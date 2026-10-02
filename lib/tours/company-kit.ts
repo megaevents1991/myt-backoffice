@@ -1,8 +1,9 @@
 /**
  * Plumbing the company-level tours actions share: the site content
  * (tours-content-actions.ts), the leads inbox (tours-leads-actions.ts), the
- * company settings and members (tours-settings-actions.ts,
- * tours-members-actions.ts) and "Publish to site" (lib/tours/site-publish.ts).
+ * company settings (tours-settings-actions.ts) and "Publish to site"
+ * (lib/tours/site-publish.ts). The company's people are managed on the Users
+ * screen (lib/actions/user-actions.ts), which uses companyAudit from here.
  *
  * Not a "use server" module: it exports constants and takes a Company, so
  * nothing here may become an action a browser can call. Server code only.
@@ -10,9 +11,8 @@
 import type { z } from "zod";
 
 import type { Company } from "@/lib/company";
-import { supabaseTyped } from "@/lib/supabase-server";
 import type { Json } from "@/types/database.types";
-import type { CompanyMemberRow, SitePublishRecord } from "@/components/tours/content/shared";
+import type { SitePublishRecord } from "@/components/tours/content/shared";
 
 export type JsonObject = { [key: string]: Json | undefined };
 
@@ -52,26 +52,4 @@ export function publishRecordOf(value: Json | undefined): SitePublishRecord | nu
     ok: o.ok === true,
     ...(typeof o.error === "string" ? { error: o.error } : {}),
   };
-}
-
-// ---------------------------------------------------------------- members
-/** The accounts assigned to the company (public.company_members), by name. */
-export async function companyMembersOf(company: Company): Promise<CompanyMemberRow[]> {
-  const { data, error } = await supabaseTyped
-    .from("company_members")
-    .select("user_id, role, user_profiles!inner(email, display_name, is_active)")
-    .eq("company_id", company.id);
-  if (error) throw error;
-  return (data ?? [])
-    .map((m) => {
-      const profile = m.user_profiles as unknown as { email: string; display_name: string | null; is_active: boolean };
-      return {
-        userId: m.user_id,
-        name: profile.display_name || profile.email,
-        email: profile.email,
-        role: m.role,
-        isActive: profile.is_active,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, "he"));
 }

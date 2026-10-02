@@ -11,6 +11,7 @@ import {
   Check,
   FileText,
   Trash2,
+  UserMinus,
 } from "lucide-react";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import { Button } from "@/components/ui/button";
@@ -69,18 +70,22 @@ import {
   uploadUserContract,
   getContractDownloadUrl,
   removeUserContract,
+  removeFromCompany,
 } from "@/lib/actions/user-actions";
 import {
   ROLES,
   ADMIN_ROLES,
+  COMPANY_MEMBER_ROLES,
   PARTNER_ROLES,
   ROLE_LABELS,
   TOURS_AGENT_ROLE,
   type Role,
+  type UserListItem,
   type UserProfile,
 } from "@/types/auth.types";
 import type { PartnerListItem } from "@/lib/actions/partner-actions";
 import { useAuth } from "@/contexts/auth-context";
+import { useConfirm } from "@/components/confirm-provider";
 
 type FormState = {
   email: string;
@@ -105,6 +110,14 @@ function roleLabel(role: Role) {
   const label = ROLE_LABELS[role];
   return label ? `${role} · ${label.he}` : role;
 }
+
+/** Company scope: the role in plain English ("Tours agent", "Editor"). */
+function companyRoleLabel(role: Role) {
+  return ROLE_LABELS[role]?.en ?? role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+/** The role shown in the row: the role in the active company in company scope, else the account role. */
+const roleHere = (user: UserListItem) => user.membership?.role ?? user.role;
 
 function roleBadgeVariant(role: Role) {
   if (role === "superadmin") return "destructive" as const;
@@ -191,14 +204,25 @@ function PartnerCombobox({
 export function UsersClient({
   users,
   partners,
+  scope = "events",
+  companyName,
 }: {
-  users: UserProfile[];
+  users: UserListItem[];
   partners: PartnerListItem[];
+  /**
+   * "company": the people of the active company, for any company but Mega
+   * Events (lib/actions/user-actions.ts holds the rules). No partner link, no
+   * contract, no agent portal there.
+   */
+  scope?: "events" | "company";
+  companyName?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { user: me } = useAuth();
   const [isPending, startTransition] = useTransition();
+  const inCompany = scope === "company";
 
   const isSuper = me?.role === "superadmin";
   // Admins cannot assign or touch admin/superadmin/office_manager accounts -
@@ -209,15 +233,34 @@ export function UsersClient({
   const canManageRow = (target: UserProfile) =>
     isSuper ||
     (!ADMIN_ROLES.includes(target.role) && target.role !== "office_manager");
+  // Company scope: the roles of a company (admin by a superadmin only); the
+  // hierarchy reads the role here too, and a person who also works in another
+  // company is edited only by a superadmin. The server enforces all of it.
+  const roleOptions = inCompany
+    ? COMPANY_MEMBER_ROLES.filter((r) => isSuper || r !== "admin")
+    : assignableRoles;
+  const canManageMember = (target: UserListItem) =>
+    canManageRow(target) && (isSuper || !ADMIN_ROLES.includes(roleHere(target)));
+  const canEditMember = (target: UserListItem) =>
+    canManageMember(target) && (isSuper || target.membership?.onlyHere === true);
 
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<UserProfile | null>(null);
+  const [editing, setEditing] = useState<UserListItem | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [contractFile, setContractFile] = useState<File | null>(null);
 
   const [resetOpen, setResetOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+
+  // Company scope, editing as a company admin: a tours agent stays a tours
+  // agent and staff stays staff - crossing that line is a superadmin's call.
+  const editRoleOptions =
+    inCompany && editing && !isSuper
+      ? roleOptions.filter(
+          (r) => (r === TOURS_AGENT_ROLE) === (roleHere(editing) === TOURS_AGENT_ROLE),
+        )
+      : roleOptions;
 
   const needsPartner = PARTNER_ROLES.includes(form.role);
   // A tours_agent belongs to a tours company, not to a Mega Events partner: no partner link at all.
@@ -230,14 +273,14 @@ export function UsersClient({
     setFormOpen(true);
   };
 
-  const openEdit = (user: UserProfile) => {
+  const openEdit = (user: UserListItem) => {
     setEditing(user);
     setContractFile(null);
     setForm({
       email: user.email,
       password: "",
       display_name: user.display_name ?? "",
-      role: user.role,
+      role: roleHere(user),
       partner_tracking_code: user.partner_tracking_code ?? "",
       phone: user.phone ?? "",
     });
@@ -262,11 +305,15 @@ export function UsersClient({
     }
 
     if (!editing) {
-      if (!email || form.password.length < 8) {
+      // Company scope: an email that already has an account is added without
+      // a password - the server checks the password of a new account.
+      if (!email || (!inCompany && form.password.length < 8)) {
         toast({
           variant: "destructive",
           title: "Invalid input",
-          description: "Email and a password of 8+ characters are required.",
+          description: inCompany
+            ? "An email is required."
+            : "Email and a password of 8+ characters are required.",
         });
         return;
       }
@@ -288,6 +335,8 @@ export function UsersClient({
     startTransition(async () => {
       let targetId: string | null;
       let saveError: string | null = null;
+      // Company scope: set when the email already had an account and was added.
+      let addedNote: string | undefined;
       if (editing) {
         const result = await updateUser(editing.id, {
           display_name: form.display_name || null,
@@ -308,6 +357,7 @@ export function UsersClient({
         });
         targetId = result.ok ? result.id : null;
         if (!result.ok) saveError = result.error;
+        else addedNote = result.note;
       }
 
       if (saveError) {
@@ -338,8 +388,10 @@ export function UsersClient({
       }
 
       toast({
-        title: editing ? "User updated" : "User created",
-        description: editing ? `${form.email} saved.` : `${email} can now sign in.`,
+        title: editing ? "User updated" : addedNote ? "User added" : "User created",
+        description: editing
+          ? `${form.email} saved.`
+          : (addedNote ?? `${email} can now sign in.`),
       });
       setFormOpen(false);
       router.refresh();
@@ -386,6 +438,34 @@ export function UsersClient({
     });
   };
 
+  const handleRemoveFromCompany = async (user: UserListItem) => {
+    const ok = await confirm({
+      title: `Remove ${user.display_name || user.email} from ${companyName}?`,
+      description:
+        "They will no longer see this company. The account itself and its other companies do not change.",
+      confirmLabel: "Remove from company",
+      cancelLabel: "Cancel",
+      destructive: true,
+    });
+    if (!ok) return;
+    startTransition(async () => {
+      const result = await removeFromCompany(user.id);
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.error,
+        });
+        return;
+      }
+      toast({
+        title: "Removed from company",
+        description: `${user.email} no longer works in ${companyName}.`,
+      });
+      router.refresh();
+    });
+  };
+
   const handleResetPassword = () => {
     if (!resetTarget) return;
     if (resetPassword.length < 8) {
@@ -421,7 +501,9 @@ export function UsersClient({
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Users</h1>
           <p className="text-muted-foreground">
-            Manage backoffice staff and partner-linked accounts.
+            {inCompany
+              ? `The people of ${companyName}: who works in this company and their role here. Superadmins see every company and are not listed.`
+              : "Manage backoffice staff and partner-linked accounts."}
           </p>
         </div>
         <Button onClick={openCreate}>
@@ -437,7 +519,7 @@ export function UsersClient({
               <TableHead>Email</TableHead>
               <TableHead>Display Name</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Partner</TableHead>
+              {!inCompany && <TableHead>Partner</TableHead>}
               <TableHead>Active</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="w-10" />
@@ -446,8 +528,8 @@ export function UsersClient({
           <TableBody>
             {users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  No users yet.
+                <TableCell colSpan={inCompany ? 6 : 7} className="text-center text-muted-foreground">
+                  {inCompany ? `No one works in ${companyName} yet.` : "No users yet."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -456,13 +538,26 @@ export function UsersClient({
                   <TableCell className="font-medium">{user.email}</TableCell>
                   <TableCell>{user.display_name || "-"}</TableCell>
                   <TableCell>
-                    <Badge variant={roleBadgeVariant(user.role)}>{roleLabel(user.role)}</Badge>
+                    <Badge variant={roleBadgeVariant(roleHere(user))}>
+                      {inCompany ? companyRoleLabel(roleHere(user)) : roleLabel(user.role)}
+                    </Badge>
                   </TableCell>
-                  <TableCell>{user.partner_tracking_code || "-"}</TableCell>
+                  {!inCompany && <TableCell>{user.partner_tracking_code || "-"}</TableCell>}
                   <TableCell>
                     <Switch
                       checked={user.is_active}
-                      disabled={isPending || !canManageRow(user) || user.id === me?.id}
+                      disabled={
+                        isPending ||
+                        !canManageRow(user) ||
+                        user.id === me?.id ||
+                        // Company scope: only people who work in this company only are switched off here.
+                        (inCompany && !(canManageMember(user) && user.membership?.onlyHere))
+                      }
+                      title={
+                        inCompany && !user.membership?.onlyHere
+                          ? "Also works in another company - use Remove from company"
+                          : undefined
+                      }
                       onCheckedChange={(checked) => handleToggleActive(user, checked)}
                       aria-label={`Toggle ${user.email}`}
                     />
@@ -471,7 +566,7 @@ export function UsersClient({
                     {new Date(user.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    {canManageRow(user) && (
+                    {(inCompany ? canManageMember(user) : canManageRow(user)) && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -484,18 +579,31 @@ export function UsersClient({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(user)}>
-                            <Pencil className="h-4 w-4 mr-2" />
-                            <span>Edit</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openReset(user)}>
-                            <KeyRound className="h-4 w-4 mr-2" />
-                            <span>Reset password</span>
-                          </DropdownMenuItem>
-                          {user.contract_url && (
+                          {(!inCompany || canEditMember(user)) && (
+                            <DropdownMenuItem onClick={() => openEdit(user)}>
+                              <Pencil className="h-4 w-4 mr-2" />
+                              <span>Edit</span>
+                            </DropdownMenuItem>
+                          )}
+                          {(!inCompany || canEditMember(user)) && (
+                            <DropdownMenuItem onClick={() => openReset(user)}>
+                              <KeyRound className="h-4 w-4 mr-2" />
+                              <span>Reset password</span>
+                            </DropdownMenuItem>
+                          )}
+                          {!inCompany && user.contract_url && (
                             <DropdownMenuItem onClick={() => handleDownloadContract(user)}>
                               <FileText className="h-4 w-4 mr-2" />
                               <span>Download contract</span>
+                            </DropdownMenuItem>
+                          )}
+                          {inCompany && user.id !== me?.id && (
+                            <DropdownMenuItem
+                              onClick={() => void handleRemoveFromCompany(user)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <UserMinus className="h-4 w-4 mr-2" />
+                              <span>Remove from company</span>
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -527,11 +635,19 @@ export function UsersClient({
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="name@example.com"
               />
+              {inCompany && !editing && (
+                <p className="text-xs text-muted-foreground">
+                  If this email already has an account, it is added to {companyName} with
+                  no new account and no password.
+                </p>
+              )}
             </div>
 
             {!editing && (
               <div className="space-y-1.5">
-                <Label htmlFor="user-password">Temporary password</Label>
+                <Label htmlFor="user-password">
+                  {inCompany ? "Temporary password (new accounts)" : "Temporary password"}
+                </Label>
                 <PasswordInput
                   id="user-password"
                   value={form.password}
@@ -564,20 +680,27 @@ export function UsersClient({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {assignableRoles.map((role) => (
+                  {editRoleOptions.map((role) => (
                     <SelectItem key={role} value={role}>
-                      {roleLabel(role)}
+                      {inCompany ? companyRoleLabel(role) : roleLabel(role)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {isToursAgent ? (
+            {inCompany ? (
+              isToursAgent && (
+                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                  A tours agent sells for {companyName}: they see only its departures board,
+                  read-only.
+                </p>
+              )
+            ) : isToursAgent ? (
               <p dir="rtl" className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
                 סוכן טיולים הוא סוכן מכירות של חברת טיולים (מגה תיירות), לא שותף של מגה איבנטס, ולכן אין לו קישור
-                לשותף. הוא רואה רק את לוח היציאות של החברה שלו, לצפייה בלבד. אחרי היצירה משייכים אותו לחברה במסך
-                &quot;הגדרות חברה&quot; של חברת הטיולים. עד השיוך הוא לא רואה כלום.
+                לשותף. הוא רואה רק את לוח היציאות של החברה שלו, לצפייה בלבד. אחרי היצירה עוברים לחברת הטיולים בבורר
+                החברות ומוסיפים אותו ב-Users עם אותו אימייל. עד השיוך הוא לא רואה כלום.
               </p>
             ) : (
               <div className="space-y-1.5">
@@ -608,7 +731,7 @@ export function UsersClient({
               />
             </div>
 
-            {needsPartner && (
+            {!inCompany && needsPartner && (
               <div className="space-y-1.5">
                 <Label htmlFor="user-contract">Contract (PDF/DOC/image, max 10MB)</Label>
                 {editing?.contract_url && !contractFile && (

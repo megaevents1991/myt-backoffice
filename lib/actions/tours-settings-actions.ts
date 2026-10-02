@@ -29,7 +29,6 @@ import {
   SITE_DEPLOY_HOOK_KEY,
   asObject,
   companyAudit,
-  companyMembersOf,
   invalidInput,
   publishRecordOf,
   type JsonObject,
@@ -106,10 +105,7 @@ function merged(current: JsonObject, values: Record<string, Json | undefined>): 
 }
 
 async function load(company: Company): Promise<{ row: CompanyRow; settings: CompanySettingsData }> {
-  const [{ data: row, error }, members] = await Promise.all([
-    supabaseTyped.from("companies").select("*").eq("id", company.id).single(),
-    companyMembersOf(company),
-  ]);
+  const { data: row, error } = await supabaseTyped.from("companies").select("*").eq("id", company.id).single();
   if (error) throw error;
   const contact = asObject(row.contact);
   const brand = asObject(row.brand);
@@ -140,7 +136,6 @@ async function load(company: Company): Promise<{ row: CompanyRow; settings: Comp
       // only whether one is stored - the URL itself is a secret and stays on the server
       deployHookSet: typeof features[SITE_DEPLOY_HOOK_KEY] === "string" && features[SITE_DEPLOY_HOOK_KEY] !== "",
       lastPublish: publishRecordOf(features[LAST_SITE_PUBLISH_KEY]),
-      members,
     },
   };
 }

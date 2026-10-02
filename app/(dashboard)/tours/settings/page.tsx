@@ -12,7 +12,7 @@ export default async function TourCompanySettingsPage() {
     <div>
       <PageHeader
         title="Settings"
-        description="Details of the active company: name, site, contact details, brand, email, analytics, the connection that publishes the site, and members. Company admins only."
+        description="Details of the active company: name, site, contact details, brand, email, analytics and the connection that publishes the site. People and roles are managed in Users. Company admins only."
         actions={result.success ? <PublishSiteButton /> : undefined}
       />
       {result.success ? (

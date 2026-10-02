@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleSlash } from "lucide-react";
 
@@ -15,7 +16,6 @@ import { saveCompanySettings } from "@/lib/actions/tours-settings-actions";
 import { CurrencySelect, Field, Section } from "@/components/tours/ui";
 import { SiteImage } from "@/components/tours/content/fields";
 import { CONTENT_UNSAVED_NOTE } from "@/components/tours/content/save-bar";
-import { CompanyMembers } from "@/components/tours/content/company-members";
 import type { CompanySettingsData, CompanySettingsForm, DeployHookChange } from "@/components/tours/content/shared";
 
 /** Settings of the active company. The deploy hook is write-only: it can be replaced or removed, never read back. */
@@ -220,7 +220,15 @@ export function CompanySettingsFormEditor({ initial }: { initial: CompanySetting
         )}
       </Section>
 
-      <CompanyMembers initial={saved.members} companyName={saved.form.name} />
+      <Section title="People">
+        <p className="text-sm text-muted-foreground">
+          People and roles are managed in{" "}
+          <Link href="/users" className="font-medium text-foreground underline underline-offset-2 hover:text-primary">
+            Users
+          </Link>
+          .
+        </p>
+      </Section>
 
       <StickySaveBar
         isDirty={isDirty}

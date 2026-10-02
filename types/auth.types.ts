@@ -47,6 +47,12 @@ export const ADMIN_ROLES: Role[] = ["superadmin", "admin"];
 export const PARTNER_ROLES: Role[] = ["office_manager", "agent", "affiliate"];
 /** Partner roles that SELL (build packages, quote, order for a customer). */
 export const SELLER_ROLES: Role[] = ["agent", "office_manager"];
+/**
+ * The roles a person can hold in a company other than Mega Events - the Users
+ * screen in company scope (lib/actions/user-actions.ts). Only a superadmin
+ * gives `admin`.
+ */
+export const COMPANY_MEMBER_ROLES: Role[] = ["admin", "editor", "tours_agent"];
 
 /** Row shape of public.user_profiles (hand-typed until `npm run db:types` regen). */
 export interface UserProfile {
@@ -64,6 +70,25 @@ export interface UserProfile {
   is_active: boolean;
   created_at: string;
   created_by: string | null;
+}
+
+/**
+ * A person's place in the active company (public.company_members). Set only
+ * on the Users screen of a company other than Mega Events.
+ */
+export interface UserMembership {
+  /** Their role in this company (company_members.role). */
+  role: Role;
+  /**
+   * True when this company is their only company and they are not a
+   * superadmin - the only people a company admin manages fully.
+   */
+  onlyHere: boolean;
+}
+
+/** A row of the Users screen. */
+export interface UserListItem extends UserProfile {
+  membership?: UserMembership;
 }
 
 /** The user object exposed to the client (auth context / session route). */

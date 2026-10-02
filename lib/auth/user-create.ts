@@ -95,6 +95,11 @@ export type CreatePortalUserInput = {
   phone: string | null;
   /** The authorized actor's sub - recorded as user_profiles.created_by. */
   created_by: string;
+  /**
+   * false creates the account switched off (default true). The company scope
+   * of /users switches it on only once its company membership exists.
+   */
+  isActive?: boolean;
 };
 
 export async function createManagedUser(
@@ -149,7 +154,7 @@ export async function createManagedUser(
       partner_tracking_code: input.partner_tracking_code || null,
       phone: input.phone || null,
       agent_slug: slug,
-      is_active: true,
+      is_active: input.isActive ?? true,
       created_by: input.created_by,
     });
 
