@@ -40,8 +40,12 @@ export function tourReadiness(input: {
   const mainDays = input.itineraries.find((v) => v.key === "main")?.days.length ?? 0;
   const chosen = new Set(form.termIds);
   const audiences = input.terms.filter((t) => t.kind === "audiences" && chosen.has(t.id)).length;
+  // The tour row and its dates carry the time of their last change; prices, flights and itinerary
+  // edits do not, so after those the operator publishes again on their own (the detail says so).
   const publishedAfterChange =
-    !!input.lastPublish?.ok && !!input.updatedAt && input.lastPublish.at > input.updatedAt;
+    !!input.lastPublish?.ok &&
+    !!input.updatedAt &&
+    Date.parse(input.lastPublish.at) > Date.parse(input.updatedAt);
 
   const item = (key: string, label: string, state: ReadinessState, detail: string, tab: string): TourReadinessItem => ({
     key,
@@ -102,7 +106,9 @@ export function tourReadiness(input: {
       "site",
       "Publish Site",
       publishedAfterChange ? "done" : "todo",
-      publishedAfterChange ? "The site was rebuilt after the last change" : "Rebuild the site to show the changes",
+      publishedAfterChange
+        ? "Rebuilt after the last change of the tour or its dates. After editing prices, flights or the itinerary, publish again."
+        : "Rebuild the site to show the changes",
       "general",
     ),
   ];

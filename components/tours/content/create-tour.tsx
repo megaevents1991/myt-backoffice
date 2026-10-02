@@ -40,12 +40,12 @@ import { PackageGeneralFields, PackageTermsPicker, slugFromName } from "@/compon
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
 import { createTour } from "@/lib/actions/tours-tour-actions";
 import { listUpcomingBlocks } from "@/lib/actions/tours-departure-actions";
-import { addDays, daysBetween, fmtDateTime, isDateOnly } from "@/lib/tours/format";
-import { flightRouteLabel } from "@/lib/tours/routes";
+import { addDays, daysBetween, fmtDateTime, isDateOnly, nightsBetween, parsePrice } from "@/lib/tours/format";
+import { checkBlockFitsDeparture, flightRouteLabel } from "@/lib/tours/routes";
 import { departureCode } from "@/components/tours/departures/departure-utils";
 import { CURRENCIES, PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import type { CardFlight } from "@/components/tours/departures/types";
-import type { NewTourContext, NewTourSeries, PackageForm } from "@/components/tours/content/shared";
+import { createProblemsKey, type NewTourContext, type NewTourSeries, type PackageForm } from "@/components/tours/content/shared";
 
 const EMPTY_FORM: PackageForm = {
   name: "",
@@ -79,17 +79,27 @@ const EMPTY_FORM: PackageForm = {
 const DAY_WINDOW = 2;
 const CODE = /^[A-Z][A-Z0-9]{1,7}$/;
 const AIRPORT = /^[A-Z]{3}$/;
+const MAX_DATES = 60;
+const MAX_NIGHTS = 60;
 const priceKey = (paxType: string, position: number) => `${paxType}:${position}`;
 
 const freeSeats = (b: CardFlight) => b.initial_quantity - Math.max(b.allocatedOutbound, b.allocatedInbound);
 
-/** The open blocks that fly within two days of a date's departure or return. */
-function blocksFor(blocks: CardFlight[], start: string, end: string): CardFlight[] {
-  if (!isDateOnly(start)) return [];
+/**
+ * The open blocks that can serve a date both ways - out within two days of
+ * its departure, back within two days of its return, landing and leaving
+ * where the series does: the blocks addFlightAllocation accepts for "both".
+ */
+function blocksFor(blocks: CardFlight[], start: string, end: string, route: { arrival: string; ret: string }): CardFlight[] {
+  if (!isDateOnly(start) || !isDateOnly(end)) return [];
   const near = (flightDay: string | undefined, day: string) =>
-    !!flightDay && isDateOnly(day) && Math.abs(daysBetween(day, flightDay) ?? 99) <= DAY_WINDOW;
+    !!flightDay && Math.abs(daysBetween(day, flightDay)) <= DAY_WINDOW;
+  const ends = { arrival_airport: route.arrival || null, return_airport: route.ret || null };
   return blocks.filter(
-    (b) => near(b.outbound_departure_time?.slice(0, 10), start) || near(b.inbound_departure_time?.slice(0, 10), end),
+    (b) =>
+      near(b.outbound_departure_time?.slice(0, 10), start) &&
+      near(b.inbound_departure_time?.slice(0, 10), end) &&
+      checkBlockFitsDeparture(b, ends, "both").ok,
   );
 }
 
@@ -176,6 +186,13 @@ export function CreateTour({ context }: { context: NewTourContext }) {
   const takenSlugs = useMemo(() => new Set(context.slugs), [context.slugs]);
   const takenCodes = useMemo(() => new Set(context.seriesCodes), [context.seriesCodes]);
   const filledDates = dates.filter((d) => d.start);
+  const parsedPrices = PRICE_MATRIX_ROWS.map((r) => ({
+    paxType: r.paxType,
+    position: r.position,
+    label: r.label,
+    price: parsePrice(prices[priceKey(r.paxType, r.position)] ?? ""),
+  }));
+  const badPrice = parsedPrices.find((p) => p.price === undefined);
 
   const problem = !form.name.trim()
     ? "Tour name is required"
@@ -189,11 +206,23 @@ export function CreateTour({ context }: { context: NewTourContext }) {
             ? `Series ${code} already exists`
             : !AIRPORT.test(series.arrivalAirport) || !AIRPORT.test(series.returnAirport)
               ? "Arrival and return airports are 3 English letters (e.g. LHR)"
-              : filledDates.some((d) => !isDateOnly(d.start) || !isDateOnly(d.end) || d.end < d.start)
-                ? "Every date needs a departure date and a later return date"
-                : new Set(filledDates.map((d) => d.start)).size !== filledDates.length
-                  ? "Two dates start on the same day"
-                  : null;
+              : series.capacity !== null && series.capacity > 2000
+                ? "Seats per date: up to 2000"
+                : series.childMaxAge > 25
+                  ? "Child age: up to 25"
+                  : (form.nights ?? 0) > MAX_NIGHTS
+                    ? `A tour of more than ${MAX_NIGHTS} nights - check the nights`
+                    : filledDates.length > MAX_DATES
+                      ? `Up to ${MAX_DATES} dates here - add more from the tour page (Add Season)`
+                      : filledDates.some((d) => !isDateOnly(d.start) || !isDateOnly(d.end) || d.end < d.start)
+                        ? "Every date needs a departure date and a later return date"
+                        : filledDates.some((d) => (nightsBetween(d.start, d.end) ?? 0) > MAX_NIGHTS)
+                          ? `A date of more than ${MAX_NIGHTS} nights - check the return date`
+                          : new Set(filledDates.map((d) => d.start)).size !== filledDates.length
+                            ? "Two dates start on the same day"
+                            : badPrice
+                              ? `${badPrice.label}: not a valid price`
+                              : null;
 
   const create = async () => {
     if (problem || saving) return;
@@ -203,33 +232,41 @@ export function CreateTour({ context }: { context: NewTourContext }) {
       page: form,
       series: { ...series, code },
       dates: filledDates,
-      prices: PRICE_MATRIX_ROWS.map((r) => {
-        const raw = prices[priceKey(r.paxType, r.position)]?.trim() ?? "";
-        return { paxType: r.paxType, position: r.position, price: raw === "" ? null : Number(raw) };
-      }),
+      prices: parsedPrices.map(({ paxType, position, price }) => ({ paxType, position, price: price ?? null })),
       flights: Object.entries(links)
         .map(([key, seats]) => {
           const [start, id] = key.split("|");
           return { start, flightId: Number(id), seats, legs: "both" as const };
         })
         .filter((f) => starts.has(f.start) && f.seats > 0),
-    }).catch((e: unknown) => ({ success: false as const, error: e instanceof Error ? e.message : "Failed to create the tour" }));
-    setSaving(false);
+    }).catch(() => null);
+    if (!result) {
+      // the request broke off: the steps already run on the server stay done
+      setSaving(false);
+      toast({
+        variant: "destructive",
+        title: "The connection broke off",
+        description: "The tour may already exist. Check the Tours list before trying again.",
+      });
+      return;
+    }
     if (!result.success) {
+      setSaving(false);
       toast({ variant: "destructive", title: "The tour was not created", description: result.error });
       return;
     }
+    // saving stays on: the page is leaving, a second click must not create it again
     const { id, departures, flights, problems } = result.data;
     toast({
       title: "Tour created",
       description: `${departures} dates, ${flights} flight links. It stays inactive until you switch it on.`,
     });
     if (problems.length) {
-      toast({
-        variant: "destructive",
-        title: `${problems.length} steps were not done - finish them on the tour page`,
-        description: problems.slice(0, 4).join(" · "),
-      });
+      try {
+        sessionStorage.setItem(createProblemsKey(id), JSON.stringify(problems));
+      } catch {
+        toast({ variant: "destructive", title: "Some steps were not done", description: problems.slice(0, 4).join(" · ") });
+      }
     }
     router.push(`/tours/packages/${id}?tab=dates`);
   };
@@ -393,7 +430,8 @@ export function CreateTour({ context }: { context: NewTourContext }) {
                   dir="ltr"
                   inputMode="decimal"
                   value={prices[key] ?? ""}
-                  onChange={(e) => setPrices((p) => ({ ...p, [key]: e.target.value.replace(/[^\d.]/g, "") }))}
+                  aria-invalid={parsePrice(prices[key] ?? "") === undefined}
+                  onChange={(e) => setPrices((p) => ({ ...p, [key]: e.target.value }))}
                 />
               </Field>
             );
@@ -405,7 +443,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
         id="section-flights"
         icon={Plane}
         title="Offline Flights"
-        description="Each date lists the flight blocks that fly within two days of it. Tick the ones that serve it."
+        description="Each date lists the flight blocks that fly out and back within two days of it, on the series route. Tick the ones that serve it."
         actions={
           <>
             <Button asChild variant="outline" size="sm">
@@ -427,7 +465,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
           <EmptyLine>Add dates first - each date lists the flight blocks that fit it.</EmptyLine>
         ) : (
           filledDates.map((d) => {
-            const fits = blocksFor(upcoming, d.start, d.end);
+            const fits = blocksFor(upcoming, d.start, d.end, { arrival: series.arrivalAirport, ret: series.returnAirport });
             return (
               <div key={d.start} className="space-y-2 rounded-md border p-3">
                 <div className="text-sm font-medium">
@@ -436,7 +474,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
                 {blocks.loading && !blocks.data ? (
                   <p className="text-sm text-muted-foreground">Loading flights...</p>
                 ) : fits.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No flight block flies on these dates yet.</p>
+                  <p className="text-sm text-muted-foreground">No flight block flies this route on these dates yet.</p>
                 ) : (
                   fits.map((b) => {
                     const key = `${d.start}|${b.id}`;

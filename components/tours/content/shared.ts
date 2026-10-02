@@ -190,6 +190,9 @@ export interface NewTourContext {
   slugs: string[];
 }
 
+/** Where Create Tour leaves the steps that failed, for the new tour's page to show once. */
+export const createProblemsKey = (tourId: string) => `create-tour-problems:${tourId}`;
+
 /** What reached the database. The tour exists once `id` is set, even when a later step failed. */
 export interface NewTourResult {
   id: string;

@@ -3,6 +3,8 @@ import { CreateTour } from "@/components/tours/content/create-tour";
 import { PageLoadError } from "@/components/tours/content/save-bar";
 
 export const dynamic = "force-dynamic";
+// Create Tour runs every step of a new tour in one server action (up to 60 dates).
+export const maxDuration = 300;
 export const metadata = { title: "Create Tour" };
 
 /** Create Tour - the tours side of /events/new. */

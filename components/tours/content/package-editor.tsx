@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Plus, Trash2 } from "lucide-react";
 
@@ -20,7 +20,7 @@ import { useUrlState } from "@/hooks/use-view-state";
 import { deleteTourPackage, saveTourItinerary, saveTourPackage } from "@/lib/actions/tours-content-actions";
 import { getTourDates } from "@/lib/actions/tours-departure-actions";
 import { getSitePublishStatus } from "@/lib/tours/site-publish";
-import { ActiveChip, Chip, EmptyLine, Field, LoadError, Section } from "@/components/tours/ui";
+import { ActiveChip, Chip, EmptyLine, Field, LoadError, Notice, Section } from "@/components/tours/ui";
 import {
   IMAGE_FIELDS_NOTE,
   ImageListEditor,
@@ -43,6 +43,7 @@ import {
   ViewOnSiteButton,
 } from "@/components/tours/content/save-bar";
 import {
+  createProblemsKey,
   siteAssetUrl,
   type ItineraryVariant,
   type PackageEditorData,
@@ -89,6 +90,20 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [tab, setTab] = useUrlState<Tab>("tab", "general", TABS);
+  // Steps Create Tour could not finish, shown once on the new tour's page
+  const [createProblems, setCreateProblems] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const key = createProblemsKey(initial.id);
+      const raw = sessionStorage.getItem(key);
+      if (!raw) return;
+      sessionStorage.removeItem(key);
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) setCreateProblems(list.filter((p): p is string => typeof p === "string"));
+    } catch {
+      // no storage: the toast of Create Tour already said it
+    }
+  }, [initial.id]);
   const dates = useActionData(() => getTourDates(initial.id), [initial.id]);
   const publish = useActionData(() => getSitePublishStatus(), []);
 
@@ -103,6 +118,10 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const isDirty = formDirty || dirtyKeys.length > 0;
 
   const problem = !form.name.trim() ? "Tour name is required" : !form.slug.trim() ? "Slug is required" : null;
+  // the dates tab keeps these current; the loaded page only until it answers
+  const dateCount = dates.data ? dates.data.rows.length : saved.departures;
+  const seriesCodes = dates.data ? dates.data.series.map((s) => s.code) : saved.seriesCodes;
+  const slugLocked = saved.slugLocked || dateCount > 0;
   const readiness = tourReadiness({
     form: saved.form,
     itineraries: saved.itineraries,
@@ -200,15 +219,15 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           <span className="flex flex-wrap items-center gap-2">
             <ActiveChip active={saved.form.isActive} />
             {!saved.hasContent && <Chip>No content</Chip>}
-            {saved.seriesCodes.length > 0 && (
+            {seriesCodes.length > 0 && (
               <span>
                 Series:{" "}
                 <span dir="ltr" className="font-mono">
-                  {saved.seriesCodes.join(", ")}
+                  {seriesCodes.join(", ")}
                 </span>
               </span>
             )}
-            <span>{saved.departures} dates</span>
+            <span>{dateCount} dates</span>
           </span>
         }
         actions={
@@ -230,6 +249,20 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
         </div>
       )}
 
+      {createProblems.length > 0 && (
+        <Notice tone="warning">
+          <p className="font-medium">Create Tour could not finish {createProblems.length} steps. Finish them here:</p>
+          <ul className="mt-1 list-disc space-y-0.5 ps-5">
+            {createProblems.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ul>
+          <Button type="button" variant="ghost" size="sm" className="mt-1" onClick={() => setCreateProblems([])}>
+            Dismiss
+          </Button>
+        </Notice>
+      )}
+
       <TourReadinessStrip items={readiness} onOpen={(next) => setTab(next as Tab)} />
 
       <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="space-y-4">
@@ -248,9 +281,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             <PackageGeneralFields
               form={form}
               set={set}
-              slugLocked={saved.slugLocked}
+              slugLocked={slugLocked}
               slugHint={
-                saved.slugLocked
+                slugLocked
                   ? "The tour has dates, so its address on the site is locked."
                   : "The last part of the tour's address on the site. No spaces."
               }

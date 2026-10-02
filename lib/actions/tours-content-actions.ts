@@ -72,7 +72,19 @@ const asStrings = (value: Json | undefined): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
 const blank = (value: unknown): boolean => value === null || value === undefined || value === "";
-const same = (a: unknown, b: unknown): boolean => (blank(a) && blank(b)) || JSON.stringify(a) === JSON.stringify(b);
+/** The value with every object's keys sorted: jsonb hands keys back in its own order, a form in another. */
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>)
+            .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+            .map(([k, v]) => [k, canonical(v)]),
+        )
+      : value;
+const same = (a: unknown, b: unknown): boolean =>
+  (blank(a) && blank(b)) || JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 /** "" -> null for a nullable text column. */
 const orNull = (value: string): string | null => (value.trim() === "" ? null : value);
@@ -183,7 +195,7 @@ const hotelStaySchema = z
     amenities: textList.optional(),
     roomFeatures: textList.optional(),
     href: z.string().max(700).optional(),
-    code: z.string().max(60).optional(),
+    code: z.string().max(200).optional(),
   })
   .passthrough();
 
@@ -315,16 +327,32 @@ const toFaq = (value: Json): FaqItem[] =>
       })
     : [];
 
-/** The stored hotels of a tour, every key kept (a save writes back what it read). */
+const OPTIONAL_HOTEL_TEXTS = ["board", "dates", "distance", "href", "code"] as const;
+const OPTIONAL_HOTEL_LISTS = ["amenities", "roomFeatures"] as const;
+
+/**
+ * The stored hotels of a tour, every key kept (a save writes back what it
+ * read). The fields the editor knows are made the type the save checks, so an
+ * imported hotel with a number or a null in one of them never blocks a save.
+ */
 const toHotels = (value: Json): TourHotelStay[] =>
   Array.isArray(value)
     ? value.map((item) => {
-        const o = asObject(item);
+        const o: Record<string, unknown> = { ...asObject(item) };
+        for (const key of OPTIONAL_HOTEL_TEXTS) {
+          if (o[key] === null || o[key] === undefined) delete o[key];
+          else if (typeof o[key] !== "string") o[key] = String(o[key]);
+        }
+        for (const key of OPTIONAL_HOTEL_LISTS) {
+          if (!Array.isArray(o[key])) delete o[key];
+          else o[key] = (o[key] as unknown[]).filter((v): v is string => typeof v === "string");
+        }
+        const stars = typeof o.stars === "number" ? Math.trunc(o.stars) : Number(o.stars);
         return {
-          ...(o as Record<string, unknown>),
+          ...o,
           name: typeof o.name === "string" ? o.name : "",
           location: typeof o.location === "string" ? o.location : "",
-          stars: typeof o.stars === "number" ? o.stars : null,
+          stars: Number.isFinite(stars) && stars >= 1 && stars <= 7 ? stars : null,
           nights: typeof o.nights === "string" ? o.nights : typeof o.nights === "number" ? String(o.nights) : "",
           image: typeof o.image === "string" ? o.image : "",
           html: typeof o.html === "string" ? o.html : "",
@@ -423,7 +451,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     fetchAll((from, to) =>
       db
         .from("departures")
-        .select("itinerary_id")
+        .select("itinerary_id, updated_at")
         .eq("company_id", company.id)
         .eq("package_id", id)
         .order("id")
@@ -458,7 +486,11 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     itineraries: variants,
     terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
     hotelCatalog: hotels,
-    updatedAt: pkg.updated_at,
+    // the tour or one of its dates, whichever changed last
+    updatedAt: departures.reduce(
+      (latest, d) => (Date.parse(d.updated_at) > Date.parse(latest) ? d.updated_at : latest),
+      pkg.updated_at,
+    ),
     siteUrl: company.siteUrl,
   };
 }
