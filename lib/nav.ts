@@ -596,6 +596,8 @@ const SEGMENT_LABELS: Record<string, string> = {
 const TOURS_SEGMENT_LABELS: Record<string, string> = {
   tours: "Dashboard",
   departures: "Departures",
+  pricing: "Pricing",
+  bookings: "Online Bookings",
   reservations: "Reservations",
   series: "Series",
   contracts: "Flight Contracts",

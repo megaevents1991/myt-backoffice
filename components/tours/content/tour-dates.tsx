@@ -166,7 +166,11 @@ export function TourDates({
   return (
     <Section
       title="Dates & Prices"
-      description="Click a date to edit its prices, flights, promotions and sales, and to put it on the site."
+      description={
+        mode === "sheet"
+          ? "Edit the dates like a spreadsheet and click Save. A code opens the date's card (promotions, flights, sales)."
+          : "Click a date to edit its prices, flights, promotions and sales, and to put it on the site."
+      }
       actions={
         <>
           {sheetFits && (
