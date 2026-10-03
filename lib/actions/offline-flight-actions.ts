@@ -21,6 +21,7 @@ import {
   assertFlightValues,
 } from "./offline-flight-columns";
 import { pushFlightsToEvents } from "./offline-flight-event-sync";
+import { syncSubToursFromFlights } from "@/lib/tours/flight-sync";
 
 // `flights` is shared by every company. Nothing here touches the table
 // directly - every query goes through lib/flights-scope.ts:
@@ -161,7 +162,7 @@ export async function updateOfflineFlight(
   id: number,
   flight: Partial<Omit<OfflineFlight, "id" | "consumed_quantity">>,
 ) {
-  const { company } = await requireCompany();
+  const { company, session } = await requireCompany();
   const mode = { tours: sellsTours(company) };
   const patch = withoutLifecycleStatus(
     pickFlightColumns(flight as Record<string, unknown>, mode),
@@ -211,6 +212,18 @@ export async function updateOfflineFlight(
         repriced: priceChanged ? newEventIds : [],
       },
     ]);
+  }
+
+  // A tours sub-tour created from this block follows its new dates, unless it
+  // has customers (lib/tours/flight-sync.ts). Never throws.
+  const day = (t: unknown) => String(t ?? "").slice(0, 10);
+  if (
+    sellsTours(company) &&
+    (day(current.outbound_departure_time) !== day(updated.outbound_departure_time) ||
+      day(current.inbound_departure_time) !== day(updated.inbound_departure_time))
+  ) {
+    const synced = await syncSubToursFromFlights(company, session.sub, [updated]);
+    if (synced.moved.length) revalidatePath("/tours/departures");
   }
 
   revalidatePath("/offline-flights");

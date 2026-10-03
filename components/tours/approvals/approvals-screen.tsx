@@ -30,6 +30,7 @@ import { LoadError, Notice } from "@/components/tours/ui";
 import { BlockApprovals } from "./block-approvals";
 import { DeparturesWithoutBlock } from "./departures-without-block";
 import { DeparturesWithoutPrice } from "./departures-without-price";
+import { SubToursOffFlight } from "./subtours-off-flight";
 import { ExceptionsSummary } from "./exceptions-summary";
 import { UnmatchedHotels } from "./unmatched-hotels";
 import type { QueueRun } from "./queue-ui";
@@ -141,6 +142,7 @@ export function ApprovalsScreen({ companyName }: { companyName: string }) {
           <DeparturesWithoutBlock data={data} run={run} busy={busy} />
           <UnmatchedHotels data={data} run={run} busy={busy} />
           <DeparturesWithoutPrice data={data} run={run} busy={busy} />
+          <SubToursOffFlight data={data} />
           <ExceptionsSummary refreshKey={changes} />
         </div>
       )}
@@ -159,6 +161,7 @@ function Summary({ data }: { data: ApprovalsData }) {
     { id: "no-block", label: "Published without a live flight", count: data.departuresWithoutBlock.length },
     { id: "hotels", label: "Hotels not in catalog", count: data.unmatchedHotels.length },
     { id: "no-price", label: "No price", count: data.departuresWithoutPrice.length },
+    { id: "off-flight", label: "Off their flight", count: data.subToursOffFlight.length },
   ];
   const total = sections.reduce((sum, s) => sum + s.count, 0);
 

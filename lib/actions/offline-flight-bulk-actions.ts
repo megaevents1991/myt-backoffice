@@ -20,6 +20,7 @@ import {
   type FlightForEvents,
 } from "./offline-flight-event-sync";
 import type { OfflineFlight } from "@/types/offline-flight.types";
+import { syncSubToursFromFlights } from "@/lib/tours/flight-sync";
 
 // `flights` is shared by every company, so nothing here touches the table
 // directly (lib/flights-scope.ts). The bulk edits work in the ACTIVE company:
@@ -54,7 +55,7 @@ export async function bulkUpdateOfflineFlights(
   ids: number[],
   patch: Record<string, unknown>,
 ): Promise<number> {
-  const { company } = await requireCompany();
+  const { company, session } = await requireCompany();
   assertIds(ids);
   const mode = { tours: sellsTours(company) };
   const row = withoutLifecycleStatus(pickFlightColumns(patch, mode), mode);
@@ -96,6 +97,18 @@ export async function bulkUpdateOfflineFlights(
         .filter((f) => oldPrice.get(f.id) !== Math.round(Number(f.price)))
         .map((f) => ({ flight: f, repriced: f.event_ids ?? [] })),
     );
+  }
+  // New dates on tours blocks: their sub-tours follow, unless they have customers.
+  if (
+    sellsTours(company) &&
+    (row.outbound_departure_time !== undefined || row.inbound_departure_time !== undefined)
+  ) {
+    const synced = await syncSubToursFromFlights(
+      company,
+      session.sub,
+      (data ?? []) as FlightForPush[],
+    );
+    if (synced.moved.length) revalidatePath("/tours/departures");
   }
   await revalidateFlights(
     ((data ?? []) as FlightIdEvents[]).flatMap((f) => f.event_ids ?? []),

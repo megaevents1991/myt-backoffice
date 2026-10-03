@@ -21,6 +21,7 @@
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { toursDb } from "@/lib/tours/db";
+import { flightsOf } from "@/lib/flights-scope";
 import { logAudit } from "@/lib/audit";
 import { companyAudit } from "@/lib/tours/company-kit";
 import { toPriceMatrix } from "@/lib/tours/pricing";
@@ -125,6 +126,19 @@ export interface BlockCandidate {
   suggestedSeats: number;
 }
 
+/** A sub-tour made from a flight whose dates no longer match that flight (lib/tours/flight-sync.ts). */
+export interface SubTourOffFlight {
+  id: string;
+  code: string;
+  packageName: string | null;
+  startDate: string;
+  endDate: string;
+  flightId: number;
+  /** yyyy-mm-dd the flight takes off, out and back; null when the flight has no such leg. */
+  flightOut: string | null;
+  flightBack: string | null;
+}
+
 export interface DepartureWithoutBlock {
   id: string;
   code: string;
@@ -200,6 +214,7 @@ export interface ApprovalsData {
   unmatchedHotels: UnmatchedHotelOption[];
   hotelCatalog: CatalogHotel[];
   departuresWithoutPrice: DepartureWithoutPrice[];
+  subToursOffFlight: SubTourOffFlight[];
 }
 
 // ------------------------------------------------------------------ plumbing
@@ -690,9 +705,10 @@ export async function getApprovalsQueue(input: { reviewPage?: number } = {}): Pr
     if (unreviewedCount.error) throw new Error(unreviewedCount.error.message);
     const { today } = state;
 
-    const [published, hotels] = await Promise.all([
+    const [published, hotels, offFlight] = await Promise.all([
       loadPublishedDepartures(company.id, today),
       loadUnmatchedHotels(company.id, today),
+      loadSubToursOffFlight(company, today),
     ]);
 
     // --- flight blocks
@@ -800,11 +816,72 @@ export async function getApprovalsQueue(input: { reviewPage?: number } = {}): Pr
         unmatchedHotels: hotels.unmatched,
         hotelCatalog: hotels.catalog,
         departuresWithoutPrice,
+        subToursOffFlight: offFlight,
       },
     };
   } catch (e) {
     return dbFail("queue read", e);
   }
+}
+
+/**
+ * Upcoming sub-tours whose dates left the flight they were made from: the flight
+ * moved while the sub-tour had customers (a task was opened), or it moved through
+ * a path that does not sync. A deleted flight is not listed here - its sub-tour
+ * shows under "without a block".
+ */
+async function loadSubToursOffFlight(company: { id: string }, today: string): Promise<SubTourOffFlight[]> {
+  type SubTourRow = {
+    id: string;
+    code: string;
+    start_date: string;
+    end_date: string;
+    origin_flight_id: number;
+    packages: { name: string } | null;
+  };
+  const deps = (await fetchAll((a, b) =>
+    toursDb()
+      .from("departures")
+      .select("id, code, start_date, end_date, origin_flight_id, packages(name)")
+      .eq("company_id", company.id)
+      .is("is_deleted", null)
+      .not("origin_flight_id", "is", null)
+      .gte("end_date", today)
+      .order("start_date", { ascending: true })
+      .range(a, b),
+  )) as unknown as SubTourRow[];
+  if (deps.length === 0) return [];
+  const flights = new Map<number, { out: string | null; back: string | null }>();
+  const ids = [...new Set(deps.map((d) => d.origin_flight_id))];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await flightsOf(company)
+      .select("id, outbound_departure_time, inbound_departure_time, is_deleted")
+      .in("id", ids.slice(i, i + 200));
+    if (error) throw new Error(error.message);
+    for (const f of (data ?? []) as { id: number; outbound_departure_time: string | null; inbound_departure_time: string | null; is_deleted: boolean | null }[]) {
+      if (f.is_deleted) continue;
+      flights.set(f.id, {
+        out: f.outbound_departure_time ? f.outbound_departure_time.slice(0, 10) : null,
+        back: f.inbound_departure_time ? f.inbound_departure_time.slice(0, 10) : null,
+      });
+    }
+  }
+  const rows: SubTourOffFlight[] = [];
+  for (const d of deps) {
+    const f = flights.get(d.origin_flight_id);
+    if (!f || (f.out === d.start_date && f.back === d.end_date)) continue;
+    rows.push({
+      id: d.id,
+      code: d.code,
+      packageName: d.packages?.name ?? null,
+      startDate: d.start_date,
+      endDate: d.end_date,
+      flightId: d.origin_flight_id,
+      flightOut: f.out,
+      flightBack: f.back,
+    });
+  }
+  return rows.slice(0, LIST_CAP);
 }
 
 /** Another page of the review list - the rest of the screen stays as it is. */

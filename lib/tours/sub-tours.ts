@@ -23,6 +23,9 @@ export interface FlightDates {
   season_label: string | null;
 }
 
+/** What decides a sub-tour's dates: the two take-off times. */
+export type FlightSpanInput = Pick<FlightDates, "outbound_departure_time" | "inbound_departure_time">;
+
 export interface SubTourDraft {
   code: string;
   seasonYear: number;
@@ -50,7 +53,7 @@ const airport = (a: string | null | undefined): string | null => {
 };
 
 /** The dates a flight gives its sub-tour, or why it gives none. */
-function flightSpan(f: FlightDates): { start: string; end: string } | { error: string } {
+function flightSpan(f: FlightSpanInput): { start: string; end: string } | { error: string } {
   const start = day(f.outbound_departure_time);
   const end = day(f.inbound_departure_time);
   if (!start) return { error: "The flight has no outbound date" };
@@ -96,7 +99,7 @@ export type MoveDecision =
 export function flightMoveDecision(
   dep: { start_date: string; end_date: string; code: string; season_year: number },
   seriesCode: string,
-  f: FlightDates,
+  f: FlightSpanInput,
   opts: { hasSales: boolean; codeTaken: (code: string, seasonYear: number) => boolean },
 ): MoveDecision {
   const span = flightSpan(f);
