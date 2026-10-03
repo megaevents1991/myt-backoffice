@@ -24,6 +24,7 @@ import {
 
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import {
+  getFlightCompanyMode,
   getOfflineFlight,
   updateOfflineFlight,
   getRelevantEventsForFlight,
@@ -161,9 +162,11 @@ const offlineFlightFormSchema = z.object({
     .number()
     .int()
     .min(0, { message: "Initial quantity must be 0 or more." }),
+  // 0 is a valid price only for a tours block (not sold seat by seat); onSubmit
+  // refuses it for Mega Events, where the price is what the customer pays.
   price: z.coerce
     .number()
-    .positive({ message: "Price must be a positive number." }),
+    .nonnegative({ message: "Price must be a positive number." }),
   duration: z
     .string()
     .regex(
@@ -276,6 +279,13 @@ export default function EditOfflineFlightPage({
     { id: number; name: string; date: string }[]
   >([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  // Mega Events rules until the server says the company sells tours.
+  const [isTours, setIsTours] = useState(false);
+  useEffect(() => {
+    getFlightCompanyMode()
+      .then((mode) => setIsTours(mode.tours))
+      .catch((error) => console.error("Failed to load the company mode:", error));
+  }, []);
 
   const form = useForm<OfflineFlightFormData>({
     resolver: zodResolver(offlineFlightFormSchema, {
@@ -440,6 +450,10 @@ export default function EditOfflineFlightPage({
   async function onSubmit(values: OfflineFlightFormData) {
     if (flightId === null) {
       toast.error("Flight ID is missing. Cannot update.");
+      return;
+    }
+    if (!isTours && !(Number(values.price) > 0)) {
+      form.setError("price", { message: "Price must be a positive number." });
       return;
     }
     // console.log for values can be removed or kept
