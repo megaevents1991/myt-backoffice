@@ -19,6 +19,8 @@ export type TourDeparturePrice = T["departure_prices"]["Row"];
 export type TourDepartureOption = T["departure_options"]["Row"];
 export type TourPromotion = T["promotions"]["Row"];
 export type TourSalesEntry = T["departure_sales_entries"]["Row"];
+/** An order from the site: a request for a rep, or a card payment (20261003100000). */
+export type TourBooking = T["bookings"]["Row"];
 export type TourFlightAllocation = T["flight_allocations"]["Row"];
 export type TourHotel = T["hotels"]["Row"];
 export type TourInstructor = T["instructors"]["Row"];
@@ -174,6 +176,7 @@ export const LEAD_KIND_LABELS: Record<string, string> = {
   cancellation: "Cancellation request",
   newsletter: "Newsletter",
   advisor: "Advisor request (booking)",
+  booking: "Online booking (card)",
 };
 
 /** The numeric id the customer site uses for a departure (?product_id=). */

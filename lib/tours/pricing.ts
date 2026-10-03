@@ -12,9 +12,13 @@
  *   couple + kid = 2 x adult-in-double + third-kid
  *   adult + 2 kids is priced like couple + kid (the first kid pays the adult price)
  *   every further person pays fourth-kid when it is set, else adult-in-double
+ *   adult + 3 kids and 3 adults + kid need the fourth-kid price itself (as on WordPress):
+ *     adult + 3 kids = 2 x adult-in-double + third-kid + fourth-kid
+ *     3 adults + kid = 2 x adult-in-double + third-adult + fourth-kid
  *
- * Pure functions, no I/O. The customer site carries the same table in
- * mega-family/scripts/sync-content.mjs - change both together.
+ * Pure functions, no I/O. The same table lives in the customer site
+ * (mega-family/lib/data/departures.mjs) and in the database, which prices online
+ * bookings (tours.room_price, migration 20261003100000) - change all three together.
  */
 import type { PaxType } from "@/types/tours.types";
 
@@ -38,6 +42,8 @@ export const ROOM_COMPOSITIONS: RoomComposition[] = [
   { key: "couple_kid", title: "Couple + child", adults: 2, children: 1, summaryLabel: "Triple room" },
   { key: "adult_2_kids", title: "Adult + 2 children", adults: 1, children: 2, summaryLabel: "Triple room" },
   { key: "couple_2_kids", title: "Couple + 2 children", adults: 2, children: 2, summaryLabel: "Quad room" },
+  { key: "adult_3_kids", title: "Adult + 3 children", adults: 1, children: 3, summaryLabel: "Quad room" },
+  { key: "three_adults_kid", title: "3 adults + child", adults: 3, children: 1, summaryLabel: "Quad room" },
   { key: "couple_3_kids", title: "Couple + 3 children", adults: 2, children: 3, summaryLabel: "Quintuple room" },
 ];
 
@@ -54,7 +60,8 @@ export function roomPrice(key: string, m: PriceMatrix): number | null {
   const thirdAdult = m["adult:3"];
   const secondKid = m["child:2"];
   const thirdKid = m["child:3"];
-  const extra = m["child:4"] ?? double;
+  const fourth = m["child:4"];
+  const extra = fourth ?? double;
   switch (key) {
     case "single_room":
       return single ?? null;
@@ -69,6 +76,10 @@ export function roomPrice(key: string, m: PriceMatrix): number | null {
       return double != null && thirdKid != null ? 2 * double + thirdKid : null;
     case "couple_2_kids":
       return double != null && thirdKid != null && extra != null ? 2 * double + thirdKid + extra : null;
+    case "adult_3_kids":
+      return double != null && thirdKid != null && fourth != null ? 2 * double + thirdKid + fourth : null;
+    case "three_adults_kid":
+      return double != null && thirdAdult != null && fourth != null ? 2 * double + thirdAdult + fourth : null;
     case "couple_3_kids":
       return double != null && thirdKid != null && extra != null ? 2 * double + thirdKid + 2 * extra : null;
     default:

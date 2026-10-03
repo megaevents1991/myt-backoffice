@@ -66,6 +66,7 @@ export const NAV_LABELS: Record<string, L> = {
   // Tours (Mega Family)
   "/tours": l("Dashboard", "דשבורד"),
   "/tours/reservations": l("Reservations", "הזמנות"),
+  "/tours/bookings": l("Online Bookings", "הזמנות אונליין"),
   "/tours/leads": l("Leads", "לידים"),
   "/tours/approvals": l("Approvals", "אישורים"),
   "/tours/packages": l("Tours", "טיולים"),

@@ -230,6 +230,44 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Reservations", "הזמנות"), href: "/tours/reservations" }],
   },
   {
+    id: "tours-bookings",
+    nav: "/tours/bookings",
+    productType: "tours",
+    title: t("Online Bookings - what customers booked on the site", "הזמנות אונליין - מה שלקוחות הזמינו באתר"),
+    intro: t(
+      "At the end of a booking on the site the customer either sends a request (a rep calls back) or pays by card on the CreditGuard page. Each one is a row here and a lead in Leads. The price is computed by the system from the date's prices, never taken from the customer's browser.",
+      "בסוף הזמנה באתר הלקוח שולח בקשה (נציג חוזר אליו) או משלם בכרטיס בדף של CreditGuard. כל אחת היא שורה כאן וליד בלידים. המחיר מחושב במערכת לפי המחירים של התאריך, אף פעם לא לפי מה שהדפדפן של הלקוח שלח.",
+    ),
+    howTo: [
+      {
+        title: t("Handle a request", "לטפל בבקשה"),
+        steps: [
+          t("Open [Online Bookings](/tours/bookings) and click the row: the panel shows the rooms, the passengers and the price the customer saw.", "פותחים את [הזמנות אונליין](/tours/bookings) ולוחצים על השורה: החלונית מציגה את החדרים, הנוסעים והמחיר שהלקוח ראה."),
+          t("Call the customer. When the trip is sold, click \"Create Reservation\": it adds the seats to the departure.", "מתקשרים ללקוח. כשהטיול נמכר, לוחצים \"Create Reservation\": זה מוסיף את המושבים ליציאה."),
+          t("Set the status, the receipt number and \"Confirmation sent\" - each saves at once.", "קובעים סטטוס, מספר קבלה ו-\"Confirmation sent\" - כל אחד נשמר מיד."),
+        ],
+      },
+      {
+        title: t("A card payment", "תשלום בכרטיס"),
+        steps: [
+          t("\"Paid\" means CreditGuard confirmed exactly the amount the system computed. The seats were added to the departure by themselves.", "\"Paid\" אומר ש-CreditGuard אישר בדיוק את הסכום שהמערכת חישבה. המושבים נוספו ליציאה לבד."),
+          t("Send the customer the confirmation, issue the receipt, type its number, and set \"Done\".", "שולחים ללקוח את האישור, מפיקים קבלה, מקלידים את המספר שלה, ומסמנים \"Done\"."),
+          t("\"Check payment\": CreditGuard reported a charge with another amount. Check the transaction in CreditGuard; when it is right, set \"Paid\".", "\"Check payment\": CreditGuard דיווח על חיוב בסכום אחר. בודקים את העסקה ב-CreditGuard; אם היא תקינה, מסמנים \"Paid\"."),
+          t("\"Waiting for payment\": the customer reached the payment page and did not pay. Call them.", "\"Waiting for payment\": הלקוח הגיע לדף התשלום ולא שילם. מתקשרים אליו."),
+        ],
+      },
+    ],
+    points: [
+      t("The charge is in shekels: today's rate from the [Rates](/tours/rates) screen when it was typed in, otherwise the automatic rate plus the margin.", "החיוב בשקלים: השער של היום ממסך [השערים](/tours/rates) אם הוזן, אחרת השער האוטומטי ועוד המרווח."),
+      t("Only dates with prices in the price table can be paid online. On the others the customer sends a request.", "רק תאריכים עם מחירים בטבלת המחירים אפשר לשלם אונליין. בשאר הלקוח שולח בקשה."),
+      t("Refunds are done by hand in CreditGuard; then set the booking \"Cancelled\" and remove its seats in Reservations.", "החזרים נעשים ידנית ב-CreditGuard; אחר כך מסמנים את ההזמנה \"Cancelled\" ומורידים את המושבים שלה בהזמנות."),
+    ],
+    links: [
+      { label: t("Online Bookings", "הזמנות אונליין"), href: "/tours/bookings" },
+      { label: t("Leads", "לידים"), href: "/tours/leads" },
+    ],
+  },
+  {
     id: "tours-leads",
     nav: "/tours/leads",
     productType: "tours",

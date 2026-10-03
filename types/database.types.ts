@@ -5055,6 +5055,138 @@ export type Database = {
   }
   tours: {
     Tables: {
+      bookings: {
+        Row: {
+          adults: number
+          breakdown: Json
+          cg_auth_number: string | null
+          cg_card_last4: string | null
+          cg_result: Json | null
+          cg_tx_id: string | null
+          cg_uniqueid: string | null
+          children: number
+          company_id: string
+          confirmation_sent_at: string | null
+          created_at: string
+          currency: string
+          customer_email: string | null
+          customer_name: string | null
+          customer_phone: string | null
+          departure_id: string
+          discount: number
+          id: string
+          is_deleted: string | null
+          kind: string
+          lead_id: string | null
+          note: string | null
+          paid_at: string | null
+          passengers: Json
+          payment_started_at: string | null
+          payments: number | null
+          price_basis: string
+          rate: number | null
+          rate_source: string | null
+          receipt_no: string | null
+          ref: string
+          rooms: Json
+          sales_entry_id: string | null
+          seniors: number
+          source_path: string | null
+          staff_note: string | null
+          status: string
+          subtotal: number
+          total: number
+          total_ils: number | null
+          updated_at: string
+        }
+        Insert: {
+          adults?: number
+          breakdown?: Json
+          cg_auth_number?: string | null
+          cg_card_last4?: string | null
+          cg_result?: Json | null
+          cg_tx_id?: string | null
+          cg_uniqueid?: string | null
+          children?: number
+          company_id: string
+          confirmation_sent_at?: string | null
+          created_at?: string
+          currency: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          departure_id: string
+          discount?: number
+          id?: string
+          is_deleted?: string | null
+          kind: string
+          lead_id?: string | null
+          note?: string | null
+          paid_at?: string | null
+          passengers?: Json
+          payment_started_at?: string | null
+          payments?: number | null
+          price_basis: string
+          rate?: number | null
+          rate_source?: string | null
+          receipt_no?: string | null
+          ref: string
+          rooms?: Json
+          sales_entry_id?: string | null
+          seniors?: number
+          source_path?: string | null
+          staff_note?: string | null
+          status?: string
+          subtotal?: number
+          total?: number
+          total_ils?: number | null
+          updated_at?: string
+        }
+        Update: {
+          adults?: number
+          breakdown?: Json
+          cg_auth_number?: string | null
+          cg_card_last4?: string | null
+          cg_result?: Json | null
+          cg_tx_id?: string | null
+          cg_uniqueid?: string | null
+          children?: number
+          company_id?: string
+          confirmation_sent_at?: string | null
+          created_at?: string
+          currency?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          customer_phone?: string | null
+          departure_id?: string
+          discount?: number
+          id?: string
+          is_deleted?: string | null
+          kind?: string
+          lead_id?: string | null
+          note?: string | null
+          paid_at?: string | null
+          passengers?: Json
+          payment_started_at?: string | null
+          payments?: number | null
+          price_basis?: string
+          rate?: number | null
+          rate_source?: string | null
+          receipt_no?: string | null
+          ref?: string
+          rooms?: Json
+          sales_entry_id?: string | null
+          seniors?: number
+          source_path?: string | null
+          staff_note?: string | null
+          status?: string
+          subtotal?: number
+          total?: number
+          total_ils?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cars: {
         Row: {
           code: string
