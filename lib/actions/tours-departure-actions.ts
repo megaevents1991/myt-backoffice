@@ -111,7 +111,7 @@ const BOARD_SELECT =
   "id, code, series_id, package_id, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, docket_no, flight_mode, flight_price, markup_fixed, is_deleted, departure_prices(pax_type, room_position, price), departure_options(kind, position, price, room_prices), promotions(id, kind, value, label, valid_until, show_on_card, is_active), flight_allocations(id, flight_id, seats, legs)";
 
 const CARD_SELECT =
-  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, is_deleted, created_at, updated_at";
+  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, origin_flight_id, is_deleted, created_at, updated_at";
 
 /** What the publish rules and the price writers need to know about a departure. */
 const CORE_SELECT =

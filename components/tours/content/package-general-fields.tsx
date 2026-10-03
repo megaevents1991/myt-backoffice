@@ -34,15 +34,6 @@ const numberOrNull = (value: string): number | null => {
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
-/** A page address from a name: spaces become hyphens, the characters an address cannot hold are dropped. */
-export const slugFromName = (name: string): string =>
-  name
-    .trim()
-    .replace(/[\s_]+/g, "-")
-    .replace(/[/?#%"'`<>\\|^{}[\]]+/g, "")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-|-$/g, "");
-
 export function PackageGeneralFields({
   form,
   set,

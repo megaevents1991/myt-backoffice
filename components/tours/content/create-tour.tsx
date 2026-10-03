@@ -41,7 +41,7 @@ import { ImageUrlField, StringListEditor } from "@/components/tours/content/fiel
 import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
 import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { HtmlField } from "@/components/tours/content/html-field";
-import { PackageGeneralFields, PackageTermsPicker, slugFromName } from "@/components/tours/content/package-general-fields";
+import { PackageGeneralFields, PackageTermsPicker } from "@/components/tours/content/package-general-fields";
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
 import { createTour } from "@/lib/actions/tours-tour-actions";
 import { listUpcomingBlocks } from "@/lib/actions/tours-departure-actions";
@@ -52,40 +52,13 @@ import { CURRENCIES, PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import type { CardFlight } from "@/components/tours/departures/types";
 import {
   createProblemsKey,
+  EMPTY_PACKAGE_FORM,
+  slugFromName,
   type ItineraryDay,
   type NewTourContext,
   type NewTourSeries,
   type PackageForm,
 } from "@/components/tours/content/shared";
-
-const EMPTY_FORM: PackageForm = {
-  name: "",
-  subtitle: "",
-  slug: "",
-  kind: "organized",
-  brand: "family",
-  days: null,
-  nights: null,
-  countries: "",
-  seasons: [],
-  isActive: false,
-  heroImage: "",
-  cardImage: "",
-  gallery: [],
-  descriptionHtml: "",
-  attractions: [],
-  included: [],
-  notIncluded: [],
-  extraInfoHtml: "",
-  termsHtml: "",
-  cancellationHtml: "",
-  faq: [],
-  seoTitle: "",
-  seoDescription: "",
-  termIds: [],
-  hotels: [],
-  leaderIds: [],
-};
 
 /** Blocks fly within this many days of the date they serve (the allocation rule). */
 const DAY_WINDOW = 2;
@@ -151,7 +124,7 @@ function SectionCard({
 export function CreateTour({ context }: { context: NewTourContext }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [form, setForm] = useState<PackageForm>(EMPTY_FORM);
+  const [form, setForm] = useState<PackageForm>(EMPTY_PACKAGE_FORM);
   const [slugTouched, setSlugTouched] = useState(false);
   const [series, setSeries] = useState<NewTourSeries>({
     code: "",

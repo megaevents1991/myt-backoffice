@@ -109,6 +109,45 @@ export interface PackageForm {
   leaderIds: string[];
 }
 
+/** A blank organized tour page: Add Tour starts from it, and so does a tour a flight series creates. */
+export const EMPTY_PACKAGE_FORM: PackageForm = {
+  name: "",
+  subtitle: "",
+  slug: "",
+  kind: "organized",
+  brand: "family",
+  days: null,
+  nights: null,
+  countries: "",
+  seasons: [],
+  isActive: false,
+  heroImage: "",
+  cardImage: "",
+  gallery: [],
+  descriptionHtml: "",
+  attractions: [],
+  included: [],
+  notIncluded: [],
+  extraInfoHtml: "",
+  termsHtml: "",
+  cancellationHtml: "",
+  faq: [],
+  seoTitle: "",
+  seoDescription: "",
+  termIds: [],
+  hotels: [],
+  leaderIds: [],
+};
+
+/** A page address from a name: spaces become hyphens, the characters an address cannot hold are dropped. */
+export const slugFromName = (name: string): string =>
+  name
+    .trim()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[/?#%"'`<>\\|^{}[\]]+/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+
 /** A group leader a tour can list. */
 export interface LeaderOption {
   id: string;

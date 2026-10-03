@@ -28,6 +28,20 @@ import {
 } from "@/lib/actions/offline-flight-actions";
 import { blockStatusOptions } from "@/components/flight-field-groups";
 import { toStopoverColumns } from "@/lib/flight-stops";
+import {
+  MAX_ORGANIZED_FLIGHTS,
+  NO_ORGANIZED_SERIES,
+  OrganizedSeriesFields,
+  OrganizedSeriesResult,
+  organizedProblem,
+  type OrganizedSeries,
+} from "@/components/tours/flights/organized-series";
+import {
+  createSubToursFromFlightSeries,
+  getTourCodes,
+  type SubToursResult,
+  type TourCodeOption,
+} from "@/lib/actions/tours-flight-series-actions";
 
 type RelevantEvent = { id: number; name: string; date: string };
 
@@ -171,12 +185,39 @@ export default function NewOfflineFlightSeriesPage() {
   // Mega Events until the server says otherwise - the form then looks exactly
   // as it always did. The server validates the status on save either way.
   const [isTours, setIsTours] = useState(false);
+  // Tours only: the series may be the dates of an organized tour - each flight
+  // becomes a sub-tour of the tour with that code (tours-flight-series-actions).
+  const [organized, setOrganized] = useState<OrganizedSeries>(NO_ORGANIZED_SERIES);
+  const [tourCodes, setTourCodes] = useState<TourCodeOption[]>([]);
+  const [done, setDone] = useState<{
+    seriesId: string;
+    flights: number;
+    result: SubToursResult | null;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
     getFlightCompanyMode()
-      .then((mode) => setIsTours(mode.tours))
+      .then((mode) => {
+        setIsTours(mode.tours);
+        if (!mode.tours) return;
+        getTourCodes()
+          .then((res) =>
+            res.success
+              ? setTourCodes(res.data)
+              : console.error("Failed to load the tour codes:", res.error),
+          )
+          .catch((error) => console.error("Failed to load the tour codes:", error));
+      })
       .catch((error) => console.error("Failed to load the company mode:", error));
   }, []);
+
+  const organizedOn = isTours && organized.on;
+  // An organized series is named by its tour code, like the blocks the ops sheet imported.
+  const seriesName = organizedOn
+    ? organized.code.trim().toUpperCase()
+    : template.seriesName.trim();
+  const organizedIssue = isTours ? organizedProblem(organized, tourCodes) : null;
 
   const set = <K extends keyof Template>(key: K, value: Template[K]) =>
     setTemplate((prev) => ({ ...prev, [key]: value }));
@@ -230,14 +271,17 @@ export default function NewOfflineFlightSeriesPage() {
   };
 
   const step1Valid =
-    template.seriesName.trim() !== "" &&
+    seriesName !== "" &&
+    !organizedIssue &&
     template.airline_code.trim() !== "" &&
     template.metadata_name.trim() !== "" &&
     template.outbound_departure_airport.length === 3 &&
     template.outbound_arrival_airport.length === 3 &&
     template.inbound_departure_airport.length === 3 &&
     template.inbound_arrival_airport.length === 3 &&
-    Number(template.price) > 0 &&
+    (isTours
+      ? template.price.trim() !== "" && Number(template.price) >= 0
+      : Number(template.price) > 0) &&
     Number.parseInt(template.initial_quantity, 10) > 0;
 
   const nightsNum = Number.parseInt(nights, 10);
@@ -351,12 +395,45 @@ export default function NewOfflineFlightSeriesPage() {
     [rows, template],
   );
 
+  /** The second step of an organized series: its flights exist, now their sub-tours. Safe to repeat. */
+  const makeSubTours = async (seriesId: string, flights: number) => {
+    const code = organized.code.trim().toUpperCase();
+    const isNew = !tourCodes.some((c) => c.code === code);
+    try {
+      const res = await createSubToursFromFlightSeries({
+        flightSeriesId: seriesId,
+        code,
+        tourName: isNew ? organized.tourName.trim() : null,
+      });
+      setDone({
+        seriesId,
+        flights,
+        result: res.success ? res.data : null,
+        error: res.success ? null : res.error,
+      });
+      if (res.success) toast.success(`Created ${flights} flight(s) and their sub-tours`);
+      else toast.error(res.error);
+    } catch (error) {
+      console.error("Failed to create the sub-tours:", error);
+      setDone({
+        seriesId,
+        flights,
+        result: null,
+        error: error instanceof Error ? error.message : "Could not create the sub-tours",
+      });
+    }
+  };
+
   const create = () => {
     startTransition(async () => {
       try {
-        const result = await createOfflineFlightSeries(template.seriesName, drafts);
-        toast.success(`Created ${result.created} flight(s)`);
-        router.push("/offline-flights");
+        const result = await createOfflineFlightSeries(seriesName, drafts);
+        if (!organizedOn) {
+          toast.success(`Created ${result.created} flight(s)`);
+          router.push("/offline-flights");
+          return;
+        }
+        await makeSubTours(result.series_id, result.created);
       } catch (error) {
         console.error("Failed to create series:", error);
         toast.error(error instanceof Error ? error.message : "Could not create series");
@@ -381,7 +458,21 @@ export default function NewOfflineFlightSeriesPage() {
         </div>
       </div>
 
-      {step === 1 && (
+      {done && (
+        <OrganizedSeriesResult
+          flights={done.flights}
+          result={done.result}
+          error={done.error}
+          retrying={isPending}
+          onRetry={
+            done.result
+              ? undefined
+              : () => startTransition(() => makeSubTours(done.seriesId, done.flights))
+          }
+        />
+      )}
+
+      {!done && step === 1 && (
         <Card>
           <CardHeader>
             <CardTitle>Shared template</CardTitle>
@@ -391,10 +482,18 @@ export default function NewOfflineFlightSeriesPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-3">
+            {isTours && (
+              <OrganizedSeriesFields
+                value={organized}
+                codes={tourCodes}
+                onChange={setOrganized}
+              />
+            )}
             <div>
               <Label>Series name</Label>
               <Input
-                value={template.seriesName}
+                value={organizedOn ? seriesName : template.seriesName}
+                disabled={organizedOn}
                 onChange={(e) => set("seriesName", e.target.value)}
                 placeholder="Barcelona summer 2026"
               />
@@ -709,7 +808,7 @@ export default function NewOfflineFlightSeriesPage() {
         </Card>
       )}
 
-      {step === 2 && (
+      {!done && step === 2 && (
         <Card>
           <CardHeader>
             <CardTitle>Departure dates</CardTitle>
@@ -753,13 +852,13 @@ export default function NewOfflineFlightSeriesPage() {
         </Card>
       )}
 
-      {step === 3 && (
+      {!done && step === 3 && (
         <Card>
           <CardHeader>
             <CardTitle>Preview &amp; adjust</CardTitle>
             <CardDescription>
               {rows.length} flight(s) will be created in series &ldquo;
-              {template.seriesName}&rdquo;. Edit any cell, uncheck an event, or drop a
+              {seriesName}&rdquo;{organizedOn && ", each with its sub-tour"}. Edit any cell, uncheck an event, or drop a
               row before creating.
             </CardDescription>
           </CardHeader>
@@ -896,11 +995,23 @@ export default function NewOfflineFlightSeriesPage() {
               <Button variant="outline" onClick={() => setStep(2)}>
                 Back
               </Button>
-              <Button disabled={isPending || rows.length === 0} onClick={create}>
+              <Button
+                disabled={
+                  isPending ||
+                  rows.length === 0 ||
+                  (organizedOn && rows.length > MAX_ORGANIZED_FLIGHTS)
+                }
+                onClick={create}
+              >
                 {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create {rows.length} flight(s)
               </Button>
             </div>
+            {organizedOn && rows.length > MAX_ORGANIZED_FLIGHTS && (
+              <p className="text-sm text-destructive">
+                An organized tour takes up to {MAX_ORGANIZED_FLIGHTS} flights at a time - split the series.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
