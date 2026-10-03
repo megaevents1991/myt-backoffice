@@ -16,6 +16,7 @@ import { DataTable } from "@/components/data-table";
 import { Chip, Ltr, Notice, Section } from "@/components/tours/ui";
 import { fmtDateRange, fmtPrice, nightsBetween, todayIso } from "@/lib/tours/format";
 import { DepartureCard } from "@/components/tours/departures/departure-card";
+import { PricingSheet } from "@/components/tours/pricing/pricing-sheet";
 import { NewDepartureDialog } from "@/components/tours/departures/board-dialogs";
 import { SeasonDialog } from "@/components/tours/series/season-dialog";
 import { doublePricePerPerson } from "@/components/tours/departures/departure-utils";
@@ -39,6 +40,14 @@ export function TourDates({
   const [tab, setTab] = useState<CardTab>("general");
   const [dialog, setDialog] = useState<"date" | "season" | null>(null);
   const [showPast, setShowPast] = useState(false);
+  // An organized tour edits its dates in the Pricing sheet (many at once); the cards stay one click away.
+  const sheetFits = tour.kind === "organized";
+  const [mode, setMode] = useState<"sheet" | "cards">(sheetFits ? "sheet" : "cards");
+  const [sheetKey, setSheetKey] = useState(0);
+  const datesAdded = () => {
+    onChanged();
+    setSheetKey((k) => k + 1);
+  };
   const series: BoardSeries | null = data.series.find((s) => s.is_active) ?? data.series[0] ?? null;
 
   const rows = useMemo(
@@ -160,6 +169,26 @@ export function TourDates({
       description="Click a date to edit its prices, flights, promotions and sales, and to put it on the site."
       actions={
         <>
+          {sheetFits && (
+            <div className="inline-flex rounded-md border p-0.5" role="tablist" aria-label="View">
+              {(["sheet", "cards"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === m}
+                  onClick={() => setMode(m)}
+                  className={
+                    mode === m
+                      ? "rounded bg-primary px-3 py-1 text-sm font-medium text-primary-foreground"
+                      : "rounded px-3 py-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  {m === "sheet" ? "Sheet" : "Cards"}
+                </button>
+              ))}
+            </div>
+          )}
           <Button type="button" size="sm" variant="outline" disabled={!series} onClick={() => setDialog("date")}>
             <CalendarPlus />
             Add Date
@@ -199,26 +228,30 @@ export function TourDates({
           .
         </p>
       )}
-      <DataTable
-        columns={columns}
-        data={rows}
-        getRowId={(row) => row.id}
-        onRowClick={(row) => open(row)}
-        defaultPageSize={50}
-        dense
-        stateKey={`tour-dates-${tour.id}`}
-        rightActions={
-          past > 0 ? (
-            <Button type="button" size="sm" variant="ghost" onClick={() => setShowPast((v) => !v)}>
-              {showPast ? "Hide past dates" : `Show past dates (${past})`}
-            </Button>
-          ) : undefined
-        }
-        emptyState={{
-          title: "No dates yet",
-          description: series ? "Add a date or a whole season of dates." : "Create the tour's series first.",
-        }}
-      />
+      {mode === "sheet" ? (
+        <PricingSheet packageId={tour.id} onSaved={onChanged} refreshKey={sheetKey} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={rows}
+          getRowId={(row) => row.id}
+          onRowClick={(row) => open(row)}
+          defaultPageSize={50}
+          dense
+          stateKey={`tour-dates-${tour.id}`}
+          rightActions={
+            past > 0 ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => setShowPast((v) => !v)}>
+                {showPast ? "Hide past dates" : `Show past dates (${past})`}
+              </Button>
+            ) : undefined
+          }
+          emptyState={{
+            title: "No dates yet",
+            description: series ? "Add a date or a whole season of dates." : "Create the tour's series first.",
+          }}
+        />
+      )}
 
       <DepartureCard
         target={target}
@@ -237,14 +270,14 @@ export function TourDates({
           periods={data.periods}
           typicalNights={typicalNights}
           defaultSeriesId={series.id}
-          onCreated={() => onChanged()}
+          onCreated={datesAdded}
         />
       )}
       <SeasonDialog
         series={dialog === "season" ? series : null}
         periods={data.periods}
         onClose={() => setDialog(null)}
-        onCreated={onChanged}
+        onCreated={datesAdded}
       />
     </Section>
   );

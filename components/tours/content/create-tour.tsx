@@ -135,7 +135,8 @@ export function CreateTour({ context }: { context: NewTourContext }) {
     capacity: 45,
     childMaxAge: 16,
   });
-  const [dates, setDates] = useState<{ start: string; end: string }[]>([{ start: "", end: "" }]);
+  // No date row to start with: the dates of an organized tour usually come from its flight series.
+  const [dates, setDates] = useState<{ start: string; end: string }[]>([]);
   const [prices, setPrices] = useState<Record<string, string>>({});
   /** `${start}|${flightId}` -> seats */
   const [links, setLinks] = useState<Record<string, number>>({});
@@ -362,7 +363,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
         id="section-dates"
         icon={CalendarDays}
         title="Dates"
-        description="Each date is created as a draft. Put dates on the site from the tour page when they are ready; a whole season can be added there too."
+        description="Optional. The usual way: save the tour, then create its flights in Offline Flights > New Series, tick Organized tour and give this tour's code - every flight becomes a date. Dates added here are drafts too."
         actions={
           <Button type="button" variant="outline" size="sm" onClick={() => setDates((d) => [...d, { start: "", end: "" }])}>
             <Plus className="me-2 h-4 w-4" />
@@ -370,7 +371,15 @@ export function CreateTour({ context }: { context: NewTourContext }) {
           </Button>
         }
       >
-        {dates.length === 0 && <EmptyLine>No dates. You can add them later from the tour page.</EmptyLine>}
+        {dates.length === 0 && (
+          <EmptyLine>
+            No dates here - the flight series will create them (
+            <Link href="/offline-flights/series/new" target="_blank" rel="noreferrer" className="underline">
+              New Series
+            </Link>
+            , Organized tour, code {CODE.test(code) ? code : "of this tour"}). Or click Add Date.
+          </EmptyLine>
+        )}
         {dates.map((d, index) => (
           <div key={index} className="flex flex-wrap items-end gap-3">
             <Field label="Departure">

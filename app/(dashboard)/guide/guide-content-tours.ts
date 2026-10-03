@@ -24,6 +24,15 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     ),
     howTo: [
       {
+        title: t("The usual way: the tour, then its flight series", "הדרך הרגילה: הטיול, ואז סדרת הטיסות שלו"),
+        steps: [
+          t("Build the tour in \"Add Tour\" (below): its page, and in \"Series & Route\" its code - the tour code. Leave \"Dates\" empty.", "בונים את הטיול ב-\"Add Tour\" (למטה): העמוד שלו, וב-\"Series & Route\" הקוד שלו - קוד הטיול. משאירים את \"Dates\" ריק."),
+          t("Open [New series](/offline-flights/series/new), tick \"Organized tour\" and type the tour code. A code that does not exist yet asks for \"New tour name\" and creates the tour as a draft. Fill the flights and click \"Create N flight(s)\".", "פותחים [סדרה חדשה](/offline-flights/series/new), מסמנים \"Organized tour\" ומקלידים את קוד הטיול. קוד שעוד לא קיים מבקש \"New tour name\" ויוצר את הטיול כטיוטה. ממלאים את הטיסות ולוחצים \"Create N flight(s)\"."),
+          t("Every flight becomes a sub-tour (a date) of the tour, with the flight's dates, route and seats, as a draft without prices. The answer lists what was created; \"Set prices in Pricing\" opens the sheet.", "כל טיסה הופכת לתת-טיול (תאריך) של הטיול, עם התאריכים, המסלול והמושבים של הטיסה, כטיוטה בלי מחירים. התשובה מפרטת מה נוצר; \"Set prices in Pricing\" פותח את הטבלה."),
+          t("In [Pricing](/tours/pricing) type the six room prices of each sub-tour (or paste them from Excel), tick \"On site\" and \"Save\". Then \"Revalidate Pages\".", "ב[תמחור](/tours/pricing) מקלידים את ששת מחירי החדר של כל תת-טיול (או מדביקים מאקסל), מסמנים \"On site\" ו-\"Save\". ואז \"Revalidate Pages\"."),
+        ],
+      },
+      {
         title: t("1. Fill in Add Tour", "1. ממלאים את Add Tour"),
         steps: [
           t("Open [Tours](/tours/packages) and click \"Add Tour\" (or go straight to [Add Tour](/tours/packages/new)). It is one page of cards, like Add Event.", "פותחים את [הטיולים](/tours/packages) ולוחצים \"Add Tour\" (או ישר ל[הוספת טיול](/tours/packages/new)). זה עמוד אחד של כרטיסים, כמו הוספת אירוע."),
@@ -488,6 +497,44 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Departures board", "לוח היציאות"), href: "/tours/departures" }],
   },
   {
+    id: "tours-pricing",
+    nav: "/tours/pricing",
+    productType: "tours",
+    title: t("Pricing - every sub-tour in one sheet", "תמחור - כל תתי-הטיול בטבלה אחת"),
+    intro: t(
+      "The organized tours as one sheet: the tour's name as a header row, its sub-tours (dates) under it, then the next tour. The same sheet sits in each tour page, on the \"Dates & Prices\" tab. Nothing is saved until you click \"Save\".",
+      "הטיולים המאורגנים כטבלה אחת: שם הטיול כשורת כותרת, תתי-הטיול (התאריכים) שלו מתחתיו, ואז הטיול הבא. אותה טבלה נמצאת בכל עמוד טיול, בלשונית \"Dates & Prices\". שום דבר לא נשמר עד שלוחצים \"Save\".",
+    ),
+    howTo: [
+      {
+        title: t("Edit like a spreadsheet", "לערוך כמו בגיליון"),
+        steps: [
+          t("Open [Pricing](/tours/pricing). \"Prices\" shows the six room prices per person (double room first), the currency, on the site or not, the status, the seats and the flight's cost; \"Details\" shows capacity, labels, meeting time, baggage, meal, transfers, connections, ages, senior discount and notes.", "פותחים את [התמחור](/tours/pricing). \"Prices\" מציג את ששת מחירי החדר לאדם (זוגי ראשון), המטבע, באתר או לא, הסטטוס, המושבים ועלות הטיסה; \"Details\" מציג קיבולת, תגיות, שעת התכנסות, כבודה, ארוחה, העברות, קונקשן, גילאים, הנחת גיל הזהב והערות."),
+          t("Click a cell and type, or double-click or press Enter; Enter saves the cell and goes down, Tab goes right, Escape cancels. Delete empties a cell. A tick cell switches with Enter or the space bar.", "לוחצים על תא ומקלידים, או לחיצה כפולה או Enter; Enter שומר את התא ויורד, Tab זז ימינה, Escape מבטל. Delete מרוקן תא. תא של וי מתחלף ב-Enter או ברווח."),
+          t("Paste a block copied from Excel or Google Sheets: it fills from the cell you stand on, to the right and down.", "מדביקים בלוק שהועתק מאקסל או מגוגל שיטס: הוא ממלא מהתא שעומדים עליו, ימינה ולמטה."),
+          t("Changed cells turn yellow and a bar shows how many changes wait - \"Save\" or \"Discard\". A cell with a value that means nothing turns red and blocks Save until it is fixed.", "תאים ששונו נצבעים צהוב ופס מראה כמה שינויים מחכים - \"Save\" או \"Discard\". תא עם ערך שאין לו משמעות נצבע אדום וחוסם את Save עד שמתקנים."),
+        ],
+      },
+      {
+        title: t("Many sub-tours at once", "הרבה תתי-טיול בבת אחת"),
+        steps: [
+          t("Tick rows (or a tour's header row for all its dates) → \"Set for selected\": a column and a value; for prices also \"Add\" an amount or \"Add %\" (a negative number lowers).", "מסמנים שורות (או את שורת הכותרת של טיול לכל התאריכים שלו) ← \"Set for selected\": עמודה וערך; למחירים גם \"Add\" סכום או \"Add %\" (מספר שלילי מוריד)."),
+          t("With rows ticked, pasting one value puts it in that column of every ticked row.", "כשיש שורות מסומנות, הדבקה של ערך אחד שמה אותו בעמודה הזאת בכל השורות המסומנות."),
+          t("Filters: search by tour or code, season, \"No double price\", \"Not on the site\", and \"Past dates\".", "מסננים: חיפוש לפי טיול או קוד, עונה, \"No double price\", \"Not on the site\", ו-\"Past dates\"."),
+        ],
+      },
+    ],
+    points: [
+      t("The prices are final, per person, and include the flight. The \"Flight\" column is what the flight costs per seat - to see the margin; it is never added to the price.", "המחירים סופיים, לאדם, וכוללים טיסה. עמודת \"Flight\" היא העלות של הטיסה למושב - כדי לראות רווח; היא אף פעם לא מתווספת למחיר."),
+      t("A code opens the sub-tour's card in a new tab (promotions, flights, sales). The dates themselves change there, or follow the flight they were made from.", "קוד פותח את הכרטיס של התת-טיול בלשונית חדשה (הטבות, טיסות, מכירות). את התאריכים עצמם משנים שם, או שהם עוקבים אחרי הטיסה שממנה נוצרו."),
+      t("Each saved row is checked again: a row someone else changed since you opened the sheet is not saved and is listed with the reason, your edit kept.", "כל שורה שנשמרת נבדקת שוב: שורה שמישהו אחר שינה מאז שפתחתם את הטבלה לא נשמרת ומופיעה עם הסיבה, והעריכה שלכם נשארת."),
+    ],
+    rules: [
+      t("A sub-tour on the site keeps its double-room price and everything the site needs; to empty it, untick \"On site\" in the same save.", "תת-טיול שבאתר שומר את מחיר החדר הזוגי וכל מה שהאתר צריך; כדי לרוקן אותו, מורידים את הסימון \"On site\" באותה שמירה."),
+    ],
+    links: [{ label: t("Pricing", "תמחור"), href: "/tours/pricing" }],
+  },
+  {
     id: "tours-flights",
     nav: "/offline-flights",
     productType: "tours",
@@ -502,7 +549,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Offline Flights](/offline-flights) and click \"Add New Flight\".", "פותחים את [הטיסות האופליין](/offline-flights) ולוחצים \"Add New Flight\"."),
           t("Type the airline code and click \"Validate\"; fill the outbound and inbound flights (numbers, airports, times), the price and \"Initial Quantity\" (the seats) → \"Create Flight\".", "מקלידים את קוד חברת התעופה ולוחצים \"Validate\"; ממלאים את טיסות הלוך והחזור (מספרים, שדות, שעות), את המחיר ואת \"Initial Quantity\" (המושבים) ← \"Create Flight\"."),
-          t("The same route on many dates: [New series](/offline-flights/series/new).", "אותו מסלול בהרבה תאריכים: [New series](/offline-flights/series/new)."),
+          t("The same route on many dates: [New series](/offline-flights/series/new). Tick \"Organized tour\" and give the tour code, and every flight becomes a sub-tour of that tour.", "אותו מסלול בהרבה תאריכים: [New series](/offline-flights/series/new). מסמנים \"Organized tour\" ונותנים את קוד הטיול, וכל טיסה הופכת לתת-טיול של הטיול."),
         ],
       },
       {
@@ -528,6 +575,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     ],
     rules: [
       t("Approving a block to book, and cancelling one the airline already confirmed, are for the company's admins - here or on [Approvals](/tours/approvals).", "אישור בלוק להזמנה, וביטול בלוק שחברת התעופה כבר אישרה, שמורים למנהלי החברה - כאן או ב[אישורים](/tours/approvals)."),
+      t("A sub-tour made from a flight follows it: when the flight's dates change, so do the sub-tour's dates and code - unless it has customers. Then it stays, a task opens, and [Approvals](/tours/approvals) lists it under \"Sub-tours off their flight\".", "תת-טיול שנוצר מטיסה עוקב אחריה: כשתאריכי הטיסה משתנים, משתנים גם התאריכים והקוד של התת-טיול - אלא אם יש לו לקוחות. אז הוא נשאר, נפתחת משימה, ו[האישורים](/tours/approvals) מציגים אותו תחת \"Sub-tours off their flight\"."),
     ],
     links: [
       { label: t("Offline flights", "טיסות אופליין"), href: "/offline-flights" },

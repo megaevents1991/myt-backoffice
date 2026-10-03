@@ -35,6 +35,7 @@ import {
   TrendingUp,
   Factory,
   BookOpen,
+  Table2,
 } from "lucide-react";
 import { ADMIN_ROLES, TOURS_AGENT_ROLE, type Role } from "@/types/auth.types";
 import { isToursAgentPath } from "@/lib/auth/tours-agent";
@@ -169,6 +170,15 @@ const NAV: NavGroup[] = [
         href: "/tours/departures",
         icon: CalendarDays,
         keywords: "departures dates prices series board יציאות תאריכים מחירים סדרות לוח",
+        productType: "tours",
+      },
+      {
+        // Every sub-tour of the organized tours as one sheet, tour by tour:
+        // prices and details edited in bulk, saved with one button.
+        name: "Pricing",
+        href: "/tours/pricing",
+        icon: Table2,
+        keywords: "pricing prices sheet bulk edit sub-tours תמחור מחירים טבלה עריכה מרובה תתי טיול",
         productType: "tours",
       },
       {
