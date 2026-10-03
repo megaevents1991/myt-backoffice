@@ -11,12 +11,13 @@
 --   20261002120000_tours_group_leaders
 --   20261002130000_tours_live_sale_status
 --   20261003100000_tours_online_bookings
+--   20261003120000_tours_departure_origin_flight
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the twelve versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261003100000 20261002130000 20261002120000 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the twelve migration files on master,
+-- then mark the thirteen versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261003120000 20261003100000 20261002130000 20261002120000 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the thirteen migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.
@@ -24,6 +25,11 @@
 -- original block_status check back.
 
 begin;
+
+-- 13. departures remember their flight --------------------------------------
+-- Undoes 20261003120000 alone too (run just this line). The departures stay;
+-- they only forget which flight block they were created from.
+alter table tours.departures drop column if exists origin_flight_id;
 
 -- 12. online bookings ---------------------------------------------------------
 -- Undoes 20261003100000 alone too (run just this block). It refuses while any

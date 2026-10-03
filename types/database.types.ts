@@ -5602,6 +5602,7 @@ export type Database = {
           meal_included: boolean
           meeting_at: string | null
           notes: string | null
+          origin_flight_id: number | null
           package_id: string
           price_source: string
           return_airport: string | null
@@ -5646,6 +5647,7 @@ export type Database = {
           meal_included?: boolean
           meeting_at?: string | null
           notes?: string | null
+          origin_flight_id?: number | null
           package_id: string
           price_source?: string
           return_airport?: string | null
@@ -5690,6 +5692,7 @@ export type Database = {
           meal_included?: boolean
           meeting_at?: string | null
           notes?: string | null
+          origin_flight_id?: number | null
           package_id?: string
           price_source?: string
           return_airport?: string | null
