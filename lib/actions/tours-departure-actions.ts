@@ -108,10 +108,10 @@ const SERIES_SELECT =
   "id, code, label, package_id, arrival_airport, arrival_weekday, return_airport, return_weekday, default_nights, default_capacity, default_currency, child_max_age, senior_min_age, senior_discount, is_active";
 
 const BOARD_SELECT =
-  "id, code, series_id, package_id, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, docket_no, flight_mode, flight_price, markup_fixed, is_deleted, departure_prices(pax_type, room_position, price), departure_options(kind, position, price, room_prices), promotions(id, kind, value, label, valid_until, show_on_card, is_active), flight_allocations(id, flight_id, seats, legs)";
+  "id, code, series_id, package_id, season_year, start_date, end_date, season, season_id, itinerary_id, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, docket_no, flight_mode, flight_price, markup_fixed, is_deleted, departure_prices(pax_type, room_position, price), departure_options(kind, position, price, room_prices), promotions(id, kind, value, label, valid_until, show_on_card, is_active), flight_allocations(id, flight_id, seats, legs)";
 
 const CARD_SELECT =
-  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, origin_flight_id, is_deleted, created_at, updated_at";
+  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, season_id, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, origin_flight_id, is_deleted, created_at, updated_at";
 
 /** What the publish rules and the price writers need to know about a departure. */
 const CORE_SELECT =
@@ -396,6 +396,8 @@ function viewerBoardRow(r: BoardRow): BoardRow {
     start_date: r.start_date,
     end_date: r.end_date,
     season: r.season,
+    season_id: null,
+    itinerary_id: null,
     currency: r.currency,
     is_published: r.is_published,
     // the agent sees what the customer sees: sold out / last places follow the seats
@@ -828,7 +830,7 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
     if (!departure) throw new UserError("Departure not found in the active company");
     const dep = departure;
 
-    const [series, pkg, itineraries, prices, options, promotions, allocations, stats] = await Promise.all([
+    const [series, pkg, itineraries, seasons, prices, options, promotions, allocations, stats] = await Promise.all([
       db.from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", dep.series_id).maybeSingle(),
       db.from("packages").select("id, name, kind, slug").eq("company_id", company.id).eq("id", dep.package_id).maybeSingle(),
       db
@@ -837,6 +839,13 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
         .eq("company_id", company.id)
         .eq("package_id", dep.package_id)
         .order("key"),
+      db
+        .from("package_seasons")
+        .select("id, name")
+        .eq("company_id", company.id)
+        .eq("package_id", dep.package_id)
+        .order("position")
+        .order("name"),
       db
         .from("departure_prices")
         .select("pax_type, room_position, price")
@@ -896,6 +905,7 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
       series: must(series),
       package: pkgRow,
       itineraries: must(itineraries) ?? [],
+      seasons: must(seasons) ?? [],
       hotels: must(hotels) ?? [],
       leaders: (must(leaders) ?? []).map((l) => ({ id: l.id, name: l.name, isActive: l.is_active })),
       prices: must(prices) ?? [],
@@ -940,6 +950,26 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
       if (seasonYearOf(start) !== core.season_year) patch.season_year = seasonYearOf(start);
     }
     if (has("season")) patch.season = text(input.season, 60);
+    if (has("season_id")) {
+      // The season row decides the word: the database keeps `season` in step (departures_season_sync).
+      const seasonId = input.season_id || null;
+      if (seasonId) {
+        const found = UUID.test(seasonId)
+          ? must(
+              await toursDb()
+                .from("package_seasons")
+                .select("id")
+                .eq("company_id", company.id)
+                .eq("package_id", core.package_id)
+                .eq("id", seasonId)
+                .maybeSingle(),
+            )
+          : null;
+        if (!found) throw new UserError("The season doesn't belong to the departure's tour");
+      }
+      patch.season_id = seasonId;
+      delete patch.season;
+    }
     if (has("currency")) {
       if (!(CURRENCIES as readonly string[]).includes(input.currency ?? "")) throw new UserError("Unsupported currency");
       patch.currency = input.currency;

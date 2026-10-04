@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { CopyPlus, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,12 @@ import { useConfirm } from "@/components/confirm-provider";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { createTourItineraryVariant, deleteTourItineraryVariant } from "@/lib/actions/tours-content-actions";
+import { setItineraryDates } from "@/lib/actions/tours-season-actions";
 import { Field, Section } from "@/components/tours/ui";
+import { DatesChecklist } from "@/components/tours/content/dates-checklist";
 import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
 import type { ItineraryVariant, PackageEditorData } from "@/components/tours/content/shared";
+import type { BoardRow } from "@/components/tours/departures/types";
 
 interface ItineraryEditorProps {
   packageId: string;
@@ -31,13 +34,19 @@ interface ItineraryEditorProps {
   onChange: (variants: ItineraryVariant[]) => void;
   /** A variant was created or deleted on the server: the page's fresh state. */
   onVariantsChanged: (data: PackageEditorData, change: { created?: string; deleted?: string }) => void;
+  /** The tour's dates - what a variant is assigned to; null while they load. */
+  rows: BoardRow[] | null;
+  /** Dates were moved onto or off a variant. */
+  onDatesChanged: () => void;
 }
 
 /**
  * The daily itinerary of a trip page, in every direction it is sold
  * (functional spec 4.8). The `main` variant always exists; a new variant opens
- * as a copy of an existing one and is then edited day by day. A departure
- * points at the variant whose landing and return city match its route.
+ * as a copy of an existing one and is then edited day by day. A variant is
+ * given to specific dates ("Dates on this variant", Alon 04.10.2026) or to a
+ * whole season (Seasons tab); a date given none runs its season's variant,
+ * else the main itinerary.
  */
 export function ItineraryEditor({
   packageId,
@@ -46,6 +55,8 @@ export function ItineraryEditor({
   siteUrl,
   onChange,
   onVariantsChanged,
+  rows,
+  onDatesChanged,
 }: ItineraryEditorProps) {
   const confirm = useConfirm();
   const run = useActionToast();
@@ -84,7 +95,7 @@ export function ItineraryEditor({
     <div className="space-y-4">
       <Section
         title="Itinerary variants"
-        description="Every page has a main itinerary. When the tour is also sold in the opposite direction, open another variant as a copy and edit its days. On the site, each departure shows the variant whose arrival and return cities match the departure's route."
+        description="Every page has a main itinerary. When some dates run another route - the opposite direction, a season with a different plan - open another variant as a copy, edit its days and tick the dates that run it. A date that is given no variant shows its season's variant, else the main itinerary."
       >
         <div className="flex flex-wrap items-center gap-2">
           {variants.map((variant) => (
@@ -179,6 +190,21 @@ export function ItineraryEditor({
         </div>
       </Section>
 
+      {active.key !== "main" && active.id && (
+        <VariantDates
+          key={active.id}
+          packageId={packageId}
+          itineraryId={active.id}
+          label={active.label || active.key}
+          rows={rows}
+          labelOf={(id) => {
+            const v = variants.find((x) => x.id === id);
+            return v ? v.label || v.key : null;
+          }}
+          onChanged={onDatesChanged}
+        />
+      )}
+
       <ItineraryDaysEditor
         key={active.key}
         days={active.days}
@@ -200,6 +226,87 @@ export function ItineraryEditor({
         />
       )}
     </div>
+  );
+}
+
+/** Which dates of the tour run this variant: tick, save. An unticked date goes back to the default. */
+function VariantDates({
+  packageId,
+  itineraryId,
+  label,
+  rows,
+  labelOf,
+  onChanged,
+}: {
+  packageId: string;
+  itineraryId: string;
+  label: string;
+  rows: BoardRow[] | null;
+  /** The name of another variant a date runs now. */
+  labelOf: (itineraryId: string) => string | null;
+  onChanged: () => void;
+}) {
+  const run = useActionToast();
+  const live = useMemo(() => (rows ?? []).filter((r) => !r.is_deleted), [rows]);
+  const savedKey = useMemo(
+    () =>
+      live
+        .filter((r) => r.itinerary_id === itineraryId)
+        .map((r) => r.id)
+        .sort()
+        .join(","),
+    [live, itineraryId],
+  );
+  const [picked, setPicked] = useState<Set<string>>(new Set(savedKey ? savedKey.split(",") : []));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setPicked(new Set(savedKey ? savedKey.split(",") : []));
+  }, [savedKey]);
+  const dirty = [...picked].sort().join(",") !== savedKey;
+
+  const save = async () => {
+    setBusy(true);
+    const res = await run(
+      () => setItineraryDates(packageId, itineraryId, [...picked]),
+      (a) => `${a.data.assigned} date(s) now run "${label}", ${a.data.released} went back to the default`,
+    );
+    setBusy(false);
+    if (res.success) onChanged();
+  };
+
+  return (
+    <Section
+      title="Dates on this variant"
+      description="Tick the dates that run this variant. A date left unticked shows its season's variant, else the main itinerary."
+    >
+      {rows === null ? (
+        <p className="text-sm text-muted-foreground">Loading the dates…</p>
+      ) : (
+        <>
+          <DatesChecklist
+            rows={live}
+            value={picked}
+            onChange={setPicked}
+            disabled={busy}
+            noteOf={(row) => {
+              if (!row.itinerary_id || row.itinerary_id === itineraryId) return row.season ? <span dir="auto">{row.season}</span> : null;
+              return <span dir="auto">now: {labelOf(row.itinerary_id) ?? "another variant"}</span>;
+            }}
+          />
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" disabled={!dirty || busy} onClick={() => void save()}>
+              {busy && <Loader2 className="animate-spin" />}
+              Save the dates of this variant
+            </Button>
+            {dirty && (
+              <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setPicked(new Set(savedKey ? savedKey.split(",") : []))}>
+                Discard
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+    </Section>
   );
 }
 

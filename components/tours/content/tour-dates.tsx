@@ -40,7 +40,7 @@ export function TourDates({
   const [tab, setTab] = useState<CardTab>("general");
   const [dialog, setDialog] = useState<"date" | "season" | null>(null);
   const [showPast, setShowPast] = useState(false);
-  // An organized tour edits its dates in the Pricing sheet (many at once); the cards stay one click away.
+  // An organized tour edits its dates in the departures sheet (many at once); the cards stay one click away.
   const sheetFits = tour.kind === "organized";
   const [mode, setMode] = useState<"sheet" | "cards">(sheetFits ? "sheet" : "cards");
   const [sheetKey, setSheetKey] = useState(0);
@@ -168,7 +168,7 @@ export function TourDates({
       title="Dates & Prices"
       description={
         mode === "sheet"
-          ? "Edit the dates like a spreadsheet and click Save. A code opens the date's card (promotions, flights, sales)."
+          ? "Every date of the tour as a spreadsheet: tick dates and Set for selected to change many at once - season, itinerary, labels, prices, discount, gift - then Save. A code opens the date's card (all promotions, flights, sales)."
           : "Click a date to edit its prices, flights, promotions and sales, and to put it on the site."
       }
       actions={
@@ -197,14 +197,21 @@ export function TourDates({
             <CalendarPlus />
             Add Date
           </Button>
-          <Button type="button" size="sm" variant="outline" disabled={!series} onClick={() => setDialog("season")}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!series}
+            title="One date per week over a range, following the series' weekday and nights"
+            onClick={() => setDialog("season")}
+          >
             <CalendarRange />
-            Add Season
+            Add Weekly Dates
           </Button>
           <Button asChild size="sm" variant="ghost">
             <Link href={`/tours/departures?page=${tour.id}`}>
               <ExternalLink />
-              Departures Board
+              All Departures
             </Link>
           </Button>
         </>
@@ -233,7 +240,16 @@ export function TourDates({
         </p>
       )}
       {mode === "sheet" ? (
-        <PricingSheet packageId={tour.id} onSaved={onChanged} refreshKey={sheetKey} />
+        <PricingSheet
+          packageId={tour.id}
+          onSaved={onChanged}
+          refreshKey={sheetKey}
+          defaultView="departures"
+          onOpenCard={(row) => {
+            setTab("general");
+            setTarget({ id: row.id });
+          }}
+        />
       ) : (
         <DataTable
           columns={columns}
@@ -263,7 +279,7 @@ export function TourDates({
         onTabChange={setTab}
         periods={data.periods}
         onClose={() => setTarget(null)}
-        onChanged={onChanged}
+        onChanged={datesAdded}
       />
       {series && (
         <NewDepartureDialog

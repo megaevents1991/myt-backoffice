@@ -165,20 +165,15 @@ const NAV: NavGroup[] = [
         productType: "tours",
       },
       {
-        // The departures board: every date of every tour, grouped by series.
+        // Departures and Pricing as one sheet (Alon, 04.10.2026): every sub-tour of
+        // the organized tours, tour by tour - a Departures / Prices / Details switch
+        // over the same rows, edited in bulk and saved with one button.
+        // /tours/pricing redirects here.
         name: "Departures",
         href: "/tours/departures",
-        icon: CalendarDays,
-        keywords: "departures dates prices series board יציאות תאריכים מחירים סדרות לוח",
-        productType: "tours",
-      },
-      {
-        // Every sub-tour of the organized tours as one sheet, tour by tour:
-        // prices and details edited in bulk, saved with one button.
-        name: "Pricing",
-        href: "/tours/pricing",
         icon: Table2,
-        keywords: "pricing prices sheet bulk edit sub-tours תמחור מחירים טבלה עריכה מרובה תתי טיול",
+        keywords:
+          "departures dates prices pricing sheet bulk edit sub-tours seasons labels series board יציאות תאריכים מחירים תמחור טבלה עריכה מרובה תתי טיול עונות סדרות לוח",
         productType: "tours",
       },
       {

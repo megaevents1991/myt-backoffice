@@ -310,6 +310,51 @@ export interface TermOption {
   isActive: boolean;
 }
 
+// ---------------------------------------------------------------- seasons of a tour
+/**
+ * A season of a tour (tours.package_seasons): the dates assigned to it and what
+ * it says instead of the tour page. An empty field means "the tour's own".
+ */
+export interface TourSeasonForm {
+  name: string;
+  /** The itinerary variant of the season's dates; "" = the main itinerary. */
+  itineraryId: string;
+  descriptionHtml: string;
+  attractions: string[];
+  included: string[];
+  notIncluded: string[];
+  heroImage: string;
+  gallery: string[];
+  /** Free tags, for landing pages built later ("חגים"). */
+  tags: string[];
+}
+
+export interface TourSeasonRow extends TourSeasonForm {
+  id: string;
+  position: number;
+}
+
+export interface TourSeasonsData {
+  seasons: TourSeasonRow[];
+  /** tours.packages.seasons after the change - the tour form keeps it in step. */
+  seasonNames: string[];
+}
+
+export const EMPTY_SEASON_FORM: TourSeasonForm = {
+  name: "",
+  itineraryId: "",
+  descriptionHtml: "",
+  attractions: [],
+  included: [],
+  notIncluded: [],
+  heroImage: "",
+  gallery: [],
+  tags: [],
+};
+
+/** The seasons the site filters by (mega-family lib/site.ts SEASONS) - offered when a season is named. */
+export const SEASON_NAME_SUGGESTIONS = ["קיץ", "חורף", "סתיו", "פסח", "שבועות", "חגי תשרי", "חנוכה", "סילבסטר"] as const;
+
 export interface PackageEditorData {
   id: string;
   form: PackageForm;

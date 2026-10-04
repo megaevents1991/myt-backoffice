@@ -17,7 +17,7 @@ export default async function TourPackagesPage() {
     <div>
       <PageHeader
         title="Tours"
-        description="Every tour of the site: its page, dates, prices, flights and hotels. Open a tour to edit it; changes reach the site after you save and click Revalidate Pages."
+        description="Every organized tour of the site: its page, seasons, dates, prices, flights and hotels. Open a tour to edit it; changes reach the site after you save and click Revalidate Pages."
         actions={
           <>
             <PublishSiteButton />

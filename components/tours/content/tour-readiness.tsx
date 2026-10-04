@@ -36,6 +36,7 @@ export function tourReadiness(input: {
   const upcoming = (dates?.rows ?? []).filter((r) => r.start_date >= today && !r.is_deleted);
   const noPrice = upcoming.filter((r) => doublePricePerPerson(r).price == null).length;
   const noFlight = upcoming.filter((r) => r.stats.liveBlocks === 0).length;
+  const noSeason = upcoming.filter((r) => !r.season_id).length;
   const published = upcoming.filter((r) => r.is_published).length;
   const mainDays = input.itineraries.find((v) => v.key === "main")?.days.length ?? 0;
   const chosen = new Set(form.termIds);
@@ -81,6 +82,17 @@ export function tourReadiness(input: {
       "dates",
     ),
     item(
+      "seasons",
+      "Seasons",
+      upcoming.length === 0 ? "todo" : noSeason === 0 ? "done" : "warn",
+      noSeason
+        ? `${noSeason} upcoming dates with no season - assign them before they go on the site`
+        : upcoming.length
+          ? "Every date belongs to a season"
+          : "Add dates first",
+      "seasons",
+    ),
+    item(
       "prices",
       "Prices",
       upcoming.length > 0 && noPrice === 0 ? "done" : "todo",
@@ -91,7 +103,11 @@ export function tourReadiness(input: {
       "flights",
       "Flights",
       upcoming.length > 0 && noFlight === 0 ? "done" : "warn",
-      noFlight ? `${noFlight} dates without a live flight block` : upcoming.length ? "Every date has a flight" : "Add dates first",
+      noFlight
+        ? `${noFlight} dates without a live flight block - they can be sold; the site says the flight details will follow`
+        : upcoming.length
+          ? "Every date has a flight"
+          : "Add dates first",
       "dates",
     ),
     item(

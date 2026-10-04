@@ -1285,6 +1285,18 @@ export async function deleteTourItineraryVariant(
     if ((count ?? 0) > 0) {
       return { success: false, error: `Departures use this variant (${count}). Move them to another variant before deleting it` };
     }
+    const { data: usingSeasons, error: seasonsError } = await db
+      .from("package_seasons")
+      .select("name")
+      .eq("company_id", company.id)
+      .eq("itinerary_id", itineraryId);
+    if (seasonsError) throw seasonsError;
+    if (usingSeasons && usingSeasons.length > 0) {
+      return {
+        success: false,
+        error: `The season "${usingSeasons.map((s) => s.name).join('", "')}" runs this variant. Give the season another itinerary (Seasons tab) before deleting it`,
+      };
+    }
 
     const { error: deleteError } = await db
       .from("package_itineraries")

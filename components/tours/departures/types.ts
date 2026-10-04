@@ -97,6 +97,8 @@ export interface BoardRow
     | "start_date"
     | "end_date"
     | "season"
+    | "season_id"
+    | "itinerary_id"
     | "currency"
     | "is_published"
     | "sale_status"
@@ -221,6 +223,8 @@ export interface DepartureCardData {
   series: BoardSeries | null;
   package: BoardPackage | null;
   itineraries: CardItinerary[];
+  /** The seasons of the departure's tour, in order - what its Season field chooses from. */
+  seasons: { id: string; name: string }[];
   hotels: CardHotel[];
   leaders: CardLeader[];
   prices: { pax_type: string; room_position: number; price: number }[];
@@ -327,6 +331,8 @@ export interface DepartureGeneralInput {
   start_date?: string;
   end_date?: string;
   season?: string | null;
+  /** The season of the tour this date belongs to (a tours.package_seasons id); the season word follows it. */
+  season_id?: string | null;
   currency?: string;
   sale_status?: string;
   card_badge?: string | null;

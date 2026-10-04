@@ -14,9 +14,11 @@
  */
 import { revalidatePath } from "next/cache";
 
+import { logAudit } from "@/lib/audit";
 import { requireCompany } from "@/lib/company";
 import { toursDb } from "@/lib/tours/db";
-import { actionFail, actionOk, must, UserError, type ActionResult } from "@/lib/tours/action-kit";
+import { companyAudit } from "@/lib/tours/company-kit";
+import { actionFail, actionOk, must, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
 import { isDateOnly, nightsBetween, weekdayOf } from "@/lib/tours/format";
 import { normalizeAirport } from "@/components/tours/departures/departure-utils";
 import { CURRENCIES } from "@/types/tours.types";
@@ -76,6 +78,15 @@ export async function createTour(input: NewTourInput): Promise<ActionResult<NewT
       revalidatePath("/tours/departures");
       return actionOk<NewTourResult>({ id, departures, flights, problems });
     };
+
+    // --- 1a. its seasons: every name typed is a season of the tour (Seasons tab); the dates below join the first
+    const seasonNames = [...new Set(input.page.seasons.map((s) => s.trim()).filter(Boolean))];
+    if (seasonNames.length) {
+      const { error: seasonsError } = await toursDb()
+        .from("package_seasons")
+        .insert(seasonNames.map((name, position) => ({ company_id: company.id, package_id: id, name, position })));
+      if (seasonsError) problems.push("The seasons were not opened. Add them on the tour's Seasons tab and assign the dates there.");
+    }
 
     // --- 1b. the day-by-day plan
     const days = (input.itinerary ?? []).filter((d) => d.title.trim() || d.subtitle.trim() || d.html.trim());
@@ -139,5 +150,87 @@ export async function createTour(input: NewTourInput): Promise<ActionResult<NewT
     return done(created.length, flights);
   } catch (e) {
     return actionFail(e, "tours-tour-actions", "Failed to create the tour");
+  }
+}
+
+/**
+ * The series code of a tour, set from the tour page's Details tab (Alon,
+ * 04.10.2026): the English code every date and flight of the tour is named by
+ * (CBP -> CBP927). `seriesId` null gives a tour that has no series its first
+ * one, with the defaults a flight series fills in later; with an id the code is
+ * renamed, which is possible only while no date was built from it.
+ */
+export async function setTourSeriesCode(
+  packageId: string,
+  seriesId: string | null,
+  rawCode: string,
+): Promise<ActionResult<{ id: string; code: string }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const db = toursDb();
+    if (!UUID.test(String(packageId))) throw new UserError("Tour not found");
+    const code = String(rawCode ?? "").trim().toUpperCase();
+    if (!SERIES_CODE.test(code)) {
+      throw new UserError("Series code: 2 to 8 characters, letters (A-Z) and digits, starting with a letter (e.g. CBP)");
+    }
+    const pkg = must(
+      await db.from("packages").select("id, name, nights").eq("company_id", company.id).eq("id", packageId).is("is_deleted", null).maybeSingle(),
+    );
+    if (!pkg) throw new UserError("Tour not found in the active company");
+    const taken = must(await db.from("series").select("id, package_id").eq("company_id", company.id).eq("code", code).limit(1)) ?? [];
+    if (taken.length && taken[0].id !== seriesId) throw new UserError(`Series ${code} already exists - choose another code`);
+
+    let id = seriesId;
+    if (seriesId) {
+      if (!UUID.test(seriesId)) throw new UserError("Series not found");
+      const current = must(
+        await db.from("series").select("id, code").eq("company_id", company.id).eq("id", seriesId).eq("package_id", packageId).maybeSingle(),
+      );
+      if (!current) throw new UserError("Series not found on this tour");
+      if (current.code === code) return actionOk({ id: current.id, code });
+      const { count } = await db
+        .from("departures")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id)
+        .eq("series_id", seriesId);
+      if ((count ?? 0) > 0) {
+        throw new UserError(`${count} date(s) carry the code ${current.code} (e.g. ${current.code}703). The code can't be changed once dates were built from it.`);
+      }
+      must(await db.from("series").update({ code }).eq("company_id", company.id).eq("id", seriesId));
+    } else {
+      const { data: inserted, error } = await db
+        .from("series")
+        .insert({
+          company_id: company.id,
+          package_id: packageId,
+          code,
+          label: pkg.name,
+          default_nights: pkg.nights,
+          default_currency: "USD",
+          child_max_age: 16,
+          senior_min_age: 65,
+          senior_discount: 25,
+          is_active: true,
+        })
+        .select("id")
+        .single();
+      if (error) {
+        if (error.code === "23505") throw new UserError(`Series ${code} already exists - choose another code`);
+        throw new Error(error.message);
+      }
+      id = inserted.id;
+    }
+    await logAudit({
+      action: seriesId ? "update" : "create",
+      entityType: "tours_series",
+      entityId: id,
+      changes: { code, package_id: packageId },
+      metadata: { ...companyAudit(company), code, from: "tour_page" },
+    });
+    revalidatePath("/tours/packages");
+    revalidatePath(`/tours/packages/${packageId}`);
+    return actionOk({ id: id as string, code });
+  } catch (e) {
+    return actionFail(e, "tours-tour-actions", "Failed to save the series code");
   }
 }

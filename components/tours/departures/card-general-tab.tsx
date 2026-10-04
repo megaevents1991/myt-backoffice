@@ -31,7 +31,7 @@ interface Draft {
   end_date: string;
   arrival_airport: string;
   return_airport: string;
-  season: string;
+  season_id: string;
   card_badge: string;
   date_labels: string;
   itinerary_id: string;
@@ -58,7 +58,7 @@ function toDraft(d: DepartureCardData["departure"]): Draft {
     end_date: d.end_date,
     arrival_airport: inputValue(d.arrival_airport),
     return_airport: inputValue(d.return_airport),
-    season: inputValue(d.season),
+    season_id: inputValue(d.season_id),
     card_badge: inputValue(d.card_badge),
     date_labels: d.date_labels.join(", "),
     itinerary_id: inputValue(d.itinerary_id),
@@ -92,7 +92,7 @@ function changes(base: Draft, draft: Draft): DepartureGeneralInput {
   }
   if (draft.arrival_airport !== base.arrival_airport) out.arrival_airport = textOrNull(draft.arrival_airport);
   if (draft.return_airport !== base.return_airport) out.return_airport = textOrNull(draft.return_airport);
-  if (draft.season !== base.season) out.season = textOrNull(draft.season);
+  if (draft.season_id !== base.season_id) out.season_id = draft.season_id || null;
   if (draft.card_badge !== base.card_badge) out.card_badge = textOrNull(draft.card_badge);
   if (draft.date_labels !== base.date_labels) out.date_labels = labelsOf(draft.date_labels);
   if (draft.itinerary_id !== base.itinerary_id) out.itinerary_id = draft.itinerary_id || null;
@@ -189,9 +189,9 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
           )}
         </p>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Itinerary version" hint="For a series whose direction flips between dates">
+          <Field label="Itinerary version" hint="A variant for this date alone. Default = its season's variant, else the main itinerary">
             <select className={`${selectClass} w-full`} value={draft.itinerary_id} onChange={(e) => set("itinerary_id", e.target.value)}>
-              <option value="">Default - the tour page&apos;s main itinerary</option>
+              <option value="">Default - the season&apos;s, else the main itinerary</option>
               {data.itineraries.map((it) => (
                 <option key={it.id} value={it.id}>
                   {it.label || it.key}
@@ -200,8 +200,24 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
               ))}
             </select>
           </Field>
-          <Field label="Season">
-            <Input dir="auto" className="h-9" value={draft.season} list="tours-season-suggestions" onChange={(e) => set("season", e.target.value)} />
+          <Field
+            label="Season"
+            hint={
+              data.seasons.length === 0
+                ? "The tour has no seasons yet - add them on its page (Seasons tab)"
+                : draft.season_id
+                  ? "The season's itinerary, description and images apply to this date"
+                  : "Not assigned - assign a season before the date goes on the site"
+            }
+          >
+            <select className={`${selectClass} w-full`} value={draft.season_id} onChange={(e) => set("season_id", e.target.value)}>
+              <option value="">No season</option>
+              {data.seasons.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
       </Section>
@@ -277,19 +293,14 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
             <Input dir="ltr" type="datetime-local" className="h-9" value={draft.meeting_at} onChange={(e) => set("meeting_at", e.target.value)} />
           </Field>
         </div>
+        {/* Baggage, meal and connection are the flight's own details (Offline Flights) - the site reads them from the flight. */}
         <div className="flex flex-wrap gap-x-6 gap-y-2">
-          <CheckField label="Baggage included" checked={draft.baggage_included} onCheckedChange={(v) => set("baggage_included", v)} />
-          <CheckField label="Meals included" checked={draft.meal_included} onCheckedChange={(v) => set("meal_included", v)} />
           <CheckField label="Transfers included" checked={draft.transfers_included} onCheckedChange={(v) => set("transfers_included", v)} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Connection note, outbound" hint="Text shown to the customer">
-            <Input dir="auto" className="h-9" value={draft.connection_out} onChange={(e) => set("connection_out", e.target.value)} />
-          </Field>
-          <Field label="Connection note, return">
-            <Input dir="auto" className="h-9" value={draft.connection_back} onChange={(e) => set("connection_back", e.target.value)} />
-          </Field>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Flight times, baggage and stops come from the flight block itself (Flights tab). A date with no flight yet can be
+          published - the site says the flight details will follow.
+        </p>
       </Section>
 
       <Section title="Internal">

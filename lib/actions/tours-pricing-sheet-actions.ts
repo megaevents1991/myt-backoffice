@@ -1,15 +1,17 @@
 "use server";
 
 /**
- * Tours > Pricing and the tour page's sheet (mega-family
- * docs/plans/TOUR-SETUP-FLOW-PLAN.md, steps 4-6): every sub-tour of the
- * organized tours as one spreadsheet, tour by tour.
+ * Tours > Departures and the tour page's sheet (mega-family
+ * docs/plans/TOUR-SETUP-FLOW-PLAN.md, steps 4-6, and
+ * docs/plans/TOUR-UPLOAD-ROUND9-PLAN.md): every sub-tour of the organized tours
+ * as one spreadsheet, tour by tour - the departures, prices and details views
+ * are column sets over the same rows.
  *
  * getPricingSheet reads the rows; savePricingSheet writes the changed cells of
  * many rows at once. A row is written only when every changed cell still holds
  * the value the sheet showed (`before`) - otherwise someone changed it in the
  * meantime and it is skipped with the reason. The writes go through the actions
- * the departure card uses (updateDeparture, saveDeparturePrices,
+ * the departure card uses (updateDeparture, saveDeparturePrices, savePromotion,
  * setDeparturesPublished), so a published sub-tour keeps what the site needs by
  * the same rules.
  */
@@ -21,16 +23,26 @@ import { toursDb } from "@/lib/tours/db";
 import { actionFail, actionOk, chunk, fetchAll, must, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
 import { todayIso } from "@/lib/tours/format";
 import { departureRouteLabel } from "@/lib/tours/routes";
-import { siteSaleStatus } from "@/components/tours/departures/departure-utils";
+import { promotionSummary, siteSaleStatus } from "@/components/tours/departures/departure-utils";
 import type { DepartureGeneralInput } from "@/components/tours/departures/types";
-import { PRICE_MATRIX_ROWS } from "@/types/tours.types";
-import { saveDeparturePrices, setDeparturesPublished, updateDeparture } from "@/lib/actions/tours-departure-actions";
+import { BLOCK_STATUS_LABELS, LIVE_BLOCK_STATUSES, PRICE_MATRIX_ROWS, type BlockStatus } from "@/types/tours.types";
+import {
+  saveDeparturePrices,
+  savePromotion,
+  setDeparturesPublished,
+  setPromotionActive,
+  updateDeparture,
+} from "@/lib/actions/tours-departure-actions";
 import {
   cellValue,
+  dateLabelsOf,
   EDITABLE_KEYS,
+  isBarMitzvahLabel,
+  MAX_DATE_LABELS,
   priceIndexOf,
   sameValue,
   type PricingSheetData,
+  type SheetFlight,
   type SheetRow,
   type SheetRowChange,
   type SheetSaveOutcome,
@@ -43,7 +55,7 @@ const fail = (e: unknown) => actionFail(e, "tours-pricing-sheet-actions");
 const MAX_ROWS_PER_SAVE = 1000;
 const ID_CHUNK = 150;
 const SHEET_SELECT =
-  "id, code, package_id, series_id, start_date, end_date, season, currency, is_published, sale_status, arrival_airport, return_airport, capacity, date_labels, meeting_at, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, notes, origin_flight_id, departure_prices(pax_type, room_position, price), flight_allocations(flight_id, legs)";
+  "id, code, package_id, series_id, start_date, end_date, season, season_id, itinerary_id, currency, is_published, sale_status, card_badge, arrival_airport, return_airport, capacity, date_labels, docket_no, meeting_at, transfers_included, child_max_age, senior_min_age, senior_discount, notes, origin_flight_id, departure_prices(pax_type, room_position, price), flight_allocations(flight_id, legs)";
 
 interface RawRow {
   id: string;
@@ -53,19 +65,19 @@ interface RawRow {
   start_date: string;
   end_date: string;
   season: string | null;
+  season_id: string | null;
+  itinerary_id: string | null;
   currency: string;
   is_published: boolean;
   sale_status: string;
+  card_badge: string | null;
   arrival_airport: string | null;
   return_airport: string | null;
   capacity: number | null;
   date_labels: string[] | null;
+  docket_no: string | null;
   meeting_at: string | null;
-  baggage_included: boolean;
-  meal_included: boolean;
   transfers_included: boolean;
-  connection_out: string | null;
-  connection_back: string | null;
   child_max_age: number | null;
   senior_min_age: number | null;
   senior_discount: number | null;
@@ -75,7 +87,28 @@ interface RawRow {
   flight_allocations: { flight_id: number; legs: string }[];
 }
 
-/** The sheet rows of some departures (not deleted), with seats, site status and flight cost. */
+interface PromoRow {
+  id: string;
+  departure_id: string | null;
+  series_id: string | null;
+  kind: string;
+  value: number | null;
+  label: string | null;
+  valid_until: string | null;
+  show_on_card: boolean;
+}
+const PROMO_SELECT = "id, departure_id, series_id, kind, value, label, valid_until, show_on_card";
+
+interface FlightRow {
+  id: number;
+  cost_price: number | null;
+  cost_currency: string | null;
+  airline_code: string | null;
+  block_status: string | null;
+  is_deleted: boolean | null;
+}
+
+/** The sheet rows of some departures (not deleted), with seats, site status, flight and promotions. */
 async function loadSheetRows(
   company: Company,
   filter: { packageIds?: string[]; ids?: string[]; from?: string | null },
@@ -108,10 +141,14 @@ async function loadSheetRows(
 
   const ids = raw.map((d) => d.id);
   const seriesIds = [...new Set(raw.map((d) => d.series_id))];
+  const seasonIds = [...new Set(raw.map((d) => d.season_id).filter((s): s is string => !!s))];
   const flightIds = [...new Set(raw.flatMap((d) => d.flight_allocations.map((a) => a.flight_id)))];
   const stats = new Map<string, { allocated: number; sold: number; remaining: number }>();
   const series = new Map<string, { code: string; arrival: string | null; ret: string | null }>();
-  const flights = new Map<number, { cost: number | null; currency: string | null }>();
+  const seasons = new Map<string, string>();
+  const flights = new Map<number, FlightRow>();
+  const ownPromos = new Map<string, PromoRow[]>();
+  const seriesPromos = new Map<string, PromoRow[]>();
   await Promise.all([
     (async () => {
       for (const part of chunk(ids, ID_CHUNK)) {
@@ -138,11 +175,35 @@ async function loadSheetRows(
       }
     })(),
     (async () => {
+      for (const part of chunk(seasonIds, ID_CHUNK)) {
+        const rows = must(await toursDb().from("package_seasons").select("id, name").eq("company_id", company.id).in("id", part)) ?? [];
+        for (const s of rows) seasons.set(s.id, s.name);
+      }
+    })(),
+    (async () => {
       for (const part of chunk(flightIds, ID_CHUNK)) {
-        const { data, error } = await flightsOf(company).select("id, cost_price, cost_currency").in("id", part);
+        const { data, error } = await flightsOf(company)
+          .select("id, cost_price, cost_currency, airline_code, block_status, is_deleted")
+          .in("id", part);
         if (error) throw new Error(error.message);
-        for (const f of (data ?? []) as { id: number; cost_price: number | null; cost_currency: string | null }[]) {
-          flights.set(f.id, { cost: f.cost_price == null ? null : Number(f.cost_price), currency: f.cost_currency });
+        for (const f of (data ?? []) as unknown as FlightRow[]) flights.set(f.id, f);
+      }
+    })(),
+    (async () => {
+      for (const part of chunk(ids, ID_CHUNK)) {
+        const rows =
+          must(await toursDb().from("promotions").select(PROMO_SELECT).eq("company_id", company.id).eq("is_active", true).in("departure_id", part)) ?? [];
+        for (const p of rows as PromoRow[]) {
+          if (p.departure_id) ownPromos.set(p.departure_id, [...(ownPromos.get(p.departure_id) ?? []), p]);
+        }
+      }
+    })(),
+    (async () => {
+      for (const part of chunk(seriesIds, ID_CHUNK)) {
+        const rows =
+          must(await toursDb().from("promotions").select(PROMO_SELECT).eq("company_id", company.id).eq("is_active", true).in("series_id", part)) ?? [];
+        for (const p of rows as PromoRow[]) {
+          if (p.series_id) seriesPromos.set(p.series_id, [...(seriesPromos.get(p.series_id) ?? []), p]);
         }
       }
     })(),
@@ -160,6 +221,30 @@ async function loadSheetRows(
     const main = d.origin_flight_id != null && blocks.includes(d.origin_flight_id) ? d.origin_flight_id : blocks[0];
     const cost = main != null ? flights.get(main) : undefined;
     const arrival = d.arrival_airport ?? s?.arrival ?? null;
+
+    const linked = [...new Set(d.flight_allocations.map((a) => a.flight_id))]
+      .map((id) => flights.get(id))
+      .filter((f): f is FlightRow => !!f && f.is_deleted !== true);
+    const isLive = (f: FlightRow) => LIVE_BLOCK_STATUSES.includes(f.block_status as BlockStatus);
+    const live = linked.filter(isLive);
+    const shown = live.length ? live : linked;
+    const flight: SheetFlight | null = shown.length
+      ? {
+          airlines: [...new Set(shown.map((f) => f.airline_code).filter(Boolean))].join("+"),
+          status: [...new Set(shown.map((f) => BLOCK_STATUS_LABELS[f.block_status as BlockStatus] ?? "Draft"))].join(", "),
+          live: live.length > 0,
+        }
+      : null;
+
+    const own = ownPromos.get(d.id) ?? [];
+    const discount = own.find((p) => p.kind === "fixed_per_pax");
+    const gift = own.find((p) => p.kind === "gift");
+    const more = [
+      ...own.filter((p) => p !== discount && p !== gift).map((p) => promotionSummary({ ...p, is_active: true }, d.currency)),
+      ...(seriesPromos.get(d.series_id) ?? []).map((p) => `${promotionSummary({ ...p, is_active: true }, d.currency)} (series)`),
+    ];
+    const allLabels = d.date_labels ?? [];
+
     return {
       id: d.id,
       code: d.code,
@@ -167,7 +252,9 @@ async function loadSheetRows(
       seriesCode: s?.code ?? "",
       startDate: d.start_date,
       endDate: d.end_date,
-      season: d.season,
+      seasonId: d.season_id,
+      season: (d.season_id ? seasons.get(d.season_id) : null) ?? d.season,
+      itineraryId: d.itinerary_id,
       route: departureRouteLabel(arrival, d.return_airport ?? s?.ret ?? arrival),
       isPublished: d.is_published,
       saleStatus: d.sale_status,
@@ -175,18 +262,21 @@ async function loadSheetRows(
       currency: d.currency,
       capacity: d.capacity,
       seats,
+      flight,
       flightCost:
-        cost && cost.cost != null
-          ? { amount: cost.cost, currency: cost.currency || "USD", more: Math.max(0, blocks.length - 1) }
+        cost && cost.cost_price != null
+          ? { amount: Number(cost.cost_price), currency: cost.cost_currency || "USD", more: Math.max(0, blocks.length - 1) }
           : null,
       prices,
-      labels: d.date_labels ?? [],
+      labels: allLabels.filter((l) => !isBarMitzvahLabel(l)),
+      barMitzvah: allLabels.some(isBarMitzvahLabel),
+      cardBadge: d.card_badge,
+      discount: discount?.value == null ? null : Number(discount.value),
+      gift: gift?.label ?? null,
+      morePromotions: more,
+      docket: d.docket_no,
       meetingAt: d.meeting_at,
-      baggage: d.baggage_included,
-      meal: d.meal_included,
       transfers: d.transfers_included,
-      connectionOut: d.connection_out,
-      connectionBack: d.connection_back,
       childMaxAge: d.child_max_age,
       seniorMinAge: d.senior_min_age,
       seniorDiscount: d.senior_discount == null ? null : Number(d.senior_discount),
@@ -207,12 +297,32 @@ export async function getPricingSheet(
     const { company } = await requireCompany("tours");
     const today = todayIso();
     const db = toursDb();
-    const [packages, series] = await Promise.all([
+    const [packages, series, seasons, itineraries] = await Promise.all([
       fetchAll<{ id: string; name: string; slug: string; kind: string; is_active: boolean; is_deleted: string | null }>((from, to) =>
         db.from("packages").select("id, name, slug, kind, is_active, is_deleted").eq("company_id", company.id).order("id").range(from, to),
       ),
       fetchAll<{ code: string; package_id: string | null }>((from, to) =>
         db.from("series").select("code, package_id").eq("company_id", company.id).order("code").range(from, to),
+      ),
+      fetchAll<{ id: string; package_id: string; name: string; position: number }>((from, to) =>
+        db
+          .from("package_seasons")
+          .select("id, package_id, name, position")
+          .eq("company_id", company.id)
+          .order("position")
+          .order("name")
+          .order("id")
+          .range(from, to),
+      ),
+      fetchAll<{ id: string; package_id: string; key: string; label: string | null }>((from, to) =>
+        db
+          .from("package_itineraries")
+          .select("id, package_id, key, label")
+          .eq("company_id", company.id)
+          .neq("key", "main")
+          .order("key")
+          .order("id")
+          .range(from, to),
       ),
     ]);
     const organized = packages.filter((p) => p.kind === "organized" && !p.is_deleted);
@@ -233,6 +343,8 @@ export async function getPricingSheet(
         slug: p.slug,
         codes: series.filter((s) => s.package_id === p.id).map((s) => s.code),
         isActive: p.is_active,
+        seasons: seasons.filter((s) => s.package_id === p.id).map((s) => ({ id: s.id, name: s.name })),
+        itineraries: itineraries.filter((v) => v.package_id === p.id).map((v) => ({ id: v.id, label: v.label || v.key })),
       }))
       .sort((a, b) => (first.get(a.id) ?? "9999").localeCompare(first.get(b.id) ?? "9999") || a.name.localeCompare(b.name, "he"));
     return actionOk({ today, tours, rows });
@@ -244,13 +356,19 @@ export async function getPricingSheet(
 const asNumber = (v: SheetValue): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const asText = (v: SheetValue): string | null => (typeof v === "string" ? v : null);
 
-/** The departure fields one row's changed cells set (prices and publishing go their own way). */
-function fieldsOf(cells: SheetRowChange["cells"]): DepartureGeneralInput {
+/** The departure fields one row's changed cells set (prices, promotions and publishing go their own way). */
+function fieldsOf(row: SheetRow, cells: SheetRowChange["cells"]): DepartureGeneralInput {
   const out: DepartureGeneralInput = {};
   for (const [key, { after }] of Object.entries(cells)) {
     switch (key) {
       case "saleStatus":
         out.sale_status = String(after ?? "");
+        break;
+      case "seasonId":
+        out.season_id = asText(after);
+        break;
+      case "itineraryId":
+        out.itinerary_id = asText(after);
         break;
       case "currency":
         out.currency = String(after ?? "");
@@ -258,26 +376,17 @@ function fieldsOf(cells: SheetRowChange["cells"]): DepartureGeneralInput {
       case "capacity":
         out.capacity = asNumber(after);
         break;
-      case "labels":
-        out.date_labels = Array.isArray(after) ? after.map(String) : [];
+      case "cardBadge":
+        out.card_badge = asText(after);
+        break;
+      case "docket":
+        out.docket_no = asText(after);
         break;
       case "meetingAt":
         out.meeting_at = asText(after);
         break;
-      case "baggage":
-        out.baggage_included = after === true;
-        break;
-      case "meal":
-        out.meal_included = after === true;
-        break;
       case "transfers":
         out.transfers_included = after === true;
-        break;
-      case "connectionOut":
-        out.connection_out = asText(after);
-        break;
-      case "connectionBack":
-        out.connection_back = asText(after);
         break;
       case "childMaxAge":
         out.child_max_age = asNumber(after);
@@ -293,13 +402,52 @@ function fieldsOf(cells: SheetRowChange["cells"]): DepartureGeneralInput {
         break;
     }
   }
+  // the labels and the bar / bat mitzvah mark are one list in the database
+  if ("labels" in cells || "barMitzvah" in cells) {
+    const labels = "labels" in cells && Array.isArray(cells.labels.after) ? cells.labels.after.map(String) : row.labels;
+    if (labels.filter((l) => !isBarMitzvahLabel(l)).length > MAX_DATE_LABELS) throw new UserError(`Up to ${MAX_DATE_LABELS} labels on a date`);
+    const bar = "barMitzvah" in cells ? cells.barMitzvah.after === true : row.barMitzvah;
+    out.date_labels = dateLabelsOf(labels, bar);
+  }
   return out;
 }
 
-/** Writes one row; returns why it stopped, or null when all of it was saved. */
-async function applyRow(row: SheetRow, cells: SheetRowChange["cells"]): Promise<string | null> {
+/** The date's own discount per traveler or its gift: set, changed or switched off. */
+async function applyOwnPromotion(company: Company, row: SheetRow, kind: "fixed_per_pax" | "gift", after: SheetValue): Promise<string | null> {
+  const own =
+    must(
+      await toursDb()
+        .from("promotions")
+        .select(PROMO_SELECT)
+        .eq("company_id", company.id)
+        .eq("departure_id", row.id)
+        .eq("is_active", true)
+        .eq("kind", kind)
+        .limit(1),
+    ) ?? [];
+  const existing = own[0] as PromoRow | undefined;
+  const value = kind === "gift" ? asText(after) : asNumber(after);
+  if (value === null || value === "" || value === 0) {
+    if (!existing) return null;
+    const off = await setPromotionActive(existing.id, false);
+    return off.success ? null : off.error;
+  }
+  const res = await savePromotion(row.id, existing?.id ?? null, {
+    kind,
+    value: kind === "gift" ? (existing?.value ?? null) : (value as number),
+    label: kind === "gift" ? (value as string) : (existing?.label ?? null),
+    valid_until: existing?.valid_until ?? null,
+    show_on_card: existing?.show_on_card ?? true,
+    is_active: true,
+  });
+  return res.success ? null : res.error;
+}
+
+/** Writes one row; returns why it stopped (null when all of it was saved) and what is worth a look. */
+async function applyRow(company: Company, row: SheetRow, cells: SheetRowChange["cells"]): Promise<{ stopped: string | null; notes: string[] }> {
   const done: string[] = [];
-  const stop = (reason: string) => (done.length ? `${reason} (already saved: ${done.join(", ")})` : reason);
+  const notes: string[] = [];
+  const stop = (reason: string) => ({ stopped: done.length ? `${reason} (already saved: ${done.join(", ")})` : reason, notes });
   const publish = "isPublished" in cells ? cells.isPublished.after === true : null;
 
   // off the site first, so the checks below no longer hold the row as published
@@ -310,7 +458,7 @@ async function applyRow(row: SheetRow, cells: SheetRowChange["cells"]): Promise<
     done.push("taken off the site");
   }
 
-  const fields = fieldsOf(cells);
+  const fields = fieldsOf(row, cells);
   if (Object.keys(fields).length) {
     const res = await updateDeparture(row.id, fields);
     if (!res.success) return stop(res.error);
@@ -333,13 +481,27 @@ async function applyRow(row: SheetRow, cells: SheetRowChange["cells"]): Promise<
     done.push("prices");
   }
 
+  if ("discount" in cells) {
+    const problem = await applyOwnPromotion(company, row, "fixed_per_pax", cells.discount.after);
+    if (problem) return stop(`Discount: ${problem}`);
+    done.push("discount");
+  }
+  if ("gift" in cells) {
+    const problem = await applyOwnPromotion(company, row, "gift", cells.gift.after);
+    if (problem) return stop(`Gift: ${problem}`);
+    done.push("gift");
+  }
+
   // on the site last, once it has everything the site needs
   if (publish === true && !row.isPublished) {
     const res = await setDeparturesPublished([row.id], true);
     if (!res.success) return stop(res.error);
     if (res.data.skipped[0]) return stop(`Not put on the site: ${res.data.skipped[0].reason}`);
+    if (res.data.warnings[0]) notes.push("On the site with no live flight - the site says the flight details will follow");
+    const seasonId = "seasonId" in cells ? cells.seasonId.after : row.seasonId;
+    if (!seasonId) notes.push("On the site with no season - assign one (Season column)");
   }
-  return null;
+  return { stopped: null, notes };
 }
 
 export async function savePricingSheet(changes: SheetRowChange[]): Promise<ActionResult<SheetSaveOutcome>> {
@@ -358,7 +520,7 @@ export async function savePricingSheet(changes: SheetRowChange[]): Promise<Actio
 
     const ids = [...new Set(changes.map((c) => c.id))];
     const current = new Map((await loadSheetRows(company, { ids })).map((r) => [r.id, r]));
-    const outcome: SheetSaveOutcome = { saved: [], skipped: [], rows: [] };
+    const outcome: SheetSaveOutcome = { saved: [], skipped: [], notes: [], rows: [] };
     for (const change of changes) {
       const row = current.get(change.id);
       if (!row) {
@@ -374,8 +536,15 @@ export async function savePricingSheet(changes: SheetRowChange[]): Promise<Actio
         });
         continue;
       }
-      const stopped = await applyRow(row, change.cells);
-      if (stopped) outcome.skipped.push({ id: row.id, code: row.code, reason: stopped });
+      let result: Awaited<ReturnType<typeof applyRow>>;
+      try {
+        result = await applyRow(company, row, change.cells);
+      } catch (e) {
+        if (!(e instanceof UserError)) throw e;
+        result = { stopped: e.message, notes: [] };
+      }
+      for (const note of result.notes) outcome.notes!.push({ code: row.code, note });
+      if (result.stopped) outcome.skipped.push({ id: row.id, code: row.code, reason: result.stopped });
       else outcome.saved.push(row.id);
     }
 

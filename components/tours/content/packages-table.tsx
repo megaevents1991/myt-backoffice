@@ -16,28 +16,38 @@ import {
   type PackageListRow,
 } from "@/components/tours/content/shared";
 
-type View = "content" | "stubs" | "all";
-const VIEWS: View[] = ["content", "stubs", "all"];
+type View = "content" | "stubs" | "all" | "packages";
+const VIEWS: View[] = ["content", "stubs", "all", "packages"];
 const isView = (value: unknown): value is View => VIEWS.includes(value as View);
-const VIEW_LABELS: Record<View, string> = { content: "With content", stubs: "No content", all: "All" };
+const VIEW_LABELS: Record<View, string> = {
+  content: "With content",
+  stubs: "No content",
+  all: "All tours",
+  packages: "Vacation packages",
+};
 
 /**
- * The trip pages of the site, on the shared DataTable. Pages the import created
- * only so a series has a home ("stubs") carry no content - they are hidden by
- * default.
+ * The organized tours of the site, on the shared DataTable. Pages the import
+ * created only so a series has a home ("stubs") carry no content - they are
+ * hidden by default. Vacation packages are no longer managed here (Alon,
+ * 04.10.2026): the ones that still exist sit apart, under their own tab, so
+ * they can be switched off - the tab is gone once there are none.
  */
 export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteUrl: string | null }) {
   const router = useRouter();
-  const [view, setView] = useSessionState<View>("view", "content", isView);
+  const [stored, setView] = useSessionState<View>("view", "content", isView);
 
-  const byView = useMemo(
-    () => ({
-      content: rows.filter((r) => r.hasContent),
-      stubs: rows.filter((r) => !r.hasContent),
-      all: rows,
-    }),
-    [rows],
-  );
+  const byView = useMemo(() => {
+    const organized = rows.filter((r) => r.kind === "organized");
+    return {
+      content: organized.filter((r) => r.hasContent),
+      stubs: organized.filter((r) => !r.hasContent),
+      all: organized,
+      packages: rows.filter((r) => r.kind !== "organized"),
+    };
+  }, [rows]);
+  const views = VIEWS.filter((id) => id !== "packages" || byView.packages.length > 0);
+  const view: View = views.includes(stored) ? stored : "content";
 
   const columns = useMemo<ColumnDef<PackageListRow>[]>(
     () => [
@@ -66,12 +76,17 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
           </>
         ),
       },
-      {
-        id: "type",
-        accessorFn: (row) => packageKindLabel(row.kind),
-        header: ({ column }) => <SortableHeader label="Type" column={column} />,
-        cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span>,
-      },
+      // every row of the tours tabs is an organized tour - the type says something only among the packages
+      ...(view === "packages"
+        ? [
+            {
+              id: "type",
+              accessorFn: (row) => packageKindLabel(row.kind),
+              header: ({ column }) => <SortableHeader label="Type" column={column} />,
+              cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span>,
+            } satisfies ColumnDef<PackageListRow>,
+          ]
+        : []),
       {
         id: "series",
         accessorFn: (row) => row.seriesCodes.join(" "),
@@ -81,7 +96,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
           row.original.seriesCodes.length ? (
             <div className="flex flex-wrap gap-1" dir="ltr">
               {row.original.seriesCodes.map((code) => (
-                <Badge key={code} variant="secondary" className="font-mono text-[11px]">
+                <Badge key={code} variant="secondary" className="font-mono text-xs font-semibold">
                   {code}
                 </Badge>
               ))}
@@ -107,7 +122,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
         (row) => row.name,
       ),
     ],
-    [siteUrl],
+    [siteUrl, view],
   );
 
   const stubs = byView.stubs.length;
@@ -120,7 +135,7 @@ export function PackagesTable({ rows, siteUrl }: { rows: PackageListRow[]; siteU
       searchPlaceholder="Search by name, slug or series code"
       defaultPageSize={50}
       getRowId={(row) => row.id}
-      views={VIEWS.map((id) => ({ id, label: VIEW_LABELS[id], count: byView[id].length }))}
+      views={views.map((id) => ({ id, label: VIEW_LABELS[id], count: byView[id].length }))}
       activeView={view}
       onViewChange={(id) => setView(id as View)}
       onRowClick={(row) => router.push(`/tours/packages/${row.id}`)}

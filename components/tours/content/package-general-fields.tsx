@@ -41,7 +41,10 @@ export function PackageGeneralFields({
   slugLocked = false,
   kinds = PACKAGE_KINDS,
   extra,
+  showSeasons = true,
 }: {
+  /** The plain list of season names - Create Tour only; a tour page edits its seasons on the Seasons tab. */
+  showSeasons?: boolean;
   form: PackageForm;
   set: <K extends keyof PackageForm>(key: K, value: PackageForm[K]) => void;
   slugHint: ReactNode;
@@ -121,14 +124,16 @@ export function PackageGeneralFields({
         </Field>
         {extra}
       </div>
-      <StringListEditor
-        label="Seasons"
-        value={form.seasons}
-        onChange={(value) => set("seasons", value)}
-        placeholder="קיץ, חנוכה, פסח..."
-        addLabel="Add Season"
-        hint="The first season also labels the dates and the badge at the top of the page."
-      />
+      {showSeasons && (
+        <StringListEditor
+          label="Seasons"
+          value={form.seasons}
+          onChange={(value) => set("seasons", value)}
+          placeholder="קיץ, חנוכה, פסח..."
+          addLabel="Add Season"
+          hint="The first season also labels the dates and the badge at the top of the page. Each one opens as a season of the tour (Seasons tab), where its dates and content are set."
+        />
+      )}
     </>
   );
 }

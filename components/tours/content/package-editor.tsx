@@ -31,6 +31,8 @@ import {
 } from "@/components/tours/content/fields";
 import { PackageGeneralFields, PackageTermsPicker } from "@/components/tours/content/package-general-fields";
 import { TourDates } from "@/components/tours/content/tour-dates";
+import { TourSeasons } from "@/components/tours/content/tour-seasons";
+import { TourSeriesField } from "@/components/tours/content/tour-series-field";
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
 import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { TourReadinessStrip, tourReadiness } from "@/components/tours/content/tour-readiness";
@@ -51,13 +53,14 @@ import {
   type PackageForm,
 } from "@/components/tours/content/shared";
 
-const TABS = ["general", "images", "description", "itinerary", "dates", "hotels", "faq", "seo", "terms"] as const;
+const TABS = ["general", "images", "description", "itinerary", "seasons", "dates", "hotels", "faq", "seo", "terms"] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   general: "Details",
   images: "Images",
   description: "Description",
   itinerary: "Itinerary",
+  seasons: "Seasons",
   dates: "Dates & Prices",
   hotels: "Hotels",
   faq: "FAQ",
@@ -223,13 +226,17 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           <span className="flex flex-wrap items-center gap-2">
             <ActiveChip active={saved.form.isActive} />
             {!saved.hasContent && <Chip>No content</Chip>}
-            {seriesCodes.length > 0 && (
-              <span>
-                Series:{" "}
-                <span dir="ltr" className="font-mono">
-                  {seriesCodes.join(", ")}
+            {seriesCodes.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1 text-base font-semibold text-foreground">
+                Series:
+                <span dir="ltr" className="font-mono text-lg tracking-wide">
+                  {seriesCodes.join(" · ")}
                 </span>
               </span>
+            ) : (
+              <button type="button" className="text-warning underline-offset-2 hover:underline" onClick={() => setTab("general")}>
+                No series code yet
+              </button>
             )}
             <span>{dateCount} dates</span>
           </span>
@@ -281,10 +288,21 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
         {/* ------------------------------------------------------------ general */}
         <TabsContent value="general" className="space-y-4">
+          <TourSeriesField
+            packageId={saved.id}
+            series={dates.data?.series ?? null}
+            fallbackCodes={saved.seriesCodes}
+            hasDates={dateCount > 0}
+            onChanged={() => {
+              void dates.reload({ quiet: true });
+              router.refresh();
+            }}
+          />
           <Section>
             <PackageGeneralFields
               form={form}
               set={set}
+              showSeasons={false}
               slugLocked={slugLocked}
               slugHint={
                 slugLocked
@@ -459,6 +477,11 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             variants={variants}
             dirtyKeys={dirtyKeys}
             siteUrl={siteUrl}
+            rows={dates.data?.rows ?? null}
+            onDatesChanged={() => {
+              void dates.reload({ quiet: true });
+              router.refresh();
+            }}
             onChange={setVariants}
             onVariantsChanged={(data, change) => {
               // the form may hold unsaved edits - only the itineraries move to the server's state
@@ -469,6 +492,24 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                 return created ? [...current, created] : current;
               });
               router.refresh();
+            }}
+          />
+        </TabsContent>
+
+        {/* ------------------------------------------------------------ seasons */}
+        <TabsContent value="seasons">
+          <TourSeasons
+            packageId={saved.id}
+            rows={dates.data?.rows ?? null}
+            variants={saved.itineraries}
+            siteUrl={siteUrl}
+            onChanged={(names) => {
+              void dates.reload({ quiet: true });
+              if (names) {
+                // the tour's season list follows its seasons - the form must not write the old list back
+                setSaved((current) => ({ ...current, form: { ...current.form, seasons: names } }));
+                setForm((current) => ({ ...current, seasons: names }));
+              }
             }}
           />
         </TabsContent>
