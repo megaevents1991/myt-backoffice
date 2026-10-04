@@ -74,6 +74,13 @@ export type Event = {
   // QA-only events: main keeps them orderable by direct /order/{id} link but
   // filters them from every listing, search, category and feed surface.
   is_test?: boolean;
+  // Off the customer site (2026-10-04): null / absent = listed. The TixStock
+  // price sync writes "tx_no_category" / "tx_sold_out" when the event has no
+  // ticket left to sell, and clears them when tickets return
+  // (lib/services/tixstock-availability.ts). Main drops such an event from
+  // every listing; its order page shows sold out. Synced with main lib/app.types.ts.
+  deactivated_reason?: string | null;
+  deactivated_at?: string | null;
   tags: string;
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.
@@ -455,6 +462,12 @@ export type EventTicket = {
   vendor?: string;
   eid?: string;
   available?: boolean;
+  // Set with `available: false` when the TixStock price sync took the ticket
+  // off sale by itself (2026-10-04): "sold_out" = the category has nothing on
+  // sale at the supplier, "no_category" = the supplier has no such category for
+  // the show. Only a ticket carrying it is put back automatically; off without
+  // it = switched off by a person. Synced with main lib/app.types.ts.
+  autoOff?: "sold_out" | "no_category";
   vip?: VipConfig;
   // Multi-supplier events (2026-09): one event page can sell tickets from
   // several suppliers, so the supplier lives on the ticket. Absent = implied by

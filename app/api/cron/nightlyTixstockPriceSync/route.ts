@@ -20,9 +20,13 @@ export async function GET(request: NextRequest) {
     // Budget under the 800s maxDuration so the run always finishes and
     // reports; leftovers (syncResult.remaining) drain on the next schedule.
     // Serial processing outgrew the ceiling at ~500 tx_events (2026-08-30).
+    // ?dry_run=1 = zero writes: syncResult.availability says which tickets and
+    // events a real run would take off the site or put back.
+    const dryRun = new URL(request.url).searchParams.get("dry_run") === "1";
     const syncResult = await syncTixStockPrices({
       timeBudgetMs: 700_000,
       concurrency: 4,
+      dryRun,
     });
 
     console.log("✅ Nightly TixStock price sync completed:", syncResult);

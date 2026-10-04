@@ -217,6 +217,16 @@ export async function duplicateEvent(
     // that never dropped.
     light_package: null, light_ticket: null, light_detail: null, light_checked_at: null,
     light_silenced_until: null, price_drop_usd: null, price_drop_from: null, price_drop_until: null,
+    // "Off the site" is the ORIGINAL's state at its supplier (tixstock-availability.ts) - the
+    // copy, usually another show with another eid, is judged afresh by the next price sync:
+    // it starts on the site, and tickets the sync took off are put back.
+    ...("deactivated_reason" in source ? { deactivated_reason: null, deactivated_at: null } : {}),
+    tickets_and_rates: (source.tickets_and_rates ?? []).map((ticket) => {
+      if (!ticket.autoOff) return ticket;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { autoOff: _was, ...rest } = ticket;
+      return { ...rest, available: true };
+    }),
   };
   delete newEvent.id;
 

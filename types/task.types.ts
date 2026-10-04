@@ -34,6 +34,9 @@ export const PRIORITY_ORDER: Record<TaskPriority, number> = {
  * price_light - born from a red light on /price-light (source_ref = the event, kind = the scope).
  * recurring - born from a task_rules row (source_ref = the rule + matched item).
  * roadmap - dev-board product work, tracked by phase (no external source_ref).
+ * supplier_gap - opened by the TixStock price sync for an event whose tickets cannot
+ *   sell at the supplier (source_ref = the event, kind "supplier_gap"); see
+ *   lib/services/supplier-gap-tasks.ts.
  */
 export const TASK_SOURCES = [
   "manual",
@@ -42,6 +45,7 @@ export const TASK_SOURCES = [
   "price_light",
   "recurring",
   "roadmap",
+  "supplier_gap",
 ] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 

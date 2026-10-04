@@ -6,14 +6,56 @@ import {
   supplierEventId,
   ticketSupplier,
 } from "@/lib/suppliers";
+import {
+  isTxDeactivation,
+  nextDeactivation,
+  planTixstockAvailability,
+} from "@/lib/services/tixstock-availability";
+import {
+  closeSupplierGapTask,
+  eventsWithOpenSupplierGapTask,
+  openSupplierGapTask,
+} from "@/lib/services/supplier-gap-tasks";
+import { logAudit } from "@/lib/audit";
+import { revalidateMain } from "@/lib/revalidate-main";
 
 const TIXSTOCK_API_URL = process.env.NEXT_SECRET_TIXSTOCK_API_URL;
 const TIXSTOCK_TOKEN = process.env.NEXT_SECRET_TIXSTOCK_TOKEN;
+
+/**
+ * Most events one run may take off the site. The first run after 04.10.2026
+ * had 13 to take off; a number far above that means the supplier's feed is
+ * lying (listings gone everywhere), and the run stops switching events off
+ * instead of emptying the site. What it already did comes back on the next run.
+ */
+const MAX_AUTO_DEACTIVATIONS_PER_RUN = 30;
+
+/** What a run did to one event's availability - or, on a dry run, would do. */
+export interface AvailabilityChange {
+  eventId: number;
+  name: string;
+  date: string;
+  action: "deactivated" | "reactivated" | "tickets";
+  /** `events.deactivated_reason` after the run; null = on the site. */
+  reason: string | null;
+  missing: string[];
+  soldOut: string[];
+  ticketsTakenOff: number;
+  ticketsPutBack: number;
+  supplierCategories: string[] | null;
+}
 
 export interface TixStockPriceSyncResult {
   eventsProcessed: number;
   ticketsUpdated: number;
   ticketsSkipped: number;
+  /** Tickets taken off sale / put back (lib/services/tixstock-availability.ts). */
+  ticketsTakenOff: number;
+  ticketsPutBack: number;
+  /** Events taken off the customer site / put back. */
+  eventsDeactivated: number;
+  eventsReactivated: number;
+  availability: AvailabilityChange[];
   /** tx_events the run didn't reach before the time budget ran out. */
   remaining: number;
   errors: string[];
@@ -34,6 +76,11 @@ export interface TixStockPriceSyncOptions {
   timeBudgetMs?: number;
   /** Parallel TixStock API fetches. Keep gentle - their feed rate-limits. */
   concurrency?: number;
+  /**
+   * Read everything, write nothing: no price, no ticket taken off, no event
+   * deactivated, no task. The result says what a real run would do.
+   */
+  dryRun?: boolean;
 }
 
 /** The slice of a TixStock /tickets/feed listing this sync reads. */
@@ -44,13 +91,25 @@ export interface TixStockFeedTicket {
   face_value?: { currency?: string };
 }
 
+/** A show's feed: its listings, and every category name TixStock has for it. */
+interface TixStockFeed {
+  tickets: TixStockFeedTicket[];
+  /** `meta.categories` names - sold-out ones included. null = the feed did not say. */
+  categories: string[] | null;
+}
+
 /** Also read by the price advisor's supplier quote (price-alternatives.ts) - one feed reader, not two. */
 export const fetchTixStockFeed = (tixstockEventId: string): Promise<TixStockFeedTicket[]> =>
-  fetchAllTicketsForEvent(tixstockEventId);
+  fetchFeedForEvent(tixstockEventId).then((feed) => feed.tickets);
 
-async function fetchAllTicketsForEvent(
-  tixstockEventId: string,
-): Promise<TixStockFeedTicket[]> {
+/** `meta.categories` is an object: every category of the show → "true" / "false" (has listings). */
+function feedCategories(raw: unknown): string[] | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const names = Object.keys(raw);
+  return names.length ? names : null;
+}
+
+async function fetchFeedForEvent(tixstockEventId: string): Promise<TixStockFeed> {
   if (!TIXSTOCK_TOKEN) throw new Error("TixStock API token is missing");
 
   const baseUrl = new URL(`${TIXSTOCK_API_URL}/tickets/feed`);
@@ -58,6 +117,7 @@ async function fetchAllTicketsForEvent(
   baseUrl.searchParams.set("per_page", "50");
 
   const allTickets: TixStockFeedTicket[] = [];
+  let categories: string[] | null = null;
   let currentPage = 1;
   let lastPage = 1;
 
@@ -78,52 +138,99 @@ async function fetchAllTicketsForEvent(
     }
 
     const data = await res.json();
-    if (currentPage === 1) lastPage = data.meta?.last_page ?? 1;
+    if (currentPage === 1) {
+      lastPage = data.meta?.last_page ?? 1;
+      categories = feedCategories(data.meta?.categories);
+    }
     allTickets.push(...(data.data || []));
     currentPage++;
   } while (currentPage <= lastPage);
 
-  return allTickets;
+  return { tickets: allTickets, categories };
 }
 
 export async function syncTixStockPrices(
   options: TixStockPriceSyncOptions = {},
 ): Promise<TixStockPriceSyncResult> {
-  const { timeBudgetMs, concurrency = 4 } = options;
+  const { timeBudgetMs, concurrency = 4, dryRun = false } = options;
   const startedAt = new Date();
   const deadline = timeBudgetMs ? startedAt.getTime() + timeBudgetMs : null;
-  console.log(`Starting TixStock price sync at ${startedAt.toISOString()}...`);
+  console.log(
+    `Starting TixStock price sync at ${startedAt.toISOString()}${dryRun ? " (dry run)" : ""}...`,
+  );
 
-  // Ensure fresh exchange rates before processing any prices
-  try {
-    await multiCurrencyExchangeRateService.updateAllExchangeRates();
-    console.log("Exchange rates refreshed.");
-  } catch (err) {
-    console.warn("Could not refresh exchange rates, using cached values:", err);
+  // Ensure fresh exchange rates before processing any prices. A dry run writes
+  // no price, so it does not refresh them either.
+  if (!dryRun) {
+    try {
+      await multiCurrencyExchangeRateService.updateAllExchangeRates();
+      console.log("Exchange rates refreshed.");
+    } catch (err) {
+      console.warn("Could not refresh exchange rates, using cached values:", err);
+    }
   }
 
   const errors: string[] = [];
   let eventsProcessed = 0;
   let ticketsUpdated = 0;
   let ticketsSkipped = 0;
+  let ticketsTakenOff = 0;
+  let ticketsPutBack = 0;
+  let eventsDeactivated = 0;
+  let eventsReactivated = 0;
+  let deactivationCapReported = false;
+  const availability: AvailabilityChange[] = [];
   let remaining = 0;
 
   try {
     // Fetch all active tx_events that have a vendor event ID. Explicit columns:
     // the full rows (500+ events with jsonb) were most of this query's weight.
-    const { data, error } = await supabase
-      .from("events")
-      .select("id,name,tickets_and_rates")
-      .eq("type", "tx_event")
-      .is("is_deleted", null);
+    type SyncEvent = Pick<
+      Event,
+      "id" | "name" | "date" | "tickets_and_rates" | "deactivated_reason"
+    >;
+    // Upcoming events only: a show that already happened has no price to keep
+    // and nothing to take off the site. They were a quarter of the run (138 of
+    // 579 on 04.10.2026), every one "sold out" at the supplier - enough to use
+    // up MAX_AUTO_DEACTIVATIONS_PER_RUN before a single live event was judged.
+    const today = startedAt.toISOString().slice(0, 10);
+    const loadEvents = (columns: string) =>
+      supabase
+        .from("events")
+        .select(columns)
+        .eq("type", "tx_event")
+        .is("is_deleted", null)
+        .gte("date", today);
+
+    // `deactivated_reason` arrives with migration 20261004090000. Until it is
+    // applied the column does not exist (42703): prices and ticket flags still
+    // sync, only the event-level switch waits.
+    let canDeactivate = true;
+    let { data, error } = await loadEvents(
+      "id,name,date,tickets_and_rates,deactivated_reason",
+    );
+    if ((error as { code?: string } | null)?.code === "42703") {
+      canDeactivate = false;
+      ({ data, error } = await loadEvents("id,name,date,tickets_and_rates"));
+    }
 
     if (error) throw error;
 
-    const events = (data ?? []) as Pick<
-      Event,
-      "id" | "name" | "tickets_and_rates"
-    >[];
+    const events = (data ?? []) as unknown as SyncEvent[];
     console.log(`Found ${events.length} tx_events to process.`);
+
+    // One read per run: which events already have an open supplier_gap task.
+    // null = tasks could not be read; the run then opens and closes none.
+    let openTasks: Map<number, string> | null = null;
+    if (!dryRun) {
+      try {
+        openTasks = await eventsWithOpenSupplierGapTask();
+      } catch (err) {
+        errors.push(
+          `supplier_gap tasks unavailable: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     const processEvent = async (event: (typeof events)[number]) => {
       try {
@@ -151,9 +258,12 @@ export async function syncTixStockPrices(
           `Processing event ${event.id} (${event.name}) - TixStock ID: ${tixstockEventId}`,
         );
 
-        const sourceTickets = await fetchAllTicketsForEvent(tixstockEventId);
+        const feed = await fetchFeedForEvent(tixstockEventId);
+        const sourceTickets = feed.tickets;
 
-        if (sourceTickets.length === 0) {
+        // No listings and no category list: nothing to price, and too little to
+        // judge availability on - a hiccup at the supplier looks the same.
+        if (sourceTickets.length === 0 && !feed.categories) {
           console.log(
             `No TixStock tickets found for event ${event.id}, skipping.`,
           );
@@ -245,8 +355,72 @@ export async function syncTixStockPrices(
           },
         );
 
-        if (eventUpdated) {
-          const updatePayload = { tickets_and_rates: updatedTicketsAndRates };
+        // What the customer can actually buy (tixstock-availability.ts): a
+        // category with nothing on sale goes off the site, an event with
+        // nothing left to sell is deactivated, and both come back by
+        // themselves when listings return.
+        const currentReason = event.deactivated_reason ?? null;
+        let plan = planTixstockAvailability(updatedTicketsAndRates, "tx_event", {
+          categories: feed.categories,
+          listed: sourceTickets.map((t) => t.seat_details?.category ?? ""),
+        });
+        let reason = canDeactivate
+          ? nextDeactivation(currentReason, plan)
+          : currentReason;
+
+        if (reason !== null && currentReason === null) {
+          if (eventsDeactivated >= MAX_AUTO_DEACTIVATIONS_PER_RUN) {
+            // Too many for one run to be true: leave this event exactly as it is.
+            if (!deactivationCapReported) {
+              deactivationCapReported = true;
+              errors.push(
+                `Stopped taking events off the site after ${MAX_AUTO_DEACTIVATIONS_PER_RUN} in one run - check TixStock's feed.`,
+              );
+            }
+            plan = {
+              tickets: updatedTicketsAndRates,
+              changed: false,
+              turnedOff: [],
+              turnedOn: [],
+              missing: [],
+              soldOut: [],
+              sellable: true,
+            };
+            reason = null;
+          } else {
+            eventsDeactivated++;
+          }
+        }
+        const reasonChanged = reason !== currentReason;
+        if (reasonChanged && reason === null) eventsReactivated++;
+        ticketsTakenOff += plan.turnedOff.length;
+        ticketsPutBack += plan.turnedOn.length;
+
+        if (plan.changed || reasonChanged) {
+          availability.push({
+            eventId: event.id,
+            name: event.name,
+            date: event.date,
+            action: !reasonChanged ? "tickets" : reason ? "deactivated" : "reactivated",
+            reason,
+            missing: plan.missing,
+            soldOut: plan.soldOut,
+            ticketsTakenOff: plan.turnedOff.length,
+            ticketsPutBack: plan.turnedOn.length,
+            supplierCategories: feed.categories,
+          });
+        }
+
+        if (!dryRun && (eventUpdated || plan.changed || reasonChanged)) {
+          const updatePayload = {
+            tickets_and_rates: plan.tickets,
+            ...(reasonChanged
+              ? {
+                  deactivated_reason: reason,
+                  deactivated_at: reason ? new Date().toISOString() : null,
+                }
+              : {}),
+          };
           // tickets_and_rates jsonb isn't in the generated row type - cast like template-crud.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { error: updateError } = await (supabase.from("events") as any)
@@ -254,6 +428,45 @@ export async function syncTixStockPrices(
             .eq("id", event.id);
 
           if (updateError) throw updateError;
+        }
+
+        if (!dryRun) {
+          if (reasonChanged) {
+            await logAudit({
+              action: reason ? "event.auto_deactivated" : "event.auto_reactivated",
+              entityType: "event",
+              entityId: event.id,
+              metadata: {
+                reason,
+                previous: currentReason,
+                missing: plan.missing,
+                sold_out: plan.soldOut,
+                auto: true,
+              },
+            });
+          }
+          // A task while the event is off by this sync, or carries a category
+          // the supplier does not have; closed once neither is true.
+          if (openTasks) {
+            const openTaskId = openTasks.get(event.id);
+            const needsTask = isTxDeactivation(reason) || plan.missing.length > 0;
+            if (needsTask && !openTaskId) {
+              const taskId = await openSupplierGapTask({
+                eventId: event.id,
+                eventName: event.name,
+                eventDate: event.date,
+                reason,
+                missing: plan.missing,
+                soldOut: plan.soldOut,
+                supplierCategories: feed.categories,
+              });
+              if (taskId) openTasks.set(event.id, taskId);
+            } else if (!needsTask && openTaskId) {
+              if (await closeSupplierGapTask(event.id, openTaskId)) {
+                openTasks.delete(event.id);
+              }
+            }
+          }
         }
 
         eventsProcessed++;
@@ -287,6 +500,9 @@ export async function syncTixStockPrices(
         `Time budget exhausted - ${remaining} tx_events not reached this run.`,
       );
     }
+    // The site caches the catalog for an hour - an event that just went off (or
+    // came back) should not wait for it.
+    if (!dryRun && availability.length > 0) await revalidateMain();
   } catch (err) {
     const msg = `Fatal error: ${err instanceof Error ? err.message : String(err)}`;
     console.error(msg);
@@ -300,13 +516,20 @@ export async function syncTixStockPrices(
 
   console.log(
     `TixStock price sync completed at ${completedAt.toISOString()}. ` +
-      `Events: ${eventsProcessed}, Updated: ${ticketsUpdated}, Skipped: ${ticketsSkipped}, Duration: ${durationSeconds}s`,
+      `Events: ${eventsProcessed}, Updated: ${ticketsUpdated}, Skipped: ${ticketsSkipped}, ` +
+      `Tickets off/back: ${ticketsTakenOff}/${ticketsPutBack}, Events off/back: ${eventsDeactivated}/${eventsReactivated}, ` +
+      `Duration: ${durationSeconds}s`,
   );
 
   return {
     eventsProcessed,
     ticketsUpdated,
     ticketsSkipped,
+    ticketsTakenOff,
+    ticketsPutBack,
+    eventsDeactivated,
+    eventsReactivated,
+    availability,
     remaining,
     errors,
     startedAt: startedAt.toISOString(),
