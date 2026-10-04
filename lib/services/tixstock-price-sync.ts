@@ -35,7 +35,8 @@ export interface AvailabilityChange {
   eventId: number;
   name: string;
   date: string;
-  action: "deactivated" | "reactivated" | "tickets";
+  /** "unchanged" is reported only on a run asked for specific events (`eventIds`). */
+  action: "deactivated" | "reactivated" | "tickets" | "unchanged";
   /** `events.deactivated_reason` after the run; null = on the site. */
   reason: string | null;
   missing: string[];
@@ -81,6 +82,12 @@ export interface TixStockPriceSyncOptions {
    * deactivated, no task. The result says what a real run would do.
    */
   dryRun?: boolean;
+  /**
+   * Only these events - the editor's "check now" after staff fixed an event
+   * (recheckEventAvailability). `availability` then carries a line for each
+   * of them even when nothing changed.
+   */
+  eventIds?: number[];
 }
 
 /** The slice of a TixStock /tickets/feed listing this sync reads. */
@@ -152,7 +159,7 @@ async function fetchFeedForEvent(tixstockEventId: string): Promise<TixStockFeed>
 export async function syncTixStockPrices(
   options: TixStockPriceSyncOptions = {},
 ): Promise<TixStockPriceSyncResult> {
-  const { timeBudgetMs, concurrency = 4, dryRun = false } = options;
+  const { timeBudgetMs, concurrency = 4, dryRun = false, eventIds } = options;
   const startedAt = new Date();
   const deadline = timeBudgetMs ? startedAt.getTime() + timeBudgetMs : null;
   console.log(
@@ -194,13 +201,15 @@ export async function syncTixStockPrices(
     // 579 on 04.10.2026), every one "sold out" at the supplier - enough to use
     // up MAX_AUTO_DEACTIVATIONS_PER_RUN before a single live event was judged.
     const today = startedAt.toISOString().slice(0, 10);
-    const loadEvents = (columns: string) =>
-      supabase
+    const loadEvents = (columns: string) => {
+      const query = supabase
         .from("events")
         .select(columns)
         .eq("type", "tx_event")
         .is("is_deleted", null)
         .gte("date", today);
+      return eventIds ? query.in("id", eventIds) : query;
+    };
 
     // `deactivated_reason` arrives with migration 20261004090000. Until it is
     // applied the column does not exist (42703): prices and ticket flags still
@@ -396,12 +405,18 @@ export async function syncTixStockPrices(
         ticketsTakenOff += plan.turnedOff.length;
         ticketsPutBack += plan.turnedOn.length;
 
-        if (plan.changed || reasonChanged) {
+        if (plan.changed || reasonChanged || eventIds) {
           availability.push({
             eventId: event.id,
             name: event.name,
             date: event.date,
-            action: !reasonChanged ? "tickets" : reason ? "deactivated" : "reactivated",
+            action: reasonChanged
+              ? reason
+                ? "deactivated"
+                : "reactivated"
+              : plan.changed
+                ? "tickets"
+                : "unchanged",
             reason,
             missing: plan.missing,
             soldOut: plan.soldOut,
@@ -502,7 +517,9 @@ export async function syncTixStockPrices(
     }
     // The site caches the catalog for an hour - an event that just went off (or
     // came back) should not wait for it.
-    if (!dryRun && availability.length > 0) await revalidateMain();
+    if (!dryRun && availability.some((a) => a.action !== "unchanged")) {
+      await revalidateMain();
+    }
   } catch (err) {
     const msg = `Fatal error: ${err instanceof Error ? err.message : String(err)}`;
     console.error(msg);

@@ -3,8 +3,12 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
-import type { Event } from "@/types/app.types";
+import type { Event, EventTicket } from "@/types/app.types";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import {
+  syncTixStockPrices,
+  type AvailabilityChange,
+} from "@/lib/services/tixstock-price-sync";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { applyTagRules } from "@/lib/services/auto-tagger";
 
@@ -18,7 +22,7 @@ const EVENT_LIST_COLUMNS =
   "tickets_and_rates,def_date_depart,def_date_return," +
   "base_flight_price,base_hotel_price,event_additional_markup," +
   "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
-  "price_drop_usd,price_drop_from,price_drop_until";
+  "price_drop_usd,price_drop_from,price_drop_until,deactivated_reason";
 
 export async function getEvents() {
   await requireStaff();
@@ -114,6 +118,11 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     light_package: _lp, light_ticket: _lt, light_detail: _ld, light_checked_at: _lc, light_silenced_until: _ls,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     price_drop_usd: _pu, price_drop_from: _pf, price_drop_until: _pt,
+    // "Off the site" is owned by the TixStock price sync (tixstock-availability.ts) - the same
+    // stale-copy trap: a form opened before the sync switched the event off would switch it
+    // back on with its save.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    deactivated_reason: _dr, deactivated_at: _da,
     ...event
   } = input;
   const before = await fetchBefore("events", "id", id, event);
@@ -143,6 +152,70 @@ export async function updateEvent(id: number, input: Partial<Event>) {
   // flow edits the base price here and goes straight back to that screen.
   invalidatePriceLight("rows");
   return data[0] as Event;
+}
+
+export type AvailabilityCheckResult =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      /** What the check did to the event. */
+      action: AvailabilityChange["action"];
+      /** `events.deactivated_reason` now; null = on the customer site. */
+      reason: string | null;
+      deactivatedAt: string | null;
+      /** The tickets as stored after the check - prices and off-sale marks included. */
+      tickets: EventTicket[];
+      /** Every category TixStock has for the show, when its feed said. */
+      supplierCategories: string[] | null;
+    };
+
+/**
+ * "Check now" in the event editor: the TixStock price sync for this ONE event,
+ * right away - so an event staff just fixed is back on the site (and its task
+ * closed) without waiting for the next scheduled run. Same code path as the
+ * cron: it prices, takes dead categories off, deactivates or reactivates.
+ * Works on the SAVED event.
+ */
+export async function recheckEventAvailability(
+  id: number,
+): Promise<AvailabilityCheckResult> {
+  await requireStaff();
+  try {
+    const run = await syncTixStockPrices({ eventIds: [id], concurrency: 1 });
+    if (run.errors.length) return { ok: false, error: run.errors[0] };
+    const checked = run.availability.find((a) => a.eventId === id);
+    if (!checked) {
+      return {
+        ok: false,
+        error:
+          "אין מה לבדוק: TixStock לא החזיר נתונים להופעה, לאירוע אין כרטיס TixStock עם eid, או שהתאריך שלו עבר.",
+      };
+    }
+    const { data, error } = await supabase
+      .from("events")
+      .select("tickets_and_rates,deactivated_reason,deactivated_at")
+      .eq("id", id)
+      .single();
+    if (error) {
+      console.error(JSON.stringify(error));
+      return { ok: false, error: "הבדיקה רצה, אבל האירוע לא נטען מחדש - רעננו את הדף." };
+    }
+    const row = data as unknown as Pick<
+      Event,
+      "tickets_and_rates" | "deactivated_reason" | "deactivated_at"
+    >;
+    return {
+      ok: true,
+      action: checked.action,
+      reason: row.deactivated_reason ?? null,
+      deactivatedAt: row.deactivated_at ?? null,
+      tickets: row.tickets_and_rates ?? [],
+      supplierCategories: checked.supplierCategories,
+    };
+  } catch (e) {
+    console.error("recheckEventAvailability failed", e);
+    return { ok: false, error: e instanceof Error ? e.message : "הבדיקה נכשלה" };
+  }
 }
 
 export async function softDeleteEvent(id: number) {

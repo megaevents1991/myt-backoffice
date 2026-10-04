@@ -784,6 +784,15 @@ export function EventsTable() {
                 Not instant
               </Badge>
             )}
+            {row.original.deactivated_reason && !isDeleted && (
+              <Badge
+                variant="outline"
+                className="text-destructive border-destructive"
+                title="Off the customer site - nothing left to sell at the supplier. Open the event to see why and to check again."
+              >
+                כבוי
+              </Badge>
+            )}
             <span>{row.getValue("name")}</span>
           </div>
         );

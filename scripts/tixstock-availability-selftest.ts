@@ -3,6 +3,8 @@
 //   npx tsx scripts/tixstock-availability-selftest.ts
 import assert from "node:assert/strict";
 import {
+  autoOffCategories,
+  deactivationText,
   nextDeactivation,
   planTixstockAvailability,
   type TixstockSupply,
@@ -113,5 +115,23 @@ const again = plan(p.tickets, supply(["Floor Standing"]));
 assert.deepEqual([again.changed, again.turnedOff, again.turnedOn], [false, [], []]);
 assert.deepEqual(again.tickets, p.tickets);
 assert.deepEqual([again.missing, again.soldOut], [["Unterrang"], ["Lower Tier"]]);
+
+// 10. What staff read: the categories the sync took off, by cause - a ticket a
+// person switched off is not in it - and one line per reason.
+assert.deepEqual(
+  autoOffCategories([
+    ticket({ category: "Unterrang", available: false, autoOff: "no_category" }),
+    ticket({ category: "Lower Tier", available: false, autoOff: "sold_out" }),
+    ticket({ category: "Upper Tier", available: false, autoOff: "sold_out" }),
+    ticket({ category: "VIP", available: false }),
+    floor,
+  ]),
+  { missing: ["Unterrang"], soldOut: ["Lower Tier", "Upper Tier"] },
+);
+assert.deepEqual(autoOffCategories([floor]), { missing: [], soldOut: [] });
+assert.ok(deactivationText("tx_no_category").includes("TixStock"));
+assert.ok(deactivationText("tx_sold_out").includes("אין"));
+// a reason this sync did not write still gets a line - the raw value, never a blank
+assert.ok(deactivationText("manual").includes("manual"));
 
 console.log("tixstock-availability: all assertions passed");

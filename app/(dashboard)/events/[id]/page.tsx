@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RevalidateButton } from "@/components/templates/RevalidateButton";
 import { PushToFeedButton } from "@/components/push-to-feed-button";
+import { EventAvailabilityBanner } from "@/components/event-availability-banner";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble, ChevronDown } from "lucide-react";
 import {
   Collapsible,
@@ -1800,6 +1801,25 @@ export default function EventPage({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {!isNewEvent && !event.is_deleted && (
+        <EventAvailabilityBanner
+          event={event}
+          unsaved={isDirty}
+          onChecked={(checked) => {
+            // The check ran on the saved event (the button is off while the
+            // form is dirty), so what it stored IS the new baseline.
+            const next = {
+              ...event,
+              tickets_and_rates: checked.tickets,
+              deactivated_reason: checked.reason,
+              deactivated_at: checked.deactivatedAt,
+            };
+            initialEventRef.current = JSON.stringify(next);
+            setEvent(next);
+          }}
+        />
       )}
 
       <div className="flex items-start gap-6">

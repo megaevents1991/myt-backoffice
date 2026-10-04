@@ -30,6 +30,30 @@ export const isTxDeactivation = (
 ): reason is TxDeactivationReason =>
   !!reason && (TX_DEACTIVATION_REASONS as readonly string[]).includes(reason);
 
+const DEACTIVATION_TEXT: Record<TxDeactivationReason, string> = {
+  tx_no_category:
+    "יש בו קטגוריות שלא קיימות ב-TixStock להופעה הזו, ואין בו כרטיס אחר למכירה",
+  tx_sold_out:
+    "הקטגוריות שלו קיימות ב-TixStock, אבל אין בהן כרטיסים למכירה כרגע",
+};
+
+/** Why the event is off the site, as staff read it (the task, the editor). */
+export const deactivationText = (reason: string): string =>
+  isTxDeactivation(reason) ? DEACTIVATION_TEXT[reason] : `סיבה: ${reason}`;
+
+/**
+ * The categories the sync took off sale on an event, by cause. A ticket a
+ * person switched off carries no `autoOff` and is not listed.
+ */
+export function autoOffCategories(
+  tickets: Pick<EventTicket, "category" | "autoOff">[],
+): { missing: string[]; soldOut: string[] } {
+  const of = (cause: TicketAutoOff) => [
+    ...new Set(tickets.filter((t) => t.autoOff === cause).map((t) => t.category)),
+  ];
+  return { missing: of("no_category"), soldOut: of("sold_out") };
+}
+
 /** What TixStock's feed says about one show. */
 export interface TixstockSupply {
   /**

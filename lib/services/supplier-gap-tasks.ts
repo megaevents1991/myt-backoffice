@@ -4,6 +4,7 @@
 // again with nothing missing. One open task per event.
 import { megaEventsTasks, type TaskResult } from "@/lib/tasks-scope";
 import { logAudit } from "@/lib/audit";
+import { deactivationText } from "@/lib/services/tixstock-availability";
 import { OPEN_TASK_STATUSES, type TaskSourceRef } from "@/types/task.types";
 
 const SOURCE = "supplier_gap";
@@ -34,12 +35,9 @@ function title(gap: SupplierGap): string {
 }
 
 function description(gap: SupplierGap): string {
-  const head =
-    gap.reason === "tx_no_category"
-      ? "האירוע הורד מהאתר אוטומטית: אף קטגוריה שלנו לא קיימת ב-TixStock להופעה הזו, ולכן אי אפשר למכור בו כרטיס."
-      : gap.reason
-        ? "האירוע הורד מהאתר אוטומטית: הקטגוריות שלנו קיימות ב-TixStock, אבל אין בהן כרטיסים למכירה כרגע."
-        : "האירוע עדיין באתר, אבל חלק מהקטגוריות שלנו לא קיימות ב-TixStock להופעה הזו והורדו מהמכירה.";
+  const head = gap.reason
+    ? `האירוע הורד מהאתר אוטומטית: ${deactivationText(gap.reason)}.`
+    : "האירוע עדיין באתר, אבל חלק מהקטגוריות שלנו לא קיימות ב-TixStock להופעה הזו והורדו מהמכירה.";
   const fix = gap.missing.length
     ? "מה לעשות: לפתוח את האירוע, לוודא שה-eid והמפה שייכים להופעה הזו (אירוע משוכפל שומר את הקטגוריות והמפה של המקור), ולהוסיף את הקטגוריות מהרשימה של TixStock."
     : "מה לעשות: אם יש ב-TixStock קטגוריות אחרות למכירה - להוסיף אותן; אפשר גם לצרף ספק נוסף (LiveTickets) או למחוק את האירוע.";
@@ -49,7 +47,7 @@ function description(gap: SupplierGap): string {
     gap.soldOut.length ? `אצלנו, אזל אצל הספק: ${gap.soldOut.join(", ")}` : "",
     gap.supplierCategories?.length ? `הקטגוריות של TixStock להופעה: ${gap.supplierCategories.join(", ")}` : "",
     fix,
-    "האירוע והקטגוריות חוזרים לאתר לבד בסנכרון המחירים הבא (4 פעמים ביום) ברגע שיש כרטיס למכירה, והמשימה נסגרת.",
+    "אחרי התיקון: \"בדוק עכשיו\" בעורך האירוע מחזיר אותו לאתר מיד וסוגר את המשימה. בלי זה - בסנכרון המחירים הבא (4 פעמים ביום), ברגע שיש כרטיס למכירה.",
   ]
     .filter(Boolean)
     .join("\n");
