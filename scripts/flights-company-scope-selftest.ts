@@ -75,6 +75,18 @@ const SCOPE_FILE = "lib/flights-scope.ts";
 const CALL_ALLOW: Record<string, string> = {
   "lib/services/base-price-sync.ts#offlineLinkedEventIds":
     'picks a branch - "flights" goes to megaEventsFlights(), the other one names offline_hotels literally',
+  "components/tours/content/tour-readiness.tsx#item":
+    'item("flights", ...) is the key of a "Ready for the site" step, not a table name - the file reads no table',
+};
+
+/**
+ * Files of prose where "flights (" is English, not an embedded relation, as
+ * file -> reason. The entry holds only while the file reads no table: a
+ * `.from(` or `.select(` in it and the scan fails again.
+ */
+const EMBED_ALLOW: Record<string, string> = {
+  "app/(dashboard)/guide/guide-content-tours.ts":
+    'guide text ("the outbound and inbound flights (numbers, airports, times)") - the file holds strings only',
 };
 
 /** Direct accesses excused from rule A, as "file:line" -> reason. Empty on purpose. */
@@ -222,6 +234,10 @@ function staticScan() {
     for (const match of source.matchAll(EMBED)) {
       const index = match.index ?? 0;
       if (isCommentLine(source, index)) continue;
+      if (EMBED_ALLOW[name] && !/\.(from|select)\(/.test(source)) {
+        sites.push({ where: `${name}:${lineOf(source, index)}`, how: `prose ALLOW-LISTED: ${EMBED_ALLOW[name]}` });
+        continue;
+      }
       const lineStart = source.lastIndexOf("\n", index) + 1;
       const statement = statementFrom(source, lineStart);
       const where = `${name}:${lineOf(source, index)}`;
