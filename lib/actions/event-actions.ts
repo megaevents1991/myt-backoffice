@@ -123,6 +123,10 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     // back on with its save.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     deactivated_reason: _dr, deactivated_at: _da,
+    // The ready package is owned by its own card and the refresh cron (ready-package-actions.ts) -
+    // a form opened before the package went live would switch it back off with its save.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    ready_package_token: _rt, ready_package_mode: _rm, ready_package_price_usd: _rp,
     ...event
   } = input;
   const before = await fetchBefore("events", "id", id, event);

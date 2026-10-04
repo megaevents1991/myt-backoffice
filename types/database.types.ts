@@ -2160,6 +2160,9 @@ export type Database = {
           price_drop_from: number | null
           price_drop_until: string | null
           price_drop_usd: number | null
+          ready_package_mode: string | null
+          ready_package_price_usd: number | null
+          ready_package_token: string | null
           skip_flight: boolean | null
           skip_flight_markup: number | null
           skip_hotel_markup: number | null
@@ -2221,6 +2224,9 @@ export type Database = {
           price_drop_from?: number | null
           price_drop_until?: string | null
           price_drop_usd?: number | null
+          ready_package_mode?: string | null
+          ready_package_price_usd?: number | null
+          ready_package_token?: string | null
           skip_flight?: boolean | null
           skip_flight_markup?: number | null
           skip_hotel_markup?: number | null
@@ -2282,6 +2288,9 @@ export type Database = {
           price_drop_from?: number | null
           price_drop_until?: string | null
           price_drop_usd?: number | null
+          ready_package_mode?: string | null
+          ready_package_price_usd?: number | null
+          ready_package_token?: string | null
           skip_flight?: boolean | null
           skip_flight_markup?: number | null
           skip_hotel_markup?: number | null
@@ -3892,10 +3901,17 @@ export type Database = {
           hotel_order_info: Json | null
           hotel_skipped: boolean
           id: number
+          kind: string
+          max_travelers: number | null
           num_travelers: number
-          partner_tracking_code: string
+          partner_tracking_code: string | null
           price_adjust_per_person: number
+          refresh_note: string | null
+          refresh_status: string | null
+          refreshed_at: string | null
           share_token: string
+          spec: Json | null
+          variants: Json | null
         }
         Insert: {
           allow_edit?: boolean
@@ -3909,10 +3925,17 @@ export type Database = {
           hotel_order_info?: Json | null
           hotel_skipped?: boolean
           id?: never
+          kind?: string
+          max_travelers?: number | null
           num_travelers?: number
-          partner_tracking_code: string
+          partner_tracking_code?: string | null
           price_adjust_per_person?: number
+          refresh_note?: string | null
+          refresh_status?: string | null
+          refreshed_at?: string | null
           share_token: string
+          spec?: Json | null
+          variants?: Json | null
         }
         Update: {
           allow_edit?: boolean
@@ -3926,10 +3949,17 @@ export type Database = {
           hotel_order_info?: Json | null
           hotel_skipped?: boolean
           id?: never
+          kind?: string
+          max_travelers?: number | null
           num_travelers?: number
-          partner_tracking_code?: string
+          partner_tracking_code?: string | null
           price_adjust_per_person?: number
+          refresh_note?: string | null
+          refresh_status?: string | null
+          refreshed_at?: string | null
           share_token?: string
+          spec?: Json | null
+          variants?: Json | null
         }
         Relationships: [
           {

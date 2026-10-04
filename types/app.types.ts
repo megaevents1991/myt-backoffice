@@ -81,6 +81,16 @@ export type Event = {
   // every listing; its order page shows sold out. Synced with main lib/app.types.ts.
   deactivated_reason?: string | null;
   deactivated_at?: string | null;
+  // Ready package ("חבילה מוכנה", lib/ready-package.ts): the house-built
+  // prepared package this event opens on. `ready_package_token` is that row's
+  // share_token; mode 'preview' = only the staff link opens it, 'live' = a click
+  // on the event card does (anything else = off); the price is per person at the
+  // package's default party, rewritten by the nightly refresh, and is what the
+  // site card shows in 'live'. Owned by the editor's Ready package card and the
+  // refresh cron - updateEvent never writes them. Synced with main lib/app.types.ts.
+  ready_package_token?: string | null;
+  ready_package_mode?: "off" | "preview" | "live" | null;
+  ready_package_price_usd?: number | null;
   tags: string;
   tx_excluded_sections?: string[];
   // Extra event-level markup (USD) added to this event.

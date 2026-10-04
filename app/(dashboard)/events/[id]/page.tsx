@@ -102,6 +102,7 @@ import { flattenWithPath } from "@/lib/taxonomy-tree";
 import { isTicketOnlyEvent, ticketOnlyProblems } from "@/lib/package-mode";
 import { hasEventCity, lodgingProblems, LODGING_MODES } from "@/lib/lodging";
 import { HotelWarmButton } from "@/components/hotel-warm-button";
+import { ReadyPackageCard } from "./ready-package-card";
 import {
   isSectionExcluded,
   isUnlabeledSectionId,
@@ -2711,6 +2712,10 @@ export default function EventPage({
             )}
           </CardContent>
         </Card>
+
+        {/* Ready package: needs a saved event (its own actions write straight to the DB, never
+            through this form's Save). */}
+        {!isNewEvent && event?.id ? <ReadyPackageCard eventId={event.id} /> : null}
 
         <Card id="section-images" data-editor-section="Images" className="scroll-mt-20">
           <CardHeader>
