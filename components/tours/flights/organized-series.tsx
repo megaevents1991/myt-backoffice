@@ -69,7 +69,8 @@ export function OrganizedSeriesFields({
           <span className="font-medium">Organized tour</span>
           <span className="block text-xs text-muted-foreground">
             Every flight becomes a sub-tour (a date) of the tour with this code, with the flight&apos;s dates, route and
-            seats. A new code creates the tour as a draft. Prices are set later in Tours &gt; Pricing.
+            seats. A new code creates the tour as a draft. Prices and the season of each date are set later in Tours &gt;
+            Departures.
           </span>
         </span>
       </label>
@@ -187,7 +188,7 @@ export function OrganizedSeriesResult({
           {result && (
             <>
               <Button asChild>
-                <Link href={`/tours/pricing?tour=${result.packageId}`}>Set prices in Pricing</Link>
+                <Link href={`/tours/departures?view=prices&tour=${result.packageId}`}>Set prices in Departures</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link href={`/tours/packages/${result.packageId}?tab=${result.createdTour ? "general" : "dates"}`}>
