@@ -5608,6 +5608,7 @@ export type Database = {
           return_airport: string | null
           sale_status: string
           season: string | null
+          season_id: string | null
           season_year: number
           senior_discount: number | null
           senior_min_age: number | null
@@ -5653,6 +5654,7 @@ export type Database = {
           return_airport?: string | null
           sale_status?: string
           season?: string | null
+          season_id?: string | null
           season_year: number
           senior_discount?: number | null
           senior_min_age?: number | null
@@ -5698,6 +5700,7 @@ export type Database = {
           return_airport?: string | null
           sale_status?: string
           season?: string | null
+          season_id?: string | null
           season_year?: number
           senior_discount?: number | null
           senior_min_age?: number | null
@@ -5912,6 +5915,68 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "package_itineraries_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      package_seasons: {
+        Row: {
+          attractions: string[] | null
+          company_id: string
+          created_at: string
+          description_html: string | null
+          gallery: string[] | null
+          hero_image: string | null
+          id: string
+          included: string[] | null
+          itinerary_id: string | null
+          name: string
+          not_included: string[] | null
+          package_id: string
+          position: number
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          attractions?: string[] | null
+          company_id: string
+          created_at?: string
+          description_html?: string | null
+          gallery?: string[] | null
+          hero_image?: string | null
+          id?: string
+          included?: string[] | null
+          itinerary_id?: string | null
+          name: string
+          not_included?: string[] | null
+          package_id: string
+          position?: number
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          attractions?: string[] | null
+          company_id?: string
+          created_at?: string
+          description_html?: string | null
+          gallery?: string[] | null
+          hero_image?: string | null
+          id?: string
+          included?: string[] | null
+          itinerary_id?: string | null
+          name?: string
+          not_included?: string[] | null
+          package_id?: string
+          position?: number
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "package_seasons_package_id_fkey"
             columns: ["package_id"]
             isOneToOne: false
             referencedRelation: "packages"

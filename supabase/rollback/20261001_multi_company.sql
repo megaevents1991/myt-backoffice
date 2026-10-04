@@ -12,12 +12,13 @@
 --   20261002130000_tours_live_sale_status
 --   20261003100000_tours_online_bookings
 --   20261003120000_tours_departure_origin_flight
+--   20261004100000_tours_package_seasons
 --
 -- This file lives OUTSIDE supabase/migrations on purpose: the CLI never runs it.
 -- Run it by hand (SQL editor or psql) only when the migrations must be undone,
--- then mark the thirteen versions as reverted so the history matches the schema:
---   npx supabase migration repair --status reverted 20261003120000 20261003100000 20261002130000 20261002120000 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
--- and remove (or revert the commit of) the thirteen migration files on master,
+-- then mark the fourteen versions as reverted so the history matches the schema:
+--   npx supabase migration repair --status reverted 20261004100000 20261003120000 20261003100000 20261002130000 20261002120000 20261002110000 20261002100000 20261001100600 20261001100500 20261001100400 20261001100300 20261001100200 20261001100100 20261001100000
+-- and remove (or revert the commit of) the fourteen migration files on master,
 -- otherwise the next push applies them again.
 --
 -- Everything here is new since the migrations: no Mega Events data is deleted.
@@ -25,6 +26,29 @@
 -- original block_status check back.
 
 begin;
+
+-- 14. seasons of a tour -----------------------------------------------------
+-- Undoes 20261004100000. The site views read the season: <schema>.departures
+-- selects season_id and <schema>.package_seasons reads the table, so both are
+-- dropped here first. The dates keep their season word (tours.departures.season);
+-- only the season rows and what they said instead of the tour page are lost.
+-- Run alone: after this block, run the "create or replace function
+-- public.provision_company" block of 20261003100000_tours_online_bookings.sql
+-- (it ends with reprovision_all_companies()), which puts <schema>.departures
+-- back without season_id. In a full rollback section 12 does that.
+do $rb14$
+declare s text;
+begin
+  for s in select schema_name from public.companies loop
+    execute format('drop view if exists %I.package_seasons', s);
+    execute format('drop view if exists %I.departures cascade', s);
+  end loop;
+end
+$rb14$;
+drop trigger if exists departures_season_sync on tours.departures;
+drop function if exists tours.departure_season_sync();
+alter table tours.departures drop column if exists season_id;
+drop table if exists tours.package_seasons;
 
 -- 13. departures remember their flight --------------------------------------
 -- Undoes 20261003120000 alone too (run just this line). The departures stay;
