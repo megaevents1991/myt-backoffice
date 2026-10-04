@@ -9,7 +9,7 @@
  * the day or the status, which is the only way off the list. `dryRun` = the full report,
  * nothing mailed.
  */
-import { appOrigin, sendMail } from "@/lib/email";
+import { DEFAULT_FROM, appOrigin, sendMail } from "@/lib/email";
 import { escapeHtml } from "@/lib/services/task-mention-notify";
 import { israelDate } from "@/lib/tasks/reminders";
 import {
@@ -42,18 +42,19 @@ export interface FollowUpReminderSummary {
   errors: string[];
 }
 
-/** Who gets the reminder: NEXT_SECRET_FOLLOW_UP_REMINDER_TO (comma-separated), else the admin
- *  mailbox the other daily summaries go to. */
+/** Alon's Mega mailbox (Dor, 04.10: "send it to Alon's Mega mail") - the same address every
+ *  system mail is sent from. */
+const DEFAULT_TO = DEFAULT_FROM;
+
+/** Who gets the reminder: Alon's Mega mailbox, unless NEXT_SECRET_FOLLOW_UP_REMINDER_TO
+ *  (comma-separated) names other addresses. An override with no usable address in it falls
+ *  back to the default - a typo in an env var must not silence the reminder. */
 export function followUpReminderRecipients(): string[] {
-  const raw =
-    process.env.NEXT_SECRET_FOLLOW_UP_REMINDER_TO?.trim() ||
-    process.env.NEXT_SECRET_ADMIN_EMAIL?.trim() ||
-    "";
-  const addresses = raw
+  const addresses = (process.env.NEXT_SECRET_FOLLOW_UP_REMINDER_TO ?? "")
     .split(/[,;\s]+/)
     .map((part) => part.trim().toLowerCase())
     .filter((part) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(part));
-  return [...new Set(addresses)];
+  return addresses.length > 0 ? [...new Set(addresses)] : [DEFAULT_TO];
 }
 
 function buildMail(rows: FollowUpRow[], today: string) {
@@ -141,10 +142,6 @@ export async function runFollowUpReminder(options: {
   if (waiting.length === 0) return summary;
 
   const recipients = followUpReminderRecipients();
-  if (recipients.length === 0) {
-    summary.errors.push("no recipient: set NEXT_SECRET_FOLLOW_UP_REMINDER_TO or NEXT_SECRET_ADMIN_EMAIL");
-    return summary;
-  }
   if (options.dryRun) {
     summary.mails = recipients.map((to) => ({ to, outcome: "dry-run" }));
     return summary;
