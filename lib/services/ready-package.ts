@@ -186,7 +186,7 @@ export type VariantResult =
   | { ok: false; reason: string; transient: boolean };
 
 type Piece =
-  | { ok: true; info: JsonObject | null; skipped: boolean; perPerson: number | null; note?: string }
+  | { ok: true; info: JsonObject | null; skipped: boolean; perPerson: number | null; note?: string; image?: string | null }
   | { ok: false; reason: string; transient: boolean };
 
 async function resolveFlight(
@@ -351,6 +351,7 @@ async function resolveHotel(
     skipped: false,
     perPerson: match.option.price / pax,
     note: match.note,
+    image: match.option.image,
   };
 }
 
@@ -410,6 +411,7 @@ function assembleVariant(
     hotel_order_info: hotel.info,
     hotel_skipped: hotel.skipped,
     price_per_person: pricePerPerson,
+    ...(hotel.image ? { hotel_image: hotel.image } : {}),
     built_at: new Date().toISOString(),
     ...(notes ? { note: notes } : {}),
   };
@@ -592,6 +594,8 @@ export type Composition = {
   hotel_order_info: JsonObject | null;
   hotel_skipped: boolean;
   num_travelers: number;
+  /** Rides into the first variant only (see ReadyVariant.hotel_image). */
+  hotel_image?: string | null;
 };
 
 export type CreateHouseResult =
@@ -624,6 +628,7 @@ export async function createHousePackage(input: {
     hotel_order_info: composition.hotel_order_info,
     hotel_skipped: composition.hotel_skipped,
     price_per_person: Number.isFinite(price) && price > 0 ? price : null,
+    ...(composition.hotel_image ? { hotel_image: composition.hotel_image } : {}),
     built_at: new Date().toISOString(),
   };
   const variants: ReadyVariants = { [String(spec.defaultTravelers)]: first };
@@ -779,7 +784,7 @@ export async function composeAuto(input: {
       skipped: false,
       perPerson: Number(offer.price) / Math.max(1, Number(offer.numOfTravelers) || pax),
     },
-    { ok: true, info: option.snapshot as JsonObject, skipped: false, perPerson: option.price / pax },
+    { ok: true, info: option.snapshot as JsonObject, skipped: false, perPerson: option.price / pax, image: option.image },
   );
   return {
     ok: true,
@@ -791,6 +796,7 @@ export async function composeAuto(input: {
       hotel_order_info: variant.hotel_order_info,
       hotel_skipped: variant.hotel_skipped,
       num_travelers: pax,
+      hotel_image: variant.hotel_image ?? null,
     },
   };
 }

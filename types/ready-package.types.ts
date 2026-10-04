@@ -61,6 +61,8 @@ export type ReadyVariant = {
   hotel_skipped: boolean;
   /** Site price per traveller for this size, USD. Null when it could not be computed. */
   price_per_person: number | null;
+  /** A photo of the hotel for the site's package view (online hotels only; never part of the order). */
+  hotel_image?: string | null;
   built_at: string;
   /** Something the builder had to settle for ("the room changed, cheapest with breakfast taken"). */
   note?: string;

@@ -125,8 +125,9 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
     if (!settle(res) || !res.ok || !res.data.view) return;
     setChoosing(false);
     setPicked(null);
-    const { maxTravelers, defaultTravelers } = res.data.view;
-    await priceSizes(targetSizes(maxTravelers).filter((n) => n !== defaultTravelers));
+    // Every size, the built one included: the adopted composition may be days old, and a fresh
+    // search is what gives it today's price (and the hotel's photo).
+    await priceSizes(targetSizes(res.data.view.maxTravelers));
   };
 
   const run = async (label: string, action: () => Promise<ReadyActionResult>): Promise<boolean> => {
