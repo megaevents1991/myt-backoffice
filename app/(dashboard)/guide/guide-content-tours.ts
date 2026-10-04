@@ -28,8 +28,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Build the tour in \"Add Tour\" (below): its page, and in \"Series & Route\" its code - the tour code. Leave \"Dates\" empty.", "בונים את הטיול ב-\"Add Tour\" (למטה): העמוד שלו, וב-\"Series & Route\" הקוד שלו - קוד הטיול. משאירים את \"Dates\" ריק."),
           t("Open [New series](/offline-flights/series/new), tick \"Organized tour\" and type the tour code. A code that does not exist yet asks for \"New tour name\" and creates the tour as a draft. Fill the flights and click \"Create N flight(s)\".", "פותחים [סדרה חדשה](/offline-flights/series/new), מסמנים \"Organized tour\" ומקלידים את קוד הטיול. קוד שעוד לא קיים מבקש \"New tour name\" ויוצר את הטיול כטיוטה. ממלאים את הטיסות ולוחצים \"Create N flight(s)\"."),
-          t("Every flight becomes a sub-tour (a date) of the tour, with the flight's dates, route and seats, as a draft without prices. The answer lists what was created; \"Set prices in Pricing\" opens the sheet.", "כל טיסה הופכת לתת-טיול (תאריך) של הטיול, עם התאריכים, המסלול והמושבים של הטיסה, כטיוטה בלי מחירים. התשובה מפרטת מה נוצר; \"Set prices in Pricing\" פותח את הטבלה."),
-          t("In [Pricing](/tours/pricing) type the six room prices of each sub-tour (or paste them from Excel), tick \"On site\" and \"Save\". Then \"Revalidate Pages\".", "ב[תמחור](/tours/pricing) מקלידים את ששת מחירי החדר של כל תת-טיול (או מדביקים מאקסל), מסמנים \"On site\" ו-\"Save\". ואז \"Revalidate Pages\"."),
+          t("Every flight becomes a sub-tour (a date) of the tour, with the flight's dates, route and seats, as a draft without prices. The answer lists what was created; \"Set prices in Departures\" opens the sheet.", "כל טיסה הופכת לתת-טיול (תאריך) של הטיול, עם התאריכים, המסלול והמושבים של הטיסה, כטיוטה בלי מחירים. התשובה מפרטת מה נוצר; \"Set prices in Departures\" פותח את הטבלה."),
+          t("In [Departures](/tours/departures?view=prices) → \"Prices\" type the six room prices of each sub-tour (or paste them from Excel); on \"Departures\" give each date its \"Season\", tick \"On site\" and \"Save\". Then \"Revalidate Pages\".", "ב[יציאות](/tours/departures?view=prices) ← \"Prices\" מקלידים את ששת מחירי החדר של כל תת-טיול (או מדביקים מאקסל); ב-\"Departures\" נותנים לכל תאריך \"Season\", מסמנים \"On site\" ו-\"Save\". ואז \"Revalidate Pages\"."),
         ],
       },
       {
@@ -411,7 +411,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Edit a tour", "לערוך טיול"),
         steps: [
-          t("The tabs: \"Details\", \"Images\", \"Description\", \"Itinerary\", \"Dates & Prices\", \"Hotels\", \"FAQ\", \"SEO\", \"Categories & Tags\". \"Ready for the site\" above them says which one still needs work.", "הלשוניות: \"Details\", \"Images\", \"Description\", \"Itinerary\", \"Dates & Prices\", \"Hotels\", \"FAQ\", \"SEO\", \"Categories & Tags\". \"Ready for the site\" מעליהן אומר איזו עוד צריכה עבודה."),
+          t("The tabs: \"Details\", \"Images\", \"Description\", \"Itinerary\", \"Seasons\", \"Dates & Prices\", \"Hotels\", \"FAQ\", \"SEO\", \"Categories & Tags\". \"Ready for the site\" above them says which one still needs work.", "הלשוניות: \"Details\", \"Images\", \"Description\", \"Itinerary\", \"Seasons\", \"Dates & Prices\", \"Hotels\", \"FAQ\", \"SEO\", \"Categories & Tags\". \"Ready for the site\" מעליהן אומר איזו עוד צריכה עבודה."),
+          t("\"Details\" opens with \"Series code\": the English code of the series (CBP), shown large. A tour with no series yet gets its code there (\"Save Code\"); the code is locked once dates were built from it.", "\"Details\" נפתחת ב-\"Series code\": הקוד באנגלית של הסדרה (CBP), בגדול. טיול שעוד אין לו סדרה מקבל שם את הקוד (\"Save Code\"); הקוד ננעל אחרי שנבנו ממנו תאריכים."),
           t("\"Description\" holds the \"Tour description\", \"Attractions\", \"Included\", \"Not included\", \"Additional info\", \"Booking terms\" and \"Cancellation terms\". \"Images\" holds the hero, the card image and the \"Gallery\" (its order is the site's order).", "ב-\"Description\": \"Tour description\", \"Attractions\", \"Included\", \"Not included\", \"Additional info\", \"Booking terms\" ו-\"Cancellation terms\". ב-\"Images\": תמונת הראש, תמונת הכרטיס וה-\"Gallery\" (הסדר שלה הוא הסדר באתר)."),
           t("A text field offers \"HTML & Preview\" or \"Visual Editor\" (the visual editor turns off when the HTML is too complex for it).", "שדה טקסט מציע \"HTML & Preview\" או \"Visual Editor\" (העורך הוויזואלי נכבה כשה-HTML מורכב מדי בשבילו)."),
           t("Click \"Save\" in the bottom bar, then \"Revalidate Pages\" when you are done.", "לוחצים \"Save\" בסרגל התחתון, ואז \"Revalidate Pages\" כשמסיימים."),
@@ -429,6 +430,9 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       t("\"No content\" tours were created by the data import so their series has a page. Add a description or an image and save - it then counts as a tour with content.", "טיולים ב-\"No content\" נוצרו בייבוא הנתונים כדי שלסדרה שלהם יהיה עמוד. מוסיפים תיאור או תמונה ושומרים - ואז הוא נחשב טיול עם תוכן."),
       t("Itinerary variants: every tour has a main itinerary; a variant serves dates sold in the other direction. On the site, each date shows the variant whose arrival and return cities match its route.", "גרסאות מסלול: לכל טיול יש מסלול ראשי; גרסה משרתת תאריכים שנמכרים בכיוון השני. באתר, כל תאריך מציג את הגרסה שערי הנחיתה והחזרה שלה מתאימות למסלול שלו."),
       t("The \"Hotels\" tab copies a hotel from the catalog into the tour. A later edit in the catalog does not change the tour - update it here too.", "לשונית \"Hotels\" מעתיקה מלון מהקטלוג לטיול. עריכה מאוחרת בקטלוג לא משנה את הטיול - מעדכנים גם כאן."),
+      t("\"Seasons\": a season is more than a word on a date. \"New Season\" → its name, \"Itinerary of this season\", then tick \"Dates of this season\" and \"Create Season\". Under \"What this season says instead of the tour page\" fill only what differs - description, attractions, included / not included, images; an empty field shows the tour's own. \"Add Promotion to its dates\" puts a discount or a gift on every upcoming date of the season.", "\"Seasons\": עונה היא יותר ממילה על תאריך. \"New Season\" ← השם שלה, \"Itinerary of this season\", ואז מסמנים את \"Dates of this season\" ו-\"Create Season\". תחת \"What this season says instead of the tour page\" ממלאים רק מה ששונה - תיאור, אטרקציות, כלול / לא כלול, תמונות; שדה ריק מציג את של הטיול. \"Add Promotion to its dates\" שם הנחה או מתנה על כל תאריך עתידי של העונה."),
+      t("A date with no season is counted on the \"Seasons\" tab and marked on the \"Ready for the site\" strip. On the site, a customer who picks a date sees the content of that date's season.", "תאריך בלי עונה נספר בלשונית \"Seasons\" ומסומן בפס \"Ready for the site\". באתר, לקוח שבוחר תאריך רואה את התוכן של העונה של אותו תאריך."),
+      t("\"Itinerary\" → a variant → \"Dates on this variant\": tick the dates that run it and \"Save the dates of this variant\". A date given no variant shows its season's variant, else the main itinerary.", "\"Itinerary\" ← גרסה ← \"Dates on this variant\": מסמנים את התאריכים שרצים עליה ו-\"Save the dates of this variant\". תאריך שלא קיבל גרסה מציג את הגרסה של העונה שלו, ואם אין - את המסלול הראשי."),
     ],
     rules: [
       t("An inactive tour is left out of the site build, whatever its dates say.", "טיול לא פעיל לא נכנס לבנייה של האתר, לא משנה מה מצב התאריכים שלו."),
@@ -442,97 +446,62 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     id: "tours-departures",
     nav: "/tours/departures",
     productType: "tours",
-    title: t("Departures - every date on one board", "יציאות - כל התאריכים בלוח אחד"),
+    title: t("Departures - every date and price in one sheet", "יציאות - כל התאריכים והמחירים בטבלה אחת"),
     intro: t(
-      "Every departure date of every tour, grouped by series - the board that replaced the team's sheet. Publish, set the sale status, date tags and double-room price right in the row; click a code for the full departure card.",
-      "כל תאריך יציאה של כל טיול, מקובץ לפי סדרה - הלוח שהחליף את הגיליון של הצוות. מפרסמים, קובעים סטטוס מכירה, תגיות תאריך ומחיר חדר זוגי ישר בשורה; לחיצה על קוד פותחת את כרטיס היציאה המלא.",
+      "Departures and Pricing are one table. The organized tours as a spreadsheet: the tour's name as a header row, its dates (sub-tours) under it, then the next tour. \"Departures\", \"Prices\" and \"Details\" only switch the columns. The same sheet sits in each tour page, on the \"Dates & Prices\" tab. Nothing is saved until you click \"Save\".",
+      "היציאות והתמחור הם טבלה אחת. הטיולים המאורגנים כגיליון: שם הטיול כשורת כותרת, התאריכים (תתי-הטיול) שלו מתחתיו, ואז הטיול הבא. \"Departures\", \"Prices\" ו-\"Details\" רק מחליפים עמודות. אותה טבלה נמצאת בכל עמוד טיול, בלשונית \"Dates & Prices\". שום דבר לא נשמר עד שלוחצים \"Save\".",
     ),
     howTo: [
       {
-        title: t("Find the dates you need", "למצוא את התאריכים"),
+        title: t("The three column sets", "שלוש קבוצות העמודות"),
         steps: [
-          t("Open [Departures](/tours/departures). It starts on this year and next; the filters pick the sale status and \"Published\" / \"Draft\".", "פותחים את [היציאות](/tours/departures). הלוח נפתח על השנה הזאת והבאה; המסננים בוחרים סטטוס מכירה ו-\"Published\" / \"Draft\"."),
-          t("\"More filters\": season, series, tour page, and the switches \"No live flight\", \"No price\", \"Upcoming only\", \"Deleted\". \"Clear\" resets.", "\"More filters\": עונה, סדרה, עמוד טיול, והמתגים \"No live flight\", \"No price\", \"Upcoming only\", \"Deleted\". \"Clear\" מאפס."),
-          t("The filters live in the address - copy it to share the same view. Click a series heading to fold it; \"Collapse all\" / \"Expand all\".", "המסננים נשמרים בכתובת - מעתיקים אותה כדי לשתף את אותה תצוגה. לחיצה על כותרת סדרה מקפלת אותה; \"Collapse all\" / \"Expand all\"."),
+          t("Open [Departures](/tours/departures). \"Departures\" shows what the site shows on each date: \"On site\", the dates and route, \"Season\", \"Status\", \"Labels\" (up to 3), \"Bar/Bat Mitzvah\", the double-room price, \"Discount\", \"Gift\", the flight, the seats and the \"Docket\".", "פותחים את [היציאות](/tours/departures). \"Departures\" מציג את מה שהאתר מציג על כל תאריך: \"On site\", התאריכים והמסלול, \"Season\", \"Status\", \"Labels\" (עד 3), \"Bar/Bat Mitzvah\", מחיר החדר הזוגי, \"Discount\", \"Gift\", הטיסה, המושבים ו-\"Docket\"."),
+          t("\"Prices\" shows the six room prices per person (double room first) next to the flight's cost. \"Details\" shows the currency, capacity, \"Season\", \"Itinerary\", \"Card badge\", meeting time, transfers, ages, senior discount and notes.", "\"Prices\" מציג את ששת מחירי החדר לאדם (זוגי ראשון) ליד עלות הטיסה. \"Details\" מציג מטבע, קיבולת, \"Season\", \"Itinerary\", \"Card badge\", שעת התכנסות, העברות, גילאים, הנחת גיל הזהב והערות."),
+          t("Filters: search by tour or code, the tour, the season, the status, and the ticks \"No season\", \"No flight\", \"No double price\", \"Not on the site\", \"Past dates\".", "מסננים: חיפוש לפי טיול או קוד, הטיול, העונה, הסטטוס, והסימונים \"No season\", \"No flight\", \"No double price\", \"Not on the site\", \"Past dates\"."),
         ],
       },
-      {
-        title: t("Work in the row", "לעבוד בתוך השורה"),
-        steps: [
-          t("\"Published\": the switch puts the date on the site or takes it off (after the next Revalidate Pages).", "\"Published\": המתג מעלה את התאריך לאתר או מוריד אותו (אחרי ה-Revalidate Pages הבא)."),
-          t("\"Sale status\": \"Open\", \"Guaranteed\", \"Last places\", \"Sold out\", \"Closed\". To stop selling a date, set \"Closed\".", "\"Sale status\": \"Open\", \"Guaranteed\", \"Last places\", \"Sold out\", \"Closed\". כדי להפסיק למכור תאריך, בוחרים \"Closed\"."),
-          t("\"Date tags\" and \"Double-room price\": click to edit; Enter saves and moves to the next row, like a spreadsheet.", "\"Date tags\" ו-\"Double-room price\": לוחצים לעריכה; Enter שומר ועובר לשורה הבאה, כמו בגיליון."),
-          t("\"Active promotion\", \"Flight\" and \"Seats\" open the matching tab of the date's card.", "\"Active promotion\", \"Flight\" ו-\"Seats\" פותחים את הלשונית המתאימה בכרטיס התאריך."),
-        ],
-      },
-      {
-        title: t("Edit a date in its card", "לערוך תאריך בכרטיס שלו"),
-        steps: [
-          t("Click the code. At the top: \"Published on the site\", the sale status, and \"Delete\" (or \"Restore\").", "לוחצים על הקוד. למעלה: \"Published on the site\", סטטוס המכירה, ו-\"Delete\" (או \"Restore\")."),
-          t("\"General\": dates and route, date labels and the red \"Card badge\", age rules, flight and meeting time, Docket and capacity → \"Save Changes\".", "\"General\": תאריכים ומסלול, תגיות התאריך ו-\"Card badge\" האדום, כללי גיל, טיסה ושעת התכנסות, Docket וקיבולת ← \"Save Changes\"."),
-          t("\"Prices\": the six room prices with \"What the customer sees\" → \"Save Prices\". \"Promotions\": \"Add Promotion\" (type, value, \"Valid until\", \"Show on the date card\").", "\"Prices\": ששת מחירי החדר עם \"What the customer sees\" ← \"Save Prices\". \"Promotions\": \"Add Promotion\" (סוג, ערך, \"Valid until\", \"Show on the date card\")."),
-          t("\"Flights\": \"Find Matching Blocks\" → direction and seats → \"Allocate\". \"Reservations\": allocated, sold, left, and \"Add Reservation\".", "\"Flights\": \"Find Matching Blocks\" ← כיוון ומושבים ← \"Allocate\". \"Reservations\": מוקצה, נמכר, נשאר, ו-\"Add Reservation\"."),
-        ],
-      },
-      {
-        title: t("Many dates at once, and new dates", "הרבה תאריכים בבת אחת, ותאריכים חדשים"),
-        steps: [
-          t("Tick rows → \"Publish\", \"Unpublish\", \"Set sale status…\", \"Copy Prices\" or \"Add Promotion\". Rows that could not change are listed with the reason.", "מסמנים שורות ← \"Publish\", \"Unpublish\", \"Set sale status…\", \"Copy Prices\" או \"Add Promotion\". שורות שלא השתנו מופיעות עם הסיבה."),
-          t("\"Add Departure\": series, departure and return date, season → \"Create Departure\" (a draft).", "\"Add Departure\": סדרה, תאריך יציאה וחזרה, עונה ← \"Create Departure\" (טיוטה)."),
-          t("\"More\" → \"Paste Prices\": paste rows from a sheet - a code, then the six prices → \"Apply N Rows\". \"More\" also has \"Series & Seasons\" and \"Export to Excel\".", "\"More\" ← \"Paste Prices\": מדביקים שורות מגיליון - קוד ואחריו ששת המחירים ← \"Apply N Rows\". ב-\"More\" יש גם \"Series & Seasons\" ו-\"Export to Excel\"."),
-        ],
-      },
-    ],
-    points: [
-      t("A date's code is the series code + month + two-digit day: BBC on 3 July = BBC703.", "קוד התאריך הוא קוד הסדרה + חודש + יום בשתי ספרות: BBC ב-3 ביולי = BBC703."),
-      t("\"Seats\" reads Allocated / Sold / Left. Only live blocks count (\"Confirmed by airline\", \"Handed to operations\", \"Ticketed\"); sold = the reservations.", "\"Seats\" מציג Allocated / Sold / Left. רק בלוקים חיים נספרים (\"Confirmed by airline\", \"Handed to operations\", \"Ticketed\"); נמכר = ההזמנות."),
-      t("A date with flight seats shows \"Last places\" on the site at 5 seats or fewer and \"Sold out\" at none - on its own, and back again when a cancellation frees seats. The board marks it (\"Sold out on site\"). \"Closed\" and a \"Sold out\" you set by hand always win.", "תאריך עם מושבי טיסה מוצג באתר כ-\"Last places\" כשנשארו 5 מושבים או פחות, וכ-\"Sold out\" כשלא נשאר - לבד, וחוזר כשביטול מפנה מקום. הלוח מסמן את זה (\"Sold out on site\"). \"Closed\" ו-\"Sold out\" שקבעתם ידנית תמיד גוברים."),
-      t("A percent-off-the-order discount and a fixed discount per traveler can't be active together on one date.", "הנחה באחוזים על ההזמנה והנחה קבועה לנוסע לא יכולות להיות פעילות יחד על אותו תאריך."),
-      t("A tours agent sees this board read-only: published dates only, with no cost, docket or notes.", "סוכן טיולים רואה את הלוח הזה לקריאה בלבד: רק תאריכים מפורסמים, בלי עלויות, docket או הערות."),
-    ],
-    rules: [
-      t("A date is published only with dates, both cities, a currency and a double-room price.", "תאריך מתפרסם רק עם תאריכים, שתי הערים, מטבע ומחיר חדר זוגי."),
-      t("Delete is soft: the date leaves the site and comes back through the \"Deleted\" filter → \"Restore\", as a draft.", "המחיקה רכה: התאריך יורד מהאתר וחוזר דרך המסנן \"Deleted\" ← \"Restore\", כטיוטה."),
-    ],
-    links: [{ label: t("Departures board", "לוח היציאות"), href: "/tours/departures" }],
-  },
-  {
-    id: "tours-pricing",
-    nav: "/tours/pricing",
-    productType: "tours",
-    title: t("Pricing - every sub-tour in one sheet", "תמחור - כל תתי-הטיול בטבלה אחת"),
-    intro: t(
-      "The organized tours as one sheet: the tour's name as a header row, its sub-tours (dates) under it, then the next tour. The same sheet sits in each tour page, on the \"Dates & Prices\" tab. Nothing is saved until you click \"Save\".",
-      "הטיולים המאורגנים כטבלה אחת: שם הטיול כשורת כותרת, תתי-הטיול (התאריכים) שלו מתחתיו, ואז הטיול הבא. אותה טבלה נמצאת בכל עמוד טיול, בלשונית \"Dates & Prices\". שום דבר לא נשמר עד שלוחצים \"Save\".",
-    ),
-    howTo: [
       {
         title: t("Edit like a spreadsheet", "לערוך כמו בגיליון"),
         steps: [
-          t("Open [Pricing](/tours/pricing). \"Prices\" shows the six room prices per person (double room first), the currency, on the site or not, the status, the seats and the flight's cost; \"Details\" shows capacity, labels, meeting time, baggage, meal, transfers, connections, ages, senior discount and notes.", "פותחים את [התמחור](/tours/pricing). \"Prices\" מציג את ששת מחירי החדר לאדם (זוגי ראשון), המטבע, באתר או לא, הסטטוס, המושבים ועלות הטיסה; \"Details\" מציג קיבולת, תגיות, שעת התכנסות, כבודה, ארוחה, העברות, קונקשן, גילאים, הנחת גיל הזהב והערות."),
-          t("Click a cell and type, or double-click or press Enter; Enter saves the cell and goes down, Tab goes right, Escape cancels. Delete empties a cell. A tick cell switches with Enter or the space bar.", "לוחצים על תא ומקלידים, או לחיצה כפולה או Enter; Enter שומר את התא ויורד, Tab זז ימינה, Escape מבטל. Delete מרוקן תא. תא של וי מתחלף ב-Enter או ברווח."),
+          t("Click a cell and type, or double-click or press Enter; Enter saves the cell and goes down, Tab goes right, Escape cancels. Delete empties a cell. A tick cell switches with Enter or the space bar; \"Season\", \"Status\" and \"Itinerary\" open a list.", "לוחצים על תא ומקלידים, או לחיצה כפולה או Enter; Enter שומר את התא ויורד, Tab זז ימינה, Escape מבטל. Delete מרוקן תא. תא של וי מתחלף ב-Enter או ברווח; \"Season\", \"Status\" ו-\"Itinerary\" פותחים רשימה."),
           t("Paste a block copied from Excel or Google Sheets: it fills from the cell you stand on, to the right and down.", "מדביקים בלוק שהועתק מאקסל או מגוגל שיטס: הוא ממלא מהתא שעומדים עליו, ימינה ולמטה."),
           t("Changed cells turn yellow and a bar shows how many changes wait - \"Save\" or \"Discard\". A cell with a value that means nothing turns red and blocks Save until it is fixed.", "תאים ששונו נצבעים צהוב ופס מראה כמה שינויים מחכים - \"Save\" או \"Discard\". תא עם ערך שאין לו משמעות נצבע אדום וחוסם את Save עד שמתקנים."),
         ],
       },
       {
-        title: t("Many sub-tours at once", "הרבה תתי-טיול בבת אחת"),
+        title: t("Many dates at once", "הרבה תאריכים בבת אחת"),
         steps: [
-          t("Tick rows (or a tour's header row for all its dates) → \"Set for selected\": a column and a value; for prices also \"Add\" an amount or \"Add %\" (a negative number lowers).", "מסמנים שורות (או את שורת הכותרת של טיול לכל התאריכים שלו) ← \"Set for selected\": עמודה וערך; למחירים גם \"Add\" סכום או \"Add %\" (מספר שלילי מוריד)."),
+          t("Tick rows (or a tour's header row for all its dates) → \"Set for selected\": a column and a value - the season, the itinerary, the labels, a price, the discount, the gift, any column. For prices also \"Add\" an amount or \"Add %\" (a negative number lowers).", "מסמנים שורות (או את שורת הכותרת של טיול לכל התאריכים שלו) ← \"Set for selected\": עמודה וערך - העונה, המסלול, התגיות, מחיר, ההנחה, המתנה, כל עמודה. למחירים גם \"Add\" סכום או \"Add %\" (מספר שלילי מוריד)."),
           t("With rows ticked, pasting one value puts it in that column of every ticked row.", "כשיש שורות מסומנות, הדבקה של ערך אחד שמה אותו בעמודה הזאת בכל השורות המסומנות."),
-          t("Filters: search by tour or code, season, \"No double price\", \"Not on the site\", and \"Past dates\".", "מסננים: חיפוש לפי טיול או קוד, עונה, \"No double price\", \"Not on the site\", ו-\"Past dates\"."),
+          t("What a group of dates says differently from the tour - its description, included / not included, attractions, images, itinerary - is set once on the season (the tour's \"Seasons\" tab) and reaches every date of that season.", "מה שקבוצת תאריכים אומרת אחרת מהטיול - התיאור, כלול / לא כלול, אטרקציות, תמונות, מסלול - נקבע פעם אחת בעונה (לשונית \"Seasons\" של הטיול) ומגיע לכל תאריך של העונה."),
+        ],
+      },
+      {
+        title: t("A date's card, and new dates", "כרטיס התאריך, ותאריכים חדשים"),
+        steps: [
+          t("Click a code: the date's card opens over the sheet. \"General\": dates and route, the season, the itinerary version, labels and the red \"Card badge\", ages, meeting time, Docket and capacity. \"Prices\", \"Promotions\" (every kind, with \"Valid until\"), \"Flights\" and \"Reservations\".", "לוחצים על קוד: כרטיס התאריך נפתח מעל הטבלה. \"General\": תאריכים ומסלול, העונה, גרסת המסלול, תגיות ו-\"Card badge\" האדום, גילאים, שעת התכנסות, Docket וקיבולת. \"Prices\", \"Promotions\" (כל הסוגים, עם \"Valid until\"), \"Flights\" ו-\"Reservations\"."),
+          t("\"Add Departure\": series, departure and return date → \"Create Departure\" (a draft). A date opened this way has no flight yet: price it, put it on the site and sell it; link the flight when it exists.", "\"Add Departure\": סדרה, תאריך יציאה וחזרה ← \"Create Departure\" (טיוטה). לתאריך שנפתח כך אין עדיין טיסה: מתמחרים, מעלים לאתר ומוכרים; את הטיסה מקשרים כשהיא קיימת."),
+          t("\"More\" → \"Classic board\" opens the old board: vacation packages, deleted dates (\"Deleted\" → \"Restore\") and \"Export to Excel\".", "\"More\" ← \"Classic board\" פותח את הלוח הישן: חבילות נופש, תאריכים מחוקים (\"Deleted\" ← \"Restore\") ו-\"Export to Excel\"."),
         ],
       },
     ],
     points: [
-      t("The prices are final, per person, and include the flight. The \"Flight\" column is what the flight costs per seat - to see the margin; it is never added to the price.", "המחירים סופיים, לאדם, וכוללים טיסה. עמודת \"Flight\" היא העלות של הטיסה למושב - כדי לראות רווח; היא אף פעם לא מתווספת למחיר."),
-      t("A code opens the sub-tour's card in a new tab (promotions, flights, sales). The dates themselves change there, or follow the flight they were made from.", "קוד פותח את הכרטיס של התת-טיול בלשונית חדשה (הטבות, טיסות, מכירות). את התאריכים עצמם משנים שם, או שהם עוקבים אחרי הטיסה שממנה נוצרו."),
+      t("A date's code is the series code + month + two-digit day: BBC on 3 July = BBC703.", "קוד התאריך הוא קוד הסדרה + חודש + יום בשתי ספרות: BBC ב-3 ביולי = BBC703."),
+      t("The prices are final, per person, and include the flight. \"Flight cost\" is what the flight costs per seat - to see the margin; it is never added to the price.", "המחירים סופיים, לאדם, וכוללים טיסה. \"Flight cost\" היא העלות של הטיסה למושב - כדי לראות רווח; היא אף פעם לא מתווספת למחיר."),
+      t("\"Season\" is one of the tour's seasons. A date with \"No season\" is marked in amber, counted on the tour's header row and on its \"Ready for the site\" strip - assign it before it goes live.", "\"Season\" היא אחת מהעונות של הטיול. תאריך עם \"No season\" מסומן בכתום, נספר בשורת הכותרת של הטיול ובפס \"Ready for the site\" שלו - משייכים אותו לפני שהוא עולה לאוויר."),
+      t("\"Labels\" holds up to 3 labels the site shows on the date. \"Bar/Bat Mitzvah\" marks the date as a bar / bat mitzvah date - the site shows \"מועד בר/בת מצווה\" on it.", "\"Labels\" מחזיק עד 3 תגיות שהאתר מציג על התאריך. \"Bar/Bat Mitzvah\" מסמן את התאריך כמועד בר/בת מצווה - האתר מציג עליו \"מועד בר/בת מצווה\"."),
+      t("\"Discount\" is a discount per traveler on that date - the site shows the old price crossed out. \"Gift\" is a gift of that date, shown on its card on the site. Other promotions (a percent, a named discount, the series') show under \"More promotions\" and are edited in the card.", "\"Discount\" היא הנחה לנוסע בתאריך הזה - האתר מציג את המחיר הישן מחוק. \"Gift\" היא מתנה של התאריך, שמופיעה על הכרטיס שלו באתר. הטבות אחרות (אחוז, הנחה עם שם, של הסדרה) מופיעות ב-\"More promotions\" ונערכות בכרטיס."),
+      t("\"Flight\" is read from the flight block itself, like its times, baggage and stops - nothing about the flight is typed here. \"No flight yet\" is not an error: the date can be on the site, which then says \"פרטי הטיסות יעלו בהמשך\".", "\"Flight\" נקרא מבלוק הטיסה עצמו, כמו השעות, הכבודה והעצירות - שום דבר על הטיסה לא מוקלד כאן. \"No flight yet\" אינו שגיאה: התאריך יכול להיות באתר, שכותב אז \"פרטי הטיסות יעלו בהמשך\"."),
+      t("A date with flight seats shows \"Last places\" on the site at 5 seats or fewer and \"Sold out\" at none - on its own, and back again when a cancellation frees seats. \"Closed\" and a \"Sold out\" you set yourself always stay.", "תאריך עם מושבי טיסה מציג באתר \"Last places\" ב-5 מושבים או פחות ו-\"Sold out\" כשלא נשארו - לבד, וחוזר כשביטול מפנה מושבים. \"Closed\" ו-\"Sold out\" שקבעתם בעצמכם תמיד נשארים."),
       t("Each saved row is checked again: a row someone else changed since you opened the sheet is not saved and is listed with the reason, your edit kept.", "כל שורה שנשמרת נבדקת שוב: שורה שמישהו אחר שינה מאז שפתחתם את הטבלה לא נשמרת ומופיעה עם הסיבה, והעריכה שלכם נשארת."),
+      t("A tours agent sees the old board read-only: published dates only, with no cost, docket or notes.", "סוכן טיולים רואה את הלוח הישן לקריאה בלבד: רק תאריכים מפורסמים, בלי עלות, docket או הערות."),
     ],
     rules: [
-      t("A sub-tour on the site keeps its double-room price and everything the site needs; to empty it, untick \"On site\" in the same save.", "תת-טיול שבאתר שומר את מחיר החדר הזוגי וכל מה שהאתר צריך; כדי לרוקן אותו, מורידים את הסימון \"On site\" באותה שמירה."),
+      t("A date is published only with dates, both cities, a currency and a double-room price. A flight is not required.", "תאריך מתפרסם רק עם תאריכים, שתי הערים, מטבע ומחיר חדר זוגי. טיסה אינה חובה."),
+      t("A date on the site keeps its double-room price and everything the site needs; to empty it, untick \"On site\" in the same save.", "תאריך שבאתר שומר את מחיר החדר הזוגי וכל מה שהאתר צריך; כדי לרוקן אותו, מורידים את הסימון \"On site\" באותה שמירה."),
+      t("A percent-off-the-order discount and a fixed discount per traveler can't be active together on one date.", "הנחה באחוזים על ההזמנה והנחה קבועה לנוסע לא יכולות להיות פעילות יחד באותו תאריך."),
     ],
-    links: [{ label: t("Pricing", "תמחור"), href: "/tours/pricing" }],
+    links: [{ label: t("Departures", "יציאות"), href: "/tours/departures" }],
   },
   {
     id: "tours-flights",
@@ -540,8 +509,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     productType: "tours",
     title: t("Offline flights - the company's flight blocks", "טיסות אופליין - בלוקי הטיסה של החברה"),
     intro: t(
-      "The group seats the company holds with airlines. The same screen as Mega Events, showing only this company's flights; a block is allocated to tour dates, never linked to events.",
-      "המושבים הקבוצתיים שהחברה מחזיקה מול חברות התעופה. אותו מסך של מגה אירועים, שמציג רק את הטיסות של החברה הזאת; בלוק מוקצה לתאריכי טיולים, אף פעם לא מקושר לאירועים.",
+      "The group seats the company holds with airlines, as a spreadsheet: every flight block, series by series, edited like the departures sheet. \"Details\" is the flight itself and its costs; \"Operations\" is the work on the block - status, seats and every deadline. Both start with \"Tour code\": the sub-tours the flight serves (BBC712). A block is allocated to tour dates, never linked to events.",
+      "המושבים הקבוצתיים שהחברה מחזיקה מול חברות התעופה, כגיליון: כל בלוק טיסה, סדרה אחרי סדרה, בעריכה כמו בטבלת היציאות. \"Details\" הוא הטיסה עצמה והעלויות שלה; \"Operations\" הוא העבודה על הבלוק - סטטוס, מושבים וכל המועדים. שתיהן נפתחות ב-\"Tour code\": תתי-הטיול שהטיסה משרתת (BBC712). בלוק מוקצה לתאריכי טיולים, אף פעם לא מקושר לאירועים.",
     ),
     howTo: [
       {
@@ -570,7 +539,9 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     ],
     points: [
       t("A live block - \"Confirmed by airline\", \"Handed to operations\", \"Ticketed\" - is what counts as a date's seats and turns its \"Flights\" step green.", "בלוק חי - \"Confirmed by airline\", \"Handed to operations\", \"Ticketed\" - הוא מה שנספר כמושבים של תאריך ומדליק בירוק את השלב \"Flights\"."),
-      t("\"Columns\" → \"Group Operations\" adds the block's fields: season / pool, contract, first cancellation date, names due, cancellation fee and more. \"Export inventory\" downloads the list.", "\"Columns\" ← \"Group Operations\" מוסיף את שדות הבלוק: עונה / מאגר, חוזה, מועד ביטול ראשון, מועד שמות, דמי ביטול ועוד. \"Export inventory\" מוריד את הרשימה."),
+      t("The sheet: click a cell and type, paste a block from Excel, tick rows and \"Set for selected\"; changed cells turn yellow until \"Save\". \"Details\": series, airline, both legs (flight, from, to, times), costs, baggage kg, stops, supplier, PNR. \"Operations\": \"Status\" (the next step of the block), \"Seats\", \"Ordered\", \"Allocated\", \"Free\", \"Requested\", \"Option until\", \"Cancel 1\", \"Cancel 2\", \"Names\", \"Ticketing\", \"Payment\", \"Handled by\", \"Reviewed\".", "הטבלה: לוחצים על תא ומקלידים, מדביקים בלוק מאקסל, מסמנים שורות ו-\"Set for selected\"; תאים ששונו נצבעים צהוב עד \"Save\". \"Details\": סדרה, חברת תעופה, שתי הרגליים (טיסה, מ-, אל, שעות), עלויות, כבודה בק\"ג, עצירות, ספק, PNR. \"Operations\": \"Status\" (הצעד הבא של הבלוק), \"Seats\", \"Ordered\", \"Allocated\", \"Free\", \"Requested\", \"Option until\", \"Cancel 1\", \"Cancel 2\", \"Names\", \"Ticketing\", \"Payment\", \"Handled by\", \"Reviewed\"."),
+      t("In \"Operations\" a deadline turns amber within a week and red once it has passed. Lowering \"Seats\" releases seats to the airline and is written to the block's timeline; it can't go below the seats already allocated. Declining or cancelling a block needs a reason - click the flight number and do it on the flight's page.", "ב-\"Operations\" מועד נצבע כתום בתוך שבוע ואדום אחרי שעבר. הורדת \"Seats\" משחררת מושבים לחברת התעופה ונכתבת בציר הזמן של הבלוק; אי אפשר לרדת מתחת למושבים שכבר הוקצו. דחייה או ביטול של בלוק דורשים סיבה - לוחצים על מספר הטיסה ועושים זאת בעמוד הטיסה."),
+      t("\"Tour code\" links to the sub-tour's card. \"No sub-tour\" marks a flight no date takes seats from yet (filter: \"No sub-tour\"). \"Classic table\" opens the old table: the column picker, delete / restore and \"Export inventory\".", "\"Tour code\" מקשר לכרטיס של התת-טיול. \"No sub-tour\" מסמן טיסה שאף תאריך עוד לא לוקח ממנה מושבים (מסנן: \"No sub-tour\"). \"Classic table\" פותח את הטבלה הישנה: בחירת עמודות, מחיקה / שחזור ו-\"Export inventory\"."),
       t("The block card also holds \"Deadlines\" (\"Recompute from Contract\", \"Record Deposit\"), \"Costs\" and a \"Timeline\" of every step.", "בכרטיס הבלוק יש גם \"Deadlines\" (\"Recompute from Contract\", \"Record Deposit\"), \"Costs\" ו-\"Timeline\" של כל צעד."),
     ],
     rules: [
