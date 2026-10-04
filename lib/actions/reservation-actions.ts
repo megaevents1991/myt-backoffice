@@ -1,7 +1,10 @@
 "use server";
 
 import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
-import { supabase } from "@/lib/supabase-server";
+import { supabase, supabaseTyped } from "@/lib/supabase-server";
+import { followUpDateOnSave, isFollowUpStatus } from "@/lib/reservations/follow-up";
+import { isMissingColumn } from "@/lib/services/reservation-follow-ups";
+import { israelDate } from "@/lib/tasks/reminders";
 import { megaEventsFlights } from "@/lib/flights-scope";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { getAgentLabelsForReservations } from "@/lib/portal-attribution";
@@ -34,11 +37,11 @@ export async function getReservations(): Promise<ReservationListRow[]> {
   // Paged: PostgREST hard-caps every response at 1000 rows, so the old single
   // fetch silently dropped everything past the cap once the table outgrew it
   // (1331 rows as of 2026-08-19 → the 331 oldest were invisible).
-  const { rows, truncated, error } = await fetchPaged<ReservationListDbRow>(
+  const read = (columns: string) => fetchPaged<ReservationListDbRow>(
     () =>
       supabase
         .from("reservations")
-        .select(RESERVATION_LIST_COLUMNS)
+        .select(columns)
         // Agent payment-link DRAFTS are not reservations yet (אזור סוכן V2,
         // 2026-08-27: "לא פותח אצלנו הזמנה חדשה בבק אופיס - רק כאשר הלקוח
         // שילם או ביקש לפצל תשלום"). Such a draft is a 24Save hold whose
@@ -54,6 +57,12 @@ export async function getReservations(): Promise<ReservationListRow[]> {
         .order("id", { ascending: false }),
     20000,
   );
+  // follow_up_date is read separately from the fixed list so a deploy that beat
+  // its migration still loads the table - every row simply has no call-back day.
+  let { rows, truncated, error } = await read(`${RESERVATION_LIST_COLUMNS},follow_up_date`);
+  if (error && isMissingColumn(error)) {
+    ({ rows, truncated, error } = await read(RESERVATION_LIST_COLUMNS));
+  }
 
   if (error) throw error;
   if (truncated)
@@ -222,11 +231,80 @@ export async function createReservation(
  */
 const RELEASED_STATUSES = new Set(["Cancelled", "Lost", "24Save"]);
 
+/**
+ * The call-back day a save leaves behind (lib/reservations/follow-up.ts): a reservation
+ * that ENTERS Follow-up always gets one, and a date the form sends is cleaned to a real day
+ * or null. A save that touches neither the status nor the date passes through untouched.
+ * Before the column is migrated (or when the read fails) the date is dropped from the save,
+ * so the rest of it still goes through - the row then reads "No date".
+ */
+async function withFollowUpDate(
+  id: number,
+  patch: Partial<Reservation>,
+): Promise<Partial<Reservation>> {
+  if (patch.status === undefined && patch.follow_up_date === undefined) return patch;
+  const { data: prev, error } = await supabaseTyped
+    .from("reservations")
+    .select("status,follow_up_date")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !prev) {
+    if (error && !isMissingColumn(error)) {
+      console.error("withFollowUpDate:", JSON.stringify(error));
+    }
+    const rest = { ...patch };
+    delete rest.follow_up_date;
+    return rest;
+  }
+  const next = followUpDateOnSave({
+    prevStatus: prev.status,
+    nextStatus: patch.status,
+    current: prev.follow_up_date,
+    requested: patch.follow_up_date,
+    today: israelDate(new Date()),
+  });
+  return next === undefined ? patch : { ...patch, follow_up_date: next };
+}
+
+/**
+ * Bulk status change: the reservations that ENTER Follow-up, grouped by the call-back day
+ * they should get. Read BEFORE the status write (the rule needs the previous status).
+ * Any failure = an empty map: the status change itself must never depend on this.
+ */
+async function followUpDatesForBulk(
+  ids: number[],
+  status: string,
+): Promise<Map<string, number[]>> {
+  const byDate = new Map<string, number[]>();
+  if (!isFollowUpStatus(status)) return byDate;
+  const { data, error } = await supabaseTyped
+    .from("reservations")
+    .select("id,status,follow_up_date")
+    .in("id", ids);
+  if (error) {
+    if (!isMissingColumn(error)) console.error("followUpDatesForBulk:", JSON.stringify(error));
+    return byDate;
+  }
+  const today = israelDate(new Date());
+  for (const row of data ?? []) {
+    const next = followUpDateOnSave({
+      prevStatus: row.status,
+      nextStatus: status,
+      current: row.follow_up_date,
+      today,
+    });
+    if (typeof next !== "string" || next === row.follow_up_date) continue;
+    byDate.set(next, [...(byDate.get(next) ?? []), row.id]);
+  }
+  return byDate;
+}
+
 export async function updateReservation(
   id: number,
-  reservation: Partial<Reservation>,
+  input: Partial<Reservation>,
 ) {
   await requireStaff();
+  const reservation = await withFollowUpDate(id, input);
   const auditBefore = await fetchBefore("reservations", "id", id, reservation);
   // Detect transition into a released status so we can return inventory
   let toRelease: Reservation | null = null;
@@ -347,6 +425,8 @@ export async function updateReservationsStatus(ids: number[], status: string) {
     );
   }
 
+  const followUpDates = await followUpDatesForBulk(ids, status);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from("reservations")
@@ -355,6 +435,17 @@ export async function updateReservationsStatus(ids: number[], status: string) {
     .select();
 
   if (error) throw error;
+
+  // The status is saved; a call-back day that fails to save leaves the row "No date",
+  // which still shows as waiting - never a reason to fail the whole change.
+  for (const [date, datedIds] of followUpDates) {
+    const { error: dateError } = await supabaseTyped
+      .from("reservations")
+      .update({ follow_up_date: date })
+      .in("id", datedIds);
+    if (dateError) console.error("updateReservationsStatus follow_up_date:", JSON.stringify(dateError));
+  }
+
   await logAudit({
     action: "update",
     entityType: "reservation",

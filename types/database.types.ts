@@ -4021,6 +4021,7 @@ export type Database = {
           exchange_rate_usd_ils_100: number | null
           final_purchase_price_ils: number | null
           flight_order_info: Json
+          follow_up_date: string | null
           gtmIdnts: Json | null
           hotel_order_info: Json
           hotel_segments: Json | null
@@ -4064,6 +4065,7 @@ export type Database = {
           exchange_rate_usd_ils_100?: number | null
           final_purchase_price_ils?: number | null
           flight_order_info: Json
+          follow_up_date?: string | null
           gtmIdnts?: Json | null
           hotel_order_info: Json
           hotel_segments?: Json | null
@@ -4107,6 +4109,7 @@ export type Database = {
           exchange_rate_usd_ils_100?: number | null
           final_purchase_price_ils?: number | null
           flight_order_info?: Json
+          follow_up_date?: string | null
           gtmIdnts?: Json | null
           hotel_order_info?: Json
           hotel_segments?: Json | null

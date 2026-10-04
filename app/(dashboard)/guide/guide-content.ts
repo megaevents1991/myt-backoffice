@@ -184,6 +184,16 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Follow-up - a customer waiting for a call back", "Follow-up - לקוח שמחכה שנחזור אליו"),
+        steps: [
+          t("Set the booking to \"Follow-up\": tick the row(s), \"Set status…\" → \"Follow-up\" → \"Apply\", or pick it in \"Edit Reservation\". It gets a call-back day by itself - the next working day (Sunday-Thursday).", "מעבירים את ההזמנה ל-\"Follow-up\": מסמנים את השורה/ות, \"Set status…\" ← \"Follow-up\" ← \"Apply\", או בוחרים ב-\"Edit Reservation\". היא מקבלת יום חזרה לבד - יום העבודה הבא (ראשון-חמישי)."),
+          t("Change the day in the date box under the amber \"Follow-up\" tag in the \"Status\" column (or \"Call the customer back on\" in \"Edit Reservation\") - picking a day saves at once. Write what was agreed in \"Comment\".", "משנים את היום בתיבת התאריך מתחת לתג הכתום \"Follow-up\" בעמודת \"Status\" (או ב-\"Call the customer back on\" ב-\"Edit Reservation\") - בחירת יום נשמרת מיד. את מה שסוכם כותבים ב-\"Comment\"."),
+          t("The tag next to the day says where it stands: \"Today\", \"2 days late\" (red), \"In 3 days\", or \"No date\" for a booking that never got a day.", "התג ליד היום אומר איפה הוא עומד: \"Today\", \"2 days late\" (אדום), \"In 3 days\", או \"No date\" להזמנה שלא נקבע לה יום."),
+          t("Click \"Follow-up\" above the [Reservations](/reservations) list to see only that pile, longest overdue first. In the full list those rows are tinted.", "לוחצים \"Follow-up\" מעל רשימת [ההזמנות](/reservations) כדי לראות רק את הערימה הזו, האיחור הארוך קודם. ברשימה המלאה השורות האלה צבועות."),
+          t("Every working morning a mail lists the customers to call that day: the day is today, has passed, or was never set. A booking leaves it when you move the day forward or change the status (\"Paid\" / \"Lost\").", "כל בוקר של יום עבודה יוצא מייל עם הלקוחות שצריך לחזור אליהם באותו יום: היום הגיע, עבר, או לא נקבע. הזמנה יורדת ממנו כשמזיזים את היום קדימה או משנים סטטוס (\"Paid\" / \"Lost\")."),
+        ],
+      },
+      {
         title: t("Complete passenger details for ticketing", "להשלים פרטי נוסעים להנפקה"),
         steps: [
           t("Open the booking and click \"Edit Reservation\" (or the pencil icon in the list).", "פותחים את ההזמנה ולוחצים \"Edit Reservation\" (או אייקון העיפרון ברשימה)."),
@@ -213,7 +223,9 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("Open the [Dashboard](/dashboard).", "פותחים את [הדשבורד](/dashboard)."),
           t("A red \"Google reviews sync is broken\" banner at the top means new Google reviews stopped reaching the site. Admins click \"Run sync now\" (admins); everyone else tells an admin.", "באנר אדום \"Google reviews sync is broken\" למעלה אומר שביקורות גוגל חדשות לא מגיעות לאתר. מנהלים לוחצים \"Run sync now\" (מנהלים); כל השאר מעדכנים מנהל."),
           t("The top cards count \"Events\" (7+ days away), \"Agents\", \"Partners\", \"Paid Reservations\" and \"Pending Reservations\".", "הכרטיסים העליונים סופרים \"Events\" (7+ ימים קדימה), \"Agents\", \"Partners\", \"Paid Reservations\" ו-\"Pending Reservations\"."),
-          t("\"Pending Reservations\" is the follow-up pile. Open [Reservations](/reservations) and sort by \"Status\" to work through it.", "\"Pending Reservations\" היא ערימת המעקב. פותחים את [ההזמנות](/reservations) וממיינים לפי \"Status\" כדי לעבור עליה."),
+          t("\"Pending Reservations\" are bookings not paid yet. Open [Reservations](/reservations) and sort by \"Status\" to work through them.", "\"Pending Reservations\" הן הזמנות שעוד לא שולמו. פותחים את [ההזמנות](/reservations) וממיינים לפי \"Status\" כדי לעבור עליהן."),
+          t("A banner \"N customers are waiting for a call back\" appears while a booking in \"Follow-up\" is due today, overdue (the banner turns red) or has no day. \"Open the list\" goes to the pile.", "באנר \"N customers are waiting for a call back\" מופיע כל עוד יש הזמנה ב-\"Follow-up\" שהיום שלה הגיע, עבר (הבאנר נהיה אדום) או שאין לה יום. \"Open the list\" מוביל לערימה."),
+          t("The \"Follow-up\" card under the top cards lists who to call back, in order: day tag, name, event and comment, and the phone number (click to dial). The name opens the booking.", "הכרטיס \"Follow-up\" מתחת לכרטיסים העליונים מציג למי לחזור, לפי הסדר: תג היום, שם, אירוע והערה, ומספר הטלפון (לחיצה מחייגת). השם פותח את ההזמנה."),
           t("\"My tasks\" lists up to 6 of your open tasks, most urgent first (dot = priority, date = due date). \"All tasks\" opens the full board. A row tagged \"לבדיקה שלך\" is a task you opened that its assignee finished - ticking it approves it. Tasks you sent to review yourself leave the list until they come back.", "\"My tasks\" מציג עד 6 משימות פתוחות שלכם, הדחופה קודם (נקודה = עדיפות, תאריך = יעד). \"All tasks\" פותח את הלוח המלא. שורה עם תג \"לבדיקה שלך\" היא משימה שפתחתם והמשובץ סיים - סימון וי מאשר אותה. משימות שהעברתם בעצמכם לבדיקה יורדות מהרשימה עד שהן חוזרות."),
         ],
       },

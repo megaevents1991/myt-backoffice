@@ -619,6 +619,39 @@ these tables.
   one sheet per response. `PrintBar` names the tab (= default file name) and opens the print
   dialog once fonts and the logo loaded. Language: Hebrew unless the form is English-only.
 
+### Reservation Follow-up (2026-10-04)
+
+A reservation in status `Follow-up` = a customer waiting for us to get back to them. The status
+existed (edit page + bulk "Set status…"); what was added is the DAY and everything that makes the
+pile stand out. Mega Events only (`/dashboard`, `/reservations`) - not the tours companies.
+
+- **`reservations.follow_up_date`** (date, null; migration `20261004210000`; `database.types.ts`
+  hand-patched). Backoffice-only - main never reads or writes it, and it is read only WHILE the
+  status is Follow-up, so leaving the status clears nothing.
+- **Every rule is pure in `lib/reservations/follow-up.ts`** (`scripts/reservation-follow-up-selftest.ts`):
+  `isFollowUpStatus` (the status box takes free text - "follow up", "FollowUp" count),
+  `followUpState` = `overdue` / `today` / `undated` / `upcoming` against the date in ISRAEL,
+  `needsCallNow` = everything but `upcoming` (a row nobody ever dated still counts as waiting),
+  `nextWorkingDay` (Sunday-Thursday), `compareFollowUps` (longest overdue, today, undated, nearest),
+  and `followUpDateOnSave` - a reservation that ENTERS Follow-up always gets a day: the one picked,
+  else a stored day still ahead, else the next working day. The edit form sends the whole row back,
+  so a past day identical to the stored one is a leftover of an older round, not a choice.
+- **Writes:** `updateReservation` (`withFollowUpDate`) and `updateReservationsStatus`
+  (`followUpDatesForBulk`, read BEFORE the status write) apply that rule; the inline date box in the
+  table calls `setFollowUpDate` (`lib/actions/reservation-follow-up-actions.ts`, explicit column,
+  audited). A date that fails to save never fails the status change - the row reads "No date".
+- **Reads:** ONE loader, `loadFollowUps` (`lib/services/reservation-follow-ups.ts`, session-free,
+  THROWS on a failed read - an empty list would read as "nobody is waiting") feeds the dashboard and
+  the mail. Dashboard: `FollowUpAlert` (only while someone `needsCallNow`; red once overdue) and the
+  `FollowUpWidget` card under the top cards - both from one `useFollowUps()` read in the page
+  (`components/follow-up-widget.tsx`). Table: coloured status tag, the day + its label under a
+  Follow-up tag, tinted rows, and a view **All / Follow-up (N)** kept in the URL
+  (`/reservations?status=Follow-up` - what the dashboard and the mail link to).
+- **Morning mail:** cron `followUpReminder` (below).
+- **Deploy order does not matter:** every read of the column falls back on 42703 / PGRST204
+  (`isMissingColumn`) - the list and the pile load undated, the date box answers "available after
+  the system update".
+
 ### Cron Jobs (Vercel)
 
 Defined in `vercel.json`. All cron routes are secured via `guardCronRoute()`
@@ -642,6 +675,7 @@ fallback for manual triggers:
 - `price-light-ours` - nightly 02:40 UTC (after `base-price-sync` finishes its own Amadeus searches): describes OUR package contents for the /price-light comparison - the flight and hotel the pricing rule would buy today (cheapest direct / connection past the $300 gap via `fetchFlightOffers` + `pickFlightPrice`; cheapest 3★ via main's `/api/hotels`; a linked offline flight/hotel wins) - into `events.light_detail.ours`. Never-described first, then older than `OUR_OFFER_REFRESH_DAYS` (7) or last lost to a TRANSIENT error (HTTP/API/timeout - retried next night, not left blank a week), `OUR_OFFER_CONCURRENCY` 3 events at a time in a 260s budget (~5-8s per event). **Hotel searches run through ONE queue** whatever the event concurrency, with one retry on 429/5xx: main's `/api/hotels` fails under parallel load (first full pass lost 308 of 426 hotels; each answered alone). Flights: 423 of 426 described. Reads the rule, writes no price. `?dry_run=1` still SEARCHES (that is what is being tested) but writes nothing; `?limit=N` caps a manual run. Dor 2026-09-14: the extra Amadeus/hotel calls are fine nightly and on demand.
 - `price-light-nightly` - 00:15 UTC, before `base-price-sync`: refreshes the `livetickets` competitor table from `live_events` first (it's an API read, never crawled, budgeted at 60s so it can't eat the whole run); then pass 1 snapshots every live future event and applies the "ירידת מחיר" tag (drop ≥$50 vs ~14 days ago, shown 14 days); pass 2 rule-matches every event against the stored catalogs and recomputes `events.light_package` / `light_ticket` / `light_detail`. Both passes go least-recently-checked first and share one 270s budget measured from the top of the run, so a cutoff mid-pass-1 is recorded (`snapshotsRemaining`) rather than silently skipped. **Follow-ups at 03:30 and 05:30 UTC** (`?followup=1`, 2026-09-24): same queue, no LiveTickets refresh, no second snapshot for an event already snapshotted today - the lights the first run did not reach (it covered ~60 of 430 a night, so a light sat ~8 days); a follow-up mails only on a red move or an error. Revalidates main (both targets) once if anything changed; summary email (which also reports `aiCalls` used out of `AI_CALLS_PER_RUN`). `?dry_run=1` = zero writes **and zero AI** - dry runs pass `judge: null`, so a report pointed at prod never spends money. Spec `docs/superpowers/specs/2026-09-09-price-light-design.md`; rules + constants ONLY in `lib/services/price-light.ts`.
 - `taskOverdueAlerts` - Sunday-Thursday 06:30 UTC (`30 6 * * 0-4`, the office's working days): every task past its due date whose assignee has said nothing since is raised to whoever opened it, ONE mail per opener, again every `OVERDUE_REALERT_DAYS` (3) while it stays silent (`overdue_alert` activity rows are the dedupe). Reads every company's tasks on purpose. `?dry_run=1` = full report, nothing mailed or written. See "Editors assign + reminders + late alerts" under Tasks Hub.
+- `followUpReminder` - Sunday-Thursday 05:15 UTC (`15 5 * * 0-4`, morning in Israel): ONE mail with every reservation in `Follow-up` whose customer is waiting today - call-back day today, passed, or never set (`needsCallNow`); a later day stays out until it comes; nobody waiting = no mail (`lib/services/follow-up-reminder.ts`). A daily digest on purpose - no dedupe: a customer stays in it until the day is moved or the status changes. Recipients = `NEXT_SECRET_FOLLOW_UP_REMINDER_TO` (comma-separated), else `NEXT_SECRET_ADMIN_EMAIL`. `?dry_run=1` = full report (reservation ids + labels, no customer details), nothing mailed. See "Reservation Follow-up".
 - `weeklyTaskGen` - daily 06:00 UTC (`vercel.json` `0 6 * * *`); each rule runs only on its own UTC weekday (`dow`): runs every active `task_rules` row through its domain's generator (`lib/services/task-rules/*`) and `weekly-task-plan.ts`'s pure decision logic, creating one weekly-digest task per rule (source `recurring`) or one task per item under that domain's native source (`price_light`/`price_review`/`creative_gap`). Per-item rules are capped at 25 creates per run (`PER_ITEM_MAX_PER_RUN`) with one summary mail per assignee; the 270s budget is checked per created task. A generator that fails to load its data THROWS - never silently returns an empty list, which would auto-close open digests that are still valid. `?dry_run=1` reports what it would create with zero writes. See "Tasks Hub" above.
 
 ### Environment Variables
@@ -1062,6 +1096,9 @@ NEXT_SECRET_SESSION_SECRET=
 NEXT_PUBLIC_APP_URL=
 NEXT_SECRET_EMAIL_SERVER_USER=
 NEXT_SECRET_EMAIL_SERVER_PASSWORD=
+# Optional. Who gets the morning Follow-up reminder (cron followUpReminder), comma-separated.
+# Unset -> NEXT_SECRET_ADMIN_EMAIL.
+NEXT_SECRET_FOLLOW_UP_REMINDER_TO=
 # Optional. Google Places API (New) key for the daily googleReviewsSync cron;
 # when unset the cron reads Elfsight's public feed instead (works today, but
 # unofficial). NEXT_SECRET_GOOGLE_PLACE_ID is optional and defaults to the

@@ -12,10 +12,13 @@ import { MyTasksWidget } from "@/components/my-tasks-widget";
 import { CreativeGapsPanel } from "@/components/creative-gaps-panel";
 import { GoogleReviewsHealthAlert } from "@/components/google-reviews-health-alert";
 import { PriceLightWidget } from "@/components/price-light-widget";
+import { FollowUpAlert, FollowUpWidget, useFollowUps } from "@/components/follow-up-widget";
 
 export default function Dashboard() {
   const [error, setError] = useState<Error | null>(null);
   const { toast } = useToast();
+  // One read for the banner and the card - they can never disagree about who is waiting.
+  const followUps = useFollowUps();
 
   useEffect(() => {
     // Add window level error handler
@@ -60,10 +63,16 @@ export default function Dashboard() {
       {/* Only renders when the Google-reviews cron failed / went stale. */}
       <GoogleReviewsHealthAlert />
 
+      {/* Only renders while a customer in Follow-up is waiting for a call back today. */}
+      <FollowUpAlert data={followUps} />
+
       {/* Cards Section */}
       <Suspense fallback={<DashboardSkeleton />}>
         <DashboardCards />
       </Suspense>
+
+      {/* Reservations in Follow-up - who to call back, in the order to do it. */}
+      <FollowUpWidget data={followUps} />
 
       {/* Statistics Section */}
       <h2 className="text-xl font-semibold tracking-tight mt-8">Statistics</h2>

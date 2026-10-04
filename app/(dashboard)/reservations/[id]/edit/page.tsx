@@ -25,6 +25,13 @@ import {
 } from "@/lib/actions/reservation-actions";
 import { getEvent } from "@/lib/actions/event-actions";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
+import { israelDate } from "@/lib/tasks/reminders";
+import {
+  followUpLabel,
+  isFollowUpDate,
+  isFollowUpStatus,
+  nextWorkingDay,
+} from "@/lib/reservations/follow-up";
 import {
   Dialog,
   DialogContent,
@@ -131,10 +138,18 @@ export default function EditReservationPage({
     } else {
       setReservation((prev) => {
         if (!prev) return prev;
-        return {
+        const next = {
           ...prev,
           [name]: value,
         };
+        // Picking Follow-up proposes the day to call back (the next working day) unless a
+        // day that is still ahead is already set - the save applies the same rule.
+        if (name === "status" && isFollowUpStatus(value)) {
+          const today = israelDate(new Date());
+          const ahead = isFollowUpDate(prev.follow_up_date) && prev.follow_up_date >= today;
+          if (!ahead) next.follow_up_date = nextWorkingDay(today);
+        }
+        return next;
       });
     }
   };
@@ -298,6 +313,31 @@ export default function EditReservationPage({
                 />
               </div>
             </div>
+
+            {/* Follow-up = the customer is waiting for us. The day lands on the dashboard
+                and in the morning reminder from then until the status changes. */}
+            {isFollowUpStatus(reservation.status) && (
+              <div className="space-y-2 rounded-md border border-warning/40 bg-warning-muted/50 p-3">
+                <Label htmlFor="follow_up_date">Call the customer back on</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id="follow_up_date"
+                    name="follow_up_date"
+                    type="date"
+                    value={reservation.follow_up_date ?? ""}
+                    onChange={handleChange}
+                    className="w-auto bg-background"
+                  />
+                  <span className="text-sm font-medium">
+                    {followUpLabel(reservation.follow_up_date, israelDate(new Date()), "en")}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  From that day the reservation shows on the dashboard and in the morning
+                  reminder mail, until the day is moved or the status changes.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="main_contact_phone_number">Phone</Label>

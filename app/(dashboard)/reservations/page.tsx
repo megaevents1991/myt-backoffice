@@ -1,6 +1,9 @@
 "use client";
 
+import { Suspense } from "react";
+
 import { PageHeader } from "@/components/page-header";
+import { DataTableSkeleton } from "@/components/data-table";
 import { ReservationsTable } from "./reservations-table";
 
 // No "Add Reservation": bookings are written by the customer site at checkout,
@@ -13,7 +16,10 @@ export default function ReservationsPage() {
         description="Customer bookings, written here by the customer site at checkout - one row per order, with its package contents, payment status and the partner it came from. Deleting only marks a row deleted; it stays recoverable."
       />
 
-      <ReservationsTable />
+      {/* The table reads ?status= (useUrlState -> useSearchParams). */}
+      <Suspense fallback={<DataTableSkeleton rows={12} label="Loading reservations" />}>
+        <ReservationsTable />
+      </Suspense>
     </div>
   );
 }

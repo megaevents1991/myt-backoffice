@@ -18,13 +18,93 @@ import {
   softDeleteReservation,
   bulkSoftDeleteReservations,
 } from "@/lib/actions/reservation-actions";
+import { setFollowUpDate } from "@/lib/actions/reservation-follow-up-actions";
 import { useToast } from "@/hooks/use-toast";
-import { useSessionState } from "@/hooks/use-view-state";
+import { useSessionState, useUrlState } from "@/hooks/use-view-state";
 import { useConfirm } from "@/components/confirm-provider";
 import { useAuth } from "@/contexts/auth-context";
+import { FOLLOW_UP_TONE } from "@/components/follow-up-widget";
+import { cn } from "@/lib/utils";
+import { israelDate } from "@/lib/tasks/reminders";
+import {
+  FOLLOW_UP_STATUS,
+  compareFollowUps,
+  followUpDateOnSave,
+  followUpLabel,
+  followUpState,
+  isFollowUpDate,
+  isFollowUpStatus,
+  needsCallNow,
+} from "@/lib/reservations/follow-up";
 
 function isOfflineReservation(r: ReservationListRow) {
   return r.offline_flight_id != null || r.offline_hotel_id != null;
+}
+
+// "Which pile am I looking at" lives in the URL (?status=Follow-up) - the dashboard and the
+// morning mail link straight to it, and a refresh keeps it.
+const STATUS_VIEWS = ["all", FOLLOW_UP_STATUS] as const;
+type StatusView = (typeof STATUS_VIEWS)[number];
+
+const STATUS_TONE: Record<string, string> = {
+  paid: "border-success/30 bg-success-muted text-success",
+  pending: "border-info/30 bg-info-muted text-info",
+  lost: "border-border bg-muted text-muted-foreground",
+  cancelled: "border-border bg-muted text-muted-foreground",
+};
+
+/** Follow-up is the one status that asks for an action, so it is the one that shouts. */
+function statusTone(status: string | null | undefined) {
+  if (isFollowUpStatus(status)) return "border-warning/40 bg-warning-muted text-warning";
+  return STATUS_TONE[(status ?? "").trim().toLowerCase()] ?? "border-border bg-background text-foreground";
+}
+
+/**
+ * The call-back day of a Follow-up row, edited in place. Uncontrolled like the row's other
+ * inline boxes: a picked or fully typed day saves at once, an emptied box saves on blur -
+ * a controlled box would read every half-typed day as "cleared".
+ */
+function FollowUpDay({
+  date,
+  today,
+  onSave,
+}: {
+  date: string | null;
+  today: string;
+  onSave: (next: string | null) => void;
+}) {
+  const state = followUpState(date, today);
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        // Remount when the stored day changes elsewhere (a bulk status change, a failed save).
+        key={date ?? "none"}
+        type="date"
+        aria-label="Call the customer back on"
+        title="The day to call the customer back"
+        defaultValue={date ?? ""}
+        onChange={(e) => {
+          if (isFollowUpDate(e.target.value)) onSave(e.target.value);
+        }}
+        onBlur={(e) => {
+          if (e.target.value === "") onSave(null);
+        }}
+        className={cn(
+          "h-7 rounded-md border bg-background px-1.5 text-xs tabular text-foreground",
+          state === "overdue" && "border-destructive/60",
+          state === "today" && "border-warning/60",
+        )}
+      />
+      <span
+        className={cn(
+          "whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[11px] font-semibold",
+          FOLLOW_UP_TONE[state],
+        )}
+      >
+        {followUpLabel(date, today, "en")}
+      </span>
+    </div>
+  );
 }
 
 export function ReservationsTable() {
@@ -36,6 +116,9 @@ export function ReservationsTable() {
   // Remembered for the browser tab (hooks/use-view-state.ts) - a refresh used to reset both.
   const [offlineOnly, setOfflineOnly] = useSessionState("offlineOnly", false);
   const [showDeleted, setShowDeleted] = useSessionState("showDeleted", false);
+  const [statusView, setStatusView] = useUrlState<StatusView>("status", "all", STATUS_VIEWS);
+  // A call-back day is a day on the office's calendar, whatever the browser's clock says.
+  const today = israelDate(new Date());
   const { toast } = useToast();
   const confirm = useConfirm();
   const { user } = useAuth();
@@ -211,6 +294,20 @@ export function ReservationsTable() {
     }
   }
 
+  /** The call-back day of a Follow-up row. Optimistic; a refused save puts the old day back. */
+  async function handleFollowUpDate(id: number, date: string | null) {
+    const before = reservations.find((r) => r.id === id)?.follow_up_date ?? null;
+    if (before === date) return;
+    setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, follow_up_date: date } : r)));
+    const result = await setFollowUpDate(id, date).catch(() => ({ ok: false as const, error: "Could not save the date." }));
+    if (result.ok) {
+      toast({ title: "Updated", description: date ? "Call-back day saved." : "Call-back day cleared." });
+      return;
+    }
+    setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, follow_up_date: before } : r)));
+    toast({ variant: "destructive", title: "Error", description: result.error });
+  }
+
   /**
    * The SELECTED reservation ids. Keys come straight from rowSelection because
    * the table is keyed by reservation id (getRowId below) - they were row
@@ -275,7 +372,19 @@ export function ReservationsTable() {
 
     try {
       await updateReservationsStatus(selectedIds, bulkStatus);
-      setReservations((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: bulkStatus } : r)));
+      setReservations((prev) =>
+        prev.map((r) => {
+          if (!selectedIds.includes(r.id)) return r;
+          // Same rule the server just applied: a row entering Follow-up gets a call-back day.
+          const day = followUpDateOnSave({
+            prevStatus: r.status,
+            nextStatus: bulkStatus,
+            current: r.follow_up_date,
+            today,
+          });
+          return { ...r, status: bulkStatus, ...(day === undefined ? {} : { follow_up_date: day }) };
+        }),
+      );
       toast({ title: "Status updated", description: `Updated ${selectedIds.length} reservation(s).` });
       setBulkStatus("");
       setRowSelection({});
@@ -439,18 +548,39 @@ export function ReservationsTable() {
         );
       },
       cell: ({ row }) => {
+        const reservation = row.original;
         const status = row.getValue("status") as string;
-        const settlementMethod = row.original.partner_settlement_method;
+        const settlementMethod = reservation.partner_settlement_method;
         return (
-          <div className="flex items-center gap-1.5">
-            {status || "-"}
-            {settlementMethod === "voucher" && (
-              <span
-                className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
-                title="Awaiting voucher from partner - do not call customer for payment"
-              >
-                Voucher
-              </span>
+          <div className="flex flex-col items-start gap-1">
+            <div className="flex items-center gap-1.5">
+              {status ? (
+                <span
+                  className={cn(
+                    "whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold",
+                    statusTone(status),
+                  )}
+                >
+                  {status}
+                </span>
+              ) : (
+                "-"
+              )}
+              {settlementMethod === "voucher" && (
+                <span
+                  className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
+                  title="Awaiting voucher from partner - do not call customer for payment"
+                >
+                  Voucher
+                </span>
+              )}
+            </div>
+            {isFollowUpStatus(status) && (
+              <FollowUpDay
+                date={reservation.follow_up_date ?? null}
+                today={today}
+                onSave={(next) => handleFollowUpDate(reservation.id, next)}
+              />
             )}
           </div>
         );
@@ -539,9 +669,16 @@ export function ReservationsTable() {
     return <DataTableSkeleton rows={12} label="Loading reservations" />;
   }
 
-  const visibleReservations = reservations
+  const listedReservations = reservations
     .filter((r) => showDeleted || !r.is_deleted)
     .filter((r) => !offlineOnly || isOfflineReservation(r));
+  // The Follow-up view is the pile in the order to work it (longest overdue first), not
+  // newest-first like the full list. A column sort the user picks still wins.
+  const followUpReservations = listedReservations
+    .filter((r) => isFollowUpStatus(r.status))
+    .sort((a, b) => compareFollowUps(a, b, today));
+  const visibleReservations =
+    statusView === FOLLOW_UP_STATUS ? followUpReservations : listedReservations;
 
   // Non-superadmins never see the Deleted column - they can't reveal deleted
   // rows via the toggle, so it would only ever read "-".
@@ -570,6 +707,25 @@ export function ReservationsTable() {
       // deleted / Mega only) reorder the rendered rows, and index-keyed
       // selection then resolved to the wrong booking.
       getRowId={(row) => String(row.id)}
+      views={[
+        { id: "all", label: "All", count: listedReservations.length },
+        { id: FOLLOW_UP_STATUS, label: "Follow-up", count: followUpReservations.length },
+      ]}
+      activeView={statusView}
+      onViewChange={(id) => setStatusView(id === FOLLOW_UP_STATUS ? FOLLOW_UP_STATUS : "all")}
+      // A customer waiting for a call back today stands out in the full list too.
+      getRowClassName={(row) => {
+        const r = row.original;
+        if (!isFollowUpStatus(r.status) || r.is_deleted) return undefined;
+        const state = followUpState(r.follow_up_date, today);
+        if (!needsCallNow(state)) return undefined;
+        return state === "overdue" ? "bg-destructive/5" : "bg-warning-muted/50";
+      }}
+      emptyState={
+        statusView === FOLLOW_UP_STATUS
+          ? { title: "Nobody is waiting for a call back", description: "No reservation is in Follow-up right now." }
+          : undefined
+      }
       rowSelection={rowSelection}
       onRowSelectionChange={(selection) => setRowSelection(selection)}
       bulkActions={

@@ -53,6 +53,8 @@ import {
 import { getRoomsByReservationId } from "@/lib/actions/offline-hotel-room-actions";
 import type { OfflineHotelRoom } from "@/types/offline-hotel.types";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
+import { israelDate } from "@/lib/tasks/reminders";
+import { followUpLabel, isFollowUpStatus } from "@/lib/reservations/follow-up";
 
 // Visible marker for reservations whose flight/hotel came from our own
 // offline inventory (the `flights` / `offline_hotels` tables) rather than
@@ -322,6 +324,15 @@ export default function ReservationDetailsPage({
               <div>
                 <p className="text-sm font-medium">Status</p>
                 <p className="text-lg">{reservation.status}</p>
+                {/* Follow-up: the day we said we would get back to the customer. */}
+                {isFollowUpStatus(reservation.status) && (
+                  <p className="text-sm font-medium text-warning">
+                    Call back: {reservation.follow_up_date ?? "no day set"}
+                    {reservation.follow_up_date
+                      ? ` (${followUpLabel(reservation.follow_up_date, israelDate(new Date()), "en")})`
+                      : ""}
+                  </p>
+                )}
               </div>
 
               <div>

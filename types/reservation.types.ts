@@ -104,6 +104,9 @@ export type Reservation = {
   // Soft delete, same convention as events - "MM-DD-YYYY" date string, null =
   // not deleted. See softDeleteReservation/bulkSoftDeleteReservations.
   is_deleted?: string | null;
+  // The day staff will get back to the customer ("YYYY-MM-DD"), read only while
+  // status is "Follow-up" - lib/reservations/follow-up.ts. Main never writes it.
+  follow_up_date?: string | null;
 };
 
 /**
@@ -131,6 +134,7 @@ export type ReservationListRow = Pick<
   | "offline_hotel_id"
   | "partner_settlement_method"
   | "is_deleted"
+  | "follow_up_date"
 > & {
   has_payment_info: boolean;
   /** Which office agent the booking is credited to (utm_touches, resolved
