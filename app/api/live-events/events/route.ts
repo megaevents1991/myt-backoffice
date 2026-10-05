@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase-server';
+import { guardAdminRoute } from '@/lib/auth/guards';
 import { LiveEventDB } from '@/types/live-events.types';
 
 export async function GET(request: NextRequest) {
+  // Staff only - until 05.10 this answered anyone on the internet, no session needed
+  // (the whole supplier catalog, 5.8MB a call).
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const eventType = searchParams.get('type'); // sports_live_event_dynamic / music_live_event_dynamic

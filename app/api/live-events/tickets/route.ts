@@ -1,6 +1,7 @@
 // app/api/live-events/tickets/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
+import { guardAdminRoute } from '@/lib/auth/guards';
 
 /**
  * Live Tickets API endpoint for LIVE events
@@ -55,6 +56,11 @@ async function fetchLiveAPI<T = unknown>(endpoint: string): Promise<T> {
 }
 
 export async function GET(request: NextRequest) {
+  // Staff only - until 05.10 this answered anyone on the internet, no session needed
+  // (each call spends a live request on the supplier's API).
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const eventIdParam = searchParams.get('event_id');

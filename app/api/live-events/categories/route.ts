@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase-server';
+import { guardAdminRoute } from '@/lib/auth/guards';
 
 export async function GET() {
+  // Staff only - until 05.10 this answered anyone on the internet, no session needed.
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
+
   try {
     const { data, error } = await supabase
       .from('live_categories')

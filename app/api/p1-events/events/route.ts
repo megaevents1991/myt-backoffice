@@ -2,9 +2,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase-server';
+import { guardAdminRoute } from '@/lib/auth/guards';
 import { P1EventDB } from '@/types/p1-events.types';
 
 export async function GET(request: NextRequest) {
+  // Staff only - until 05.10 this answered anyone on the internet, no session needed.
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category');

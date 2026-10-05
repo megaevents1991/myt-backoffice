@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase-server";
+import { guardAdminRoute } from "@/lib/auth/guards";
 
 /**
  * The TixStock browser holds this entire response in memory and filters it in
@@ -42,6 +43,10 @@ function errorMessage(error: unknown): string {
 }
 
 export async function GET(request: NextRequest) {
+  // Staff only - until 05.10 this answered anyone on the internet, no session needed.
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get("query");

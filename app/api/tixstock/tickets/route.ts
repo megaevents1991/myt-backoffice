@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardAdminRoute } from "@/lib/auth/guards";
 
 const TIXSTOCK_API_URL = process.env.NEXT_SECRET_TIXSTOCK_API_URL;
 const TIXSTOCK_TOKEN = process.env.NEXT_SECRET_TIXSTOCK_TOKEN;
 
 export async function GET(request: NextRequest) {
+  // Staff only - until 05.10 this answered anyone on the internet, no session needed
+  // (each call spends a live request on the supplier's API).
+  const denied = await guardAdminRoute();
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const eventId = searchParams.get("event_id");
