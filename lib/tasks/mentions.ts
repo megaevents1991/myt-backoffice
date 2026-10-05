@@ -6,6 +6,14 @@
  *  any script (Hebrew, Arabic, Cyrillic, etc.), checking that the mention is not
  *  glued to a letter/number on either side. Handles edge cases like one label
  *  being a prefix of another (e.g. "@Dor" vs "@Doron", "@דור" vs "@דורון"). */
+/** People in the order a name picker lists them (@mention, reviewers) - by what is shown:
+ *  the display name, else the mail. A copy; the list handed in keeps its own order. */
+export function peopleByName<T extends { display_name: string | null; email: string }>(people: T[]): T[] {
+  return [...people].sort((a, b) =>
+    (a.display_name || a.email).localeCompare(b.display_name || b.email, "he"),
+  );
+}
+
 export function mentionsStillInBody(
   body: string,
   picked: Array<{ id: string; label: string }>

@@ -17,15 +17,10 @@ import {
 import { createTask, setTaskStatus } from "@/lib/actions/task-actions";
 import { canChangeStatus } from "@/lib/tasks/review";
 import { STATUS_LABEL } from "@/lib/tasks/kanban";
+import { subtaskProgress } from "@/lib/tasks/subtasks";
 import type { TaskStatus, TaskWithNames } from "@/types/task.types";
 
 export type StaffOption = { id: string; name: string };
-
-/** Sub-tasks that count toward "x of y done" - a cancelled part is no longer part of the job. */
-export function subtaskProgress(subtasks: TaskWithNames[]): { done: number; total: number } {
-  const live = subtasks.filter((task) => task.status !== "cancelled");
-  return { done: live.filter((task) => task.status === "done").length, total: live.length };
-}
 
 /**
  * One general task split between several people (Alon, 28.09: "טאסק כללי וחלוקה של משימות

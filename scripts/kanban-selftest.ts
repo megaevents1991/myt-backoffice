@@ -7,6 +7,7 @@ import {
   groupTasks,
   parseBoardParam,
 } from "../lib/tasks/kanban";
+import { generalTasks, partsByTask, subtaskProgress } from "../lib/tasks/subtasks";
 import type { TaskWithNames } from "../types/task.types";
 
 let failed = 0;
@@ -134,6 +135,54 @@ check("drag: admin, any task", canDragCard("admin", false), true);
 check("drag: superadmin, own task", canDragCard("superadmin", true), true);
 check("drag: editor, own task", canDragCard("editor", true), true);
 check("drag: editor, someone else's task", canDragCard("editor", false), false);
+
+// --- one card per general task (lib/tasks/subtasks.ts) ---------------------
+// Board: G1 with parts a (mine) and b; G2 with part c (mine); L = a plain task; orphan = a part
+// whose general task is gone from the board.
+const board = [
+  task({ id: "G1", assignee_id: "alon", created_at: "2026-09-01T00:00:00Z" }),
+  task({ id: "a", parent_id: "G1", assignee_id: "me", status: "done", created_at: "2026-09-03T00:00:00Z" }),
+  task({ id: "b", parent_id: "G1", assignee_id: "tom", created_at: "2026-09-02T00:00:00Z" }),
+  task({ id: "G2", assignee_id: "tom", created_at: "2026-09-04T00:00:00Z" }),
+  task({ id: "c", parent_id: "G2", assignee_id: "me", status: "cancelled", created_at: "2026-09-05T00:00:00Z" }),
+  task({ id: "L", assignee_id: "me", created_at: "2026-09-06T00:00:00Z" }),
+  task({ id: "orphan", parent_id: "deleted-task", assignee_id: "me", created_at: "2026-09-07T00:00:00Z" }),
+];
+const ids = (list: { id: string }[]) => list.map((t) => t.id);
+
+check("cards: the whole board -> general tasks only, no part is a card", ids(generalTasks(board, board)), [
+  "G1",
+  "G2",
+  "L",
+  "orphan",
+]);
+const mine = board.filter((t) => t.assignee_id === "me");
+check(
+  "cards: only my parts match -> their general tasks show, each once, in the filter's order",
+  ids(generalTasks(mine, board)),
+  ["G1", "G2", "L", "orphan"],
+);
+check(
+  "cards: a general task and its own part both match -> one card",
+  ids(generalTasks([board[0], board[1], board[2]], board)),
+  ["G1"],
+);
+check("cards: a part whose general task is gone stays a card", ids(generalTasks([board[6]], board)), ["orphan"]);
+check("cards: nothing visible -> nothing", generalTasks([], board), []);
+
+const parts = partsByTask(board);
+check("parts: grouped by general task, oldest first", ids(parts.get("G1") ?? []), ["b", "a"]);
+check("parts: a plain task has none", parts.has("L"), false);
+check("parts: an orphan is filed under its missing task, never under a real one", [...parts.keys()].sort(), [
+  "G1",
+  "G2",
+  "deleted-task",
+]);
+check("progress: done of live parts", subtaskProgress(parts.get("G1") ?? []), { done: 1, total: 2 });
+check("progress: a cancelled part is not part of the job", subtaskProgress(parts.get("G2") ?? []), {
+  done: 0,
+  total: 0,
+});
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

@@ -27,10 +27,9 @@ import {
   addTaskComment,
   deleteTaskComment,
   editTaskComment,
-  listStaffForMentions,
-  listTaskComments,
-  markTaskRead,
+  loadTaskThread,
 } from "@/lib/actions/task-comment-actions";
+import { peopleByName } from "@/lib/tasks/mentions";
 import { ADMIN_ROLES } from "@/types/auth.types";
 import type {
   ActivityField,
@@ -111,10 +110,14 @@ function activityText(activity: NonNullable<TaskCommentWithAuthor["activity"]>, 
 
 export function TaskThread({
   taskId,
+  people,
   onCommentAdded,
   onRead,
 }: {
   taskId: string;
+  /** The company's people, when the screen already holds them (the Tasks board does). Left
+   *  out, the thread gets them WITH its first load - never in a call of its own. */
+  people?: StaffMentionOption[] | null;
   /** The inline thread on /tasks refreshes the row's comment count with it. */
   onCommentAdded?: () => void;
   /** The thread was shown, so the server stamped it read - the board drops its unread marker. */
@@ -125,7 +128,11 @@ export function TaskThread({
   const isAdmin = !!user && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
   const [comments, setComments] = useState<TaskCommentWithAuthor[] | null>(null);
-  const [staff, setStaff] = useState<StaffMentionOption[]>([]);
+  const [loadedPeople, setLoadedPeople] = useState<StaffMentionOption[] | null>(null);
+  const staff = useMemo(() => peopleByName(people ?? loadedPeople ?? []), [people, loadedPeople]);
+  // Read through a ref: `load` must not change (and reload the thread) when the list arrives.
+  const hasPeopleRef = useRef(false);
+  hasPeopleRef.current = !!people || !!loadedPeople;
 
   const [body, setBody] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
@@ -164,9 +171,14 @@ export function TaskThread({
     previewUrlsRef.current.delete(url);
   }
 
+  // One action for the comments, the read stamp and (only when nobody handed them in) the
+  // people - Next sends a tab's actions one at a time, so three calls were three waits.
   const load = useCallback(async () => {
-    const [rows, read] = await Promise.all([listTaskComments(taskId), markTaskRead(taskId)]);
+    const { comments: rows, read, people: loaded } = await loadTaskThread(taskId, {
+      withPeople: !hasPeopleRef.current,
+    });
     setComments(rows);
+    if (loaded) setLoadedPeople(loaded);
     if (!openedRef.current) {
       openedRef.current = true;
       if (read.ok) setNewSince({ previous: read.previous });
@@ -177,10 +189,6 @@ export function TaskThread({
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    listStaffForMentions().then(setStaff);
-  }, []);
 
   // Attachment preview URLs are local blobs - release them once they're no
   // longer shown (sent, removed, or the thread unmounts).

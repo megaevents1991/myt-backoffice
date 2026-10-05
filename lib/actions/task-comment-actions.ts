@@ -14,7 +14,7 @@ import type {
   StaffMentionOption,
   TaskAttachment,
   TaskComment,
-  TaskCommentWithAuthor,
+  TaskThreadLoad,
 } from "@/types/task-comment.types";
 import { isValidTaskAttachmentPath } from "@/lib/tasks/attachment-path";
 import type { ThreadCommentRow } from "@/lib/tasks/thread-watch";
@@ -58,44 +58,76 @@ async function commentInScope(tasks: TasksScope, commentId: string): Promise<boo
   return !!data && (await tasks.owns(data.task_id));
 }
 
-/** Every staff member of the company reads every thread of its board (spec §3.4). */
-export async function listTaskComments(taskId: string): Promise<TaskCommentWithAuthor[]> {
-  const { tasks } = await requireTaskBoard();
-  if (!(await tasks.owns(taskId))) return [];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const { data, error } = await db
-    .from("task_comments")
-    .select(COMMENT_COLUMNS)
-    .eq("task_id", taskId)
-    .order("created_at", { ascending: true });
-  if (error) {
-    console.error("task-comments: list failed", JSON.stringify(error));
-    return [];
+/**
+ * Everything one opened thread needs, in ONE action: its comments, the read stamp and - when
+ * the screen does not already hold them - the people for the @mention picker.
+ *
+ * It used to be three actions (comments, read stamp, people), and Next sends a tab's server
+ * actions one at a time: each queued behind the other and paid the guard again - 23 database
+ * round trips to open one task (measured 05.10). Here the guard runs once and whatever does
+ * not wait for anything else is read side by side.
+ *
+ * Every staff member of the company reads every thread of its board (spec §3.4). The rows are
+ * handed out only once the task is confirmed to be this company's - a task of another company
+ * still reads as an empty thread, and nothing is stamped for it.
+ */
+export async function loadTaskThread(
+  taskId: string,
+  options: { withPeople?: boolean } = {},
+): Promise<TaskThreadLoad> {
+  const { session, company, tasks } = await requireTaskBoard();
+  const nothing = { comments: [], read: { ok: false, previous: null } };
+  // A malformed id can only be "not found" - and must not reach the child tables as a bad uuid.
+  if (typeof taskId !== "string" || !UUID.test(taskId)) return { ...nothing, people: null };
+
+  const [owned, thread, lastRead, people] = await Promise.all([
+    tasks.owns(taskId),
+    db.from("task_comments").select(COMMENT_COLUMNS).eq("task_id", taskId).order("created_at", { ascending: true }),
+    db.from("task_reads").select("last_read_at").eq("task_id", taskId).eq("user_id", session.sub).maybeSingle(),
+    options.withPeople ? taskPeopleOf(company) : null,
+  ]);
+  if (!owned) return { ...nothing, people };
+  if (thread.error) {
+    // Nothing was shown, so nothing is stamped read.
+    console.error("task-comments: list failed", JSON.stringify(thread.error));
+    return { ...nothing, people };
   }
-  const rows = (data ?? []) as TaskComment[];
+  const rows = (thread.data ?? []) as TaskComment[];
 
-  const ids = [...new Set(rows.flatMap((r) => [r.author_id, ...r.mentions]).filter((v): v is string => !!v))];
+  const [nameOf, urlOf, read] = await Promise.all([
+    namesOf(rows),
+    signedUrlMap(rows.flatMap((r) => (r.deleted_at ? [] : r.attachments.map((a) => a.path)))),
+    stampRead(taskId, session, lastRead),
+  ]);
+
+  return {
+    comments: rows.map((row) => ({
+      ...row,
+      // A deleted comment keeps its place in the thread but gives up its content.
+      body: row.deleted_at ? null : row.body,
+      attachments: row.deleted_at ? [] : row.attachments,
+      author_name: row.author_id ? (nameOf.get(row.author_id) ?? null) : null,
+      mention_names: row.mentions.map((id) => nameOf.get(id) ?? "משתמש"),
+      attachment_urls: row.deleted_at ? [] : row.attachments.map((a) => urlOf.get(a.path) ?? ""),
+    })),
+    read,
+    people,
+  };
+}
+
+/** Display names of everyone who wrote or was mentioned in these rows. */
+async function namesOf(rows: TaskComment[]): Promise<Map<string, string>> {
   const nameOf = new Map<string, string>();
-  if (ids.length) {
-    const { data: users, error: userError } = await db
-      .from("user_profiles").select("id,display_name,email").in("id", ids);
-    if (userError) console.error("task-comments: names failed", JSON.stringify(userError));
-    for (const user of (users ?? []) as { id: string; display_name: string | null; email: string }[]) {
-      nameOf.set(user.id, user.display_name || user.email);
-    }
+  const ids = [...new Set(rows.flatMap((r) => [r.author_id, ...r.mentions]).filter((v): v is string => !!v))];
+  if (!ids.length) return nameOf;
+  const { data: users, error } = await db.from("user_profiles").select("id,display_name,email").in("id", ids);
+  if (error) console.error("task-comments: names failed", JSON.stringify(error));
+  for (const user of (users ?? []) as { id: string; display_name: string | null; email: string }[]) {
+    nameOf.set(user.id, user.display_name || user.email);
   }
-
-  const urlOf = await signedUrlMap(rows.flatMap((r) => (r.deleted_at ? [] : r.attachments.map((a) => a.path))));
-
-  return rows.map((row) => ({
-    ...row,
-    // A deleted comment keeps its place in the thread but gives up its content.
-    body: row.deleted_at ? null : row.body,
-    attachments: row.deleted_at ? [] : row.attachments,
-    author_name: row.author_id ? (nameOf.get(row.author_id) ?? null) : null,
-    mention_names: row.mentions.map((id) => nameOf.get(id) ?? "משתמש"),
-    attachment_urls: row.deleted_at ? [] : row.attachments.map((a) => urlOf.get(a.path) ?? ""),
-  }));
+  return nameOf;
 }
 
 /** The thread was just shown to this person: stamp it read, and hand back the PREVIOUS
@@ -103,22 +135,18 @@ export async function listTaskComments(taskId: string): Promise<TaskCommentWithA
  *  `ok: false` = nothing was stamped (a failed read or write, the table not migrated yet),
  *  so the caller keeps its marker and shows no "new" badges. Best-effort - a failure only
  *  costs the marker, never the thread. An impersonating admin reads without stamping: the
- *  unread state is the real person's, not the visitor's. */
-export async function markTaskRead(taskId: string): Promise<{ ok: boolean; previous: string | null }> {
-  const { session, tasks } = await requireTaskBoard();
-  if (!(await tasks.owns(taskId))) return { ok: false, previous: null };
-
-  const { data: before, error: readError } = await db
-    .from("task_reads")
-    .select("last_read_at")
-    .eq("task_id", taskId)
-    .eq("user_id", session.sub)
-    .maybeSingle();
-  if (readError) {
-    console.error("task-comments: last-read lookup failed", JSON.stringify(readError));
+ *  unread state is the real person's, not the visitor's. The caller has already confirmed
+ *  the task belongs to the session's company. */
+async function stampRead(
+  taskId: string,
+  session: { sub: string; impersonator?: unknown },
+  lastRead: { data: { last_read_at: string } | null; error: unknown },
+): Promise<{ ok: boolean; previous: string | null }> {
+  if (lastRead.error) {
+    console.error("task-comments: last-read lookup failed", JSON.stringify(lastRead.error));
     return { ok: false, previous: null };
   }
-  const previous = before?.last_read_at ?? null;
+  const previous = lastRead.data?.last_read_at ?? null;
   if (session.impersonator) return { ok: false, previous };
 
   const { error } = await db

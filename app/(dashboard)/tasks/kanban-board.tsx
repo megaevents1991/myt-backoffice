@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, ListTree, MessageSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useSessionState } from "@/hooks/use-view-state";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { PRIORITY_LABEL } from "@/components/task-editor";
 import { canChangeStatus } from "@/lib/tasks/review";
+import { subtaskProgress } from "@/lib/tasks/subtasks";
 import {
   groupTasks,
   initialsOf,
@@ -49,13 +50,17 @@ const shortDate = (iso: string) =>
  */
 export function KanbanBoard({
   tasks,
+  parts,
   onStatusChange,
   groupBy,
   role,
   userId,
   onOpenTask,
 }: {
+  /** General tasks only - a sub-task is never a card (lib/tasks/subtasks.ts `generalTasks`). */
   tasks: TaskWithNames[];
+  /** The parts of each general task, for the "x/y" on its card. */
+  parts: Map<string, TaskWithNames[]>;
   onStatusChange: (id: string, status: TaskStatus) => Promise<boolean>;
   groupBy: GroupBy;
   role: string;
@@ -230,6 +235,7 @@ export function KanbanBoard({
                       <KanbanCard
                         key={task.id}
                         task={task}
+                        progress={parts.has(task.id) ? subtaskProgress(parts.get(task.id) ?? []) : null}
                         canDrag={canDrag && canMove(task)}
                         canPickStatus={!canDrag && canMove(task)}
                         onClick={() => onOpenTask(task)}
@@ -252,12 +258,15 @@ export function KanbanBoard({
 
 function KanbanCard({
   task,
+  progress,
   canDrag,
   canPickStatus,
   onClick,
   onStatusPick,
 }: {
   task: TaskWithNames;
+  /** Done / total of the task's sub-tasks; null = it has none. */
+  progress: { done: number; total: number } | null;
   canDrag: boolean;
   canPickStatus: boolean;
   onClick: () => void;
@@ -306,6 +315,16 @@ function KanbanCard({
         >
           {task.assignee_name ? initialsOf(task.assignee_name) : "?"}
         </span>
+        {/* The sub-tasks live inside the task (open it to see them) - the card only counts them. */}
+        {progress && (
+          <span
+            className="inline-flex shrink-0 items-center gap-0.5 tabular-nums"
+            title={`${progress.done} מתוך ${progress.total} תתי-משימות הושלמו`}
+          >
+            <ListTree className="h-3 w-3" />
+            {progress.done}/{progress.total}
+          </span>
+        )}
         {task.due_date && (
           <span className="ms-auto shrink-0 tabular-nums" title={`Due ${task.due_date}`}>
             {shortDate(task.due_date)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, ListTree, Paperclip, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ import {
 import { createTask, listTaskAssignees, updateTask } from "@/lib/actions/task-actions";
 import { attachFilesToNewTask, listStaffForMentions } from "@/lib/actions/task-comment-actions";
 import type { StaffMentionOption } from "@/types/task-comment.types";
+import { peopleByName } from "@/lib/tasks/mentions";
 import { TaskThread } from "@/components/task-thread";
 import { TaskRemindButton } from "@/components/task-remind-button";
 import {
@@ -117,6 +118,7 @@ export function TaskEditor({
   isManager,
   plainBoard = false,
   editable,
+  people,
   onClose,
   onSaved,
   onThreadRead,
@@ -126,6 +128,10 @@ export function TaskEditor({
   isManager: boolean;
   /** The active company has the plain board - passed by /tasks; omitted = the Mega Events board. */
   plainBoard?: boolean;
+  /** The company's people, in the order the opener's "Assign to" picker lists them, when the
+   *  screen already holds them (/tasks does). The dialog then loads no list of its own - it
+   *  used to fetch two on every open, queued ahead of the thread. Omitted = it loads them. */
+  people?: TaskPerson[] | null;
   /** Fields the current viewer may change on THIS task (ignored while creating -
    *  any staff member can fill in a new task for themself). Empty on an
    *  existing task = read-only: the form still renders and the thread still
@@ -173,18 +179,24 @@ export function TaskEditor({
   );
   const [progress, setProgress] = useState<number>(task?.progress ?? 0);
   const [saving, setSaving] = useState(false);
-  const [staff, setStaff] = useState<TaskPerson[]>([]);
+  const given = people ?? null;
+  const [loadedStaff, setLoadedStaff] = useState<TaskPerson[]>([]);
+  const staff = given ?? loadedStaff;
   // Who the task goes back to in review (Dor, 30.09: "Alon opened it, but Tom checks it, or
   // both"). Empty = the default (whoever opened it). The picker's staff list is the
   // requireStaff one, so an editor can name a reviewer for a task they create themself.
   const [reviewerIds, setReviewerIds] = useState<string[]>(task?.reviewer_ids ?? []);
-  const [reviewerOptions, setReviewerOptions] = useState<StaffMentionOption[]>([]);
+  const [loadedReviewers, setLoadedReviewers] = useState<StaffMentionOption[]>([]);
+  const reviewerOptions = useMemo<StaffMentionOption[]>(
+    () => (given ? peopleByName(given) : loadedReviewers),
+    [given, loadedReviewers],
+  );
   useEffect(() => {
-    if (!state.open) return;
+    if (!state.open || given) return;
     listStaffForMentions()
-      .then(setReviewerOptions)
+      .then(setLoadedReviewers)
       .catch((error) => console.error("task-editor: staff list failed", error));
-  }, [state.open]);
+  }, [state.open, given]);
   const reviewerName = (id: string) => {
     const person = reviewerOptions.find((option) => option.id === id);
     return person ? person.display_name || person.email : "…";
@@ -312,11 +324,11 @@ export function TaskEditor({
   };
 
   useEffect(() => {
-    if (!state.open || !isManager) return;
+    if (!state.open || !isManager || given) return;
     listTaskAssignees()
-      .then(setStaff)
+      .then(setLoadedStaff)
       .catch((error) => console.error("task-editor: assignee list failed", error));
-  }, [state.open, isManager]);
+  }, [state.open, isManager, given]);
 
   const submit = async () => {
     setSaving(true);
@@ -781,7 +793,7 @@ export function TaskEditor({
         {task && children && <div className="mt-2">{children}</div>}
         {task && (
           <div className="mt-2 border-t pt-4">
-            <TaskThread taskId={task.id} onRead={() => onThreadRead?.(task.id)} />
+            <TaskThread taskId={task.id} people={given ?? undefined} onRead={() => onThreadRead?.(task.id)} />
           </div>
         )}
 

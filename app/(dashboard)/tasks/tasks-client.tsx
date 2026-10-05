@@ -47,7 +47,9 @@ import {
 } from "@/components/task-editor";
 import { TaskThread } from "@/components/task-thread";
 import { TaskRemindButton } from "@/components/task-remind-button";
-import { TaskSubtasks, subtaskProgress, type StaffOption } from "@/components/task-subtasks";
+import { TaskSubtasks, type StaffOption } from "@/components/task-subtasks";
+import { generalTasks, partsByTask, subtaskProgress } from "@/lib/tasks/subtasks";
+import type { StaffMentionOption } from "@/types/task-comment.types";
 import { listStaffForMentions } from "@/lib/actions/task-comment-actions";
 import {
   bulkUpdateTasks,
@@ -206,27 +208,24 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
   // company (lib/services/task-people.ts - Mega Events' active staff, or a company's members).
   // Admins read them newest first, the order their picker always had; since editors assign
   // too (01.10) they read the same people by name, like the @mention picker.
-  const [staff, setStaff] = useState<StaffOption[] | null>(null);
+  // Loaded ONCE here and handed to the task dialog and to every thread (05.10): each of them
+  // used to fetch its own copy on every open, queued ahead of the comments.
+  const [people, setPeople] = useState<StaffMentionOption[] | null>(null);
   useEffect(() => {
     if (!user) return;
     (isManager ? listTaskAssignees() : listStaffForMentions())
-      .then((people) => setStaff(people.map((p) => ({ id: p.id, name: p.display_name || p.email }))))
+      .then(setPeople)
       .catch((error) => console.error("tasks: staff list failed", error));
   }, [isManager, user]);
+  const staff = useMemo<StaffOption[] | null>(
+    () => people?.map((person) => ({ id: person.id, name: person.display_name || person.email })) ?? null,
+    [people],
+  );
 
   // Sub-tasks by general task, over the WHOLE board (a part assigned to someone else still
   // counts toward its parent's "x/y" when the "my tasks" switch hides it).
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task] as const)), [tasks]);
-  const childrenOf = useMemo(() => {
-    const map = new Map<string, TaskWithNames[]>();
-    for (const task of [...tasks].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
-      if (!task.parent_id) continue;
-      const list = map.get(task.parent_id) ?? [];
-      list.push(task);
-      map.set(task.parent_id, list);
-    }
-    return map;
-  }, [tasks]);
+  const childrenOf = useMemo(() => partsByTask(tasks), [tasks]);
 
   useEffect(() => {
     if (loading || !tasks.length || !initialTaskId) return;
@@ -299,6 +298,10 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
     () => filterByBoard(scoped, boardLens),
     [scoped, boardLens],
   );
+
+  // The Kanban draws one card per GENERAL task - a sub-task is never a card of its own (Dor,
+  // 05.10). A part the filters matched stands in for its general task (lib/tasks/subtasks.ts).
+  const kanbanTasks = useMemo(() => generalTasks(boardFiltered, tasks), [boardFiltered, tasks]);
 
   // Counts for the lens buttons themselves - computed pre-lens (from `scoped`) so every
   // button shows what it would reveal. OPEN tasks only (Dor, 30.09): a total that includes
@@ -951,6 +954,7 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
               {subtasksPanel(task)}
               <TaskThread
                 taskId={task.id}
+                people={people}
                 onCommentAdded={reload}
                 onRead={() => markThreadRead(task.id)}
               />
@@ -1019,7 +1023,8 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
           </Select>
         </div>
         <KanbanBoard
-          tasks={boardFiltered}
+          tasks={kanbanTasks}
+          parts={childrenOf}
           onStatusChange={onKanbanStatusChange}
           groupBy={kanbanGroupBy}
           role={user?.role ?? ""}
@@ -1038,6 +1043,7 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
             <TaskMapView
               mode="roadmap"
               tasks={tasks}
+              parts={childrenOf}
               loading={loading}
               onOpenTask={(task) => setEditor({ open: true, task })}
               onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
@@ -1048,6 +1054,7 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
             <TaskMapView
               mode="marketing"
               tasks={tasks}
+              parts={childrenOf}
               loading={loading}
               onOpenTask={(task) => setEditor({ open: true, task })}
               onAddTask={(defaults) => setEditor({ open: true, task: null, defaults })}
@@ -1085,6 +1092,7 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
         state={editor}
         isManager={isManager}
         plainBoard={plainBoard}
+        people={people}
         editable={editableFields(
           user?.role ?? "",
           !!user && editor.task?.assignee_id === user.id,

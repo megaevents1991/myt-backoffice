@@ -67,3 +67,13 @@ export interface StaffMentionOption {
   display_name: string | null;
   email: string;
 }
+
+/** One opened thread, loaded in a single action (`loadTaskThread`, task-comment-actions.ts). */
+export type TaskThreadLoad = {
+  comments: TaskCommentWithAuthor[];
+  /** `ok` false = nothing was stamped (the caller keeps its unread marker and shows no "new"
+   *  badges); `previous` = this person's stamp before this load, null the first time. */
+  read: { ok: boolean; previous: string | null };
+  /** The company's people for the @mention picker - null unless the caller asked for them. */
+  people: StaffMentionOption[] | null;
+};

@@ -375,7 +375,9 @@ function staticScan() {
     truthy(`static: ${name} is a "use server" file`, /^"use server";/.test(source), 'expected "use server" on the first line');
     truthy(`static: ${name} no longer calls requireStaff()`, !/\brequireStaff\(/.test(source.replace(/^\s*(\/\/|\*|\/\*).*$/gm, "")), "requireStaff() is the Mega Events gate - the board uses requireTaskBoard()");
     const exports = [...source.matchAll(/export async function (\w+)\(/g)];
-    truthy(`static: ${name} exports actions`, exports.length >= 8, `only ${exports.length} exported functions found`);
+    // A floor that proves the pattern above found the exports at all (the thread file holds 7
+    // since the comments, the read stamp and the people load as ONE action - loadTaskThread).
+    truthy(`static: ${name} exports actions`, exports.length >= 7, `only ${exports.length} exported functions found`);
     const unguarded: string[] = [];
     for (const match of exports) {
       // The body starts at the first "{" that follows the closing of the signature.

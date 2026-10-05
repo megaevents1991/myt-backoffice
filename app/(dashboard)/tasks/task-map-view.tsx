@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { MessageSquare, Plus } from "lucide-react";
+import { ListTree, MessageSquare, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { PRIORITY_LABEL } from "@/components/task-editor";
 import { initialsOf, PRIORITY_STYLE, STATUS_LABEL } from "@/lib/tasks/kanban";
 import { marketingSections, NO_GROUP_KEY, roadmapSections, type MapSection } from "@/lib/tasks/roadmap";
+import { generalTasks, subtaskProgress } from "@/lib/tasks/subtasks";
 import { matchesSearch } from "@/lib/search";
 import type { MktChannel, TaskPriority, TaskStatus, TaskWithNames } from "@/types/task.types";
 
@@ -45,12 +46,15 @@ const STATUS_DOT: Record<TaskStatus, string> = {
 export function TaskMapView({
   mode,
   tasks,
+  parts,
   loading,
   onOpenTask,
   onAddTask,
 }: {
   mode: "roadmap" | "marketing";
   tasks: TaskWithNames[];
+  /** The parts of each general task, for the "x/y" on its card. */
+  parts: Map<string, TaskWithNames[]>;
   loading: boolean;
   onOpenTask: (task: TaskWithNames) => void;
   onAddTask: (defaults: MapTaskDefaults) => void;
@@ -67,13 +71,18 @@ export function TaskMapView({
     return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [tasks]);
 
+  // One card per GENERAL task, as on the Kanban: a sub-task the filters matched stands in for
+  // the task it is part of, and the counts above are counts of general tasks.
   const visible = useMemo(
     () =>
-      tasks.filter(
-        (task) =>
-          (assignee === "all" ||
-            (assignee === "none" ? !task.assignee_id : task.assignee_id === assignee)) &&
-          matchesSearch(query, task.title, task.description),
+      generalTasks(
+        tasks.filter(
+          (task) =>
+            (assignee === "all" ||
+              (assignee === "none" ? !task.assignee_id : task.assignee_id === assignee)) &&
+            matchesSearch(query, task.title, task.description),
+        ),
+        tasks,
       ),
     [tasks, assignee, query],
   );
@@ -189,6 +198,7 @@ export function TaskMapView({
                 <MapCard
                   key={task.id}
                   task={task}
+                  parts={parts.has(task.id) ? subtaskProgress(parts.get(task.id) ?? []) : null}
                   showProgress={mode === "marketing"}
                   onOpen={() => onOpenTask(task)}
                 />
@@ -204,10 +214,13 @@ export function TaskMapView({
 
 function MapCard({
   task,
+  parts,
   showProgress,
   onOpen,
 }: {
   task: TaskWithNames;
+  /** Done / total of the task's sub-tasks; null = it has none. */
+  parts: { done: number; total: number } | null;
   showProgress: boolean;
   onOpen: () => void;
 }) {
@@ -242,6 +255,15 @@ function MapCard({
             title={STATUS_LABEL[task.status]}
             aria-label={STATUS_LABEL[task.status]}
           />
+          {parts && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[11px] tabular-nums text-muted-foreground"
+              title={`${parts.done} מתוך ${parts.total} תתי-משימות הושלמו`}
+            >
+              <ListTree className="h-3 w-3" />
+              {parts.done}/{parts.total}
+            </span>
+          )}
           {task.comment_count > 0 && (
             <span
               className={cn(

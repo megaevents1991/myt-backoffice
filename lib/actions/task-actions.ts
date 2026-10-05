@@ -190,24 +190,38 @@ const TASKS_LIST_MAX = 5000;
 const COMMENT_COUNT_CHUNK = 200;
 const COMMENT_ROWS_MAX = 50_000;
 
+/** Task ids in the chunks the thread reads below take. The chunks of one read run SIDE BY
+ *  SIDE (05.10): they are disjoint reads of one small index (task_comments_task_idx), and a
+ *  board that keeps growing should not wait for them in turn. */
+function idChunks(taskIds: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
+    chunks.push(taskIds.slice(i, i + COMMENT_COUNT_CHUNK));
+  }
+  return chunks;
+}
+
 /** Every live comment of these tasks, in chunks of task ids (never one query per task) -
  *  the rows behind both the comment count and the unread marker. Each chunk pages its
  *  rows; a failed chunk is logged and leaves only ITS tasks without comments. */
 async function commentRows(taskIds: string[]): Promise<ThreadCommentRow[]> {
   const out: ThreadCommentRow[] = [];
-  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
-    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
-    const { rows, error, truncated } = await fetchPaged<ThreadCommentRow & { id: string }>(
-      () =>
-        db
-          .from("task_comments")
-          .select("id,task_id,author_id,created_at,mentions")
-          .eq("kind", "comment")
-          .is("deleted_at", null)
-          .in("task_id", chunk)
-          .order("id", { ascending: true }),
-      COMMENT_ROWS_MAX,
-    );
+  const results = await Promise.all(
+    idChunks(taskIds).map((chunk) =>
+      fetchPaged<ThreadCommentRow & { id: string }>(
+        () =>
+          db
+            .from("task_comments")
+            .select("id,task_id,author_id,created_at,mentions")
+            .eq("kind", "comment")
+            .is("deleted_at", null)
+            .in("task_id", chunk)
+            .order("id", { ascending: true }),
+        COMMENT_ROWS_MAX,
+      ),
+    ),
+  );
+  for (const { rows, error, truncated } of results) {
     if (error) {
       console.error("tasks: comment rows failed for a chunk", JSON.stringify(error));
       continue;
@@ -227,19 +241,22 @@ async function assigneeChangeRows(
   fields: readonly string[] = ["assignee"],
 ): Promise<AssigneeChangeRow[]> {
   const out: AssigneeChangeRow[] = [];
-  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
-    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
-    const { rows, error, truncated } = await fetchPaged<AssigneeChangeRow & { id: string }>(
-      () =>
-        db
-          .from("task_comments")
-          .select("id,task_id,author_id,created_at,activity")
-          .eq("kind", "activity")
-          .in("activity->>field", [...fields])
-          .in("task_id", chunk)
-          .order("id", { ascending: true }),
-      COMMENT_ROWS_MAX,
-    );
+  const results = await Promise.all(
+    idChunks(taskIds).map((chunk) =>
+      fetchPaged<AssigneeChangeRow & { id: string }>(
+        () =>
+          db
+            .from("task_comments")
+            .select("id,task_id,author_id,created_at,activity")
+            .eq("kind", "activity")
+            .in("activity->>field", [...fields])
+            .in("task_id", chunk)
+            .order("id", { ascending: true }),
+        COMMENT_ROWS_MAX,
+      ),
+    ),
+  );
+  for (const { rows, error, truncated } of results) {
     if (error) {
       console.error("tasks: assignee-change rows failed for a chunk", JSON.stringify(error));
       continue;
@@ -260,17 +277,21 @@ async function threadEventRows(
 ): Promise<{ rows: Array<ThreadEvent & { task_id: string }>; failed: Set<string> }> {
   const out: Array<ThreadEvent & { task_id: string }> = [];
   const failed = new Set<string>();
-  for (let i = 0; i < taskIds.length; i += COMMENT_COUNT_CHUNK) {
-    const chunk = taskIds.slice(i, i + COMMENT_COUNT_CHUNK);
-    const { rows, error, truncated } = await fetchPaged<ThreadEvent & { id: string; task_id: string }>(
-      () =>
-        db
-          .from("task_comments")
-          .select("id,task_id,author_id,created_at")
-          .in("task_id", chunk)
-          .order("id", { ascending: true }),
-      COMMENT_ROWS_MAX,
-    );
+  const results = await Promise.all(
+    idChunks(taskIds).map(async (chunk) => ({
+      chunk,
+      ...(await fetchPaged<ThreadEvent & { id: string; task_id: string }>(
+        () =>
+          db
+            .from("task_comments")
+            .select("id,task_id,author_id,created_at")
+            .in("task_id", chunk)
+            .order("id", { ascending: true }),
+        COMMENT_ROWS_MAX,
+      )),
+    })),
+  );
+  for (const { chunk, rows, error, truncated } of results) {
     if (error) {
       console.error("tasks: thread events failed for a chunk", JSON.stringify(error));
       for (const id of chunk) failed.add(id);
