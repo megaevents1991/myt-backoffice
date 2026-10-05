@@ -27,6 +27,13 @@
 
 begin;
 
+-- 16. a lead's follow-up day and staff notes ----------------------------------
+-- Undoes 20261005200000. The follow-up days and the notes staff wrote are lost.
+drop index if exists public.leads_follow_up_idx;
+alter table if exists public.leads
+  drop column if exists follow_up_date,
+  drop column if exists notes;
+
 -- 15. the site chrome and the home page -------------------------------------
 -- Undoes 20261005180000. <schema>.site_content reads the table, so the view is
 -- dropped first. What is lost: the header menus, the footer, the contact details

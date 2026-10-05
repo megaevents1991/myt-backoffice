@@ -3398,10 +3398,12 @@ export type Database = {
           company_id: string
           created_at: string
           email: string | null
+          follow_up_date: string | null
           id: string
           kind: string
           message: string | null
           name: string | null
+          notes: string | null
           payload: Json
           phone: string | null
           source_path: string | null
@@ -3413,10 +3415,12 @@ export type Database = {
           company_id: string
           created_at?: string
           email?: string | null
+          follow_up_date?: string | null
           id?: string
           kind: string
           message?: string | null
           name?: string | null
+          notes?: string | null
           payload?: Json
           phone?: string | null
           source_path?: string | null
@@ -3428,10 +3432,12 @@ export type Database = {
           company_id?: string
           created_at?: string
           email?: string | null
+          follow_up_date?: string | null
           id?: string
           kind?: string
           message?: string | null
           name?: string | null
+          notes?: string | null
           payload?: Json
           phone?: string | null
           source_path?: string | null
