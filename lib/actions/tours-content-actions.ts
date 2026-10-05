@@ -64,7 +64,8 @@ import {
 import { UUID, actionFail, fetchAll } from "@/lib/tours/action-kit";
 import { catalogSlug } from "@/lib/tours/catalog";
 import { asObject, companyAudit, invalidInput, type JsonObject } from "@/lib/tours/company-kit";
-import { isSiteColor } from "@/lib/tours/site-content";
+import { isSiteColor, readWorldSections, worldSectionsSchema } from "@/lib/tours/site-content";
+import { siteEditorOptions } from "@/lib/tours/site-options";
 import { todayIso } from "@/lib/tours/format";
 
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-content-actions", fallback);
@@ -329,6 +330,7 @@ const termSchema = z.object({
   icon: imagePath,
   externalUrl: z.string().trim().max(600).refine((v) => v === "" || /^https?:\/\//i.test(v), "A link to another site starts with https://"),
   worldSlug: z.string().trim().max(200),
+  sections: worldSectionsSchema,
 });
 
 const instructorSchema = z.object({
@@ -1442,6 +1444,8 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
       : { data: [], error: null };
   if (worldsError) throw worldsError;
   const data = asObject(row.data);
+  // a world's page carries its own sections; their pickers need the company's tours, terms and pages
+  const options = row.kind === "audiences" ? await siteEditorOptions(company) : null;
   return {
     row,
     editor: {
@@ -1461,9 +1465,11 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         icon: dataText(data, "icon"),
         externalUrl: dataText(data, "externalUrl"),
         worldSlug: dataText(data, "worldSlug"),
+        sections: row.kind === "audiences" ? readWorldSections(data.sections) : [],
       },
       pages,
       worlds: worlds ?? [],
+      options,
       path: dataText(data, "path") || `/${TERM_SITE_FOLDER[row.kind] ?? row.kind}/${row.slug}/`,
       siteUrl: company.siteUrl,
     },
@@ -1514,6 +1520,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       if (!dataText(stored, "worldKey") && (input.brandName || input.color)) {
         patch.setData("worldKey", "", `world_${before.id.replace(/-/g, "").slice(0, 10)}`);
       }
+      patch.setData("sections", readWorldSections(stored.sections) as unknown as Json, input.sections as unknown as Json);
     }
     if (before.kind === "tags") patch.setData("worldSlug", dataText(stored, "worldSlug"), input.worldSlug);
 

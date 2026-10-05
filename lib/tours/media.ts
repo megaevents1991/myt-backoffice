@@ -36,6 +36,69 @@ export const TOUR_MEDIA_TYPES_LABEL = "JPG, PNG, WebP, GIF or AVIF";
 /** The company's public media bucket (integration plan: one bucket per company, media-<slug>). */
 export const tourMediaBucket = (companySlug: string): string => `media-${companySlug}`;
 
+/** One picture of the company's media bucket, as the media library lists it. */
+export interface TourMediaFile {
+  /** Path inside the bucket: `<folder>/<yyyy>/<mm>/<file>`. */
+  path: string;
+  /** The public address the site loads it from - what an image field stores. */
+  url: string;
+  name: string;
+  folder: string;
+  size: number | null;
+  createdAt: string | null;
+}
+
+/** The media library reads at most this many pictures, newest first. */
+export const TOUR_MEDIA_LIST_LIMIT = 1500;
+
+/** One entry of a Storage listing. A folder has no id; a file has one. */
+export interface MediaListEntry {
+  name: string;
+  id: string | null;
+  created_at?: string | null;
+  metadata?: unknown;
+}
+
+/**
+ * Every picture of a bucket laid out as `<folder>/<yyyy>/<mm>/<file>`, newest
+ * first. Storage lists one level per call, so the walk goes folder -> year ->
+ * month with `list`. Anything that is not at that depth (a stray file next to
+ * the year folders) is left out. Pure: the caller supplies the listing and the
+ * public address of a path.
+ */
+export async function walkTourMedia(
+  list: (prefix: string) => Promise<MediaListEntry[]>,
+  urlOf: (path: string) => string,
+): Promise<TourMediaFile[]> {
+  const folders = (entries: MediaListEntry[]) => entries.filter((entry) => entry.id === null);
+  const files: TourMediaFile[] = [];
+  for (const folder of TOUR_MEDIA_FOLDERS) {
+    const years = folders(await list(folder));
+    const months = (
+      await Promise.all(
+        years.map(async (year) => folders(await list(`${folder}/${year.name}`)).map((month) => `${folder}/${year.name}/${month.name}`)),
+      )
+    ).flat();
+    const found = await Promise.all(months.map(async (prefix) => ({ prefix, entries: (await list(prefix)).filter((entry) => entry.id !== null) })));
+    for (const { prefix, entries } of found) {
+      for (const entry of entries) {
+        const path = `${prefix}/${entry.name}`;
+        const size = (entry.metadata as { size?: unknown } | null | undefined)?.size;
+        files.push({
+          path,
+          url: urlOf(path),
+          name: entry.name,
+          folder,
+          size: typeof size === "number" ? size : null,
+          createdAt: entry.created_at ?? null,
+        });
+      }
+    }
+  }
+  // newest first; the path (year / month / random prefix) settles a tie
+  return files.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.path.localeCompare(a.path));
+}
+
 /** What the upload action answers: where to send the bytes, and the address the site loads them from. */
 export interface TourMediaUpload {
   bucket: string;

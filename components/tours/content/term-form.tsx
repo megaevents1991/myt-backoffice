@@ -15,6 +15,8 @@ import { BackLink, CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/t
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import { siteAssetUrl, termKindLabel, type TermEditorData, type TermForm } from "@/components/tours/content/shared";
 import { ColorInput } from "@/components/tours/site/site-fields";
+import { SectionsBoard, sectionsProblem } from "@/components/tours/site/sections-board";
+import { WORLD_SECTION_TYPES } from "@/lib/tours/site-content";
 import { cn } from "@/lib/utils";
 
 /** What the page of each kind is, in one line under the title. */
@@ -31,8 +33,8 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
     initial,
     (values) => saveTourTerm(initial.id, values),
   );
-  const problem = !form.name.trim() ? "Name is required" : null;
   const isWorld = saved.kind === "audiences";
+  const problem = !form.name.trim() ? "Name is required" : isWorld ? sectionsProblem(form.sections) : null;
   const isTag = saved.kind === "tags";
   const liveUrl = saved.form.isActive ? siteAssetUrl(saved.siteUrl, saved.path) : null;
 
@@ -118,6 +120,21 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
             siteUrl={saved.siteUrl}
             folder="terms"
             hint="Shown faintly behind the name on the world's tile. Empty = the first hero image."
+          />
+        </Section>
+      )}
+
+      {isWorld && saved.options && (
+        <Section
+          title="Sections of the world's page"
+          description="What the world's page shows under its picture and its sub-categories, above the tour list: automatic sliders, banners, pictures and text. Empty = the page goes straight to the tour list."
+        >
+          <SectionsBoard
+            sections={form.sections}
+            onChange={(sections) => set("sections", sections)}
+            options={saved.options}
+            siteUrl={saved.siteUrl}
+            kinds={WORLD_SECTION_TYPES}
           />
         </Section>
       )}

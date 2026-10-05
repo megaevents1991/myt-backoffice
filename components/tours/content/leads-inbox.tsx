@@ -7,14 +7,16 @@ import { Download, ExternalLink, Loader2, PlusCircle, RefreshCw } from "lucide-r
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/page-header";
 import { DataTable, DataTableSkeleton, SortableHeader } from "@/components/data-table";
 import { SearchInput } from "@/components/search-input";
 import { downloadBase64 } from "@/lib/download";
-import { EMPTY, fmtInstant } from "@/lib/tours/format";
+import { EMPTY, fmtInstant, todayIso } from "@/lib/tours/format";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { useSessionState } from "@/hooks/use-view-state";
@@ -27,6 +29,7 @@ import type { ReservationPrefill } from "@/components/tours/reservations/types";
 import {
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
+  leadFollowUpDue,
   leadMatches,
   leadStatusLabel,
   readablePath,
@@ -35,7 +38,12 @@ import {
 } from "@/components/tours/content/shared";
 
 const ALL = "all";
+/** The view of leads whose follow-up day is today or has passed. */
+const DUE = "follow-up-due";
 const NOBODY = "nobody";
+
+/** yyyy-mm-dd as the operators read a day: dd.mm.yy. */
+const shortDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}`;
 /** The owner of a lead who is no longer on the staff list (left the company, deactivated). */
 const FORMER_OWNER = "Another teammate";
 
@@ -101,6 +109,9 @@ export function LeadsInbox() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [reserving, setReserving] = useState<ReservationPrefill | undefined>(undefined);
+  // the notes being typed, for the lead they belong to - another lead never shows them
+  const [notesDraft, setNotesDraft] = useState<{ id: string; text: string } | null>(null);
+  const today = todayIso();
 
   const refresh = () => {
     void reload();
@@ -116,17 +127,22 @@ export function LeadsInbox() {
   const patchRows = (patch: (row: LeadRow) => LeadRow) =>
     setData((current) => current && { ...current, rows: current.rows.map(patch) });
 
-  const change = async (lead: LeadRow, patch: { status?: string; assignedTo?: string | null }) => {
+  const change = async (
+    lead: LeadRow,
+    patch: { status?: string; assignedTo?: string | null; followUpDate?: string | null; notes?: string },
+  ): Promise<boolean> => {
     setBusyId(lead.id);
     const result = await run(() => updateLead(lead.id, patch));
     setBusyId(null);
     if (result.success) patchRows((r) => (r.id === lead.id ? result.data : r));
+    return result.success;
   };
 
   const runExport = async () => {
     setExporting(true);
     const result = await run(
-      () => exportLeads({ status: view === ALL ? "" : view, kind: kind === ALL ? "" : kind, q }),
+      // "Follow-up due" is a view of this screen, not a status: its export carries every status of the type
+      () => exportLeads({ status: view === ALL || view === DUE ? "" : view, kind: kind === ALL ? "" : kind, q }),
       (answer) => `Export ready: ${answer.data.rows} leads`,
     );
     setExporting(false);
@@ -181,17 +197,34 @@ export function LeadsInbox() {
           </div>
         ),
       },
+      {
+        accessorKey: "followUpDate",
+        header: ({ column }) => <SortableHeader label="Follow-up" column={column} />,
+        cell: ({ row }) => {
+          const day = row.original.followUpDate;
+          if (!day) return EMPTY;
+          const due = leadFollowUpDue(row.original, today);
+          return (
+            <span className={cn("whitespace-nowrap tabular", due && "font-semibold text-destructive")} title={due ? "The follow-up day has come" : undefined}>
+              {shortDay(day)}
+            </span>
+          );
+        },
+      },
       { accessorKey: "assignedTo", header: "Assigned To", cell: ({ row }) => ownerName(row.original.assignedTo) || EMPTY },
       { accessorKey: "status", header: ({ column }) => <SortableHeader label="Status" column={column} />, cell: ({ row }) => <StatusBadge status={row.original.status} /> },
     ],
-    [ownerName],
+    [ownerName, today],
   );
 
   const all = useMemo(() => data?.rows ?? [], [data]);
   const ofKind = useMemo(() => (kind === ALL ? all : all.filter((r) => r.kind === kind)), [all, kind]);
   const searched = useMemo(() => (q ? ofKind.filter((r) => leadMatches(r, q)) : ofKind), [ofKind, q]);
-  const shown = view === ALL ? searched : searched.filter((r) => r.status === view);
+  const shown =
+    view === ALL ? searched : view === DUE ? searched.filter((r) => leadFollowUpDue(r, today)) : searched.filter((r) => r.status === view);
   const open = openId ? all.find((r) => r.id === openId) : undefined;
+  const notesText = open ? (notesDraft?.id === open.id ? notesDraft.text : (open.notes ?? "")) : "";
+  const notesDirty = !!open && notesText.trim() !== (open.notes ?? "");
   const siteUrl = active?.siteUrl?.replace(/\/$/, "") ?? null;
 
   return (
@@ -225,6 +258,7 @@ export function LeadsInbox() {
           defaultSorting={[{ id: "createdAt", desc: true }]}
           views={[
             { id: ALL, label: "All", count: ofKind.length },
+            { id: DUE, label: "Follow-up due", count: ofKind.filter((r) => leadFollowUpDue(r, today)).length },
             ...LEAD_STATUSES.map((status) => ({
               id: status,
               label: LEAD_STATUS_LABELS[status],
@@ -338,6 +372,64 @@ export function LeadsInbox() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-md border p-3">
+                <div className="space-y-1">
+                  <Label htmlFor="lead-follow-up" className="text-xs text-muted-foreground">
+                    Follow-up day
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="lead-follow-up"
+                      type="date"
+                      dir="ltr"
+                      className="w-44"
+                      value={open.followUpDate ?? ""}
+                      disabled={busyId === open.id}
+                      onChange={(event) => void change(open, { followUpDate: event.target.value || null })}
+                    />
+                    {open.followUpDate && (
+                      <Button variant="ghost" size="sm" disabled={busyId === open.id} onClick={() => void change(open, { followUpDate: null })}>
+                        Clear
+                      </Button>
+                    )}
+                    {leadFollowUpDue(open, today) && <Badge variant="destructive">Due</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    The lead shows under Follow-up due from that day, until it is Done or Spam.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="lead-notes" className="text-xs text-muted-foreground">
+                    Notes (staff only)
+                  </Label>
+                  <Textarea
+                    id="lead-notes"
+                    dir="auto"
+                    rows={3}
+                    maxLength={4000}
+                    placeholder="What was said, what was promised, what to do next."
+                    value={notesText}
+                    onChange={(event) => setNotesDraft({ id: open.id, text: event.target.value })}
+                  />
+                  <div className="flex justify-end gap-2">
+                    {notesDirty && (
+                      <Button variant="ghost" size="sm" onClick={() => setNotesDraft(null)}>
+                        Discard
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={!notesDirty || busyId === open.id}
+                      onClick={async () => {
+                        if (await change(open, { notes: notesText })) setNotesDraft(null);
+                      }}
+                    >
+                      Save Notes
+                    </Button>
+                  </div>
                 </div>
               </div>
 

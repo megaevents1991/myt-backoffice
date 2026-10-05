@@ -38,7 +38,10 @@ const failure = (e: unknown, fallback: string) => actionFail(e, "tours-leads-act
 /** The table loads the company's leads in one go, newest first, up to this many. */
 const LIST_LIMIT = 5000;
 const EXPORT_LIMIT = 20000;
-const COLUMNS = "id, created_at, kind, name, phone, email, message, source_path, status, assigned_to, payload, utm";
+const COLUMNS =
+  "id, created_at, kind, name, phone, email, message, source_path, status, assigned_to, payload, utm, follow_up_date, notes";
+/** The longest note staff can keep on a lead. */
+const NOTES_MAX = 4000;
 
 /**
  * A spreadsheet cell has no timezone: it shows the clock reading it is given.
@@ -54,7 +57,20 @@ function wallClock(iso: string): Date {
 
 type LeadColumns = Pick<
   Lead,
-  "id" | "created_at" | "kind" | "name" | "phone" | "email" | "message" | "source_path" | "status" | "assigned_to" | "payload" | "utm"
+  | "id"
+  | "created_at"
+  | "kind"
+  | "name"
+  | "phone"
+  | "email"
+  | "message"
+  | "source_path"
+  | "status"
+  | "assigned_to"
+  | "payload"
+  | "utm"
+  | "follow_up_date"
+  | "notes"
 >;
 
 const toRow = (lead: LeadColumns): LeadRow => ({
@@ -70,6 +86,8 @@ const toRow = (lead: LeadColumns): LeadRow => ({
   assignedTo: lead.assigned_to,
   payload: asObject(lead.payload),
   utm: asObject(lead.utm),
+  followUpDate: lead.follow_up_date,
+  notes: lead.notes,
 });
 
 /**
@@ -127,24 +145,40 @@ export async function getLeadsMeta(): Promise<ActionResult<LeadsMeta>> {
   }
 }
 
-/** Change the status and / or the owner of one lead. */
+/** Change the status, the owner, the follow-up day and / or the staff notes of one lead. */
 export async function updateLead(
   id: string,
-  change: { status?: string; assignedTo?: string | null },
+  change: { status?: string; assignedTo?: string | null; followUpDate?: string | null; notes?: string },
 ): Promise<ActionResult<LeadRow>> {
   try {
     const { company } = await requireCompany("tours");
     const { data: before, error } = await supabaseTyped
       .from("leads")
-      .select("id, status, assigned_to")
+      .select("id, status, assigned_to, follow_up_date, notes")
       .eq("company_id", company.id)
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
     if (!before) return { success: false, error: "The lead was not found." };
 
-    const patch: { status?: string; assigned_to?: string | null } = {};
+    const patch: { status?: string; assigned_to?: string | null; follow_up_date?: string | null; notes?: string | null } = {};
     const changes: Record<string, { from: unknown; to: unknown }> = {};
+    if (change.followUpDate !== undefined && change.followUpDate !== before.follow_up_date) {
+      if (change.followUpDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(change.followUpDate)) {
+        return { success: false, error: "The follow-up date is not a valid day." };
+      }
+      patch.follow_up_date = change.followUpDate;
+      changes.follow_up_date = { from: before.follow_up_date, to: change.followUpDate };
+    }
+    if (change.notes !== undefined) {
+      const notes = change.notes.trim();
+      if (notes.length > NOTES_MAX) return { success: false, error: `Notes can be up to ${NOTES_MAX} characters.` };
+      if (notes !== (before.notes ?? "")) {
+        patch.notes = notes || null;
+        // the trail records that the notes changed, not what a customer conversation said
+        changes.notes = { from: before.notes ? `${before.notes.length} chars` : null, to: notes ? `${notes.length} chars` : null };
+      }
+    }
     if (change.status !== undefined && change.status !== before.status) {
       if (!LEAD_STATUSES.includes(change.status as LeadStatus)) return { success: false, error: "Unknown status." };
       patch.status = change.status;
@@ -211,6 +245,8 @@ export async function exportLeads(filters: Partial<LeadFilters>): Promise<Action
       { header: "Source Page", key: "source", width: 30 },
       { header: "Status", key: "status", width: 12 },
       { header: "Assigned To", key: "assigned", width: 20 },
+      { header: "Follow-up", key: "followUp", width: 12 },
+      { header: "Notes", key: "notes", width: 50 },
       { header: "Form Details", key: "payload", width: 50 },
       { header: "UTM", key: "utm", width: 30 },
     ];
@@ -226,6 +262,8 @@ export async function exportLeads(filters: Partial<LeadFilters>): Promise<Action
         source: lead.sourcePath ?? "",
         status: leadStatusLabel(lead.status),
         assigned: lead.assignedTo ? (names.get(lead.assignedTo) ?? "") : "",
+        followUp: lead.followUpDate ?? "",
+        notes: lead.notes ?? "",
         payload: json(lead.payload),
         utm: json(lead.utm),
       });

@@ -632,6 +632,36 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Header & footer", "הדר ופוטר"), href: "/tours/site" }],
   },
   {
+    id: "tours-media",
+    nav: "/tours/media",
+    productType: "tours",
+    title: t("Media - the pictures of the site", "מדיה - התמונות של האתר"),
+    intro: t(
+      "Every picture that was uploaded to the site, from any screen, newest first.",
+      "כל תמונה שהועלתה לאתר, מכל מסך, מהחדשה לישנה.",
+    ),
+    howTo: [
+      {
+        title: t("Use a picture that was already uploaded", "להשתמש בתמונה שכבר הועלתה"),
+        steps: [
+          t("In any image field click \"Library\". The same pictures open in a window.", "בכל שדה תמונה לוחצים \"Library\". אותן תמונות נפתחות בחלון."),
+          t("Search by file name or choose a folder, and click the picture. Save the page as usual.", "מחפשים לפי שם קובץ או בוחרים תיקייה, ולוחצים על התמונה. שומרים את העמוד כרגיל."),
+        ],
+      },
+      {
+        title: t("Upload pictures ahead of time", "להעלות תמונות מראש"),
+        steps: [
+          t("Open [Media](/tours/media), choose the folder in \"Upload to\" and click \"Upload Images\". Several files can go at once.", "פותחים את [מדיה](/tours/media), בוחרים תיקייה ב-\"Upload to\" ולוחצים \"Upload Images\". אפשר כמה קבצים יחד."),
+          t("\"Copy Address\" copies a picture's address, for a place that takes an address.", "\"Copy Address\" מעתיק את הכתובת של תמונה, למקום שמקבל כתובת."),
+        ],
+      },
+    ],
+    points: [
+      t("A picture is not deleted from here: a page may still show it.", "תמונה לא נמחקת מכאן: ייתכן שעמוד עדיין מציג אותה."),
+    ],
+    links: [{ label: t("Media", "מדיה"), href: "/tours/media" }],
+  },
+  {
     id: "tours-pages",
     nav: "/tours/pages",
     productType: "tours",

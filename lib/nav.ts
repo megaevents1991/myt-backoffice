@@ -362,6 +362,14 @@ const NAV: NavGroup[] = [
         productType: "tours",
       },
       {
+        // Every picture uploaded to the company's site; the image fields open the same library.
+        name: "Media",
+        href: "/tours/media",
+        icon: Images,
+        keywords: "media library storage images pictures upload files מדיה ספרייה תמונות העלאה קבצים",
+        productType: "tours",
+      },
+      {
         name: "Categories & Tags",
         href: "/tours/terms",
         icon: FolderTree,
@@ -634,6 +642,7 @@ const TOURS_SEGMENT_LABELS: Record<string, string> = {
   pages: "Content Pages",
   homepage: "Homepage",
   site: "Header & Footer",
+  media: "Media",
   leads: "Leads",
   settings: "Settings",
   approvals: "Approvals",

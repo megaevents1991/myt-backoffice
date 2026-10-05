@@ -31,6 +31,7 @@ import {
 import { sniffImageType } from "@/lib/upload-helper";
 import { cn } from "@/lib/utils";
 import { EmptyLine, Field } from "@/components/tours/ui";
+import { MediaPickerButton } from "@/components/tours/content/media-picker";
 import { siteAssetUrl, type GalleryItem } from "@/components/tours/content/shared";
 
 /** Move an item of a list one place up or down. */
@@ -168,8 +169,8 @@ async function uploadSiteImage(file: File, folder: TourMediaFolder): Promise<Act
   }
 }
 
-/** Uploads files one by one, with progress, and reports the outcome in one toast. */
-function useSiteImageUpload(folder: TourMediaFolder) {
+/** Uploads files one by one, with progress, and reports the outcome in one toast. `savedNote` is the toast's second line. */
+function useSiteImageUpload(folder: TourMediaFolder, savedNote = "Save the page to keep it.") {
   const { toast } = useToast();
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const upload = useCallback(
@@ -192,12 +193,12 @@ function useSiteImageUpload(folder: TourMediaFolder) {
       } else if (urls.length > 0) {
         toast({
           title: urls.length > 1 ? `${urls.length} images uploaded` : "Image uploaded",
-          description: "Save the page to keep it.",
+          description: savedNote,
         });
       }
       return urls;
     },
-    [folder, toast],
+    [folder, toast, savedNote],
   );
   return { progress, upload };
 }
@@ -212,12 +213,13 @@ function useLatest<T>(value: T) {
 }
 
 /** Pick picture file(s) and upload them; `onUploaded` gets their public URLs. */
-function UploadButton({
+export function UploadButton({
   folder,
   onUploaded,
   multiple = false,
   label = "Upload",
   compact = false,
+  savedNote,
 }: {
   folder: TourMediaFolder;
   onUploaded: (urls: string[]) => void;
@@ -225,9 +227,11 @@ function UploadButton({
   label?: string;
   /** Icon only, for a list row. */
   compact?: boolean;
+  /** The second line of the "uploaded" toast, where there is no page to save (the media library). */
+  savedNote?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const { progress, upload } = useSiteImageUpload(folder);
+  const { progress, upload } = useSiteImageUpload(folder, savedNote);
   const busy = progress !== null;
   const busyLabel = progress && progress.total > 1 ? `Uploading ${progress.done + 1}/${progress.total}…` : "Uploading…";
   return (
@@ -313,6 +317,7 @@ export function ImageUrlField({
               className="font-mono text-xs"
             />
             <UploadButton folder={folder} onUploaded={([url]) => onChange(url)} />
+            <MediaPickerButton onPick={onChange} />
           </div>
           <HostWarning value={value} />
         </div>
@@ -389,6 +394,7 @@ export function ImageListEditor({
           label="Upload Images"
           onUploaded={(urls) => onChange([...latest.current, ...urls])}
         />
+        <MediaPickerButton onPick={(url) => onChange([...latest.current, url])} />
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>

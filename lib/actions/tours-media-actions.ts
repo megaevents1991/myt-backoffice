@@ -29,11 +29,40 @@ import {
   isTourMediaType,
   tourMediaBucket,
   tourMediaPath,
+  TOUR_MEDIA_LIST_LIMIT,
+  walkTourMedia,
+  type TourMediaFile,
   type TourMediaFolder,
   type TourMediaUpload,
 } from "@/lib/tours/media";
 
 const SCOPE = "tours-media-actions";
+
+/** Storage answers one folder level per call, up to this many entries. */
+const LIST_PAGE = 1000;
+
+/**
+ * Every picture of the active company's media bucket, newest first - the media
+ * library and the "Library" button of the image fields. The bucket is laid out
+ * as `<folder>/<yyyy>/<mm>/<file>`; Storage lists one level per call, so the
+ * walk goes folder -> year -> month. Only the company's own bucket is read.
+ */
+export async function listTourMedia(): Promise<ActionResult<{ files: TourMediaFile[]; truncated: boolean }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const bucket = tourMediaBucket(company.slug);
+    const storage = supabase.storage.from(bucket);
+    const list = async (prefix: string) => {
+      const { data, error } = await storage.list(prefix, { limit: LIST_PAGE, sortBy: { column: "name", order: "desc" } });
+      if (error) throw new Error(`storage list ${prefix}: ${error.message}`);
+      return data ?? [];
+    };
+    const files = await walkTourMedia(list, (path) => storage.getPublicUrl(path).data.publicUrl);
+    return { success: true, data: { files: files.slice(0, TOUR_MEDIA_LIST_LIMIT), truncated: files.length > TOUR_MEDIA_LIST_LIMIT } };
+  } catch (e) {
+    return actionFail(e, SCOPE, "Could not read the media library. Try again.");
+  }
+}
 
 const uploadSchema = z.object({
   folder: z.enum(TOUR_MEDIA_FOLDERS),

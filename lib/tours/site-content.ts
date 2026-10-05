@@ -264,6 +264,38 @@ export const homeSchema = z
   });
 export type HomeDoc = z.infer<typeof homeSchema>;
 
+/**
+ * The section types a world's own page can carry, under its hero and its
+ * sub-categories. The hero, the tour finder, the reviews and the lead form are
+ * already part of every world page, so they are not offered there.
+ */
+export const WORLD_SECTION_TYPES: HomeSectionType[] = ["slider", "banners", "image", "text", "reasons", "destinations", "artists"];
+
+/** The sections of one world's page (tours.terms.data.sections). */
+export const worldSectionsSchema = z
+  .array(homeSectionSchema)
+  .max(12, "Up to 12 sections on a world page")
+  .superRefine((sections, ctx) => {
+    const seen = new Set<string>();
+    sections.forEach((section, index) => {
+      if (!WORLD_SECTION_TYPES.includes(section.type)) ctx.addIssue({ code: "custom", message: "This section type is not for a world page", path: [index, "type"] });
+      if (seen.has(section.id)) ctx.addIssue({ code: "custom", message: "Two sections share an id", path: [index, "id"] });
+      seen.add(section.id);
+      if (section.type === "slider" && TOUR_SOURCE_KIND[section.source] && !section.term) {
+        ctx.addIssue({ code: "custom", message: `The slider "${section.title || "(no title)"}" needs its ${section.source}`, path: [index, "term"] });
+      }
+    });
+  });
+
+/** Stored world sections as the editor works on them: the valid ones, in order. */
+export function readWorldSections(stored: unknown): HomeSection[] {
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((section) => {
+    const one = homeSectionSchema.safeParse(section);
+    return one.success && WORLD_SECTION_TYPES.includes(one.data.type) ? [one.data] : [];
+  });
+}
+
 export interface SiteDocs {
   general: SiteGeneral;
   header: SiteHeader;

@@ -6,6 +6,8 @@
  * actions and the client components import the same types and labels.
  */
 import { matchesSearch } from "@/lib/search";
+import type { HomeSection } from "@/lib/tours/site-content";
+import type { SiteEditorOptions } from "@/lib/tours/site-options";
 
 /** Every content / leads / settings action answers with this. Expected failures never throw. */
 export type { ActionResult } from "@/lib/tours/action-kit";
@@ -467,6 +469,8 @@ export interface TermForm {
   externalUrl: string;
   /** A tag that is a sub-category of a world: that audience's slug ("" = none). */
   worldSlug: string;
+  /** A world's own page sections (sliders, banners, text...), shown under its hero and sub-categories. */
+  sections: HomeSection[];
 }
 
 export interface TermEditorData {
@@ -477,6 +481,8 @@ export interface TermEditorData {
   pages: { id: string; name: string }[];
   /** The company's worlds - what a tag picks its world from. */
   worlds: { slug: string; name: string }[];
+  /** What the pickers of a world's page sections choose from (worlds only). */
+  options: SiteEditorOptions | null;
   /** The address of the term's page on the site. */
   path: string;
   siteUrl: string | null;
@@ -652,7 +658,15 @@ export interface LeadRow {
   assignedTo: string | null;
   payload: Record<string, unknown>;
   utm: Record<string, unknown>;
+  /** The day staff plan to get back to the lead (yyyy-mm-dd), or null. */
+  followUpDate: string | null;
+  /** The staff's own notes on the lead - never shown to the customer. */
+  notes: string | null;
 }
+
+/** A lead still being worked on whose follow-up day is today or already passed. */
+export const leadFollowUpDue = (lead: LeadRow, today: string): boolean =>
+  !!lead.followUpDate && lead.followUpDate <= today && (lead.status === "new" || lead.status === "in_progress");
 
 /** A site path as people read it: Hebrew slugs decoded. */
 export function readablePath(path: string | null): string {
@@ -670,7 +684,7 @@ export function readablePath(path: string | null): string {
  * people read it (readablePath), so a Hebrew word finds a Hebrew slug.
  */
 export const leadMatches = (lead: LeadRow, q: string): boolean =>
-  matchesSearch(q, lead.name, lead.phone, lead.email, lead.message, readablePath(lead.sourcePath));
+  matchesSearch(q, lead.name, lead.phone, lead.email, lead.message, readablePath(lead.sourcePath), lead.notes);
 
 export interface LeadAssignee {
   id: string;
