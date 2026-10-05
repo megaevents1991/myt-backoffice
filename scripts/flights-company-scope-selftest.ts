@@ -77,6 +77,8 @@ const CALL_ALLOW: Record<string, string> = {
     'picks a branch - "flights" goes to megaEventsFlights(), the other one names offline_hotels literally',
   "components/tours/content/tour-readiness.tsx#item":
     'item("flights", ...) is the key of a "Ready for the site" step, not a table name - the file reads no table',
+  "app/(dashboard)/events/[id]/ready-package-builder.tsx#setBusy":
+    'setBusy("flights") is a React state value (which step is loading), not a table name - the file reads no table',
 };
 
 /**
