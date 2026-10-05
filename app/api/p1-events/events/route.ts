@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase-server';
 import { guardAdminRoute } from '@/lib/auth/guards';
+import { errorMessage } from '@/lib/utils';
 import { P1EventDB } from '@/types/p1-events.types';
 
 export async function GET(request: NextRequest) {
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Try to get ALL data by fetching in chunks if needed
-    let allData: P1EventDB[] = [];
+    const allData: P1EventDB[] = [];
     let from = 0;
     const chunkSize = 1000;
     let hasMore = true;
@@ -99,11 +100,11 @@ export async function GET(request: NextRequest) {
       }
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('API Error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
+    return NextResponse.json({
+      success: false,
+      error: errorMessage(error)
     }, { 
       status: 500 
     });

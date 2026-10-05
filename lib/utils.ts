@@ -110,8 +110,8 @@ export function createDefaultVipConfig(): VipConfig {
 /**
  * Check if hotel order info is present (not empty object)
  */
-export function hasHotelInfo(hotelInfo: any): boolean {
-  return hotelInfo && typeof hotelInfo === 'object' && Object.keys(hotelInfo).length > 0 && 'name' in hotelInfo;
+export function hasHotelInfo(hotelInfo: unknown): boolean {
+  return !!hotelInfo && typeof hotelInfo === 'object' && Object.keys(hotelInfo).length > 0 && 'name' in hotelInfo;
 }
 
 export function normalizeReservationEventOrderInfo(
@@ -133,4 +133,14 @@ export function getReservationEventOrderInfoPrimaryName(
 ): string {
   const events = normalizeReservationEventOrderInfo(eventOrderInfo);
   return events[0]?.name || "Unknown";
+}
+
+/** The message of whatever a `catch` caught: an Error, a Supabase error object (it carries
+ *  `message` but is not always an Error), or anything else. */
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
 }

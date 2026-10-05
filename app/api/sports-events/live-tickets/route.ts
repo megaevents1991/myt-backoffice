@@ -33,6 +33,12 @@ async function fetchXS2<T = unknown>(path: string): Promise<T> {
   }
 }
 
+/** One page of an XS2Event list: a bare array, or an envelope under one of three keys. */
+type XS2Pagination = { has_next?: boolean; hasNext?: boolean };
+type XS2Page<T> =
+  | T[]
+  | { tickets?: T[]; data?: T[]; results?: T[]; pagination?: XS2Pagination; meta?: XS2Pagination };
+
 async function fetchAllPaginated<T = unknown>(
   path: string, 
   maxPages: number = 10
@@ -46,18 +52,17 @@ async function fetchAllPaginated<T = unknown>(
       const separator = path.includes('?') ? '&' : '?';
       const paginatedPath = `${path}${separator}page_size=100&page=${currentPage}`;
       
-      const response = await fetchXS2<any>(paginatedPath);
-      
+      const response = await fetchXS2<XS2Page<T>>(paginatedPath);
+
       let pageData: T[] = [];
-      let pagination: any = null;
-      
+
       if (Array.isArray(response)) {
         pageData = response;
         hasMoreData = response.length === 100;
       } else if (typeof response === 'object' && response !== null) {
         pageData = response.tickets || response.data || response.results || [];
-        pagination = response.pagination || response.meta;
-        
+        const pagination = response.pagination || response.meta;
+
         if (pagination) {
           hasMoreData = pagination.has_next || pagination.hasNext || false;
         } else {

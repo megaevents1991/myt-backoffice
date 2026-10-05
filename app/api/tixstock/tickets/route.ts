@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardAdminRoute } from "@/lib/auth/guards";
+import { errorMessage } from "@/lib/utils";
 
 const TIXSTOCK_API_URL = process.env.NEXT_SECRET_TIXSTOCK_API_URL;
 const TIXSTOCK_TOKEN = process.env.NEXT_SECRET_TIXSTOCK_TOKEN;
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
     url.searchParams.set("event_id", eventId);
     url.searchParams.set("per_page", "50");
 
-    const allTickets: any[] = [];
+    const allTickets: unknown[] = [];
     let currentPage = 1;
     let lastPage = 1;
 
@@ -72,12 +73,12 @@ export async function GET(request: NextRequest) {
       success: true,
       data: { data: allTickets },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("TixStock tickets fetch failed:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: errorMessage(error),
       },
       { status: 500 },
     );

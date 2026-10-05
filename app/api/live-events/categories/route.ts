@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase-server';
 import { guardAdminRoute } from '@/lib/auth/guards';
+import { errorMessage } from '@/lib/utils';
 
 export async function GET() {
   // Staff only - until 05.10 this answered anyone on the internet, no session needed.
@@ -26,10 +27,10 @@ export async function GET() {
         'Expires': '0'
       }
     });
-  } catch (error: any) {
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message 
+  } catch (error) {
+    return NextResponse.json({
+      success: false,
+      error: errorMessage(error)
     }, { 
       status: 500,
       headers: { 
