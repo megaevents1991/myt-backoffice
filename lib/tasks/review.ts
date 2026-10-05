@@ -44,6 +44,34 @@ export function canChangeStatus(role: string, task: ReviewTask, userId: string |
   return task.assignee_id === userId || awaitsReviewBy(task, userId);
 }
 
+/**
+ * The Tasks table's piles (`?view=`). "review" is a pile of its own (Dor, 05.10): a task handed
+ * over for checking LEAVES "open" - what stays there is work still to do - and waits under
+ * "In review" until someone approves it or sends it back. Review still counts as unfinished
+ * everywhere else (OPEN_TASK_STATUSES: the board pills, the owner filter's counts, the widget).
+ */
+export const TASK_VIEWS = ["open", "review", "done", "all"] as const;
+export type TaskView = (typeof TASK_VIEWS)[number];
+
+export function isTaskView(value: string | null | undefined): value is TaskView {
+  return (TASK_VIEWS as readonly string[]).includes(value ?? "");
+}
+
+/** The one pile a status sits in. */
+export function taskViewOf(status: TaskStatus): Exclude<TaskView, "all"> {
+  if (status === "review") return "review";
+  return status === "done" || status === "cancelled" ? "done" : "open";
+}
+
+export function inTaskView(status: TaskStatus, view: TaskView): boolean {
+  return view === "all" || taskViewOf(status) === view;
+}
+
+/** Sort rank inside the review pile: what waits for THIS person's check comes first. */
+export function reviewRank(task: ReviewerFields & Pick<ReviewTask, "status">, userId: string | null): number {
+  return awaitsReviewBy(task, userId) ? 0 : 1;
+}
+
 /** What a status change means for the review hand-off - each one is a mail:
  *  sent = handed to the reviewer · approved = the reviewer closed it · returned = back to work.
  *  A review that is cancelled, or a change that never touches review, is none of them. */

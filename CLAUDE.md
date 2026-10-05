@@ -356,6 +356,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >     (`TASK_FIELDS`). Validated server-side (`cleanReviewerIds`: active staff ids, `REVIEWERS_MAX`
 >     5; `[]`/null = back to the default). The table prints "בודק: X, Y" under the assignee only
 >     when someone was picked.
+>     **"In review" view (2026-10-05):** the Tasks table's views are **Open / In review / Done /
+>     All** (`?view=review`; `TASK_VIEWS`, `taskViewOf`, `inTaskView` in `lib/tasks/review.ts`,
+>     same selftest). A task in review LEAVES "Open" (= todo / in_progress / paused, the work
+>     still to do) and waits under "In review", where what waits for the VIEWER's check sorts
+>     first (`reviewRank`). Only the table's piles changed: `review` is still an OPEN status
+>     everywhere else (`OPEN_TASK_STATUSES` - board pills, owner-filter counts, the dashboard
+>     widget), so a board pill reads Open + In review together.
 >   - **Editors assign + reminders + late alerts (2026-10-01).** (a) Liz (`editor`) could not give a
 >     task to anyone - `createTask` forced `assignee_id = session.sub` and the form hid "Assign to".
 >     Now any staff member picks any assignee on a NEW task (an editor's form starts on themself;

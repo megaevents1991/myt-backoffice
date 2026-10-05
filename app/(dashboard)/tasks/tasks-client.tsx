@@ -68,7 +68,16 @@ import {
 } from "@/lib/actions/creative-gap-actions";
 import { editableFields } from "@/lib/tasks/permissions";
 import { matchesOwner, type OwnerFilter } from "@/lib/tasks/owner-filter";
-import { awaitsReviewBy, canChangeStatus } from "@/lib/tasks/review";
+import {
+  TASK_VIEWS,
+  awaitsReviewBy,
+  canChangeStatus,
+  inTaskView,
+  isTaskView,
+  reviewRank,
+  taskViewOf,
+  type TaskView,
+} from "@/lib/tasks/review";
 import { BOARD_META } from "@/lib/task-boards";
 import { KanbanBoard } from "./kanban-board";
 import { PricingGapsTab } from "./pricing-gaps-tab";
@@ -104,8 +113,8 @@ const TAB_IDS = ["tasks", "kanban", "roadmap", "marketing", "gaps", "pricing", "
 /** The tabs of the plain board (a company that sells no events - lib/services/task-company.ts):
  *  the list and the Kanban. Roadmap, Marketing, gaps, pricing and rules are Mega Events'. */
 const PLAIN_TAB_IDS = ["tasks", "kanban"] as const;
-/** The Tasks table's saved views - `?view=`. */
-const VIEW_IDS = ["open", "done", "all"] as const;
+/** The Tasks table's saved views - `?view=` (Open / In review / Done / All, lib/tasks/review.ts). */
+const VIEW_IDS = TASK_VIEWS;
 
 /** Small badge on sourced tasks - where the work came from. */
 const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
@@ -161,6 +170,7 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
   // Where you are survives a refresh (hooks/use-view-state.ts): the tab and the Open / Done /
   // All view in the URL, the owner filter and the kanban grouping for the browser tab.
   const [view, setView] = useUrlState<string>("view", "open", VIEW_IDS);
+  const taskView: TaskView = isTaskView(view) ? view : "open";
   const [groupBy, setGroupBy] = useSessionState<GroupBy>("groupBy", "none");
   // Phases exist on the Mega Events dev board only - a stored "phase" grouping means nothing
   // on the plain board.
@@ -311,30 +321,23 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
     [pathname, router, searchParams],
   );
 
-  const filtered = useMemo(() => {
-    switch (view) {
-      case "open":
-        return boardFiltered.filter(
-          (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
-        );
-      case "done":
-        return boardFiltered.filter(
-          (task) => task.status === "done" || task.status === "cancelled",
-        );
-      default:
-        return boardFiltered;
-    }
-  }, [boardFiltered, view]);
-
-  const sorted = useMemo(
-    () =>
-      [...filtered].sort(
-        (a, b) =>
-          (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9) ||
-          (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"),
-      ),
-    [filtered],
+  // A task in review is a pile of its own (Dor, 05.10): it leaves "Open" - which is the work
+  // still to do - and waits under "In review" (lib/tasks/review.ts `taskViewOf`).
+  const filtered = useMemo(
+    () => boardFiltered.filter((task) => inTaskView(task.status, taskView)),
+    [boardFiltered, taskView],
   );
+
+  const sorted = useMemo(() => {
+    const me = user?.id ?? null;
+    return [...filtered].sort(
+      (a, b) =>
+        // Under "In review", what waits for MY check comes first.
+        (taskView === "review" ? reviewRank(a, me) - reviewRank(b, me) : 0) ||
+        (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9) ||
+        (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"),
+    );
+  }, [filtered, taskView, user]);
 
   // Each sub-task sits right under its general task when both are on screen; one whose parent
   // is filtered out stays where its own priority puts it.
@@ -395,10 +398,9 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
   );
 
   const counts = useMemo(() => {
-    const open = boardFiltered.filter(
-      (task) => (OPEN_TASK_STATUSES as readonly string[]).includes(task.status),
-    ).length;
-    return { open, done: boardFiltered.length - open, all: boardFiltered.length };
+    const piles = { open: 0, review: 0, done: 0, all: boardFiltered.length };
+    for (const task of boardFiltered) piles[taskViewOf(task.status)] += 1;
+    return piles;
   }, [boardFiltered]);
 
   // A task moved to review goes back to whoever opened it - say whether they were told.
@@ -958,6 +960,7 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
           searchPlaceholder="Search tasks..."
           views={[
             { id: "open", label: "Open", count: counts.open },
+            { id: "review", label: "In review", count: counts.review },
             { id: "done", label: "Done", count: counts.done },
             { id: "all", label: "All", count: counts.all },
           ]}
@@ -982,10 +985,16 @@ export function TasksClient({ plainBoard = false }: { plainBoard?: boolean }) {
             </Button>
           }
           emptyState={{
-            title: loading ? "Loading tasks…" : "No tasks here",
+            title: loading
+              ? "Loading tasks…"
+              : taskView === "review"
+                ? "Nothing is waiting for review"
+                : "No tasks here",
             description: loading
               ? undefined
-              : plainBoard
+              : taskView === "review"
+                ? "A task lands here when its owner sets it to In review."
+                : plainBoard
                 ? "Create one with New task."
                 : "Create one, or pull work in from the Creative gaps tab.",
           }}

@@ -5,7 +5,17 @@ import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
 import { assignedByMap, matchesOwner, type AssigneeChangeRow } from "../lib/tasks/owner-filter";
-import { awaitsReviewBy, canChangeStatus, reviewMove, reviewersOf } from "../lib/tasks/review";
+import {
+  TASK_VIEWS,
+  awaitsReviewBy,
+  canChangeStatus,
+  inTaskView,
+  isTaskView,
+  reviewMove,
+  reviewRank,
+  reviewersOf,
+  taskViewOf,
+} from "../lib/tasks/review";
 import {
   assignedAtMap,
   canRemind,
@@ -240,6 +250,37 @@ check("review move: into review, approved, returned, and everything else",
     reviewMove("in_progress", "done"),
   ],
   ["sent", "sent", null, "approved", "returned", "returned", null, null]);
+
+// --- the table's piles (05.10): a task in review leaves "Open" and waits under "In review" ---
+const ALL_STATUSES: TaskStatus[] = ["todo", "in_progress", "paused", "review", "done", "cancelled"];
+check("views: the pile of every status",
+  ALL_STATUSES.map((status) => taskViewOf(status)),
+  ["open", "open", "open", "review", "done", "done"]);
+check("views: a task in review is not in Open any more",
+  [inTaskView("review", "open"), inTaskView("review", "review"), inTaskView("review", "done"), inTaskView("review", "all")],
+  [false, true, false, true]);
+check("views: Open is the work still to do",
+  ALL_STATUSES.filter((status) => inTaskView(status, "open")), ["todo", "in_progress", "paused"]);
+check("views: every status sits in exactly one pile, and All shows everything",
+  ALL_STATUSES.map((status) => [
+    TASK_VIEWS.filter((view) => view !== "all" && inTaskView(status, view)).length,
+    inTaskView(status, "all"),
+  ]),
+  ALL_STATUSES.map(() => [1, true]));
+check("views: only a known view comes off the URL",
+  [isTaskView("review"), isTaskView("open"), isTaskView("hacked"), isTaskView(null)], [true, true, false, false]);
+check("review pile: what waits for MY check comes first",
+  [
+    { id: "theirs", ...owned("tom", null, "review", "alon") },
+    { id: "mine", ...owned("tom", null, "review", "dor") },
+    { id: "picked", ...owned("liz", null, "review", "alon", ["dor"]) },
+    { id: "sent-by-me", ...owned("dor", null, "review", "alon") },
+  ]
+    .sort((a, b) => reviewRank(a, "dor") - reviewRank(b, "dor"))
+    .map((task) => task.id),
+  ["mine", "picked", "theirs", "sent-by-me"]);
+check("review pile: nobody signed in = no one's check comes first",
+  reviewRank(owned("tom", null, "review", "dor"), null), 1);
 
 // --- reminders (01.10): the button, and "late with no answer" raised to whoever opened it ---
 check("israel date: 23:30 UTC is already tomorrow in Israel", israelDate("2026-09-30T23:30:00Z"), "2026-10-01");
