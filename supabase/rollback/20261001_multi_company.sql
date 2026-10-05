@@ -27,6 +27,24 @@
 
 begin;
 
+-- 15. the site chrome and the home page -------------------------------------
+-- Undoes 20261005180000. <schema>.site_content reads the table, so the view is
+-- dropped first. What is lost: the header menus, the footer, the contact details
+-- and the home page sections as staff edited them - the site then builds from
+-- its committed content/site.json and content/home.json (the view is optional
+-- for its build). The world keys in tours.terms.data are harmless and stay.
+-- provision_company() needs no step of its own: sections 14 / 12 put back an
+-- older body that does not create the view.
+do $rb15$
+declare s text;
+begin
+  for s in select schema_name from public.companies loop
+    execute format('drop view if exists %I.site_content', s);
+  end loop;
+end
+$rb15$;
+drop table if exists tours.site_content;
+
 -- 14. seasons of a tour -----------------------------------------------------
 -- Undoes 20261004100000. The site views read the season: <schema>.departures
 -- selects season_id and <schema>.package_seasons reads the table, so both are

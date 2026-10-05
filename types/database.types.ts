@@ -6278,6 +6278,30 @@ export type Database = {
           },
         ]
       }
+      site_content: {
+        Row: {
+          company_id: string
+          data: Json
+          key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          company_id: string
+          data?: Json
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          data?: Json
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       series_terms: {
         Row: {
           series_id: string
