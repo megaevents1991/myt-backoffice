@@ -23,7 +23,9 @@
  *   D. the child tables keyed by a task id (`task_comments`, `task_reads`) and the
  *      `task-attachments` bucket may be used only by files that resolve the parent
  *      task through a scope; `recordActivity` only from such files;
- *   E. `tasksOf(...)` takes the server-resolved company, nothing else;
+ *   E. `tasksOf(...)` takes the server-resolved company, nothing else. One helper
+ *      is allow-listed by name (HANDED_ALLOW): it is handed the company by the
+ *      actions that resolved it, and those callers are checked here too;
  *   F. no rpc touches tasks;
  *   G. every action of the task board starts with `requireTaskBoard()`;
  *   H. a mailed task link is built by `taskUrl()` (it carries the task's company).
@@ -96,6 +98,33 @@ const CHILD_ALLOW: Record<string, string> = {
 
 /** Calls that may take "tasks" as their first argument, as "file#callee" -> reason. Empty on purpose. */
 const CALL_ALLOW: Record<string, string> = {};
+
+/**
+ * Helpers that call `tasksOf(company)` on a company their CALLER resolved (rule E),
+ * as "file" -> { the exported function that receives it, how many tasksOf calls, why }.
+ * An entry holds only while:
+ *   - the file holds exactly `calls` such calls;
+ *   - `company` is the first parameter of `entry` and of the functions it is passed on
+ *     to, and the file never declares, reassigns or defaults a company of its own;
+ *   - every call of `entry` in the scanned code is `entry(company, ...)` in a file that
+ *     resolves the company with requireCompany()/getActiveCompany() - and one exists.
+ */
+const HANDED_ALLOW: Record<string, { entry: string; calls: number; reason: string }> = {
+  "lib/tours/flight-sync.ts": {
+    entry: "syncSubToursFromFlights",
+    calls: 2,
+    reason:
+      "runs inside updateOfflineFlight / bulkUpdateOfflineFlights, after the flight was saved through flightsOf(company); " +
+      'it reads the sub-tours with .eq("company_id", company.id) and opens the task on that same company, ' +
+      "so a task is always on the board of the company that owns its departure",
+  },
+};
+
+/** What a helper that is handed its company may not hold: a company it declares, reassigns or defaults to. */
+const OWN_COMPANY =
+  /\b(const|let|var)\s+company\b|\bcompany\s*=(?![=>])|\b(MEGA_EVENTS_COMPANY_ID|MEGA_EVENTS_FALLBACK|megaEventsTasks)\b/;
+/** A function whose first parameter is the company. */
+const TAKES_COMPANY = /\bfunction\s+(\w+)\(\s*company: Company\b/g;
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
@@ -214,6 +243,9 @@ function staticScan() {
 
   let unscoped = 0;
   const allowedDirect = new Map<string, number>();
+  const handedCalls = new Map<string, number>();
+  const handedCallers = new Map<string, string[]>();
+  const handedSource = new Map<string, string>();
   for (const file of files) {
     const name = rel(file);
     const source = readFileSync(file, "utf8");
@@ -321,17 +353,38 @@ function staticScan() {
     }
 
     // ---- E. the helper takes the server-resolved company
+    const resolved = /\b(requireCompany|getActiveCompany)\(/.test(source);
+    const handed = HANDED_ALLOW[name];
+    if (handed) handedSource.set(name, source);
     for (const match of source.matchAll(TASKS_OF)) {
       const index = match.index ?? 0;
       if (isCommentLine(source, index)) continue;
       const where = `${name}:${lineOf(source, index)}`;
       const arg = match[1].trim();
-      const resolved = /\b(requireCompany|getActiveCompany)\(/.test(source);
       if (arg === "company" && resolved) {
         sites.push({ where, how: "tasksOf(company) - active company" });
+      } else if (arg === "company" && handed) {
+        handedCalls.set(name, (handedCalls.get(name) ?? 0) + 1);
+        sites.push({ where, how: `tasksOf(company) ALLOW-LISTED: ${handed.reason}` });
       } else {
         unscoped++;
         fail(`static: ${where}`, `tasksOf(${arg}) - pass the company from requireCompany()/getActiveCompany(), named "company"`);
+      }
+    }
+    // Whoever calls an allow-listed helper hands it the company it resolved itself.
+    for (const [helper, allowed] of Object.entries(HANDED_ALLOW)) {
+      for (const match of source.matchAll(new RegExp(`\\b${allowed.entry}\\(\\s*([^,)]*)`, "g"))) {
+        const index = match.index ?? 0;
+        if (isCommentLine(source, index)) continue;
+        if (/\bfunction\s+$/.test(source.slice(Math.max(0, index - 12), index))) continue; // its declaration
+        const where = `${name}:${lineOf(source, index)}`;
+        const arg = match[1].trim();
+        if (arg === "company" && resolved && name !== helper) {
+          handedCallers.set(helper, [...(handedCallers.get(helper) ?? []), where]);
+        } else {
+          unscoped++;
+          fail(`static: ${where}`, `${allowed.entry}(${arg}) - ${helper} opens tasks for the company it is handed: pass the company from requireCompany()/getActiveCompany(), named "company"`);
+        }
       }
     }
     for (const match of source.matchAll(/\bmegaEventsTasks\(\)/g)) {
@@ -367,6 +420,25 @@ function staticScan() {
   // ---- A (cont.) the allow-listed files hold exactly the statements they were allowed
   for (const [file, allowed] of Object.entries(DIRECT_ALLOW)) {
     check(`static: ${file} holds exactly ${allowed.statements} cross-company read(s)`, allowedDirect.get(file) ?? 0, allowed.statements);
+  }
+
+  // ---- E (cont.) an allow-listed helper only passes on the company it was handed
+  for (const [helper, allowed] of Object.entries(HANDED_ALLOW)) {
+    check(`static: ${helper} holds exactly ${allowed.calls} tasksOf(company) call(s)`, handedCalls.get(helper) ?? 0, allowed.calls);
+    const code = (handedSource.get(helper) ?? "").replace(/^\s*(\/\/|\*|\/\*).*$/gm, "");
+    const takers = [...code.matchAll(TAKES_COMPANY)].map((m) => m[1]);
+    const strays = takers
+      .filter((fn) => fn !== allowed.entry)
+      .flatMap((fn) => [...code.matchAll(new RegExp(`(?<!function\\s)\\b${fn}\\(\\s*([^,)]*)`, "g"))])
+      .filter((m) => m[1].trim() !== "company");
+    truthy(
+      `static: ${helper} takes its company from ${allowed.entry}(company, ...) and never picks one itself`,
+      takers.includes(allowed.entry) && (code.match(/\bcompany\s*:/g) ?? []).length === takers.length && !OWN_COMPANY.test(code) && strays.length === 0,
+      "the company must be the first parameter of the entry point, passed on as it is - no company declared, reassigned or defaulted in the file",
+    );
+    const callers = handedCallers.get(helper) ?? [];
+    truthy(`static: ${allowed.entry}() is called with a resolved company`, callers.length > 0, "no caller found - drop the HANDED_ALLOW entry, or the scanner lost its targets");
+    if (callers.length) console.log(`     ${allowed.entry}(company) is called from ${callers.join(", ")}`);
   }
 
   // ---- G. every export of the board's action files starts with requireTaskBoard()
