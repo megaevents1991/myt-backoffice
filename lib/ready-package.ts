@@ -381,3 +381,129 @@ export function hotelLabel(hotel: HotelLike | null | undefined, skipped: boolean
     .filter(Boolean)
     .join(" · ");
 }
+
+// ---------------------------------------------------------------------------
+// The editor's builder: a suggestion, and the spec it sends back
+// ---------------------------------------------------------------------------
+
+const cheapestOf = <T extends { pricePerPerson: number }>(list: T[]): T | undefined =>
+  [...list].sort((a, b) => a.pricePerPerson - b.pricePerPerson)[0];
+
+/**
+ * The flight "Compose automatically" proposes: the cheapest direct one with a
+ * checked bag, else the cheapest direct, else the cheapest - saying which step
+ * it had to take.
+ */
+export function pickSuggestedFlight<
+  T extends { direct: boolean; checkedBag: boolean; pricePerPerson: number },
+>(list: T[]): { choice: T; note?: string } | null {
+  const direct = list.filter((f) => f.direct);
+  const withBag = direct.filter((f) => f.checkedBag);
+  if (withBag.length > 0) return { choice: cheapestOf(withBag)! };
+  if (direct.length > 0) {
+    return { choice: cheapestOf(direct)!, note: "no direct flight with a checked bag - took the cheapest direct" };
+  }
+  const any = cheapestOf(list);
+  return any ? { choice: any, note: "no direct flight - took the cheapest" } : null;
+}
+
+/**
+ * The hotel "Compose automatically" proposes: the cheapest of `minStars`+ with
+ * a meal, else the cheapest of `minStars`+, else the cheapest.
+ */
+export function pickSuggestedHotel<
+  T extends { stars: number; meal: string; pricePerPerson: number },
+>(list: T[], minStars = 4): { choice: T; note?: string } | null {
+  const starred = list.filter((h) => h.stars >= minStars);
+  const withMeal = starred.filter((h) => hasMeal(h.meal));
+  if (withMeal.length > 0) return { choice: cheapestOf(withMeal)! };
+  if (starred.length > 0) {
+    return { choice: cheapestOf(starred)!, note: `no ${minStars}★ hotel with a meal - took the cheapest ${minStars}★` };
+  }
+  const any = cheapestOf(list);
+  return any ? { choice: any, note: `no ${minStars}★ hotel - took the cheapest` } : null;
+}
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const record = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+const text = (value: unknown, max: number): string | null =>
+  typeof value === "string" && value.length > 0 && value.length <= max ? value : null;
+const positiveInt = (value: unknown): number | null => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+/** YYYY-MM-DD, as a date input gives it. */
+export const isDay = (value: unknown): value is string =>
+  typeof value === "string" && DAY_RE.test(value);
+
+/**
+ * A spec that came from the browser, checked field by field; null when any
+ * part is not what a spec may hold. It only says the SHAPE is sound - whether
+ * the pieces exist and what they cost is decided by looking them up again.
+ */
+export function parseSpecInput(raw: unknown): ReadyPackageSpec | null {
+  const root = record(raw);
+  if (!root) return null;
+
+  const ticketIn = record(root.ticket);
+  const category = text(ticketIn?.category, 300);
+  if (!ticketIn || !category) return null;
+  const ticket = { id: text(ticketIn.id, 200), category };
+
+  const travelers = positiveInt(root.defaultTravelers);
+  if (!travelers || travelers > READY_MAX_TRAVELERS_CAP) return null;
+
+  const flightIn = record(root.flight);
+  let flight: ReadyFlightSpec;
+  if (flightIn?.mode === "none") flight = { mode: "none" };
+  else if (flightIn?.mode === "offline") {
+    const offlineId = positiveInt(flightIn.offlineId);
+    if (!offlineId) return null;
+    flight = { mode: "offline", offlineId };
+  } else if (flightIn?.mode === "live") {
+    const outboundDeparture = text(flightIn.outboundDeparture, 40);
+    const inboundDeparture = text(flightIn.inboundDeparture, 40);
+    const departureDate = flightIn.departureDate;
+    const returnDate = flightIn.returnDate;
+    if (!outboundDeparture || !inboundDeparture) return null;
+    if (!isDay(departureDate) || !isDay(returnDate) || departureDate > returnDate) return null;
+    flight = {
+      mode: "live",
+      airline: text(flightIn.airline, 20),
+      outboundFlightNumber: text(flightIn.outboundFlightNumber, 20),
+      outboundDeparture,
+      inboundFlightNumber: text(flightIn.inboundFlightNumber, 20),
+      inboundDeparture,
+      departureDate,
+      returnDate,
+    };
+  } else return null;
+
+  const hotelIn = record(root.hotel);
+  let hotel: ReadyHotelSpec;
+  if (hotelIn?.mode === "none") hotel = { mode: "none" };
+  else if (hotelIn?.mode === "offline") {
+    const ids = Array.isArray(hotelIn.rowIds) ? hotelIn.rowIds.map(positiveInt) : [];
+    if (ids.length === 0 || ids.length > 10 || ids.some((id) => id == null)) return null;
+    hotel = { mode: "offline", rowIds: ids as number[] };
+  } else if (hotelIn?.mode === "live") {
+    const hotelId = text(hotelIn.hotelId, 200);
+    const checkin = hotelIn.checkin;
+    const checkout = hotelIn.checkout;
+    if (!hotelId || !isDay(checkin) || !isDay(checkout) || checkin >= checkout) return null;
+    hotel = {
+      mode: "live",
+      hotelId,
+      roomName: typeof hotelIn.roomName === "string" ? hotelIn.roomName.slice(0, 300) : "",
+      meal: text(hotelIn.meal, 40) ?? "nomeal",
+      checkin,
+      checkout,
+    };
+  } else return null;
+
+  return { ticket, flight, hotel, defaultTravelers: travelers };
+}

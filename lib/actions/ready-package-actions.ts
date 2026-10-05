@@ -11,17 +11,27 @@ import { revalidateMain } from "@/lib/revalidate-main";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import {
   adoptPackage,
+  createHousePackageFromSpec,
+  loadBuildOptions,
   loadHousePackageForEvent,
   loadReadyEvent,
   refreshHousePackage,
+  searchBuildFlights,
+  searchBuildHotels,
   setEventReady,
+  suggestBuild,
   toReadyView,
+  type BuildSuggestion,
+  type FlightChoicesResult,
+  type HotelChoicesResult,
 } from "@/lib/services/ready-package";
 import {
   READY_MAX_TRAVELERS_CAP,
   canGoLive,
   flightLabel,
   hotelLabel,
+  isDay,
+  parseSpecInput,
   specFromComposition,
   type CompositionLike,
   type FlightLike,
@@ -29,6 +39,7 @@ import {
 } from "@/lib/ready-package";
 import {
   READY_PACKAGE_MODES,
+  type ReadyBuildOptions,
   type ReadyPackageMode,
   type ReadyPackageView,
 } from "@/types/ready-package.types";
@@ -270,5 +281,142 @@ export async function removeReadyPackage(eventId: number): Promise<ReadyActionRe
   } catch (error) {
     console.error("removeReadyPackage:", error);
     return { ok: false, error: "Could not remove the ready package." };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "Build closed package" - building the package in the event editor itself
+// ---------------------------------------------------------------------------
+
+export type ReadyBuildOptionsResult =
+  | { ok: true; options: ReadyBuildOptions }
+  | { ok: false; error: string };
+
+const partySize = (value: unknown): number | null => {
+  const n = Math.floor(Number(value));
+  return Number.isInteger(n) && n >= 1 && n <= READY_MAX_TRAVELERS_CAP ? n : null;
+};
+
+/** The tickets on sale and the event's default travel window - what the builder opens with. */
+export async function getReadyBuildOptions(eventId: number): Promise<ReadyBuildOptionsResult> {
+  await requireStaff();
+  const id = validId(eventId);
+  if (!id) return { ok: false, error: "Invalid event." };
+  try {
+    const options = await loadBuildOptions(id);
+    if (!options) return { ok: false, error: "The event was not found or has passed." };
+    if (options.tickets.length === 0) return { ok: false, error: "This event has no ticket on sale." };
+    return { ok: true, options };
+  } catch (error) {
+    console.error("getReadyBuildOptions:", error);
+    return { ok: false, error: "Could not load the event." };
+  }
+}
+
+/** Flights for this party and these dates - the site's own search (our inventory + online offers). */
+export async function searchReadyFlights(
+  eventId: number,
+  input: { departureDate: string; returnDate: string; travelers: number },
+): Promise<FlightChoicesResult> {
+  await requireStaff();
+  const id = validId(eventId);
+  const travelers = partySize(input?.travelers);
+  if (!id || !travelers) return { ok: false, error: "Invalid search." };
+  if (!isDay(input.departureDate) || !isDay(input.returnDate) || input.departureDate > input.returnDate) {
+    return { ok: false, error: "Pick a departure date and a return date." };
+  }
+  try {
+    return await searchBuildFlights({
+      eventId: id,
+      departureDate: input.departureDate,
+      returnDate: input.returnDate,
+      travelers,
+    });
+  } catch (error) {
+    console.error("searchReadyFlights:", error);
+    return { ok: false, error: "The flight search failed. Try again." };
+  }
+}
+
+/** Hotel rooms for this party and these dates; `query` narrows by hotel name before the result cap. */
+export async function searchReadyHotels(
+  eventId: number,
+  input: { checkin: string; checkout: string; travelers: number; query?: string },
+): Promise<HotelChoicesResult> {
+  await requireStaff();
+  const id = validId(eventId);
+  const travelers = partySize(input?.travelers);
+  if (!id || !travelers) return { ok: false, error: "Invalid search." };
+  if (!isDay(input.checkin) || !isDay(input.checkout) || input.checkin >= input.checkout) {
+    return { ok: false, error: "Pick a check-in date and a later check-out date." };
+  }
+  try {
+    return await searchBuildHotels({
+      eventId: id,
+      checkin: input.checkin,
+      checkout: input.checkout,
+      travelers,
+      query: typeof input.query === "string" ? input.query.trim().slice(0, 80) || undefined : undefined,
+    });
+  } catch (error) {
+    console.error("searchReadyHotels:", error);
+    return { ok: false, error: "The hotel search failed. Try again." };
+  }
+}
+
+/** "Compose automatically": a ticket, a flight and a hotel by the plain rule. Chooses; saves nothing. */
+export async function suggestReadyBuild(eventId: number, travelers: number): Promise<BuildSuggestion> {
+  await requireStaff();
+  const id = validId(eventId);
+  const pax = partySize(travelers);
+  if (!id || !pax) return { ok: false, error: "Invalid event." };
+  try {
+    return await suggestBuild({ eventId: id, travelers: pax });
+  } catch (error) {
+    console.error("suggestReadyBuild:", error);
+    return { ok: false, error: "Could not compose a package. Try again, or choose by hand." };
+  }
+}
+
+/**
+ * Saves the chosen ticket + flight + hotel as the event's ready package. The
+ * browser names the pieces (`spec`); they are looked up and priced again here.
+ * `closed` = the customer cannot swap a piece.
+ */
+export async function buildReadyPackage(
+  eventId: number,
+  input: { spec: unknown; closed?: boolean },
+): Promise<ReadyActionResult> {
+  const session = await requireStaff();
+  const id = validId(eventId);
+  if (!id) return { ok: false, error: "Invalid event." };
+  const spec = parseSpecInput(input?.spec);
+  if (!spec) return { ok: false, error: "The package is incomplete - choose a ticket, a flight and a hotel." };
+  try {
+    const result = await createHousePackageFromSpec({
+      eventId: id,
+      spec,
+      createdBy: session.sub,
+      allowEdit: typeof input.closed === "boolean" ? !input.closed : undefined,
+    });
+    if (!result.ok) return result;
+    await logAudit({
+      action: "ready_package.built",
+      entityType: "event",
+      entityId: id,
+      metadata: {
+        package_id: result.row.id,
+        travelers: spec.defaultTravelers,
+        ticket: spec.ticket.category,
+        flight: spec.flight.mode,
+        hotel: spec.hotel.mode,
+        closed: input.closed === true,
+      },
+    });
+    await revalidateMain();
+    return { ok: true, data: await cardData(id) };
+  } catch (error) {
+    console.error("buildReadyPackage:", error);
+    return { ok: false, error: "Could not save the ready package." };
   }
 }

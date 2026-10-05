@@ -8,6 +8,9 @@ import {
   matchFlight,
   matchHotelOption,
   offlineHotelUnitsFor,
+  parseSpecInput,
+  pickSuggestedFlight,
+  pickSuggestedHotel,
   readyMode,
   readyPreviewUrl,
   specFromComposition,
@@ -237,5 +240,45 @@ assert.equal(
   readyPreviewUrl("https://www.mega-events.co.il/", 812, "abc-123"),
   "https://www.mega-events.co.il/order/812?ready=abc-123",
 );
+
+// ── the editor's builder ────────────────────────────────────────────────────
+const fl = (direct: boolean, checkedBag: boolean, pricePerPerson: number) => ({ direct, checkedBag, pricePerPerson });
+assert.equal(pickSuggestedFlight([fl(true, true, 500), fl(true, true, 450), fl(false, true, 300), fl(true, false, 400)])?.choice.pricePerPerson, 450);
+const noBag = pickSuggestedFlight([fl(true, false, 400), fl(false, true, 300)]);
+assert.equal(noBag?.choice.pricePerPerson, 400, "a direct flight without a bag beats a cheaper connection");
+assert.ok(noBag?.note?.includes("cheapest direct"));
+assert.ok(pickSuggestedFlight([fl(false, true, 300)])?.note?.includes("no direct flight"));
+assert.equal(pickSuggestedFlight([]), null);
+
+const ho = (stars: number, meal: string, pricePerPerson: number) => ({ stars, meal, pricePerPerson });
+assert.equal(pickSuggestedHotel([ho(4, "breakfast", 600), ho(5, "breakfast", 550), ho(4, "nomeal", 300), ho(3, "breakfast", 200)])?.choice.pricePerPerson, 550);
+assert.equal(pickSuggestedHotel([ho(4, "nomeal", 300), ho(3, "breakfast", 200)])?.choice.pricePerPerson, 300, "stars before the meal");
+assert.ok(pickSuggestedHotel([ho(3, "breakfast", 200)])?.note?.includes("took the cheapest"));
+assert.equal(pickSuggestedHotel([ho(3, "nomeal", 200), ho(3, "breakfast", 250)], 3)?.choice.pricePerPerson, 250);
+assert.equal(pickSuggestedHotel([]), null);
+
+const goodSpec = {
+  ticket: { id: "t1", category: "Category 1" },
+  flight: flightSpecOf(liveFlight, false),
+  hotel: hotelSpecOf(liveHotel, false),
+  defaultTravelers: 2,
+};
+assert.deepEqual(parseSpecInput(goodSpec), goodSpec, "a sound spec comes back as it went in");
+assert.deepEqual(
+  parseSpecInput({ ticket: { category: "A" }, flight: { mode: "none" }, hotel: { mode: "offline", rowIds: [7, 7] }, defaultTravelers: 4, extra: "x" }),
+  { ticket: { id: null, category: "A" }, flight: { mode: "none" }, hotel: { mode: "offline", rowIds: [7, 7] }, defaultTravelers: 4 },
+  "unknown keys are dropped",
+);
+assert.deepEqual(parseSpecInput({ ...goodSpec, flight: { mode: "offline", offlineId: "42" } })?.flight, { mode: "offline", offlineId: 42 });
+assert.equal(parseSpecInput(null), null);
+assert.equal(parseSpecInput({ ...goodSpec, ticket: {} }), null, "no ticket");
+assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 7 }), null, "above the cap");
+assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 0 }), null);
+assert.equal(parseSpecInput({ ...goodSpec, flight: { mode: "charter" } }), null, "an unknown mode");
+assert.equal(parseSpecInput({ ...goodSpec, flight: { ...goodSpec.flight, departureDate: "11/03/2027" } }), null, "a date that is not YYYY-MM-DD");
+assert.equal(parseSpecInput({ ...goodSpec, flight: { mode: "offline", offlineId: -3 } }), null);
+assert.equal(parseSpecInput({ ...goodSpec, hotel: { ...goodSpec.hotel, checkout: "2027-03-11" } }), null, "no nights");
+assert.equal(parseSpecInput({ ...goodSpec, hotel: { mode: "offline", rowIds: [] } }), null);
+assert.equal(parseSpecInput({ ...goodSpec, hotel: { mode: "offline", rowIds: [7, "x"] } }), null);
 
 console.log("ready-package selftest OK");

@@ -92,3 +92,57 @@ export type ReadyPackageView = {
   /** The link staff open to see it on the site (works in preview and live). */
   previewUrl: string;
 };
+
+// ── Building a package in the event editor ("Build here") ───────────────────
+
+type ReadyLeg = {
+  flightNumber: string | null;
+  departure: string;
+  arrival: string;
+  from: string;
+  to: string;
+};
+
+/** A flight the editor's builder can put in a ready package - what a search row shows, plus its identity. */
+export type ReadyFlightChoice = {
+  key: string;
+  spec: ReadyFlightSpec;
+  airline: string;
+  logo: string | null;
+  direct: boolean;
+  outbound: ReadyLeg;
+  inbound: ReadyLeg;
+  /** A checked bag is included in BOTH directions. */
+  checkedBag: boolean;
+  cabinBag: boolean;
+  pricePerPerson: number;
+  /** A block of seats from our inventory rather than an online offer. */
+  offline: boolean;
+};
+
+/** A hotel room the editor's builder can put in a ready package. */
+export type ReadyHotelChoice = {
+  key: string;
+  spec: ReadyHotelSpec;
+  name: string;
+  stars: number;
+  roomName: string;
+  meal: string;
+  /** Whole stay, whole party, USD. */
+  totalPrice: number;
+  pricePerPerson: number;
+  image: string | null;
+  distanceM: number | null;
+  refundable: boolean;
+  /** Rooms from our inventory rather than an online rate. */
+  offline: boolean;
+};
+
+export type ReadyTicketChoice = { id: string | null; category: string; price: number };
+
+/** What the builder opens with: the tickets on sale and the event's default travel window. */
+export type ReadyBuildOptions = {
+  tickets: ReadyTicketChoice[];
+  departureDate: string;
+  returnDate: string;
+};

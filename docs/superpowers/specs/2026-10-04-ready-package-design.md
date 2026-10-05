@@ -50,7 +50,15 @@ row keeps working.
 
 ## Backoffice
 
-- **Building.** The package is built in the portal wizard, as today (staff impersonate a
+- **Building in the editor (added 2026-10-05, Dor: "כפתור שיכול לאפשר לבנות אירוע סגור").**
+  The card's **"Build closed package"** opens a builder in place: party size and dates, then
+  "Compose automatically" (cheapest ticket, cheapest direct flight with a checked bag,
+  cheapest 4-star with a meal) or a hand pick from a flight search and a hotel search (main's
+  own searches, our inventory first). The browser sends only the IDENTITY of the chosen
+  pieces (a `spec`); the server checks its shape, looks each piece up again and prices it
+  before saving. "Closed package" (default on) = the customer cannot swap a piece. The
+  builder needs a saved event; it loads nothing until it is opened.
+- **Building in the portal (the first way, still there).** The package is built in the portal wizard, as today (staff impersonate a
   partner or use a partner login). The event editor's new card **"Ready package"**
   (`section-ready-package`) lists the prepared packages that exist for this event and
   **adopts** one: it copies the composition into a NEW `kind = house` row (the partner's
@@ -109,7 +117,7 @@ route branch. New UI lives in new files.
 ## Not in v1
 
 Several packages per event, rule profiles, priced extras, split stays inside a
-package, a staff wizard inside the dashboard, a live re-search at the moment of booking
+package, a live re-search at the moment of booking
 (the nightly refresh, main's existing step-4 flight pricing call and `confirm-order`'s
 price floor are what stand there today).
 

@@ -33,14 +33,18 @@ import {
   type HotelRow,
 } from "@/lib/services/package-snapshots";
 import {
+  READY_MAX_TRAVELERS_CAP,
   clampMaxTravelers,
   flightLabel,
+  flightSpecOf,
   hasMeal,
   hotelLabel,
   isoDay,
   matchFlight,
   matchHotelOption,
   offlineHotelUnitsFor,
+  pickSuggestedFlight,
+  pickSuggestedHotel,
   readyMode,
   readyPreviewUrl,
   specFromComposition,
@@ -55,9 +59,17 @@ import {
 import type { Json } from "@/types/database.types";
 import type { EventTicket } from "@/types/app.types";
 import type {
+  LiveFlightOffer,
+  LiveHotelOption,
+} from "@/lib/actions/portal-package-actions";
+import type {
+  ReadyBuildOptions,
+  ReadyFlightChoice,
+  ReadyHotelChoice,
   ReadyPackageMode,
   ReadyPackageSpec,
   ReadyPackageView,
+  ReadyTicketChoice,
   ReadyRefreshStatus,
   ReadyVariant,
   ReadyVariants,
@@ -603,43 +615,34 @@ export type CreateHouseResult =
   | { ok: false; error: string };
 
 /**
- * Makes `composition` the event's ready package. One house row per event: a
- * second call rewrites the same row, so its token - and the preview link staff
- * already hold - stays. An event that had none opens in `preview`.
+ * Writes the event's house row. One house row per event: a second call rewrites
+ * the same row, so its token - and the preview link staff already hold - stays.
+ * An event that had none opens in `preview`.
  */
-export async function createHousePackage(input: {
-  eventId: number;
-  composition: Composition;
+async function saveHousePackage(input: {
+  event: ReadyEventRow;
+  spec: ReadyPackageSpec;
+  first: ReadyVariant;
   createdBy: string | null;
+  /** May the customer swap pieces? Undefined = keep what the row has (a new row: yes). */
+  allowEdit?: boolean;
 }): Promise<CreateHouseResult> {
-  const event = await loadReadyEvent(input.eventId);
-  if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
-
-  const { composition } = input;
-  const parsed = specFromComposition(composition as unknown as CompositionLike);
-  if (!parsed.ok) return parsed;
-  const { spec } = parsed;
-
-  const price = Number(composition.event_order_info.price_per_person);
-  const first: ReadyVariant = {
-    event_order_info: composition.event_order_info,
-    flight_order_info: composition.flight_order_info,
-    flight_skipped: composition.flight_skipped,
-    hotel_order_info: composition.hotel_order_info,
-    hotel_skipped: composition.hotel_skipped,
-    price_per_person: Number.isFinite(price) && price > 0 ? price : null,
-    ...(composition.hotel_image ? { hotel_image: composition.hotel_image } : {}),
-    built_at: new Date().toISOString(),
-  };
+  const { event, spec, first } = input;
+  if (spec.defaultTravelers > READY_MAX_TRAVELERS_CAP) {
+    return {
+      ok: false,
+      error: `The package is for ${spec.defaultTravelers} travellers - a ready package is for up to ${READY_MAX_TRAVELERS_CAP}.`,
+    };
+  }
   const variants: ReadyVariants = { [String(spec.defaultTravelers)]: first };
 
-  const existing = await loadHousePackageForEvent(input.eventId);
+  const existing = await loadHousePackageForEvent(event.id);
   const columns = {
-    event_order_info: composition.event_order_info as unknown as Json,
-    flight_order_info: composition.flight_order_info as unknown as Json | null,
-    flight_skipped: composition.flight_skipped,
-    hotel_order_info: composition.hotel_order_info as unknown as Json | null,
-    hotel_skipped: composition.hotel_skipped,
+    event_order_info: first.event_order_info as unknown as Json,
+    flight_order_info: first.flight_order_info as unknown as Json | null,
+    flight_skipped: first.flight_skipped,
+    hotel_order_info: first.hotel_order_info as unknown as Json | null,
+    hotel_skipped: first.hotel_skipped,
     num_travelers: spec.defaultTravelers,
     spec: spec as unknown as Json,
     variants: variants as unknown as Json,
@@ -647,6 +650,9 @@ export async function createHousePackage(input: {
     // Only the built size is priced yet - the card builds the rest.
     refresh_status: "partial",
     refresh_note: null,
+    // A package built for more than the row's max would never open on its own size.
+    max_travelers: Math.max(clampMaxTravelers(existing?.max_travelers), spec.defaultTravelers),
+    ...(input.allowEdit !== undefined ? { allow_edit: input.allowEdit } : {}),
   };
 
   let token: string;
@@ -665,10 +671,9 @@ export async function createHousePackage(input: {
       kind: "house",
       partner_tracking_code: null,
       created_by: input.createdBy,
-      event_id: input.eventId,
-      allow_edit: true,
+      event_id: event.id,
+      allow_edit: input.allowEdit ?? true,
       price_adjust_per_person: 0,
-      max_travelers: clampMaxTravelers(undefined),
     });
     if (error) {
       console.error("ready-package: insert failed", JSON.stringify(error));
@@ -676,15 +681,72 @@ export async function createHousePackage(input: {
     }
   }
 
-  await writeEventReady(input.eventId, {
+  await writeEventReady(event.id, {
     token,
     price: first.price_per_person,
     ...(readyMode(event.ready_package_mode) === "off" ? { mode: "preview" as const } : {}),
   });
 
-  const row = await loadHousePackageForEvent(input.eventId);
+  const row = await loadHousePackageForEvent(event.id);
   if (!row) return { ok: false, error: "The ready package was saved but could not be read back." };
   return { ok: true, row };
+}
+
+/** Makes an existing `composition` (a prepared package's pieces, as stored) the event's ready package. */
+export async function createHousePackage(input: {
+  eventId: number;
+  composition: Composition;
+  createdBy: string | null;
+}): Promise<CreateHouseResult> {
+  const event = await loadReadyEvent(input.eventId);
+  if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
+
+  const { composition } = input;
+  const parsed = specFromComposition(composition as unknown as CompositionLike);
+  if (!parsed.ok) return parsed;
+
+  const price = Number(composition.event_order_info.price_per_person);
+  const first: ReadyVariant = {
+    event_order_info: composition.event_order_info,
+    flight_order_info: composition.flight_order_info,
+    flight_skipped: composition.flight_skipped,
+    hotel_order_info: composition.hotel_order_info,
+    hotel_skipped: composition.hotel_skipped,
+    price_per_person: Number.isFinite(price) && price > 0 ? price : null,
+    ...(composition.hotel_image ? { hotel_image: composition.hotel_image } : {}),
+    built_at: new Date().toISOString(),
+  };
+  return saveHousePackage({ event, spec: parsed.spec, first, createdBy: input.createdBy });
+}
+
+/**
+ * Makes the pieces a `spec` names the event's ready package - the editor's
+ * "Build here". The browser sends only WHICH ticket, flight and hotel; they are
+ * looked up again here (one flight search, one hotel search) and priced, so
+ * nothing price-bearing ever comes from the client.
+ */
+export async function createHousePackageFromSpec(input: {
+  eventId: number;
+  spec: ReadyPackageSpec;
+  createdBy: string | null;
+  allowEdit?: boolean;
+}): Promise<CreateHouseResult> {
+  const event = await loadReadyEvent(input.eventId);
+  if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
+  const built = await buildVariant(event, input.spec, input.spec.defaultTravelers);
+  if (!built.ok) {
+    return {
+      ok: false,
+      error: `Could not price this package for ${input.spec.defaultTravelers} travellers: ${built.reason}.`,
+    };
+  }
+  return saveHousePackage({
+    event,
+    spec: input.spec,
+    first: built.variant,
+    createdBy: input.createdBy,
+    allowEdit: input.allowEdit,
+  });
 }
 
 /** Copies a prepared package (a partner's, built in the portal wizard) into the event's house row. */
@@ -723,12 +785,267 @@ export async function adoptPackage(input: {
   });
 }
 
+// ---------------------------------------------------------------------------
+// The editor's builder ("Build here")
+// ---------------------------------------------------------------------------
+
+/** The event's default travel window; without one: the day before to the day after. */
+function defaultWindow(event: ReadyEventRow): { departureDate: string; returnDate: string } {
+  const day = (offset: number) =>
+    new Date(new Date(event.date).getTime() + offset * 86_400_000).toISOString().slice(0, 10);
+  return {
+    departureDate: event.def_date_depart ? isoDay(event.def_date_depart) : day(-1),
+    returnDate: event.def_date_return ? isoDay(event.def_date_return) : day(1),
+  };
+}
+
+const ticketsOnSale = (event: ReadyEventRow): ReadyTicketChoice[] =>
+  (event.tickets_and_rates ?? [])
+    .filter((t) => t && t.available !== false)
+    .map((t) => ({ id: t.id ?? null, category: t.category, price: Number(t.price) || 0 }))
+    .sort((a, b) => a.price - b.price);
+
+/** What the builder opens with. */
+export async function loadBuildOptions(eventId: number): Promise<ReadyBuildOptions | null> {
+  const event = await loadReadyEvent(eventId);
+  if (!event || !isLive(event)) return null;
+  return { tickets: ticketsOnSale(event), ...defaultWindow(event) };
+}
+
+function toFlightChoice(offer: LiveFlightOffer, pax: number): ReadyFlightChoice | null {
+  const spec = flightSpecOf(offer, false);
+  const price = Number(offer.price);
+  if (!spec || spec.mode === "none" || !Number.isFinite(price) || price <= 0) return null;
+  const leg = (l: LiveFlightOffer["outbound"]) => ({
+    flightNumber: l.flightNumber ?? null,
+    departure: l.departureTime,
+    arrival: l.arrivalTime,
+    from: l.departureAirport,
+    to: l.arrivalAirport,
+  });
+  return {
+    key:
+      spec.mode === "offline"
+        ? `inventory-${spec.offlineId}`
+        : [spec.outboundFlightNumber, spec.outboundDeparture, spec.inboundFlightNumber, spec.inboundDeparture].join("|"),
+    spec,
+    airline: offer.metadata?.name || offer.airline,
+    logo: offer.metadata?.logo || null,
+    direct: Number(offer.stops) === 0,
+    outbound: leg(offer.outbound),
+    inbound: leg(offer.inbound),
+    checkedBag: !!offer.outbound.checkBagsIncluded && !!offer.inbound.checkBagsIncluded,
+    cabinBag: !!offer.outbound.cabinBagsIncluded && !!offer.inbound.cabinBagsIncluded,
+    pricePerPerson: Math.round(price / Math.max(1, Number(offer.numOfTravelers) || pax)),
+    offline: spec.mode === "offline",
+  };
+}
+
+export type FlightChoicesResult =
+  | { ok: true; flights: ReadyFlightChoice[] }
+  | { ok: false; error: string };
+
 /**
- * A composition picked by a plain rule, for a package made without the wizard
- * (scripts/ready-package-create.ts): the cheapest ticket on sale (or the named
- * category), the cheapest direct flight with a checked bag both ways, the
- * cheapest hotel of `minStars`+ with a meal - each falling back one step when
- * nothing fits, and saying so.
+ * The flights a package of this event can carry, for this party: main's own
+ * search (our inventory merged with the online offers). One row per flight -
+ * several fares of the same flight collapse to the cheapest, which is the one a
+ * refresh will find again. Our inventory first, then by price.
+ */
+export async function searchBuildFlights(input: {
+  eventId: number;
+  departureDate: string;
+  returnDate: string;
+  travelers: number;
+}): Promise<FlightChoicesResult> {
+  const res = await searchFlightsViaMain({
+    eventId: input.eventId,
+    departureDate: input.departureDate,
+    returnDate: input.returnDate,
+    adults: input.travelers,
+  });
+  if (!res.ok) return res;
+  const byKey = new Map<string, ReadyFlightChoice>();
+  for (const offer of res.flights) {
+    const choice = toFlightChoice(offer, input.travelers);
+    if (!choice) continue;
+    const seen = byKey.get(choice.key);
+    if (!seen || choice.pricePerPerson < seen.pricePerPerson) byKey.set(choice.key, choice);
+  }
+  const flights = [...byKey.values()].sort(
+    (a, b) => Number(b.offline) - Number(a.offline) || a.pricePerPerson - b.pricePerPerson,
+  );
+  return { ok: true, flights };
+}
+
+function toHotelChoice(option: LiveHotelOption, pax: number): ReadyHotelChoice | null {
+  const hotelId = String(option.snapshot?.id ?? "");
+  if (!hotelId || !(option.price > 0)) return null;
+  return {
+    key: option.key,
+    spec: {
+      mode: "live",
+      hotelId,
+      roomName: option.room_name,
+      meal: option.meal || "nomeal",
+      checkin: option.checkin,
+      checkout: option.checkout,
+    },
+    name: option.name,
+    stars: Math.round(Number(option.stars) || 0),
+    roomName: option.room_name,
+    meal: option.meal || "nomeal",
+    totalPrice: Math.round(option.price),
+    pricePerPerson: Math.round(option.price / pax),
+    image: option.image,
+    distanceM: Number.isFinite(option.distance_m) ? option.distance_m : null,
+    refundable: !!option.free_cancellation_before,
+    offline: false,
+  };
+}
+
+/** Rooms from our own inventory linked to the event, as many as this party needs of ONE room type. */
+async function offlineHotelChoices(event: ReadyEventRow, pax: number): Promise<ReadyHotelChoice[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("offline_hotels")
+    .select(HOTEL_COLUMNS)
+    .contains("event_ids", [event.id])
+    .eq("is_deleted", false)
+    .gt("check_in", today)
+    .order("price", { ascending: true });
+  if (error) {
+    console.error("ready-package: inventory rooms failed", JSON.stringify(error));
+    return [];
+  }
+  const rows = (data ?? []) as unknown as HotelRow[];
+  const hids = [...new Set(rows.map((r) => r.hid).filter((h): h is number => h != null))];
+  let meta: Pick<HotelMetaRow, "hid" | "name" | "star_rating">[] = [];
+  if (hids.length > 0) {
+    const { data: metaRows } = await supabase.from("hotels").select("hid, name, star_rating").in("hid", hids);
+    meta = (metaRows ?? []) as unknown as Pick<HotelMetaRow, "hid" | "name" | "star_rating">[];
+  }
+  const choices: ReadyHotelChoice[] = [];
+  for (const row of rows) {
+    const count = Math.ceil(pax / roomCapacity(row.room_type));
+    if ((row.num_rooms ?? 0) - (row.consumed_rooms ?? 0) < count) continue;
+    const info = meta.find((m) => m.hid === row.hid);
+    const total = Number(row.price) * count;
+    choices.push({
+      key: `inventory-${row.id}`,
+      spec: { mode: "offline", rowIds: Array(count).fill(row.id) as number[] },
+      name: info?.name || row.hotel_name,
+      stars: Math.round(Number(info?.star_rating) || 0),
+      roomName: count > 1 ? `${count} x ${row.room_type}` : row.room_type,
+      meal: row.meal_plan || "nomeal",
+      totalPrice: Math.round(total),
+      pricePerPerson: Math.round(total / pax),
+      image: null,
+      distanceM: null,
+      refundable: !!row.last_cancellation_date,
+      offline: true,
+    });
+  }
+  return choices;
+}
+
+export type HotelChoicesResult =
+  | { ok: true; hotels: ReadyHotelChoice[] }
+  | { ok: false; error: string };
+
+/** The hotel rooms a package of this event can carry, for this party: our inventory first, then main's search by price. */
+export async function searchBuildHotels(input: {
+  eventId: number;
+  checkin: string;
+  checkout: string;
+  travelers: number;
+  query?: string;
+}): Promise<HotelChoicesResult> {
+  const event = await loadReadyEvent(input.eventId);
+  if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
+  const [inventory, res] = await Promise.all([
+    offlineHotelChoices(event, input.travelers),
+    searchHotelsViaMain({
+      eventId: input.eventId,
+      checkin: input.checkin,
+      checkout: input.checkout,
+      travelers: input.travelers,
+      query: input.query,
+    }),
+  ]);
+  if (!res.ok) return inventory.length > 0 ? { ok: true, hotels: inventory } : res;
+  const live = res.options
+    .map((o) => toHotelChoice(o, input.travelers))
+    .filter((c): c is ReadyHotelChoice => c !== null);
+  const query = (input.query ?? "").trim().toLowerCase();
+  const ours = query ? inventory.filter((c) => c.name.toLowerCase().includes(query)) : inventory;
+  return { ok: true, hotels: [...ours, ...live] };
+}
+
+export type BuildSuggestion =
+  | {
+      ok: true;
+      ticket: ReadyTicketChoice;
+      /** Null when the search had nothing to offer - staff then search by hand. */
+      flight: ReadyFlightChoice | null;
+      hotel: ReadyHotelChoice | null;
+      notes: string[];
+      departureDate: string;
+      returnDate: string;
+    }
+  | { ok: false; error: string };
+
+/**
+ * What "Compose automatically" fills in, by a plain rule over the event's
+ * default travel window: the cheapest ticket on sale (or the named category),
+ * the cheapest direct flight with a checked bag, the cheapest hotel of
+ * `minStars`+ with a meal - each falling back one step when nothing fits, and
+ * saying so. It chooses; it saves nothing.
+ */
+export async function suggestBuild(input: {
+  eventId: number;
+  travelers?: number;
+  category?: string;
+  minStars?: number;
+}): Promise<BuildSuggestion> {
+  const event = await loadReadyEvent(input.eventId);
+  if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
+  const pax = Math.max(1, Math.min(READY_MAX_TRAVELERS_CAP, Math.floor(input.travelers ?? 2)));
+  const notes: string[] = [];
+
+  const onSale = ticketsOnSale(event);
+  const ticket = input.category ? onSale.find((t) => t.category === input.category) : onSale[0];
+  if (!ticket) return { ok: false, error: "No ticket on sale matches." };
+
+  const { departureDate, returnDate } = defaultWindow(event);
+  const [flights, hotels] = await Promise.all([
+    searchBuildFlights({ eventId: event.id, departureDate, returnDate, travelers: pax }),
+    searchBuildHotels({ eventId: event.id, checkin: departureDate, checkout: returnDate, travelers: pax }),
+  ]);
+
+  const flight = flights.ok ? pickSuggestedFlight(flights.flights) : null;
+  if (!flights.ok) notes.push(`flight search failed: ${flights.error}`);
+  else if (!flight) notes.push("the flight search came back empty");
+  else if (flight.note) notes.push(flight.note);
+
+  const hotel = hotels.ok ? pickSuggestedHotel(hotels.hotels, input.minStars ?? 4) : null;
+  if (!hotels.ok) notes.push(`hotel search failed: ${hotels.error}`);
+  else if (!hotel) notes.push("the hotel search came back empty");
+  else if (hotel.note) notes.push(hotel.note);
+
+  return {
+    ok: true,
+    ticket,
+    flight: flight?.choice ?? null,
+    hotel: hotel?.choice ?? null,
+    notes,
+    departureDate,
+    returnDate,
+  };
+}
+
+/**
+ * A whole composition by the same rule, for a package made without any screen
+ * (scripts/ready-package-create.ts): the suggestion, looked up and priced.
  */
 export async function composeAuto(input: {
   eventId: number;
@@ -736,59 +1053,29 @@ export async function composeAuto(input: {
   category?: string;
   minStars?: number;
 }): Promise<{ ok: true; composition: Composition; notes: string[] } | { ok: false; error: string }> {
+  const suggestion = await suggestBuild(input);
+  if (!suggestion.ok) return suggestion;
+  if (!suggestion.flight || !suggestion.hotel) {
+    return { ok: false, error: suggestion.notes.join("; ") || "Nothing to compose from." };
+  }
   const event = await loadReadyEvent(input.eventId);
-  if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
-  const pax = Math.max(1, Math.floor(input.travelers ?? 2));
-  const notes: string[] = [];
-
-  const onSale = (event.tickets_and_rates ?? []).filter((t) => t && t.available !== false);
-  const ticket = input.category
-    ? onSale.find((t) => t.category === input.category)
-    : [...onSale].sort((a, b) => a.price - b.price)[0];
-  if (!ticket) return { ok: false, error: "No ticket on sale matches." };
-
-  // The event's default travel window; without one: the day before to the day after.
-  const day = (offset: number) =>
-    new Date(new Date(event.date).getTime() + offset * 86_400_000).toISOString().slice(0, 10);
-  const departureDate = event.def_date_depart ? isoDay(event.def_date_depart) : day(-1);
-  const returnDate = event.def_date_return ? isoDay(event.def_date_return) : day(1);
-
-  const [flights, hotels] = await Promise.all([
-    searchFlightsViaMain({ eventId: event.id, departureDate, returnDate, adults: pax }),
-    searchHotelsViaMain({ eventId: event.id, checkin: departureDate, checkout: returnDate, travelers: pax }),
-  ]);
-  if (!flights.ok) return { ok: false, error: `Flight search: ${flights.error}` };
-  if (!hotels.ok) return { ok: false, error: `Hotel search: ${hotels.error}` };
-
-  const byPrice = <T extends { price: number }>(list: T[]) => [...list].sort((a, b) => a.price - b.price);
-  const direct = flights.flights.filter((f) => Number(f.stops) === 0);
-  const withBag = direct.filter((f) => f.outbound.checkBagsIncluded && f.inbound.checkBagsIncluded);
-  const offer = byPrice(withBag)[0] ?? byPrice(direct)[0] ?? byPrice(flights.flights)[0];
-  if (!offer) return { ok: false, error: "The flight search came back empty." };
-  if (withBag.length === 0) notes.push(direct.length > 0 ? "no direct flight with a checked bag - took the cheapest direct" : "no direct flight - took the cheapest");
-
-  const minStars = input.minStars ?? 4;
-  const starred = hotels.options.filter((o) => o.stars >= minStars);
-  const withMeal = starred.filter((o) => hasMeal(o.meal));
-  const option = byPrice(withMeal)[0] ?? byPrice(starred)[0] ?? byPrice(hotels.options)[0];
-  if (!option) return { ok: false, error: "The hotel search came back empty." };
-  if (withMeal.length === 0) notes.push(starred.length > 0 ? `no ${minStars}★ hotel with a meal - took the cheapest ${minStars}★` : `no ${minStars}★ hotel - took the cheapest`);
-
-  const variant = assembleVariant(
+  if (!event) return { ok: false, error: "The event was not found or has passed." };
+  const pax = Math.max(1, Math.min(READY_MAX_TRAVELERS_CAP, Math.floor(input.travelers ?? 2)));
+  const built = await buildVariant(
     event,
-    ticket,
-    pax,
     {
-      ok: true,
-      info: offer as JsonObject,
-      skipped: false,
-      perPerson: Number(offer.price) / Math.max(1, Number(offer.numOfTravelers) || pax),
+      ticket: { id: suggestion.ticket.id, category: suggestion.ticket.category },
+      flight: suggestion.flight.spec,
+      hotel: suggestion.hotel.spec,
+      defaultTravelers: pax,
     },
-    { ok: true, info: option.snapshot as JsonObject, skipped: false, perPerson: option.price / pax, image: option.image },
+    pax,
   );
+  if (!built.ok) return { ok: false, error: built.reason };
+  const { variant } = built;
   return {
     ok: true,
-    notes,
+    notes: suggestion.notes,
     composition: {
       event_order_info: variant.event_order_info,
       flight_order_info: variant.flight_order_info,

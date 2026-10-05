@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, Loader2, PackagePlus, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import {
   type ReadyCardData,
 } from "@/lib/actions/ready-package-actions";
 import { READY_MAX_TRAVELERS_CAP, targetSizes } from "@/lib/ready-package";
+import { ReadyPackageBuilder } from "./ready-package-builder";
 import type { ReadyPackageMode, ReadyRefreshStatus } from "@/types/ready-package.types";
 
 const MODE_HELP: Record<ReadyPackageMode, string> = {
@@ -58,6 +59,8 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [choosing, setChoosing] = useState(false);
+  // The in-place builder is opened on request: it loads the event's tickets only then.
+  const [building, setBuilding] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const stopRef = useRef(false);
 
@@ -312,17 +315,42 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
         )}
 
         {!loading && showPicker && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium">
-              {view ? "Replace it with another package of this event" : "Choose the package"}
-            </p>
-            {candidates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No prepared package exists for this event yet. Build one in the portal wizard (Partners → view as a
-                partner → New package → this event), with a chosen flight and hotel, then come back here and pick it.
-              </p>
-            ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                size="sm"
+                variant={building ? "outline" : "default"}
+                disabled={!!busy}
+                onClick={() => setBuilding((v) => !v)}
+              >
+                <PackagePlus className="h-4 w-4" />
+                {building ? "Close the builder" : view ? "Build a new closed package" : "Build closed package"}
+              </Button>
+              {!building && (
+                <span className="text-sm text-muted-foreground">
+                  Choose the ticket, the flight and the hotel right here - or let it compose them.
+                </span>
+              )}
+            </div>
+            {building && (
+              <ReadyPackageBuilder
+                eventId={eventId}
+                disabled={!!busy}
+                onBuilt={async (built) => {
+                  setData(built);
+                  setBuilding(false);
+                  setChoosing(false);
+                  if (!built.view) return;
+                  // The built size was looked up and priced a moment ago - only the others are left.
+                  const { maxTravelers, defaultTravelers } = built.view;
+                  await priceSizes(targetSizes(maxTravelers).filter((n) => n !== defaultTravelers));
+                }}
+              />
+            )}
+            {candidates.length > 0 && (
               <>
+                <p className="pt-1 text-sm font-medium">Or use a package built in the partner portal</p>
                 <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
                   {candidates.map((c) => (
                     <button
