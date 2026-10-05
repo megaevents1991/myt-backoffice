@@ -23,25 +23,52 @@ const RETENTION_DAYS = 7;
 /**
  * Deleted per statement. Batched so one run can never sit on a delete long
  * enough to hit Postgres' statement timeout, whatever the backlog.
+ *
+ * The ids travel in the request line (`event_id=in.(...)`) and are 26 characters
+ * each: at 1,000 a batch that was a 27KB URL, which the API refused with a bare
+ * 400 - so this cron deleted NOTHING from the day it shipped until 2026-10-05
+ * (30,418 rows were waiting, the oldest from May). 200 keeps the line near 5KB.
  */
-const BATCH_SIZE = 1000;
+const BATCH_SIZE = 200;
 
 /** Ceiling per run, reported back rather than silently stopping short. */
-const MAX_BATCHES = 50;
+const MAX_BATCHES = 400;
+
+/** No new batch starts after this - the run answers well inside maxDuration. */
+const TIME_BUDGET_MS = 45_000;
 
 export async function GET(request: NextRequest) {
   const denied = await guardCronRoute(request);
   if (denied) return denied;
 
+  const startedAt = Date.now();
   const cutoff = new Date(
-    Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000,
+    startedAt - RETENTION_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
+
+  // ?dry_run=1 - how many rows a real run would remove; nothing is deleted.
+  if (new URL(request.url).searchParams.get("dry_run") === "1") {
+    const { count, error } = await supabase
+      .from("tixstock_events")
+      .select("event_id", { count: "exact", head: true })
+      .lt("show_date", cutoff);
+    if (error) {
+      console.error("purgeTixstockEvents dry run failed:", JSON.stringify(error));
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, dryRun: true, wouldDelete: count ?? 0, cutoff });
+  }
 
   try {
     let deleted = 0;
     let batches = 0;
+    let outOfTime = false;
 
     for (; batches < MAX_BATCHES; batches++) {
+      if (Date.now() - startedAt > TIME_BUDGET_MS) {
+        outOfTime = true;
+        break;
+      }
       const { data: doomed, error: selectError } = await supabase
         .from("tixstock_events")
         .select("event_id")
@@ -67,18 +94,20 @@ export async function GET(request: NextRequest) {
         (row) => row.event_id,
       );
 
-      const { error: deleteError } = await supabase
+      const { error: deleteError, status } = await supabase
         .from("tixstock_events")
         .delete()
         .in("event_id", ids);
 
       if (deleteError) {
+        // The status is logged on purpose: a refused request line comes back with
+        // an EMPTY message, which is how the old 1,000-id batch failed unnoticed.
         console.error(
-          "purgeTixstockEvents delete failed:",
+          `purgeTixstockEvents delete failed (HTTP ${status}):`,
           JSON.stringify(deleteError),
         );
         return NextResponse.json(
-          { success: false, error: deleteError.message, deleted },
+          { success: false, error: deleteError.message || `HTTP ${status}`, deleted },
           { status: 500 },
         );
       }
@@ -87,10 +116,10 @@ export async function GET(request: NextRequest) {
       if (doomed.length < BATCH_SIZE) break;
     }
 
-    const hitCeiling = batches >= MAX_BATCHES;
+    const hitCeiling = outOfTime || batches >= MAX_BATCHES;
     console.log(
       `purgeTixstockEvents: deleted ${deleted} events that ended before ${cutoff}` +
-        (hitCeiling ? " (hit the per-run ceiling, more remain)" : ""),
+        (hitCeiling ? " (stopped at the per-run ceiling, more remain for the next run)" : ""),
     );
 
     return NextResponse.json({ success: true, deleted, cutoff, hitCeiling });
