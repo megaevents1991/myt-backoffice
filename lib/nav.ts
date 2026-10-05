@@ -54,6 +54,11 @@ export interface NavItem {
   roles?: Role[];
   /** Shown only in a company that sells this product type. Undefined = shared by every company. */
   productType?: ProductType;
+  /**
+   * Kept in the code and reachable by its address and by links from other
+   * screens, but left out of the menu and the command palette.
+   */
+  hidden?: boolean;
 }
 
 export interface NavGroup {
@@ -142,6 +147,8 @@ const NAV: NavGroup[] = [
         keywords: "approvals review human decisions pending אישורים אישור טיפול ממתין מנהל",
         roles: ADMIN_ROLES,
         productType: "tours",
+        // Alon's road map (05.10.2026): not needed in phase A. The screen stays; the dashboard still links to it.
+        hidden: true,
       },
     ],
   },
@@ -169,6 +176,9 @@ const NAV: NavGroup[] = [
         // the organized tours, tour by tour - a Departures / Prices / Details switch
         // over the same rows, edited in bulk and saved with one button.
         // /tours/pricing redirects here.
+        // Alon's road map strikes "Departures" on a screenshot of the old menu (no
+        // Online Bookings, so before 03.10): that was the old board. This sheet is what
+        // he asked for a day later, so it stays. To hide it too: add `hidden: true`.
         name: "Departures",
         href: "/tours/departures",
         icon: Table2,
@@ -330,17 +340,32 @@ const NAV: NavGroup[] = [
         productType: "events",
       },
       {
+        // The home page of the company's site as a list of sections (Alon's road map, 05.10.2026).
+        name: "Homepage",
+        href: "/tours/homepage",
+        icon: Home,
+        keywords: "homepage home page sections banners sliders hero reviews layout order עמוד הבית דף הבית סקשנים באנרים סליידר ביקורות סדר",
+        productType: "tours",
+      },
+      {
+        name: "Header & Footer",
+        href: "/tours/site",
+        icon: LayoutTemplate,
+        keywords: "header footer menu menus navigation links contact phone whatsapp social הדר פוטר תפריט תפריטים קישורים טלפון וואטסאפ רשתות",
+        productType: "tours",
+      },
+      {
         name: "Content Pages",
         href: "/tours/pages",
         icon: FileText,
-        keywords: "content pages cms about terms faq blog עמודים תוכן",
+        keywords: "content pages cms about terms faq blog posts add page עמודים תוכן בלוג פוסט עמוד חדש",
         productType: "tours",
       },
       {
         name: "Categories & Tags",
         href: "/tours/terms",
         icon: FolderTree,
-        keywords: "terms categories tags taxonomy קטגוריות תגיות",
+        keywords: "terms categories tags taxonomy worlds destinations audiences קטגוריות תגיות עולמות יעדים",
         productType: "tours",
       },
       {
@@ -349,6 +374,8 @@ const NAV: NavGroup[] = [
         icon: Hotel,
         keywords: "hotels accommodation מלונות מלון",
         productType: "tours",
+        // Alon's road map (05.10.2026): not needed in phase A. The catalog stays; a tour's Hotels tab still adds to it.
+        hidden: true,
       },
       {
         name: "Group Leaders",
@@ -432,8 +459,8 @@ const GUIDE_HREF = "/guide";
  * type are dropped, and a group left with nothing is not drawn.
  */
 function forProducts(groups: NavGroup[], productTypes: readonly ProductType[]): NavGroup[] {
-  const sells = (entry: { productType?: ProductType }) =>
-    !entry.productType || productTypes.includes(entry.productType);
+  const sells = (entry: { productType?: ProductType; hidden?: boolean }) =>
+    !entry.hidden && (!entry.productType || productTypes.includes(entry.productType));
   return groups
     .filter(sells)
     .map((group) => ({
@@ -605,6 +632,8 @@ const TOURS_SEGMENT_LABELS: Record<string, string> = {
   instructors: "Group Leaders",
   hotels: "Hotels",
   pages: "Content Pages",
+  homepage: "Homepage",
+  site: "Header & Footer",
   leads: "Leads",
   settings: "Settings",
   approvals: "Approvals",

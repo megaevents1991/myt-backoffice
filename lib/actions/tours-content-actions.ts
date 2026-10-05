@@ -29,7 +29,8 @@ import type {
 } from "@/types/tours.types";
 import {
   CMS_PAGE_KINDS,
-  PACKAGE_BRANDS,
+  RESERVED_PAGE_ROOTS,
+  type TermOption,
   PACKAGE_KINDS,
   TERM_KIND_DATA_KEY,
   type ActionResult,
@@ -61,7 +62,9 @@ import {
   type TermListRow,
 } from "@/components/tours/content/shared";
 import { UUID, actionFail, fetchAll } from "@/lib/tours/action-kit";
+import { catalogSlug } from "@/lib/tours/catalog";
 import { asObject, companyAudit, invalidInput, type JsonObject } from "@/lib/tours/company-kit";
+import { isSiteColor } from "@/lib/tours/site-content";
 import { todayIso } from "@/lib/tours/format";
 
 const failure = (e: unknown, fallback: string) => actionFail(e, "tours-content-actions", fallback);
@@ -89,6 +92,36 @@ const same = (a: unknown, b: unknown): boolean =>
 
 /** "" -> null for a nullable text column. */
 const orNull = (value: string): string | null => (value.trim() === "" ? null : value);
+
+/** A string key of a `data` object, or "". */
+const dataText = (data: JsonObject, key: string): string => {
+  const value = data[key];
+  return typeof value === "string" ? value : "";
+};
+
+/** Route folder of each term kind on the site (mega-family scripts/sync-content.mjs TERM_FOLDER). */
+const TERM_SITE_FOLDER: Record<string, string> = {
+  destinations: "destinations",
+  audiences: "audience",
+  tags: "product-tag",
+  packages: "package",
+  artists: "artists",
+  villages: "villages",
+  categories: "product-category",
+};
+
+/** A term as the tour editors pick it; an audience that is a world carries its key, its name and its color. */
+const termOption = (t: { id: string; kind: string; name: string; is_active: boolean; data: Json }): TermOption => {
+  const data = asObject(t.data);
+  const key = dataText(data, "worldKey");
+  return {
+    id: t.id,
+    kind: t.kind,
+    name: t.name,
+    isActive: t.is_active,
+    ...(t.kind === "audiences" && key ? { world: { key, label: dataText(data, "brandName") || t.name, color: dataText(data, "color") } } : {}),
+  };
+};
 
 /** An id that is not a uuid cannot match a row - answer "not found" instead of a database error. */
 const isUuid = (value: string): boolean => UUID.test(value);
@@ -118,6 +151,14 @@ class RowPatch {
     this.columns[column] = after;
     this.changes[column] = { from: brief(before), to: brief(after) };
     if (dataKey) this.data[dataKey] = dataValue !== undefined ? dataValue : ((after ?? "") as Json);
+    return true;
+  }
+
+  /** A field that lives only inside `data` (it has no column of its own). */
+  setData(key: string, before: unknown, after: Json): boolean {
+    if (same(before, after)) return false;
+    this.data[key] = after;
+    this.changes[key] = { from: brief(before), to: brief(after) };
     return true;
   }
 
@@ -221,7 +262,8 @@ const packageSchema = z.object({
     .max(200)
     .regex(/^[^\s/?#%]+$/, "The page slug cannot contain spaces or the characters / ? # %"),
   kind: z.enum(PACKAGE_KINDS),
-  brand: z.enum(PACKAGE_BRANDS),
+  // the tour's world: one of the built-in four, or the key of a world added in Categories & Tags
+  brand: z.string().trim().min(1, "Choose the tour's world").max(60).regex(/^[a-zA-Z0-9_-]+$/, "Choose the tour's world"),
   days: z.number().int().min(0).max(365).nullable(),
   nights: z.number().int().min(0).max(365).nullable(),
   countries: shortText,
@@ -280,6 +322,13 @@ const termSchema = z.object({
   heroImages: z.array(imagePath).max(100),
   position: wholeNumber,
   isActive: z.boolean(),
+  subtitle: z.string().trim().max(300),
+  seoTitle: z.string().trim().max(300),
+  brandName: z.string().trim().max(120),
+  color: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
+  icon: imagePath,
+  externalUrl: z.string().trim().max(600).refine((v) => v === "" || /^https?:\/\//i.test(v), "A link to another site starts with https://"),
+  worldSlug: z.string().trim().max(200),
 });
 
 const instructorSchema = z.object({
@@ -314,6 +363,10 @@ const hotelSchema = z.object({
 
 const cmsPageSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(500),
+  path: z.string().trim().max(300),
+  excerpt: z.string().trim().max(1000),
+  image: imagePath,
+  date: z.string().trim().refine((v) => v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v), "The date is yyyy-mm-dd"),
   contentHtml: htmlText,
   seoTitle: shortText,
   seoDescription: shortText,
@@ -443,7 +496,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     fetchAll((from, to) =>
       db
         .from("terms")
-        .select("id, kind, name, is_active")
+        .select("id, kind, name, is_active, data")
         .eq("company_id", company.id)
         .order("position")
         .order("name")
@@ -488,7 +541,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     departures: departures.length,
     seriesCodes: (series.data ?? []).map((s) => s.code),
     itineraries: variants,
-    terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
+    terms: terms.map(termOption),
     hotelCatalog: hotels,
     leaderOptions: leaders,
     // the tour or one of its dates, whichever changed last
@@ -989,7 +1042,7 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
       fetchAll((from, to) =>
         db
           .from("terms")
-          .select("id, kind, name, is_active")
+          .select("id, kind, name, is_active, data")
           .eq("company_id", company.id)
           .order("position")
           .order("name")
@@ -1005,7 +1058,7 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
       success: true,
       data: {
         siteUrl: company.siteUrl,
-        terms: terms.map((t) => ({ id: t.id, kind: t.kind, name: t.name, isActive: t.is_active })),
+        terms: terms.map(termOption),
         hotels,
         leaders,
         seriesCodes: series.map((s) => s.code),
@@ -1382,6 +1435,13 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
   const pages = (links ?? [])
     .map((l) => l.packages as unknown as { id: string; name: string })
     .sort((a, b) => a.name.localeCompare(b.name, "he"));
+  // the worlds a tag can belong to
+  const { data: worlds, error: worldsError } =
+    row.kind === "tags"
+      ? await db.from("terms").select("slug, name").eq("company_id", company.id).eq("kind", "audiences").eq("is_active", true).order("position").order("name")
+      : { data: [], error: null };
+  if (worldsError) throw worldsError;
+  const data = asObject(row.data);
   return {
     row,
     editor: {
@@ -1394,8 +1454,17 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         heroImages: row.hero_images ?? [],
         position: row.position,
         isActive: row.is_active,
+        subtitle: dataText(data, "subtitle"),
+        seoTitle: dataText(data, "seoTitle"),
+        brandName: dataText(data, "brandName"),
+        color: dataText(data, "color"),
+        icon: dataText(data, "icon"),
+        externalUrl: dataText(data, "externalUrl"),
+        worldSlug: dataText(data, "worldSlug"),
       },
       pages,
+      worlds: worlds ?? [],
+      path: dataText(data, "path") || `/${TERM_SITE_FOLDER[row.kind] ?? row.kind}/${row.slug}/`,
       siteUrl: company.siteUrl,
     },
   };
@@ -1431,6 +1500,22 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
     patch.set("hero_images", before.hero_images, cleanList(input.heroImages), "heroImages");
     patch.set("position", before.position, input.position);
     patch.set("is_active", before.is_active, input.isActive);
+    // what has no column lives in `data`, which the site reads as part of the term
+    const stored = asObject(before.data);
+    patch.setData("subtitle", dataText(stored, "subtitle"), input.subtitle);
+    // an emptied title goes back to the site's own wording ("<name> Archives - <site>")
+    if (input.seoTitle !== "" || dataText(stored, "seoTitle") !== "") patch.setData("seoTitle", dataText(stored, "seoTitle"), input.seoTitle);
+    if (before.kind === "audiences") {
+      patch.setData("brandName", dataText(stored, "brandName"), input.brandName);
+      patch.setData("color", dataText(stored, "color"), input.color);
+      patch.setData("icon", dataText(stored, "icon"), input.icon);
+      patch.setData("externalUrl", dataText(stored, "externalUrl"), input.externalUrl);
+      // the key the tours of this world carry; given once, when the audience becomes a world
+      if (!dataText(stored, "worldKey") && (input.brandName || input.color)) {
+        patch.setData("worldKey", "", `world_${before.id.replace(/-/g, "").slice(0, 10)}`);
+      }
+    }
+    if (before.kind === "tags") patch.setData("worldSlug", dataText(stored, "worldSlug"), input.worldSlug);
 
     if (patch.dirty) {
       const { error } = await toursDb()
@@ -1732,20 +1817,51 @@ const cmsPageEditor = (company: Company, row: TourCmsPage): CmsPageEditorData =>
     const value = column[key] ?? original[key];
     return typeof value === "string" ? value : "";
   };
+  const data = asObject(row.data);
   return {
     id: row.id,
     kind: row.kind,
     path: row.path,
     form: {
       title: row.title,
+      path: row.path,
       contentHtml: row.content_html ?? "",
+      excerpt: dataText(data, "excerpt"),
+      image: dataText(data, "image"),
+      // WordPress kept a full timestamp; the editor works with the day
+      date: dataText(data, "date").slice(0, 10),
       seoTitle: pick("title"),
       seoDescription: pick("description"),
       isActive: row.is_active,
     },
+    created: isCreatedPage(row),
     siteUrl: company.siteUrl,
   };
 };
+
+/** A page made in the backoffice: the site draws it with the general template (mega-family app/[...slug]). */
+const isCreatedPage = (row: TourCmsPage): boolean => dataText(asObject(row.data), "template") === "cms";
+
+/**
+ * The address of a content page as the site serves it: "/name/" or
+ * "/part/name/". Refuses what would shadow one of the site's own routes.
+ */
+function pagePath(raw: string): { path: string } | { error: string } {
+  const segments = raw
+    .trim()
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return { error: "Enter the page address, e.g. /summer-tips/" };
+  if (segments.length > 3) return { error: "A page address has up to three parts" };
+  if (segments.some((s) => /[\s?#%&\\]/.test(s) || s.length > 100)) {
+    return { error: "A page address has no spaces and none of ? # % & \\ - use a hyphen between words" };
+  }
+  if (RESERVED_PAGE_ROOTS.includes(segments[0].toLowerCase())) {
+    return { error: `An address cannot start with /${segments[0]}/ - the site keeps it for its own pages` };
+  }
+  return { path: `/${segments.join("/")}/` };
+}
 
 async function cmsPageRow(company: Company, id: string): Promise<TourCmsPage | null> {
   if (!isUuid(id)) return null;
@@ -1816,6 +1932,70 @@ export async function getTourCmsPage(id: string): Promise<ActionResult<CmsPageEd
   }
 }
 
+const newPageSchema = z.object({
+  kind: z.enum(CMS_PAGE_KINDS),
+  title: z.string().trim().min(1, "Title is required").max(500),
+});
+
+/**
+ * A new content page or blog post. It starts switched off and empty, at an
+ * address made from its title; the editor fills it and switches it on. The
+ * site serves every such page from one general template, so nothing has to be
+ * built for it.
+ */
+export async function createTourCmsPage(input: { kind: string; title: string }): Promise<ActionResult<{ id: string }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const parsed = newPageSchema.safeParse(input);
+    if (!parsed.success) return invalidInput(parsed.error);
+    const { kind, title } = parsed.data;
+    const db = toursDb();
+
+    const taken = await fetchAll((from, to) =>
+      db.from("cms_pages").select("path, position").eq("company_id", company.id).order("id").range(from, to),
+    );
+    const paths = new Set(taken.map((row) => row.path));
+    const base = catalogSlug(title) || (kind === "post" ? "post" : "page");
+    const root = RESERVED_PAGE_ROOTS.includes(base.toLowerCase()) ? `${base}-page` : base;
+    let slug = root;
+    for (let n = 2; paths.has(`/${slug}/`); n++) slug = `${root}-${n}`;
+    const path = `/${slug}/`;
+    const today = todayIso();
+
+    const { data: inserted, error } = await db
+      .from("cms_pages")
+      .insert({
+        company_id: company.id,
+        kind,
+        path,
+        title,
+        content_html: null,
+        seo: {},
+        position: taken.reduce((max, row) => Math.max(max, row.position), 0) + 1,
+        legacy_id: null,
+        // `template: "cms"` marks a page made here; the rest is what the site's page type expects
+        data: { template: "cms", slug, path, title, date: today, modified: today, excerpt: "", image: "", parent: 0, seo: { title: "", description: "" } },
+        is_active: false,
+      })
+      .select("id")
+      .single();
+    if (error) {
+      if (error.code === "23505") return { success: false, error: "A page with this address already exists - try again" };
+      throw error;
+    }
+    await logAudit({
+      action: "create",
+      entityType: "tours_cms_page",
+      entityId: inserted.id,
+      metadata: { ...companyAudit(company), kind, path, title },
+    });
+    revalidatePath("/tours/pages");
+    return { success: true, data: { id: inserted.id } };
+  } catch (e) {
+    return failure(e, "Failed to create the page");
+  }
+}
+
 export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<ActionResult<CmsPageEditorData>> {
   try {
     const { company } = await requireCompany("tours");
@@ -1830,6 +2010,29 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     patch.set("title", before.title, input.title, "title");
     patch.set("content_html", before.content_html, orNull(input.contentHtml), "contentHtml");
     patch.set("is_active", before.is_active, input.isActive);
+    const stored = asObject(before.data);
+    patch.setData("excerpt", dataText(stored, "excerpt"), input.excerpt);
+    patch.setData("image", dataText(stored, "image"), input.image);
+    // the day only; an untouched WordPress timestamp is left as it is
+    if (input.date !== dataText(stored, "date").slice(0, 10)) patch.setData("date", dataText(stored, "date"), input.date);
+    // The address of an imported page is fixed: the site serves it from its own route folder.
+    if (isCreatedPage(before) && input.path.trim() !== "" && input.path.trim() !== before.path) {
+      const next = pagePath(input.path);
+      if ("error" in next) return { success: false, error: next.error };
+      if (next.path !== before.path) {
+        const { data: clash, error: clashError } = await toursDb()
+          .from("cms_pages")
+          .select("id")
+          .eq("company_id", company.id)
+          .eq("path", next.path)
+          .neq("id", id)
+          .limit(1);
+        if (clashError) throw clashError;
+        if (clash && clash.length > 0) return { success: false, error: "Another page already has this address" };
+        patch.set("path", before.path, next.path, "path");
+        patch.data.slug = next.path.split("/").filter(Boolean).pop() ?? "";
+      }
+    }
     const seoTitle = input.seoTitle.trim();
     const seoDescription = input.seoDescription.trim();
     if (!same(shown.seoTitle, seoTitle) || !same(shown.seoDescription, seoDescription)) {

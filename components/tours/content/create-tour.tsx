@@ -284,6 +284,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
         <PackageGeneralFields
           form={form}
           set={set}
+          terms={terms}
           kinds={["organized"]}
           slugHint={
             form.slug && takenSlugs.has(form.slug.trim())

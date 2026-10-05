@@ -12,7 +12,7 @@ export default async function TourTermsPage() {
     <div>
       <PageHeader
         title="Categories & Tags"
-        description="The destinations, audiences, tags and other categories the site filters and groups by. Each one has a page on the site with a name, description and hero images."
+        description="The destinations, worlds, tags and categories of the site. Each one has a page that fills itself with the tours that carry it; a world also has its own color and sub-categories."
         actions={
           <>
             <PublishSiteButton />

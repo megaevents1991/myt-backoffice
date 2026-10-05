@@ -25,14 +25,14 @@ import { createTourTerm } from "@/lib/actions/tours-catalog-actions";
 import { Field, Notice } from "@/components/tours/ui";
 import { activeColumn, editColumn } from "@/components/tours/content/columns";
 import {
-  PACKAGE_TERM_KINDS,
-  TERM_KINDS,
+  LISTED_TERM_KINDS,
   TERM_KIND_LABELS,
   type TermKind,
   type TermListRow,
 } from "@/components/tours/content/shared";
 
-const isKind = (value: unknown): value is TermKind => TERM_KINDS.includes(value as TermKind);
+// A kind left out of the screen (packages, artists, holiday villages) is not a view: a stored one falls back to the default.
+const isKind = (value: unknown): value is TermKind => LISTED_TERM_KINDS.includes(value as TermKind);
 
 /** The table's view (a kind) is kept per tab under this name; Add reads it to start on the same kind. */
 const KIND_STATE = "kind";
@@ -98,16 +98,14 @@ export function TermsTable({ rows }: { rows: TermListRow[] }) {
       searchPlaceholder="Search by name or slug"
       defaultPageSize={50}
       getRowId={(row) => row.id}
-      views={TERM_KINDS.map((k) => ({ id: k, label: TERM_KIND_LABELS[k], count: byKind.get(k)?.length ?? 0 }))}
+      views={LISTED_TERM_KINDS.map((k) => ({ id: k, label: TERM_KIND_LABELS[k], count: byKind.get(k)?.length ?? 0 }))}
       activeView={kind}
       onViewChange={(id) => setKind(id as TermKind)}
       onRowClick={(row) => router.push(`/tours/terms/${row.id}`)}
       stateKey="tours-terms"
       emptyState={{
         title: `No ${TERM_KIND_LABELS[kind].toLowerCase()} in this company yet`,
-        description: PACKAGE_TERM_KINDS.includes(kind)
-          ? "Add one with Add Category or Tag at the top of the page."
-          : "A tour's own term comes with the site's data and is not added here.",
+        description: "Add one with Add Category or Tag at the top of the page.",
       }}
     />
   );
@@ -118,7 +116,7 @@ function lastViewedKind(pathname: string): TermKind {
   try {
     const raw = window.sessionStorage.getItem(viewStateKey(pathname, KIND_STATE));
     const stored: unknown = raw ? JSON.parse(raw) : null;
-    if (isKind(stored) && PACKAGE_TERM_KINDS.includes(stored)) return stored;
+    if (isKind(stored)) return stored;
   } catch {
     // blocked storage or an old value - start on the default
   }
@@ -183,7 +181,7 @@ function AddTermDialog({ onClose }: { onClose: () => void }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PACKAGE_TERM_KINDS.map((k) => (
+                {LISTED_TERM_KINDS.map((k) => (
                   <SelectItem key={k} value={k}>
                     {TERM_KIND_LABELS[k]}
                   </SelectItem>

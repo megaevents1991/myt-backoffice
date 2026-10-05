@@ -302,6 +302,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             <PackageGeneralFields
               form={form}
               set={set}
+              terms={saved.terms}
               showSeasons={false}
               slugLocked={slugLocked}
               slugHint={

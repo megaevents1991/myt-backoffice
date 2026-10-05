@@ -64,6 +64,17 @@ function ContactLink({ scheme, value }: { scheme: "tel" | "mailto"; value: strin
   );
 }
 
+/** The tour a lead was sent from, read from the address of its page on the site: /package/<tour>/ -> "tour". */
+function tourOf(path: string | null): string {
+  const match = /^\/package\/([^/?#]+)/.exec(path ?? "");
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1]).replace(/-/g, " ");
+  } catch {
+    return match[1].replace(/-/g, " ");
+  }
+}
+
 /** The departure a lead was sent from: the site's ?product_id= on its page. */
 function siteIdOf(path: string | null): number | null {
   const query = (path ?? "").split("?")[1];
@@ -147,6 +158,17 @@ export function LeadsInbox() {
         cell: ({ row }) => (
           <div dir="auto" className="max-w-[18rem] truncate text-muted-foreground" title={row.original.message ?? undefined}>
             {row.original.message || ""}
+          </div>
+        ),
+      },
+      {
+        // the tour the visitor was looking at when they wrote: the form sits on the tour's page
+        id: "tour",
+        accessorFn: (row) => tourOf(row.sourcePath),
+        header: "Tour",
+        cell: ({ row }) => (
+          <div dir="auto" className="max-w-[12rem] truncate" title={tourOf(row.original.sourcePath) || undefined}>
+            {tourOf(row.original.sourcePath) || EMPTY}
           </div>
         ),
       },

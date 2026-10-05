@@ -308,6 +308,26 @@ export interface TermOption {
   kind: string;
   name: string;
   isActive: boolean;
+  /** Set on an audience that is a world with a key: what a tour stores as its world. */
+  world?: WorldOption;
+}
+
+/**
+ * The worlds a tour can belong to: the four built-in ones (their site colors are
+ * in the site's code) with the name and color staff gave them, then the worlds
+ * added in Categories & Tags.
+ */
+export function worldOptions(terms: TermOption[]): WorldOption[] {
+  const worlds = terms.flatMap((term) => (term.kind === "audiences" && term.world ? [term.world] : []));
+  const builtIn = PACKAGE_BRANDS.map((brand) => {
+    const world = worlds.find((w) => w.key === brand);
+    return {
+      key: brand as string,
+      label: world ? `${world.label} - ${PACKAGE_BRAND_LABELS[brand]}` : PACKAGE_BRAND_LABELS[brand],
+      color: world?.color || PACKAGE_BRAND_COLORS[brand],
+    };
+  });
+  return [...builtIn, ...worlds.filter((w) => !(PACKAGE_BRANDS as readonly string[]).includes(w.key))];
 }
 
 // ---------------------------------------------------------------- seasons of a tour
@@ -379,7 +399,8 @@ export const TERM_KINDS = ["destinations", "audiences", "tags", "packages", "art
 export type TermKind = (typeof TERM_KINDS)[number];
 export const TERM_KIND_LABELS: Record<TermKind, string> = {
   destinations: "Destinations",
-  audiences: "Audiences",
+  // An audience is a world of the group: Mega Family, Mega Events... (Alon's road map, 05.10.2026)
+  audiences: "Worlds",
   tags: "Tags",
   packages: "Packages",
   artists: "Artists",
@@ -403,6 +424,20 @@ export const TERM_KIND_DATA_KEY: Partial<Record<TermKind, string>> = {
 };
 /** The kinds a trip page can be attached to, in the order the editor shows them. */
 export const PACKAGE_TERM_KINDS: TermKind[] = ["destinations", "audiences", "tags", "categories", "artists", "villages"];
+/**
+ * The kinds the Categories & Tags screen lists and adds. Packages (a tour's own
+ * term, not a content page), artists (they come from Mega Events) and holiday
+ * villages (a later phase) stay in the data and in the code, and are left out
+ * of the screen for now (Alon's road map, 05.10.2026).
+ */
+export const LISTED_TERM_KINDS: TermKind[] = ["destinations", "audiences", "tags", "categories"];
+
+/** A world of the group as a tour picks it: an audience staff gave a key (Categories & Tags > Worlds). */
+export interface WorldOption {
+  key: string;
+  label: string;
+  color: string;
+}
 
 export interface TermListRow {
   id: string;
@@ -421,6 +456,17 @@ export interface TermForm {
   heroImages: string[];
   position: number;
   isActive: boolean;
+  /** The line under the title of the term's page on the site. */
+  subtitle: string;
+  /** The browser / search title of the term's page. */
+  seoTitle: string;
+  /** A world (an audience): its brand name ("מגה פמילי"), its color, a tile picture and a link when it lives on another site. */
+  brandName: string;
+  color: string;
+  icon: string;
+  externalUrl: string;
+  /** A tag that is a sub-category of a world: that audience's slug ("" = none). */
+  worldSlug: string;
 }
 
 export interface TermEditorData {
@@ -429,6 +475,10 @@ export interface TermEditorData {
   slug: string;
   form: TermForm;
   pages: { id: string; name: string }[];
+  /** The company's worlds - what a tag picks its world from. */
+  worlds: { slug: string; name: string }[];
+  /** The address of the term's page on the site. */
+  path: string;
   siteUrl: string | null;
 }
 
@@ -522,7 +572,15 @@ export interface CmsPageListRow {
 
 export interface CmsPageForm {
   title: string;
+  /** The address on the site. Only a page made in the backoffice can change it. */
+  path: string;
   contentHtml: string;
+  /** A short opening line: shown above the text of a page made in the backoffice. */
+  excerpt: string;
+  /** The picture of the page's hero, and of a post's tile in the blog. */
+  image: string;
+  /** A post's date (yyyy-mm-dd): the blog lists the newest first. */
+  date: string;
   seoTitle: string;
   seoDescription: string;
   isActive: boolean;
@@ -533,8 +591,34 @@ export interface CmsPageEditorData {
   kind: string;
   path: string;
   form: CmsPageForm;
+  /** Made in the backoffice (not imported from WordPress): the site draws it with the general page template. */
+  created: boolean;
   siteUrl: string | null;
 }
+
+/**
+ * First segments a content page may not take: the site's own routes
+ * (mega-family app/), so a new page can never shadow one of them.
+ */
+export const RESERVED_PAGE_ROOTS = [
+  "about",
+  "api",
+  "artists",
+  "audience",
+  "booking",
+  "cars",
+  "destinations",
+  "hotels",
+  "instructors",
+  "media",
+  "package",
+  "product",
+  "product-category",
+  "product-tag",
+  "season",
+  "villages",
+  "_next",
+];
 
 // ---------------------------------------------------------------- leads
 export const LEAD_STATUSES = ["new", "in_progress", "done", "spam"] as const;

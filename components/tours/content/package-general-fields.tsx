@@ -16,13 +16,11 @@ import { StringListEditor } from "@/components/tours/content/fields";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { createTourTerm } from "@/lib/actions/tours-catalog-actions";
 import {
-  PACKAGE_BRANDS,
-  PACKAGE_BRAND_COLORS,
-  PACKAGE_BRAND_LABELS,
   PACKAGE_KINDS,
   PACKAGE_KIND_LABELS,
   PACKAGE_TERM_KINDS,
   TERM_KIND_LABELS,
+  worldOptions,
   type PackageForm,
   type PackageKind,
   type TermOption,
@@ -42,7 +40,10 @@ export function PackageGeneralFields({
   kinds = PACKAGE_KINDS,
   extra,
   showSeasons = true,
+  terms = [],
 }: {
+  /** The company's terms: the worlds among them are what the World list offers. */
+  terms?: TermOption[];
   /** The plain list of season names - Create Tour only; a tour page edits its seasons on the Seasons tab. */
   showSeasons?: boolean;
   form: PackageForm;
@@ -80,21 +81,22 @@ export function PackageGeneralFields({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Card color on site" htmlFor="pkg-brand">
+        <Field label="World (card color on site)" htmlFor="pkg-brand">
           <Select value={form.brand} onValueChange={(value) => set("brand", value)}>
             <SelectTrigger id="pkg-brand">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PACKAGE_BRANDS.map((brand) => (
-                <SelectItem key={brand} value={brand}>
+              {/* the built-in worlds, then the ones added in Categories & Tags > Worlds */}
+              {worldOptions(terms).map((world) => (
+                <SelectItem key={world.key} value={world.key}>
                   <span className="flex items-center gap-2">
                     <span
                       aria-hidden
                       className="inline-block h-3 w-3 rounded-full"
-                      style={{ backgroundColor: PACKAGE_BRAND_COLORS[brand] }}
+                      style={{ backgroundColor: world.color || "#60356C" }}
                     />
-                    {PACKAGE_BRAND_LABELS[brand]}
+                    {world.label}
                   </span>
                 </SelectItem>
               ))}

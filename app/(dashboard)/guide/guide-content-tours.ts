@@ -354,7 +354,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: "tours-approvals",
-    nav: "/tours/approvals",
+    // the screen is off the menu for now (lib/nav.ts `hidden`); its guide sits with the dashboard, which links to it
+    nav: "/tours",
     productType: "tours",
     adminOnly: true,
     title: t("Approvals - what waits for a manager", "אישורים - מה שמחכה למנהל"),
@@ -556,26 +557,111 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
 
   // --------------------------------------------------------------------- website
   {
+    id: "tours-homepage",
+    nav: "/tours/homepage",
+    productType: "tours",
+    title: t("Homepage - the sections of the home page", "עמוד הבית - הסקשנים של דף הבית"),
+    intro: t(
+      "The home page of the site as a list of sections, top to bottom. Move a section, hide it, open it to edit, add a new one or remove it.",
+      "עמוד הבית של האתר כרשימת סקשנים, מלמעלה למטה. מזיזים סקשן, מסתירים, פותחים לעריכה, מוסיפים חדש או מסירים.",
+    ),
+    howTo: [
+      {
+        title: t("Change the home page", "לשנות את עמוד הבית"),
+        steps: [
+          t("Open [Homepage](/tours/homepage). Each row is a section; the arrows move it, the switch hides it, the bin removes it.", "פותחים את [עמוד הבית](/tours/homepage). כל שורה היא סקשן; החצים מזיזים, המתג מסתיר, הפח מסיר."),
+          t("Click a row to open it and edit its texts, pictures and links.", "לוחצים על שורה כדי לפתוח אותה ולערוך טקסטים, תמונות וקישורים."),
+          t("\"Save\", then \"Revalidate Pages\". \"Discard\" brings back what was there before the last save.", "\"Save\", ואז \"Revalidate Pages\". \"Discard\" מחזיר את מה שהיה לפני השמירה האחרונה."),
+        ],
+      },
+      {
+        title: t("Add an automatic tour slider", "להוסיף סליידר טיולים אוטומטי"),
+        steps: [
+          t("\"Add Section\" → \"Automatic tour slider\". Type the \"Section title\".", "\"Add Section\" ← \"Automatic tour slider\". מקלידים \"Section title\"."),
+          t("In \"Which tours\" choose the rule: the tours of a world, a tag, a destination or a category, tours on sale, all tours, or \"Tours I pick\".", "ב-\"Which tours\" בוחרים את הכלל: הטיולים של עולם, תגית, יעד או קטגוריה, טיולים במבצע, כל הטיולים, או \"Tours I pick\"."),
+          t("Move the section to its place with the arrows, \"Save\", \"Revalidate Pages\".", "מזיזים את הסקשן למקומו בחצים, \"Save\", \"Revalidate Pages\"."),
+        ],
+      },
+      {
+        title: t("Add a banner or a picture", "להוסיף באנר או תמונה"),
+        steps: [
+          t("\"Add Section\" → \"Banners\" (picture cards with a title and a button) or \"Wide image\" (one picture across the page).", "\"Add Section\" ← \"Banners\" (כרטיסי תמונה עם כותרת וכפתור) או \"Wide image\" (תמונה אחת לרוחב העמוד)."),
+          t("\"Upload\" a picture, type the texts, and set the link: type it, or choose a page with \"Pick…\".", "\"Upload\" לתמונה, מקלידים את הטקסטים, וקובעים קישור: מקלידים, או בוחרים עמוד ב-\"Pick…\"."),
+        ],
+      },
+    ],
+    points: [
+      t("A slider fills itself: a tour that gets the tag shows up after the next \"Revalidate Pages\", with no edit here.", "סליידר מתמלא לבד: טיול שמקבל את התגית מופיע אחרי ה-\"Revalidate Pages\" הבא, בלי לגעת כאן."),
+      t("A hidden section stays in the list with its content, so you can bring it back for the next season.", "סקשן מוסתר נשאר ברשימה עם התוכן שלו, כך שאפשר להחזיר אותו בעונה הבאה."),
+      t("The reviews of the \"Reviews\" section also show on the world and tag pages.", "הביקורות של הסקשן \"Reviews\" מופיעות גם בעמודי העולמות והתגיות."),
+      t("If someone else saved while you were editing, your save is refused instead of overwriting theirs: reload and apply your change again.", "אם מישהו אחר שמר בזמן שערכתם, השמירה שלכם נדחית במקום לדרוס את שלו: טוענים מחדש ומחילים שוב את השינוי."),
+    ],
+    links: [{ label: t("Homepage", "עמוד הבית"), href: "/tours/homepage" }],
+  },
+  {
+    id: "tours-site",
+    nav: "/tours/site",
+    productType: "tours",
+    title: t("Header & footer", "הדר ופוטר"),
+    intro: t(
+      "The menus at the top of every page, the mobile menu, the footer, and the contact details the site shows.",
+      "התפריטים בראש כל עמוד, התפריט בנייד, הפוטר, ופרטי הקשר שהאתר מציג.",
+    ),
+    howTo: [
+      {
+        title: t("Change a menu", "לשנות תפריט"),
+        steps: [
+          t("Open [Header & Footer](/tours/site) → \"Header menu\". Each card is one menu of the header.", "פותחים את [הדר ופוטר](/tours/site) ← \"Header menu\". כל כרטיס הוא תפריט אחד בהדר."),
+          t("Edit a link's label, and its address: type it, or choose a page, a world, a tag, a destination or a tour with \"Pick…\". \"Add Sub-link\" opens a level under it.", "עורכים את התווית של קישור ואת הכתובת שלו: מקלידים, או בוחרים עמוד, עולם, תגית, יעד או טיול ב-\"Pick…\". \"Add Sub-link\" פותח רמה מתחתיו."),
+          t("\"Mobile menu\" has its own order; \"Copy from the Header Menu\" rebuilds it from the header.", "ל-\"Mobile menu\" יש סדר משלו; \"Copy from the Header Menu\" בונה אותו מחדש מההדר."),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
+        ],
+      },
+      {
+        title: t("Change the phone, WhatsApp or social links", "לשנות טלפון, וואטסאפ או רשתות חברתיות"),
+        steps: [
+          t("Open [Header & Footer](/tours/site) → \"Contact details\".", "פותחים את [הדר ופוטר](/tours/site) ← \"Contact details\"."),
+          t("Change the field, \"Save\", \"Revalidate Pages\". The header icons, the footer, the contact page and the forms all read from here.", "משנים את השדה, \"Save\", \"Revalidate Pages\". האייקונים בהדר, הפוטר, עמוד צור קשר והטפסים קוראים מכאן."),
+        ],
+      },
+    ],
+    points: [
+      t("A link left empty only opens its sub-links.", "קישור שנשאר ריק רק פותח את תתי הקישורים שלו."),
+      t("\"Footer\" holds the tiles above the footer, the newsletter texts and the link columns.", "ב-\"Footer\" נמצאים האריחים שמעל הפוטר, הטקסטים של הניוזלטר ועמודות הקישורים."),
+    ],
+    links: [{ label: t("Header & footer", "הדר ופוטר"), href: "/tours/site" }],
+  },
+  {
     id: "tours-pages",
     nav: "/tours/pages",
     productType: "tours",
     title: t("Content pages", "עמודי תוכן"),
     intro: t(
-      "The free-form pages of the site: about, FAQ, terms, contact and the blog posts. A page's address is fixed; you edit its title, content and SEO.",
-      "העמודים החופשיים של האתר: אודות, שאלות נפוצות, תקנון, צור קשר ופוסטים בבלוג. הכתובת של עמוד קבועה; עורכים את הכותרת, התוכן וה-SEO.",
+      "The free-form pages of the site (about, FAQ, terms, contact, guides) and the blog posts. Add a page or a post, write it, switch it on.",
+      "העמודים החופשיים של האתר (אודות, שאלות נפוצות, תקנון, צור קשר, מדריכים) והפוסטים בבלוג. מוסיפים עמוד או פוסט, כותבים ומדליקים.",
     ),
     howTo: [
       {
+        title: t("Add a page or a blog post", "להוסיף עמוד או פוסט לבלוג"),
+        steps: [
+          t("Open [Content Pages](/tours/pages) and click \"Add Page or Post\". Choose \"Page\" or \"Blog post\", type the title, \"Add\".", "פותחים את [עמודי התוכן](/tours/pages) ולוחצים \"Add Page or Post\". בוחרים \"Page\" או \"Blog post\", מקלידים כותרת, \"Add\"."),
+          t("The editor opens. Write the content, add a \"Picture\" and an \"Opening line\". A post also has a \"Date\".", "העורך נפתח. כותבים את התוכן, מוסיפים \"Picture\" ו-\"Opening line\". לפוסט יש גם \"Date\"."),
+          t("Switch on \"Active on site\", \"Save\", then \"Revalidate Pages\". The page is live at its \"Address on the site\"; a post also shows in the blog.", "מדליקים \"Active on site\", \"Save\", ואז \"Revalidate Pages\". העמוד עולה ב-\"Address on the site\" שלו; פוסט מופיע גם בבלוג."),
+        ],
+      },
+      {
         title: t("Edit a page", "לערוך עמוד"),
         steps: [
-          t("Open [Content Pages](/tours/pages), search by title or path and click the page.", "פותחים את [עמודי התוכן](/tours/pages), מחפשים לפי כותרת או נתיב ולוחצים על העמוד."),
-          t("Change \"Title\", \"Page content\" and the \"SEO\" title and description. \"Active on site\" off hides the page.", "משנים \"Title\", \"Page content\" ואת כותרת ותיאור ה-\"SEO\". כיבוי \"Active on site\" מסתיר את העמוד."),
+          t("Open [Content Pages](/tours/pages), pick \"Pages\" or \"Blog posts\", search by title or address and click the row.", "פותחים את [עמודי התוכן](/tours/pages), בוחרים \"Pages\" או \"Blog posts\", מחפשים לפי כותרת או כתובת ולוחצים על השורה."),
+          t("Change \"Title\", the content, the \"Picture\" and the \"SEO\" title and description. \"Active on site\" off hides the page.", "משנים \"Title\", את התוכן, את ה-\"Picture\" ואת כותרת ותיאור ה-\"SEO\". כיבוי \"Active on site\" מסתיר את העמוד."),
           t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
     ],
     points: [
-      t("Pages come from the site import - there is no new or delete here. The \"Path\" can't change: menus and other pages link to it.", "העמודים הגיעו מייבוא האתר - אין כאן יצירה או מחיקה. את ה-\"Path\" אי אפשר לשנות: תפריטים ועמודים אחרים מקשרים אליו."),
+      t("A new page starts switched off, so a half-written page never reaches the site.", "עמוד חדש נוצר כבוי, כך שעמוד שלא נגמר לא מגיע לאתר."),
+      t("The address of a page you added can change; the address of a page that came with the site is fixed, because menus and other pages link to it.", "את הכתובת של עמוד שהוספתם אפשר לשנות; הכתובת של עמוד שהגיע עם האתר קבועה, כי תפריטים ועמודים אחרים מקשרים אליו."),
+      t("To put a new page in a menu, add a link to it in [Header & Footer](/tours/site): \"Pick…\" lists every page.", "כדי לשים עמוד חדש בתפריט, מוסיפים אליו קישור ב[הדר ופוטר](/tours/site): ב-\"Pick…\" מופיעים כל העמודים."),
       t("The preview shows the content without the site's styling, so it looks plainer here than on the site.", "התצוגה המקדימה מציגה את התוכן בלי העיצוב של האתר, אז כאן הוא נראה פשוט יותר מאשר באתר."),
     ],
     links: [{ label: t("Content pages", "עמודי תוכן"), href: "/tours/pages" }],
@@ -586,35 +672,46 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     productType: "tours",
     title: t("Categories & tags", "קטגוריות ותגיות"),
     intro: t(
-      "The destinations, audiences, tags and other categories the site filters and groups by. Each one has a page on the site with a name, description and hero images.",
-      "היעדים, הקהלים, התגיות ושאר הקטגוריות שהאתר מסנן ומקבץ לפיהם. לכל אחד יש עמוד באתר עם שם, תיאור ותמונות ראש.",
+      "The destinations, worlds, tags and categories of the site. Each one has a page on the site that fills itself with the tours that carry it.",
+      "היעדים, העולמות, התגיות והקטגוריות של האתר. לכל אחד יש עמוד באתר שמתמלא לבד בטיולים שמשויכים אליו.",
     ),
     howTo: [
       {
-        title: t("Edit a category", "לערוך קטגוריה"),
+        title: t("Edit or add a category", "לערוך או להוסיף קטגוריה"),
         steps: [
-          t("Open [Categories & Tags](/tours/terms) and pick the kind: \"Destinations\", \"Audiences\", \"Tags\", \"Packages\", \"Artists\", \"Holiday villages\", \"Categories\".", "פותחים את [הקטגוריות והתגיות](/tours/terms) ובוחרים סוג: \"Destinations\", \"Audiences\", \"Tags\", \"Packages\", \"Artists\", \"Holiday villages\", \"Categories\"."),
-          t("Click one: \"Name\", \"Position in list\" (lower comes first), \"Active on site\", \"Description\" (also the search-engine description) and \"Hero images\".", "לוחצים על אחת: \"Name\", \"Position in list\" (נמוך קודם), \"Active on site\", \"Description\" (גם התיאור למנועי חיפוש) ו-\"Hero images\"."),
+          t("Open [Categories & Tags](/tours/terms) and pick the kind: \"Destinations\", \"Worlds\", \"Tags\" or \"Categories\". \"Add Category or Tag\" adds a new one.", "פותחים את [הקטגוריות והתגיות](/tours/terms) ובוחרים סוג: \"Destinations\", \"Worlds\", \"Tags\" או \"Categories\". \"Add Category or Tag\" מוסיף חדש."),
+          t("Click one: \"Name\", \"Position in list\" (lower comes first), \"Active on site\", \"Line under the title\", \"Description\", \"Hero images\" and the \"SEO\" title.", "לוחצים על אחת: \"Name\", \"Position in list\" (נמוך קודם), \"Active on site\", \"Line under the title\", \"Description\", \"Hero images\" וכותרת ה-\"SEO\"."),
           t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
+        ],
+      },
+      {
+        title: t("Set up a world", "להגדיר עולם"),
+        steps: [
+          t("A world is a top category of the site: Mega Family, Mega Events, Mega Ladies... Open it under \"Worlds\" (or add it).", "עולם הוא קטגוריית על של האתר: מגה פמילי, מגה איבנטס, מגה ליידיס... פותחים אותו תחת \"Worlds\" (או מוסיפים)."),
+          t("In the \"World\" card set the \"Brand name\", the \"World color\" and a \"Tile picture\". A world that lives on another site gets a \"Link to another site\".", "בכרטיס \"World\" קובעים \"Brand name\", \"World color\" ו-\"Tile picture\". עולם שיושב באתר אחר מקבל \"Link to another site\"."),
+          t("To give the world sub-categories, open a tag under \"Tags\" and choose the world in its \"World\" list.", "כדי לתת לעולם תת קטגוריות, פותחים תגית תחת \"Tags\" ובוחרים את העולם ברשימת \"World\" שלה."),
+          t("To put a tour in the world, open the tour and choose it in \"World (card color on site)\", and tick the world in the tour's \"Categories & Tags\" tab.", "כדי לשייך טיול לעולם, פותחים את הטיול ובוחרים אותו ב-\"World (card color on site)\", ומסמנים את העולם בלשונית \"Categories & Tags\" של הטיול."),
         ],
       },
       {
         title: t("Put a tour in a category", "לשייך טיול לקטגוריה"),
         steps: [
           t("Open the tour in [Tours](/tours/packages) → \"Categories & Tags\" tab → tick it → \"Save\".", "פותחים את הטיול ב[טיולים](/tours/packages) ← לשונית \"Categories & Tags\" ← מסמנים ← \"Save\"."),
-          t("The category's own page lists its tours (\"Tour pages in this category\") - read only; each chip opens that tour.", "בעמוד הקטגוריה עצמה מופיעים הטיולים שלה (\"Tour pages in this category\") - לקריאה בלבד; כל תג פותח את הטיול."),
+          t("The category's own page lists its tours (\"Tours on this page\") - read only; each chip opens that tour.", "בעמוד הקטגוריה עצמה מופיעים הטיולים שלה (\"Tours on this page\") - לקריאה בלבד; כל תג פותח את הטיול."),
         ],
       },
     ],
     points: [
-      t("The audience decides the homepage tabs: the families, sports & music, and couples, women & solo tabs list the tours ticked under that audience.", "הקהל קובע את הלשוניות של עמוד הבית: הלשוניות של משפחות, ספורט ומוזיקה, וזוגות, נשים ויחידים מציגות את הטיולים שסומנו תחת אותו קהל."),
-      t("Categories come from the site import - there is no new or delete here, and a slug can't change.", "הקטגוריות הגיעו מייבוא האתר - אין כאן יצירה או מחיקה, ואת ה-slug אי אפשר לשנות."),
+      t("Nothing is built by hand: a world page, a tag page and a destination page list their tours by themselves, and a home page slider can follow any of them.", "שום דבר לא נבנה ידנית: עמוד עולם, עמוד תגית ועמוד יעד מציגים את הטיולים שלהם לבד, וסליידר בעמוד הבית יכול לעקוב אחרי כל אחד מהם."),
+      t("A world with a brand name gets a tile in the \"Worlds\" section of the [home page](/tours/homepage). Its color paints its page, its sub-categories and the cards of its tours.", "עולם עם שם מותג מקבל אריח בסקשן \"Worlds\" של [עמוד הבית](/tours/homepage). הצבע שלו צובע את העמוד שלו, את תת הקטגוריות ואת הכרטיסים של הטיולים שלו."),
+      t("A slug can't change: the page's address on the site is made from it.", "את ה-slug אי אפשר לשנות: הכתובת של העמוד באתר נבנית ממנו."),
     ],
     links: [{ label: t("Categories & tags", "קטגוריות ותגיות"), href: "/tours/terms" }],
   },
   {
     id: "tours-hotels",
-    nav: "/tours/hotels",
+    // the catalog is off the menu for now (lib/nav.ts `hidden`); its guide sits with Tours, whose Hotels tab uses it
+    nav: "/tours/packages",
     productType: "tours",
     title: t("Hotels - the catalog", "מלונות - הקטלוג"),
     intro: t(
