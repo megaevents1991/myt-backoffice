@@ -29,6 +29,39 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const tbl = (t: string) => (supabase as any).from(t);
 
+/** Rows PostgREST hands back per request on this project, whatever a query asks for. */
+const LINK_PAGE = 1000;
+/** Far above today's size (3,232 tag links on 2026-10-05); a read that reaches it is logged. */
+const LINK_ROWS_MAX = 100_000;
+
+/**
+ * Every row of an event link table (`filter` narrows it). A plain select returns the first
+ * 1,000 rows and says nothing: with 3,232 tag links (05.10) the events table showed tags for
+ * 516 of 823 live events, and its tag / category filters missed the rest. The link tables
+ * have no `id`, so a page is ordered by the pair itself.
+ */
+async function allLinkRows<T>(
+  table: "event_tag_links" | "event_category_links",
+  columns: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  filter: (query: any) => any = (query) => query,
+): Promise<T[]> {
+  const other = table === "event_tag_links" ? "tag_id" : "category_id";
+  const rows: T[] = [];
+  for (let from = 0; from < LINK_ROWS_MAX; from += LINK_PAGE) {
+    const { data, error } = await filter(tbl(table).select(columns))
+      .order("event_id", { ascending: true })
+      .order(other, { ascending: true })
+      .range(from, from + LINK_PAGE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as T[];
+    rows.push(...page);
+    if (page.length < LINK_PAGE) return rows;
+  }
+  console.error(`taxonomy: ${table} read stopped at ${LINK_ROWS_MAX} rows`);
+  return rows;
+}
+
 async function uniqueSlug(table: string, base: string): Promise<string> {
   let slug = base;
   for (let i = 2; i < 50; i++) {
@@ -292,11 +325,11 @@ export type TagEventRow = {
  */
 export async function listTagEvents(tagId: number): Promise<TagEventRow[]> {
   await requireStaff();
-  const { data: links, error: linkErr } = await tbl("event_tag_links")
-    .select("event_id")
-    .eq("tag_id", tagId);
-  if (linkErr) throw linkErr;
-  const ids = (links ?? []).map((r: { event_id: number }) => r.event_id);
+  // Paged like every whole-table link read: a big tag (football) passes 1,000 events.
+  const links = await allLinkRows<{ event_id: number }>("event_tag_links", "event_id", (query) =>
+    query.eq("tag_id", tagId),
+  );
+  const ids = links.map((r) => r.event_id);
   if (!ids.length) return [];
   const rows: TagEventRow[] = [];
   for (let i = 0; i < ids.length; i += 200) {
@@ -355,13 +388,11 @@ export async function listCategoryEvents(
     ids.push(...(childrenOf.get(ids[i]) ?? []));
   }
 
-  const { data: links, error: linkErr } = await tbl("event_category_links")
-    .select("event_id")
-    .in("category_id", ids);
-  if (linkErr) throw linkErr;
-  const eventIds = [
-    ...new Set((links ?? []).map((r: { event_id: number }) => r.event_id)),
-  ];
+  // Paged: a vertical hub's subtree (כדורגל and everything beneath it) passes 1,000 links.
+  const links = await allLinkRows<{ event_id: number }>("event_category_links", "event_id", (query) =>
+    query.in("category_id", ids),
+  );
+  const eventIds = [...new Set(links.map((r) => r.event_id))];
   if (!eventIds.length) return [];
 
   const today = new Date().toISOString().slice(0, 10);
@@ -423,18 +454,16 @@ export async function getTaxonomyLinkMaps(): Promise<{
   tags: Record<number, number[]>;
 }> {
   await requireStaff();
-  const [catRes, tagRes] = await Promise.all([
-    tbl("event_category_links").select("event_id,category_id"),
-    tbl("event_tag_links").select("event_id,tag_id"),
+  const [catRows, tagRows] = await Promise.all([
+    allLinkRows<{ event_id: number; category_id: number }>("event_category_links", "event_id,category_id"),
+    allLinkRows<{ event_id: number; tag_id: number }>("event_tag_links", "event_id,tag_id"),
   ]);
-  if (catRes.error) throw catRes.error;
-  if (tagRes.error) throw tagRes.error;
   const cats: Record<number, number[]> = {};
-  (catRes.data ?? []).forEach((r: { event_id: number; category_id: number }) => {
+  catRows.forEach((r) => {
     (cats[r.event_id] ??= []).push(r.category_id);
   });
   const tags: Record<number, number[]> = {};
-  (tagRes.data ?? []).forEach((r: { event_id: number; tag_id: number }) => {
+  tagRows.forEach((r) => {
     (tags[r.event_id] ??= []).push(r.tag_id);
   });
   return { cats, tags };
@@ -446,12 +475,9 @@ export async function getCategoryEventCounts(): Promise<
   Record<number, number>
 > {
   await requireStaff();
-  const { data, error } = await tbl("event_category_links").select(
-    "category_id",
-  );
-  if (error) throw error;
+  const rows = await allLinkRows<{ category_id: number }>("event_category_links", "category_id");
   const counts: Record<number, number> = {};
-  (data ?? []).forEach((r: { category_id: number }) => {
+  rows.forEach((r) => {
     counts[r.category_id] = (counts[r.category_id] ?? 0) + 1;
   });
   return counts;
@@ -459,10 +485,9 @@ export async function getCategoryEventCounts(): Promise<
 
 export async function getTagEventCounts(): Promise<Record<number, number>> {
   await requireStaff();
-  const { data, error } = await tbl("event_tag_links").select("tag_id");
-  if (error) throw error;
+  const rows = await allLinkRows<{ tag_id: number }>("event_tag_links", "tag_id");
   const counts: Record<number, number> = {};
-  (data ?? []).forEach((r: { tag_id: number }) => {
+  rows.forEach((r) => {
     counts[r.tag_id] = (counts[r.tag_id] ?? 0) + 1;
   });
   return counts;

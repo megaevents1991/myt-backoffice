@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { softDeleteEvent } from "@/lib/actions/event-actions";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 
 // base_price_sync_log predates the generated database types - cast once at
 // the boundary, same pattern as the tasks/creative-gaps actions.
@@ -33,18 +34,21 @@ export async function listSyncLog(
 ): Promise<SyncLogRow[]> {
   await requireAdmin();
 
-  let query = db
-    .from("base_price_sync_log")
-    .select("id,event_id,component,old_price,new_price,live_price,status,note,created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (filter === "needs_review") query = query.eq("status", "needs_review");
-  const { data, error } = await query;
+  // Paged: one request answers 1,000 rows at most, so `.limit(1500)` quietly returned 1,000
+  // (the log held 1,284 on 05.10 and the oldest 284 never reached the screen). `id` breaks
+  // ties so a page boundary cannot repeat or drop a row written in the same instant.
+  const { rows, error } = await fetchPaged<Omit<SyncLogRow, "event_name" | "event_date">>(() => {
+    const query = db
+      .from("base_price_sync_log")
+      .select("id,event_id,component,old_price,new_price,live_price,status,note,created_at")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
+    return filter === "needs_review" ? query.eq("status", "needs_review") : query;
+  }, limit);
   if (error) {
     console.error("price-changes: log list failed", JSON.stringify(error));
     return [];
   }
-  const rows = (data ?? []) as Omit<SyncLogRow, "event_name" | "event_date">[];
 
   // No FK on the log - resolve event name + date in one extra query. The date
   // matters for triage: a frozen flight price two days out is a different job
