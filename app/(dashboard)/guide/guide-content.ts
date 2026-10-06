@@ -445,6 +445,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "באתר: הכרטיס מציג תגית \"כרטיס בלבד\", אייקון כרטיס בלבד ו-\"מחיר לכרטיס\"; ההזמנה היא כרטיסים ← סיכום עם stepper של שני צעדים; הפידים אומרים \"כרטיס\" בלבד.",
       ),
       t(
+        "In Meta ads: the picture says \"כרטיסים רשמיים · כרטיס בלבד\" and \"כרטיסים החל מ-$X\" at the site's own price (ticket + Ticket-Only Markup), the ad's title ends with \"כרטיס בלבד\", and the feed's custom_label_4 is \"ticket-only\" - the value to build a ticket-only product set on. All of it follows the switch by itself: flipping it redraws the picture within the hour.",
+        "במודעות Meta: התמונה אומרת \"כרטיסים רשמיים · כרטיס בלבד\" ו-\"כרטיסים החל מ-$X\" במחיר של האתר (כרטיס + Ticket-Only Markup), כותרת המודעה מסתיימת ב-\"כרטיס בלבד\", וב-custom_label_4 של הפיד כתוב \"ticket-only\" - הערך שבונים עליו סט מוצרים של כרטיס בלבד. הכל נגזר מהמתג לבד: שינוי שלו מצייר את התמונה מחדש בתוך שעה.",
+      ),
+      t(
         "Switching it ON zeroes the flight/hotel base prices - the nightly base-price sync, \"our offer\" and the package light then skip the event by themselves. The ticket light keeps working.",
         "הדלקה מאפסת את מחירי הבסיס של טיסה/מלון - הסנכרון הלילי, \"ההצעה שלנו\" ורמזור החבילה מדלגים על האירוע מעצמם. רמזור הכרטיס ממשיך לעבוד.",
       ),

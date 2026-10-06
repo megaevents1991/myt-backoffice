@@ -69,6 +69,14 @@ export const BLOB_SHAPES: { d: string; w: number; h: number }[] = [
 ];
 
 const TAGLINE = "טיסות, מלון, כרטיסים - הרכיבו בעצמכם";
+// A ticket-only event sells the ticket alone: the package line would promise a
+// flight and a hotel nobody can book on it (Stevie Wonder Hannover, 2026-10-06).
+const TAGLINE_TICKET_ONLY = "כרטיסים רשמיים · כרטיס בלבד";
+
+/** The line under the wordmark. */
+export function creativeTagline(ticketOnly?: boolean): string {
+  return ticketOnly ? TAGLINE_TICKET_ONLY : TAGLINE;
+}
 
 // 1:1 SAFE ZONE. A product feed serves ONE image_link per product and Meta
 // crops it per placement - Facebook collection/carousel render 1:1, which
@@ -146,6 +154,8 @@ export type CreativeInput = {
   timeText: string | null;   // "21:00" or null → omitted
   locationText: string;      // "Santiago Bernabéu, Madrid"
   priceText: string;         // "החל מ-€499" / "כרטיסים החל מ-€99"
+  // The event sells the ticket alone - the tagline says so (creativeTagline).
+  ticketOnly?: boolean;
   // Design-base mode: render the full branded canvas (glows, wordmark, names,
   // date/price) but WITHOUT blob cards and subject images - a background the
   // designer drops a not-yet-cut photo onto.
@@ -366,7 +376,7 @@ function AvatarCircle({
 export function MatchTemplate({
   kind, homeLogoUrl, awayLogoUrl, homeName, awayName,
   homeHasCutout, awayHasCutout,
-  dateText, timeText, locationText, priceText, bare,
+  dateText, timeText, locationText, priceText, ticketOnly, bare,
   bgKind, colorIndex, shapeIndex,
   imgScale, imgOffsetX, imgOffsetY, bgScale,
   variant, heroPhoto,
@@ -568,7 +578,7 @@ export function MatchTemplate({
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: isPortrait ? SAFE_INSET : 22 }}>
         <Wordmark width={isPortrait ? 460 : 220} />
         <div style={{ display: "flex", fontSize: isPortrait ? 46 : 17, color: "rgba(250,250,245,0.72)", marginTop: isPortrait ? 14 : 10 }}>
-          {bidiVisual(TAGLINE)}
+          {bidiVisual(creativeTagline(ticketOnly))}
         </div>
       </div>
 

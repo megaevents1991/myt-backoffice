@@ -13,6 +13,8 @@ type BaseParams = {
   price: number;
   currency: string;
   mode: "package" | "ticket";
+  // The event sells the ticket alone (events.package_mode) - the tagline says so.
+  ticketOnly?: boolean;
   // Design-base render: no blob cards, no subject images (see MatchTemplate).
   bare?: boolean;
   // Card design overrides (see MatchTemplate): background kind + blob color/shape.
@@ -89,6 +91,7 @@ export async function buildCreativeInput(
     timeText: params.timeText,
     locationText: params.locationText,
     priceText,
+    ticketOnly: params.ticketOnly ?? false,
     bare: params.bare ?? false,
     bgKind: params.bgKind,
     colorIndex: params.colorIndex ?? null,

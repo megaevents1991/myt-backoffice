@@ -1,4 +1,5 @@
 import type { EventTicket } from "@/types/app.types";
+import { isTicketOnlyEvent } from "@/lib/package-mode";
 
 /**
  * Main's pricing knobs, read from the SAME env names main uses
@@ -70,6 +71,46 @@ export function hasAvailableTickets(
   event: Pick<PackagePriceEvent, "tickets_and_rates">,
 ): boolean {
   return (event.tickets_and_rates || []).some((t) => t?.available !== false);
+}
+
+export type SiteCardPriceEvent = PackagePriceEvent & {
+  package_mode?: string | null;
+  ticket_only_markup?: number | null;
+  ready_package_token?: string | null;
+  ready_package_mode?: string | null;
+  ready_package_price_usd?: number | null;
+};
+
+/**
+ * The price main's event CARD prints, branch for branch (its computePackagePrice,
+ * myt-main lib/events/price.ts): an event that opens on its ready package (`live`)
+ * costs what that package costs; a ticket-only event is its cheapest ticket + its own
+ * Ticket-Only Markup - no bases, no package markup; everything else is the package
+ * rule above. It is the number the product feed's price field carries, so it is the
+ * number a creative must print: until 2026-10-06 creatives used the package rule
+ * alone, and a ticket-only event's picture said ticket + 175 while the site charged
+ * ticket + its markup (Stevie Wonder Hannover: $707 on the ad, $782 on the site).
+ * A new branch in main's function belongs here too.
+ */
+export function siteCardPrice(event: SiteCardPriceEvent): number | null {
+  const available = (event.tickets_and_rates || []).filter(
+    (t) => t?.available !== false,
+  );
+  if (available.length === 0) return null;
+
+  if (event.ready_package_token && event.ready_package_mode === "live") {
+    const ready = Number(event.ready_package_price_usd);
+    if (Number.isFinite(ready) && ready > 0) return Math.ceil(ready);
+  }
+
+  if (isTicketOnlyEvent(event)) {
+    // Main's getTicketOnlyMarkup: a missing or unusable markup counts as 0.
+    const raw = event.ticket_only_markup;
+    const markup = raw != null && Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : 0;
+    return Math.ceil(Math.min(...available.map((t) => t.price)) + markup);
+  }
+
+  return computePackagePrice(event);
 }
 
 /** The pricing knobs a skip-aware per-person quote needs (no ticket list). */

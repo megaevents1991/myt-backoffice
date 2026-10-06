@@ -13,6 +13,8 @@ import {
   type PersonRow,
   type SubjectRow,
 } from "../lib/creative/auto";
+import { buildPriceText, creativeTagline } from "../components/creative/MatchTemplate";
+import { computePackagePrice, siteCardPrice } from "../lib/package-price";
 import { activityIdsOf } from "../lib/feed/publish-meta-feed";
 import { addToPool, moveToPool, removeFromPools } from "../lib/person-gallery";
 
@@ -124,6 +126,44 @@ assert.equal(resolveCreativeSubject(oasisShow, [oasisRow], []).artistImageUrl, "
 const oasisWithPool = { ...oasisRow, eventGallery: ["https://x/a-cutout.png", "https://x/b-cutout.png"] };
 assert.equal(resolveCreativeSubject(oasisShow, [oasisWithPool], []).artistImageUrl, "https://x/a-cutout.png"); // 1176 % 2
 assert.notEqual(expectedCampaignHash(oasisShow, [oasisRow], []), expectedCampaignHash(oasisShow, [oasisWithPool], []));
+
+/* ticket-only: the creative prints the SITE's price (cheapest ticket + its own markup, no package markup),
+   says "כרטיס בלבד", and the mode is in the hash - so every future ticket-only event is right by itself */
+const tickets = [
+  { id: "a", price: 537, available: true },
+  { id: "b", price: 457, available: false }, // off sale - never the "from" price
+] as unknown as CampaignEventRow["tickets_and_rates"];
+const stevie = ev({
+  name: "סטיבי וונדר",
+  base_flight_price: 0,
+  base_hotel_price: 0,
+  package_mode: "ticket_only",
+  ticket_only_markup: 250,
+  tickets_and_rates: tickets,
+} as Partial<CampaignEventRow>);
+assert.equal(siteCardPrice(stevie), 787, "537 + 250, not 537 + the package markup");
+assert.equal(siteCardPrice({ ...stevie, ticket_only_markup: 0 }), 537, "0 = sold at cost");
+assert.equal(siteCardPrice({ ...stevie, ticket_only_markup: null }), 537, "a stray row with no markup: the ticket alone");
+assert.equal(siteCardPrice({ ...stevie, tickets_and_rates: [tickets[1]] }), null, "nothing on sale = no price");
+// a regular package is priced exactly as before - also one that carries a ticket-only markup
+// for customers who skip both (Stevie's other shows: package + ticket_only_markup 200)
+const stevieLondon = ev({ name: "סטיבי וונדר", ticket_only_markup: 200, package_mode: "package" } as Partial<CampaignEventRow>);
+assert.equal(siteCardPrice(stevieLondon), computePackagePrice(stevieLondon));
+assert.equal(campaignInputHash(stevieLondon), campaignInputHash(ev({ name: "סטיבי וונדר" })), "a package's hash did not move - no mass redraw on deploy");
+// an event that opens on its ready package costs what the package costs - only in live
+const readyLive = { ...stevieLondon, ready_package_token: "t", ready_package_mode: "live" as const, ready_package_price_usd: 1255.4 };
+assert.equal(siteCardPrice(readyLive), 1256);
+assert.equal(siteCardPrice({ ...readyLive, ready_package_mode: "preview" as const }), computePackagePrice(stevieLondon));
+assert.equal(siteCardPrice({ ...readyLive, ready_package_price_usd: null }), computePackagePrice(stevieLondon), "live with no price yet: the package rule");
+// the switch alone flips the hash, even at the same printed price
+const samePrice = { ...stevie, ticket_only_markup: (computePackagePrice(stevie) ?? 0) - 537 };
+assert.equal(siteCardPrice(samePrice), computePackagePrice(samePrice), "set up: both modes print one price");
+assert.notEqual(campaignInputHash(samePrice), campaignInputHash({ ...samePrice, package_mode: "package" }));
+// the words
+assert.equal(creativeTagline(true), "כרטיסים רשמיים · כרטיס בלבד");
+assert.equal(creativeTagline(), "טיסות, מלון, כרטיסים - הרכיבו בעצמכם");
+assert.equal(buildPriceText("ticket", 787, "$"), "כרטיסים החל מ-$787");
+assert.equal(buildPriceText("package", 1907, "$"), "ממוצע לנוסע $1,907");
 
 console.log("meta-feed selftest: all assertions passed");
 process.exit(0);

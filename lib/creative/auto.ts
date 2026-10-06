@@ -26,16 +26,28 @@ import {
   teamImage,
   type CreativeParams,
 } from "@/lib/creative/input";
-import { computePackagePrice } from "@/lib/package-price";
+import { siteCardPrice } from "@/lib/package-price";
+import { isTicketOnlyEvent } from "@/lib/package-mode";
 import { eventCityName, hasEventCity, type LodgingEvent } from "@/lib/lodging";
 import type { Event } from "@/types/app.types";
+
+/**
+ * What siteCardPrice reads beyond the package columns: the ticket-only switch + its
+ * markup, and the ready package an event may open on. Every read that prices a
+ * creative selects them - a read without them prices a ticket-only event as a package.
+ */
+const SITE_PRICE_COLUMNS =
+  "package_mode,ticket_only_markup,ready_package_token,ready_package_mode,ready_package_price_usd";
 
 export type CreativeDefaults = {
   kind: "match" | "artist";
   dateText: string; // DD.MM.YYYY
   timeText: string | null; // HH:MM, null when event has no meaningful time
   locationText: string;
-  price: number | null; // final customer package price (main-app formula)
+  price: number | null; // what the site's event card prints (siteCardPrice)
+  // The event sells the ticket alone (events.package_mode): the pill reads
+  // "כרטיסים החל מ-" and the tagline says "כרטיס בלבד".
+  ticketOnly: boolean;
   currency: string;
   // "team:<id>" (football_teams) or "logo:<id>" (football_logos) - see input.ts.
   homeRef: string | null;
@@ -463,7 +475,7 @@ export async function deriveCreativeDefaults(
   const { data, error } = await supabase
     .from("events")
     .select(
-      "id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,art_image_url,card_image_url",
+      `id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,${SITE_PRICE_COLUMNS},art_image_url,card_image_url`,
     )
     .eq("id", eventId)
     .single();
@@ -480,7 +492,7 @@ export async function deriveCreativeDefaults(
   const { dateText, timeText } = eventDateTexts(event.date);
 
   const locationText = creativePlaceText(event);
-  const price = computePackagePrice(event);
+  const price = siteCardPrice(event);
   if (price === null)
     warnings.push("אין כרטיסים זמינים - מחיר לא חושב, מלא ידנית");
 
@@ -496,6 +508,7 @@ export async function deriveCreativeDefaults(
     timeText,
     locationText,
     price,
+    ticketOnly: isTicketOnlyEvent(event),
     currency: "$",
     cardImageUrl: event.card_image_url ?? null,
     eventName: (event.name ?? "").trim() || (event.name_english ?? "").trim(),
@@ -579,7 +592,9 @@ export function campaignInputHash(
   gap?: CreativeGap | null,
 ): string {
   const { dateText } = eventDateTexts(event.date);
-  const price = computePackagePrice(event);
+  // The price the creative PRINTS = the site card's (siteCardPrice). For a regular
+  // package it is the same number as before, so those hashes did not move.
+  const price = siteCardPrice(event);
   // The gallery and gap segments are appended ONLY when present, so an event
   // with the full look and no gallery keeps a byte-identical hash - deploying
   // either re-rendered only the events it concerns, never the whole catalog.
@@ -592,9 +607,14 @@ export function campaignInputHash(
   const placeSegment = hasEventCity(event)
     ? `|place:${creativePlaceText(event)}`
     : "";
+  // A ticket-only event wears different WORDS (tagline "כרטיס בלבד", pill "כרטיסים
+  // החל מ-"), so the mode is in its hash: flipping the editor's switch redraws the
+  // creative under a new URL even when the price happens to stay. Only those
+  // events carry the segment (2026-10-06: three live ones).
+  const modeSegment = isTicketOnlyEvent(event) ? "|mode:ticket_only" : "";
   return createHash("sha1")
     .update(
-      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}${gallerySegment}${gapSegment}${placeSegment}`,
+      `${RENDER_VERSION}|${dateText}|${price ?? "none"}|${event.name}|${event.card_image_url ?? ""}|${event.art_image_url ?? ""}${gallerySegment}${gapSegment}${placeSegment}${modeSegment}`,
     )
     .digest("hex")
     .slice(0, 12);
@@ -718,7 +738,9 @@ export async function generateCampaignForEvent(
     locationText: defaults.locationText,
     price: defaults.price,
     currency: defaults.currency,
-    mode: "package" as const,
+    // Ticket-only: "כרטיסים החל מ-$X" + the ticket-only tagline; else the package pill.
+    mode: defaults.ticketOnly ? ("ticket" as const) : ("package" as const),
+    ticketOnly: defaults.ticketOnly,
   };
 
   // The auto/campaign flow renders EXACTLY the v3 look for now: classic
@@ -805,7 +827,7 @@ export async function generateCampaignForEvent(
 
 /** Every column the creative pipeline reads - the cron's scan and the single-event push. */
 export const CAMPAIGN_EVENT_COLUMNS =
-  "id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,art_image_url,card_image_url,campaign_input_hash,campaign_image_url,campaign_generated_at";
+  `id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,${SITE_PRICE_COLUMNS},art_image_url,card_image_url,campaign_input_hash,campaign_image_url,campaign_generated_at`;
 
 /**
  * Work order for a run: events with no creative at all first (in the order
