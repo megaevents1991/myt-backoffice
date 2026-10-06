@@ -6,16 +6,23 @@
  * anything, a tour picker and a nested menu.
  */
 import { useId, type ReactNode } from "react";
-import { Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { EmptyLine, selectClass } from "@/components/tours/ui";
-import { RowControls, moved } from "@/components/tours/content/fields";
+import { EmptyLine, Field, selectClass } from "@/components/tours/ui";
+import { ImageUrlField, RowControls, moved } from "@/components/tours/content/fields";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
-import type { SiteLink } from "@/lib/tours/site-content";
+import {
+  FOOTER_TILE_MODES,
+  FOOTER_TILE_MODE_LABELS,
+  type FooterTileMode,
+  type FooterTiles,
+  type SiteFooter,
+  type SiteLink,
+} from "@/lib/tours/site-content";
 
 /** The term kinds a link can point at, as the picker names them. */
 const LINK_GROUPS: { kind: string; label: string }[] = [
@@ -422,4 +429,136 @@ export function pruneLinks(items: SiteLink[]): SiteLink[] {
       const children = item.children ? pruneLinks(item.children) : [];
       return { label: item.label, href: item.href, ...(children.length ? { children } : {}) };
     });
+}
+
+// ---------------------------------------------------------------- footer
+type FooterTile = FooterTiles["items"][number];
+
+/** The purple tiles above the footer: a name, where it leads, an icon. */
+export function TileList({
+  items,
+  onChange,
+  options,
+  siteUrl,
+}: {
+  items: FooterTile[];
+  onChange: (items: FooterTile[]) => void;
+  options: SiteEditorOptions;
+  siteUrl: string | null;
+}) {
+  return (
+    <ItemList
+      items={items}
+      onChange={onChange}
+      create={() => ({ label: "", href: "", icon: "" })}
+      addLabel="Add Tile"
+      max={8}
+      render={(tile, patch) => (
+        <div className="space-y-2">
+          <div className="grid gap-2 md:grid-cols-2">
+            <Input dir="auto" aria-label="Tile name" placeholder="Tile name" value={tile.label} onChange={(e) => patch({ label: e.target.value })} />
+            <LinkInput value={tile.href === "#" ? "" : tile.href} onChange={(href) => patch({ href })} options={options} />
+          </div>
+          <ImageUrlField label="Icon" value={tile.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="A dark icon on a transparent background; the site paints it white." />
+        </div>
+      )}
+    />
+  );
+}
+
+/** Drops the tiles nobody filled in, before a save. */
+export const pruneTiles = (items: FooterTile[]): FooterTile[] =>
+  items.filter((tile) => tile.label.trim() !== "" || (tile.href.trim() !== "" && tile.href.trim() !== "#") || tile.icon.trim() !== "");
+
+/**
+ * What one page does with the tiles above the footer: follow the rule set in
+ * Header & Footer, always show the main tiles, hide them, or show its own.
+ */
+export function FooterTilesField({
+  value,
+  onChange,
+  options,
+  siteUrl,
+}: {
+  value: FooterTiles;
+  onChange: (value: FooterTiles) => void;
+  options: SiteEditorOptions;
+  siteUrl: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <Field
+        label="On this page"
+        hint="The purple tiles and the newsletter box above the footer. The main tiles, and the kinds of page they show on, are set in Header & Footer > Footer."
+        className="md:max-w-md"
+      >
+        <select value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as FooterTileMode })} className={cn(selectClass, "w-full")}>
+          {FOOTER_TILE_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {FOOTER_TILE_MODE_LABELS[mode]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {value.mode === "custom" && (
+        <>
+          <Field label="Title above the tiles" hint="Empty = the title of the main tiles." className="md:max-w-md">
+            <Input dir="auto" value={value.title} onChange={(e) => onChange({ ...value, title: e.target.value })} />
+          </Field>
+          <TileList items={value.items} onChange={(items) => onChange({ ...value, items })} options={options} siteUrl={siteUrl} />
+          {pruneTiles(value.items).length === 0 && <EmptyLine>No tiles yet: until there is one, this page follows the rule of Header & Footer.</EmptyLine>}
+        </>
+      )}
+    </div>
+  );
+}
+
+type FooterColumns = SiteFooter["columns"];
+
+/** The link columns of the dark footer: a heading and its links, in order. */
+export function ColumnsEditor({
+  columns,
+  onChange,
+  options,
+  empty,
+}: {
+  columns: FooterColumns;
+  onChange: (columns: FooterColumns) => void;
+  options: SiteEditorOptions;
+  empty?: string;
+}) {
+  const patch = (index: number, change: Partial<FooterColumns[number]>) => onChange(columns.map((column, i) => (i === index ? { ...column, ...change } : column)));
+  return (
+    <div className="space-y-3">
+      {columns.length === 0 && empty && <EmptyLine>{empty}</EmptyLine>}
+      {columns.map((column, index) => (
+        <div key={index} className="space-y-2 rounded-md border p-3">
+          <div className="flex items-center gap-2">
+            <Input
+              dir="auto"
+              aria-label={`Heading of column ${index + 1}`}
+              placeholder="Column heading"
+              value={column.heading}
+              onChange={(e) => patch(index, { heading: e.target.value })}
+              className="font-medium"
+            />
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={index === 0} onClick={() => onChange(moved(columns, index, -1))} aria-label="Move column up" title="Move up">
+              <ArrowUp />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={index === columns.length - 1} onClick={() => onChange(moved(columns, index, 1))} aria-label="Move column down" title="Move down">
+              <ArrowDown />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive hover:text-destructive" onClick={() => onChange(columns.filter((_, i) => i !== index))} aria-label="Remove column" title="Remove column">
+              <Trash2 />
+            </Button>
+          </div>
+          <LinkTree items={column.links as SiteLink[]} onChange={(links) => patch(index, { links })} options={options} depth={0} />
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" disabled={columns.length >= 10} onClick={() => onChange([...columns, { heading: "", links: [] }])}>
+        <Plus />
+        Add Column
+      </Button>
+    </div>
+  );
 }

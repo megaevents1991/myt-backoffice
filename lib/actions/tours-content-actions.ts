@@ -64,7 +64,16 @@ import {
 import { UUID, actionFail, fetchAll } from "@/lib/tours/action-kit";
 import { catalogSlug } from "@/lib/tours/catalog";
 import { asObject, companyAudit, invalidInput, type JsonObject } from "@/lib/tours/company-kit";
-import { isSiteColor, readWorldSections, worldSectionsSchema } from "@/lib/tours/site-content";
+import {
+  footerTilesSchema,
+  homeSectionSchema,
+  isSiteColor,
+  isTermPageKind,
+  readFooterTiles,
+  readTermSections,
+  termSectionsSchema,
+} from "@/lib/tours/site-content";
+import { EASY_PAGE_LAYOUTS, EMPTY_EASY, cleanEasy, readEasy, type EasyLayout } from "@/lib/tours/wp-html";
 import { siteEditorOptions } from "@/lib/tours/site-options";
 import { todayIso } from "@/lib/tours/format";
 
@@ -330,7 +339,9 @@ const termSchema = z.object({
   icon: imagePath,
   externalUrl: z.string().trim().max(600).refine((v) => v === "" || /^https?:\/\//i.test(v), "A link to another site starts with https://"),
   worldSlug: z.string().trim().max(200),
-  sections: worldSectionsSchema,
+  // which parts a page may hold depends on the term's kind: checked in saveTourTerm (termSectionsSchema)
+  sections: z.array(homeSectionSchema).max(20, "Up to 20 parts on a page"),
+  footerTiles: footerTilesSchema,
 });
 
 const instructorSchema = z.object({
@@ -373,6 +384,16 @@ const cmsPageSchema = z.object({
   seoTitle: shortText,
   seoDescription: shortText,
   isActive: z.boolean(),
+  // the plain text of an imported legal / FAQ page (lib/tours/wp-html.ts); ignored on every other page
+  easy: z.object({
+    body: htmlText,
+    heading: z.string().trim().max(300),
+    intro: z.string().max(40_000, "The opening text is too long"),
+    faq: z
+      .array(z.object({ q: z.string().trim().max(300, "A topic title is up to 300 characters"), a: z.string().max(120_000, "The text of a topic is too long") }))
+      .max(60, "Up to 60 topics on a page"),
+  }),
+  footerTiles: footerTilesSchema,
 });
 
 // ================================================================ trip pages
@@ -1444,8 +1465,8 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
       : { data: [], error: null };
   if (worldsError) throw worldsError;
   const data = asObject(row.data);
-  // a world's page carries its own sections; their pickers need the company's tours, terms and pages
-  const options = row.kind === "audiences" ? await siteEditorOptions(company) : null;
+  // the page of a destination, a world, a tag or a category is built from sections; their pickers need the company's tours, terms and pages
+  const options = isTermPageKind(row.kind) ? await siteEditorOptions(company) : null;
   return {
     row,
     editor: {
@@ -1465,7 +1486,8 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         icon: dataText(data, "icon"),
         externalUrl: dataText(data, "externalUrl"),
         worldSlug: dataText(data, "worldSlug"),
-        sections: row.kind === "audiences" ? readWorldSections(data.sections) : [],
+        sections: isTermPageKind(row.kind) ? readTermSections(row.kind, data.sections) : [],
+        footerTiles: readFooterTiles(data.footerTiles),
       },
       pages,
       worlds: worlds ?? [],
@@ -1520,9 +1542,16 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       if (!dataText(stored, "worldKey") && (input.brandName || input.color)) {
         patch.setData("worldKey", "", `world_${before.id.replace(/-/g, "").slice(0, 10)}`);
       }
-      patch.setData("sections", readWorldSections(stored.sections) as unknown as Json, input.sections as unknown as Json);
     }
     if (before.kind === "tags") patch.setData("worldSlug", dataText(stored, "worldSlug"), input.worldSlug);
+    if (isTermPageKind(before.kind)) {
+      // The page as staff arranged it. A page they never touched compares equal to its default
+      // layout, so nothing is stored for it and the site keeps drawing it the way it always did.
+      const page = termSectionsSchema(before.kind).safeParse(input.sections);
+      if (!page.success) return invalidInput(page.error);
+      patch.setData("sections", readTermSections(before.kind, stored.sections) as unknown as Json, page.data as unknown as Json);
+    }
+    patch.setData("footerTiles", readFooterTiles(stored.footerTiles) as unknown as Json, input.footerTiles as unknown as Json);
 
     if (patch.dirty) {
       const { error } = await toursDb()
@@ -1816,7 +1845,10 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
 }
 
 // ================================================================ content pages
-const cmsPageEditor = (company: Company, row: TourCmsPage): CmsPageEditorData => {
+/** An imported legal / FAQ page has a plain editor for its text; a page made in the backoffice never needs one. */
+const easyLayoutOf = (row: TourCmsPage): EasyLayout | null => (isCreatedPage(row) ? null : (EASY_PAGE_LAYOUTS[row.path] ?? null));
+
+const cmsPageEditor = (company: Company, row: TourCmsPage): Omit<CmsPageEditorData, "options"> => {
   // the import left the SEO fields inside `data`; the column wins once it is filled
   const column = asObject(row.seo);
   const original = asObject(asObject(row.data).seo);
@@ -1825,6 +1857,7 @@ const cmsPageEditor = (company: Company, row: TourCmsPage): CmsPageEditorData =>
     return typeof value === "string" ? value : "";
   };
   const data = asObject(row.data);
+  const easyLayout = easyLayoutOf(row);
   return {
     id: row.id,
     kind: row.kind,
@@ -1840,8 +1873,11 @@ const cmsPageEditor = (company: Company, row: TourCmsPage): CmsPageEditorData =>
       seoTitle: pick("title"),
       seoDescription: pick("description"),
       isActive: row.is_active,
+      easy: easyLayout ? readEasy(easyLayout, data.easy, row.content_html ?? "") : EMPTY_EASY,
+      footerTiles: readFooterTiles(data.footerTiles),
     },
     created: isCreatedPage(row),
+    easyLayout,
     siteUrl: company.siteUrl,
   };
 };
@@ -1933,7 +1969,7 @@ export async function getTourCmsPage(id: string): Promise<ActionResult<CmsPageEd
     const { company } = await requireCompany("tours");
     const row = await cmsPageRow(company, id);
     if (!row) return { success: false, error: "Page not found" };
-    return { success: true, data: cmsPageEditor(company, row) };
+    return { success: true, data: { ...cmsPageEditor(company, row), options: await siteEditorOptions(company) } };
   } catch (e) {
     return failure(e, "Failed to load the page");
   }
@@ -2022,6 +2058,14 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     patch.setData("image", dataText(stored, "image"), input.image);
     // the day only; an untouched WordPress timestamp is left as it is
     if (input.date !== dataText(stored, "date").slice(0, 10)) patch.setData("date", dataText(stored, "date"), input.date);
+    // The plain text of an imported legal / FAQ page. Text staff never changed compares equal to what
+    // the page came with, so nothing is stored and the site keeps reading the imported markup.
+    const easyLayout = easyLayoutOf(before);
+    if (easyLayout) {
+      const easy = cleanEasy(easyLayout, input.easy);
+      patch.setData("easy", cleanEasy(easyLayout, shown.easy) as unknown as Json, easy as unknown as Json);
+    }
+    patch.setData("footerTiles", readFooterTiles(stored.footerTiles) as unknown as Json, input.footerTiles as unknown as Json);
     // The address of an imported page is fixed: the site serves it from its own route folder.
     if (isCreatedPage(before) && input.path.trim() !== "" && input.path.trim() !== before.path) {
       const next = pagePath(input.path);
@@ -2067,7 +2111,7 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     }
     const fresh = await cmsPageRow(company, id);
     if (!fresh) return { success: false, error: "Page not found" };
-    return { success: true, data: cmsPageEditor(company, fresh) };
+    return { success: true, data: { ...cmsPageEditor(company, fresh), options: await siteEditorOptions(company) } };
   } catch (e) {
     return failure(e, "Failed to save the page");
   }

@@ -11,6 +11,7 @@ import { ArrowDown, ArrowUp, Copy, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/page-header";
@@ -22,13 +23,15 @@ import { PublishSiteButton } from "@/components/tours/content/publish-site-butto
 import { CONTENT_SAVED_NOTE, CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/tours/content/save-bar";
 import { saveSiteDoc, type SiteDocEditorData, type SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
+  FOOTER_TILE_PAGES,
+  FOOTER_TILE_PAGE_LABELS,
   SITE_DOC_SCHEMAS,
   type SiteFooter,
   type SiteGeneral,
   type SiteHeader,
   type SiteLink,
 } from "@/lib/tours/site-content";
-import { ItemList, LinkInput, LinkTree, pruneLinks } from "@/components/tours/site/site-fields";
+import { ColumnsEditor, LinkTree, TileList, pruneLinks, pruneTiles } from "@/components/tours/site/site-fields";
 
 type ChromeKey = "general" | "header" | "footer";
 const KEYS: ChromeKey[] = ["header", "footer", "general"];
@@ -59,8 +62,11 @@ function cleaned<K extends ChromeKey>(key: K, form: Forms[K]): Forms[K] {
     const footer = form as SiteFooter;
     return {
       ...footer,
-      discover: footer.discover.filter((tile) => tile.label.trim() !== "" || tile.href.trim() !== "" || tile.icon.trim() !== ""),
+      discover: pruneTiles(footer.discover),
       columns: footer.columns.map((column) => ({ ...column, links: pruneLinks(column.links) })),
+      mobileColumns: footer.mobileColumns
+        .map((column) => ({ ...column, links: pruneLinks(column.links) }))
+        .filter((column) => column.heading.trim() !== "" || column.links.length > 0),
     } as Forms[K];
   }
   const general = form as SiteGeneral;
@@ -152,6 +158,7 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
           <TabsTrigger value="header">Header menu</TabsTrigger>
           <TabsTrigger value="mobile">Mobile menu</TabsTrigger>
           <TabsTrigger value="footer">Footer</TabsTrigger>
+          <TabsTrigger value="mobile-footer">Mobile footer</TabsTrigger>
           <TabsTrigger value="general">Contact details</TabsTrigger>
         </TabsList>
 
@@ -218,24 +225,29 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
 
         {/* ------------------------------------------------------------ footer */}
         <TabsContent value="footer" className="space-y-4">
-          <Section title="Tiles above the footer" description="The row of purple tiles, next to the newsletter box.">
+          <Section
+            title="Tiles above the footer"
+            description="The row of purple tiles, next to the newsletter box. These are the main tiles: one page can hide them or show tiles of its own, on that page's own screen (Homepage, a content page, a world, a tag, a category, a destination)."
+          >
             <TextInput label="Title" value={footer.discoverTitle} onChange={(discoverTitle) => setFooter({ discoverTitle })} />
-            <ItemList
-              items={footer.discover}
-              onChange={(discover) => setFooter({ discover })}
-              create={() => ({ label: "", href: "", icon: "" })}
-              addLabel="Add Tile"
-              max={8}
-              render={(tile, patch) => (
-                <div className="space-y-2">
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <Input dir="auto" aria-label="Tile name" placeholder="Tile name" value={tile.label} onChange={(e) => patch({ label: e.target.value })} />
-                    <LinkInput value={tile.href === "#" ? "" : tile.href} onChange={(href) => patch({ href })} options={options} />
+            <TileList items={footer.discover} onChange={(discover) => setFooter({ discover })} options={options} siteUrl={saved.footer.siteUrl} />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Show the tiles on</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {FOOTER_TILE_PAGES.map((page) => (
+                  <div key={page} className="flex items-center gap-3 rounded-md border p-3">
+                    <Switch
+                      id={`tiles-on-${page}`}
+                      checked={footer.discoverOn[page]}
+                      onCheckedChange={(on) => setFooter({ discoverOn: { ...footer.discoverOn, [page]: on } })}
+                    />
+                    <label htmlFor={`tiles-on-${page}`} className="text-sm">
+                      {FOOTER_TILE_PAGE_LABELS[page]}
+                    </label>
                   </div>
-                  <ImageUrlField label="Icon" value={tile.icon} onChange={(icon) => patch({ icon })} siteUrl={saved.footer.siteUrl} hint="A dark icon on a transparent background; the site paints it white." />
-                </div>
-              )}
-            />
+                ))}
+              </div>
+            </div>
           </Section>
           <Section title="Newsletter box">
             <div className="grid gap-3 md:grid-cols-2">
@@ -245,39 +257,35 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
           </Section>
           <Section title="Link columns" description="The columns of the dark footer, right to left.">
             <TextInput label="Title above the social icons" value={footer.contactTitle} onChange={(contactTitle) => setFooter({ contactTitle })} />
-            {footer.columns.map((column, index) => (
-              <div key={index} className="space-y-2 rounded-md border p-3">
-                <div className="flex items-center gap-2">
-                  <Input
-                    dir="auto"
-                    aria-label={`Heading of column ${index + 1}`}
-                    placeholder="Column heading"
-                    value={column.heading}
-                    onChange={(e) => setFooter({ columns: footer.columns.map((c, i) => (i === index ? { ...c, heading: e.target.value } : c)) })}
-                    className="font-medium"
-                  />
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={index === 0} onClick={() => setFooter({ columns: moved(footer.columns, index, -1) })} aria-label="Move column up" title="Move up">
-                    <ArrowUp />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" disabled={index === footer.columns.length - 1} onClick={() => setFooter({ columns: moved(footer.columns, index, 1) })} aria-label="Move column down" title="Move down">
-                    <ArrowDown />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive hover:text-destructive" onClick={() => setFooter({ columns: footer.columns.filter((_, i) => i !== index) })} aria-label="Remove column" title="Remove column">
-                    <Trash2 />
-                  </Button>
-                </div>
-                <LinkTree
-                  items={column.links as SiteLink[]}
-                  onChange={(links) => setFooter({ columns: footer.columns.map((c, i) => (i === index ? { ...c, links } : c)) })}
-                  options={options}
-                  depth={0}
-                />
-              </div>
-            ))}
-            <Button type="button" variant="outline" size="sm" disabled={footer.columns.length >= 10} onClick={() => setFooter({ columns: [...footer.columns, { heading: "", links: [] }] })}>
-              <Plus />
-              Add Column
-            </Button>
+            <ColumnsEditor columns={footer.columns} onChange={(columns) => setFooter({ columns })} options={options} />
+          </Section>
+        </TabsContent>
+
+        {/* ------------------------------------------------------------ mobile footer */}
+        <TabsContent value="mobile-footer" className="space-y-4">
+          <Section
+            title="Footer on a phone"
+            description="A phone can get a shorter footer than a computer: its own columns, in its own order. No columns here = the phone shows the same columns as the computer."
+            actions={
+              <Button type="button" variant="outline" size="sm" onClick={() => setFooter({ mobileColumns: footer.columns })} title="Replace the phone's columns with the columns of the Footer tab">
+                <Copy />
+                Copy from the Footer
+              </Button>
+            }
+          >
+            <div className="flex items-center gap-3 rounded-md border p-3 md:max-w-md">
+              <Switch id="footer-mobile-accordion" checked={footer.mobileAccordion} onCheckedChange={(mobileAccordion) => setFooter({ mobileAccordion })} />
+              <label htmlFor="footer-mobile-accordion" className="text-sm">
+                Columns open by a tap
+                <span className="block text-xs text-muted-foreground">Each column shows its heading only, and its links open when the customer taps it.</span>
+              </label>
+            </div>
+            <ColumnsEditor
+              columns={footer.mobileColumns}
+              onChange={(mobileColumns) => setFooter({ mobileColumns })}
+              options={options}
+              empty="No columns of its own: the phone shows the columns of the Footer tab."
+            />
           </Section>
         </TabsContent>
 
@@ -312,6 +320,20 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
               <TextInput label="Facebook" ltr value={general.facebook} onChange={(facebook) => setGeneral({ facebook })} />
               <TextInput label="Instagram" ltr value={general.instagram} onChange={(instagram) => setGeneral({ instagram })} />
               <TextInput label="YouTube" ltr value={general.youtube} onChange={(youtube) => setGeneral({ youtube })} />
+            </div>
+          </Section>
+          <Section
+            title="Google reviews"
+            description="The company's business profile on Google. Its reviews are read every night; the Reviews section of the home page can show them instead of typed reviews."
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <TextInput
+                label="Google Place ID"
+                ltr
+                hint="The ID of the business on Google Maps; it usually starts with ChIJ. Empty = no Google reviews."
+                value={general.googlePlaceId}
+                onChange={(googlePlaceId) => setGeneral({ googlePlaceId: googlePlaceId.trim() })}
+              />
             </div>
           </Section>
           <Section title="Lead form" description={'The "did not find what you were looking for" form on the home page, the tour pages and the category pages.'}>

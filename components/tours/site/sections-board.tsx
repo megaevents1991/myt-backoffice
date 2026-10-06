@@ -24,6 +24,7 @@ import {
   homeSectionSchema,
   newSection,
   sectionKind,
+  sectionProblem,
   sectionSummary,
   type HomeSection,
   type HomeSectionType,
@@ -37,9 +38,8 @@ export function sectionsProblem(sections: HomeSection[]): string | null {
     const where = `${sectionKind(section.type)?.label ?? "Section"} (#${index + 1}): `;
     const parsed = homeSectionSchema.safeParse(section);
     if (!parsed.success) return where + parsed.error.issues[0].message;
-    if (section.type === "slider" && ["world", "tag", "destination", "category"].includes(section.source) && !section.term) {
-      return `${where}choose its ${section.source}`;
-    }
+    const missing = sectionProblem(section);
+    if (missing) return where + missing;
   }
   return null;
 }
@@ -59,7 +59,8 @@ export function SectionsBoard({
   kinds?: HomeSectionType[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  const offered = kinds ? SECTION_KINDS.filter((kind) => kinds.includes(kind.type)) : SECTION_KINDS;
+  // a built-in part of a term page is always in the list: it is never added, and never removed
+  const offered = SECTION_KINDS.filter((kind) => !kind.builtIn && (!kinds || kinds.includes(kind.type)));
   const patch = (id: string, section: HomeSection) => onChange(sections.map((s) => (s.id === id ? section : s)));
   const add = (type: HomeSectionType) => {
     const section = newSection(type);
@@ -86,6 +87,7 @@ export function SectionsBoard({
                 >
                   <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
                   <span className="shrink-0 font-medium">{kind?.label ?? section.type}</span>
+                  {kind?.builtIn && <Chip tone="muted">Built in</Chip>}
                   <span dir="auto" className="min-w-0 truncate text-sm text-muted-foreground">
                     {sectionSummary(section)}
                   </span>
@@ -124,17 +126,22 @@ export function SectionsBoard({
                   >
                     <ArrowDown />
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => onChange(sections.filter((s) => s.id !== section.id))}
-                    aria-label="Remove section"
-                    title="Remove section (Discard brings it back until you save)"
-                  >
-                    <Trash2 />
-                  </Button>
+                  {kind?.builtIn ? (
+                    // keeps the row buttons aligned; the part is hidden with its switch instead
+                    <span className="h-8 w-8" title="A built-in part of the page: switch it off to hide it" />
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => onChange(sections.filter((s) => s.id !== section.id))}
+                      aria-label="Remove section"
+                      title="Remove section (Discard brings it back until you save)"
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
                 </div>
               </div>
               {isOpen && (

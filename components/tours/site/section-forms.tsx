@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * The form of each section type of the home page (lib/tours/site-content.ts
- * SECTION_KINDS). A form only edits its own section and hands the whole section
- * back; the board (homepage-editor.tsx) owns the list, the order and the save.
+ * The form of each section type of the home page and of a term page
+ * (lib/tours/site-content.ts SECTION_KINDS). A form only edits its own section and
+ * hands the whole section back; the board (sections-board.tsx) owns the list, the
+ * order and the save.
  */
 import type { ReactNode } from "react";
 
@@ -16,13 +17,19 @@ import { ImageUrlField } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
+  TAB_SHOWS,
+  TAB_TERM_KIND,
+  TILE_SOURCES,
+  TILE_SOURCE_LABELS,
   TOUR_SOURCES,
   TOUR_SOURCE_KIND,
   TOUR_SOURCE_LABELS,
   newId,
   type HomeSection,
+  type TileSource,
   type TourSource,
 } from "@/lib/tours/site-content";
+import { GoogleReviewsPanel } from "@/components/tours/site/google-reviews-panel";
 import { ColorInput, ItemList, LinkInput, TermSelect, ToursPicker } from "@/components/tours/site/site-fields";
 
 type Of<T extends HomeSection["type"]> = Extract<HomeSection, { type: T }>;
@@ -57,28 +64,124 @@ function NewTabSwitch({ id, checked, onChange }: { id: string; checked: boolean;
   );
 }
 
-// ---------------------------------------------------------------- hero
-function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
+/** A part of a long form that stays folded until it is needed: its name and what it holds stay in view. */
+function Fold({ title, summary, children }: { title: string; summary: string; children: ReactNode }) {
+  return (
+    <details className="rounded-md border bg-muted/30 open:bg-background">
+      <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+        {title}
+        <span className="ms-2 font-normal text-muted-foreground">{summary}</span>
+      </summary>
+      <div className="space-y-3 border-t p-3">{children}</div>
+    </details>
+  );
+}
+
+const clamp = (value: string, max: number): number => Math.min(max, Math.max(1, Math.trunc(Number(value)) || 1));
+
+const selectOf = <T extends string>(value: T, options: readonly T[], labels: Record<T, string>, onChange: (value: T) => void) => (
+  <select value={value} onChange={(e) => onChange(e.target.value as T)} className={cn(selectClass, "w-full")}>
+    {options.map((option) => (
+      <option key={option} value={option}>
+        {labels[option]}
+      </option>
+    ))}
+  </select>
+);
+
+/** "The tours of a world" -> "World": the name of the list a rule picks its term from. */
+const termLabel = (source: TourSource): string => TOUR_SOURCE_LABELS[source].replace("The tours of a ", "").replace(/^./, (c) => c.toUpperCase());
+
+const FILL_LABELS = { manual: "I pick them", auto: "Automatic" } as const;
+
+// ---------------------------------------------------------------- shared parts
+interface TourRule {
+  source: TourSource;
+  term: string;
+  tours: string[];
+  limit: number;
+}
+
+/** Which tours a row, a slider or automatic banners show: the rule, its term, the picked tours, and how many. */
+function TourRuleFields({
+  rule,
+  onChange,
+  options,
+  maxLimit = 24,
+  pickLabel = "Tours in this row",
+  hint,
+}: {
+  rule: TourRule;
+  onChange: (change: Partial<TourRule>) => void;
+  options: SiteEditorOptions;
+  maxLimit?: number;
+  pickLabel?: string;
+  hint?: string;
+}) {
+  const kind = TOUR_SOURCE_KIND[rule.source];
+  return (
+    <>
+      <Grid>
+        <Field label="Which tours" hint={hint}>
+          {selectOf(rule.source, TOUR_SOURCES, TOUR_SOURCE_LABELS, (source) => onChange({ source, term: "" }))}
+        </Field>
+        {kind && (
+          <Field label={termLabel(rule.source)}>
+            <TermSelect kind={kind} value={rule.term} onChange={(term) => onChange({ term })} options={options} />
+          </Field>
+        )}
+        <Field label="How many at most">
+          <Input type="number" min={1} max={maxLimit} dir="ltr" value={rule.limit} onChange={(e) => onChange({ limit: clamp(e.target.value, maxLimit) })} />
+        </Field>
+      </Grid>
+      {rule.source === "manual" && <ToursPicker label={pickLabel} value={rule.tours} onChange={(tours) => onChange({ tours })} options={options} />}
+    </>
+  );
+}
+
+interface BannerValue {
+  titleBold: string;
+  titleRest: string;
+  text: string;
+  slides: { image: string; alt: string; href: string }[];
+}
+
+/** The top banner: the title card's three texts and the rotating pictures. */
+function BannerFields({
+  value,
+  onChange,
+  options,
+  siteUrl,
+  textHint,
+  empty,
+}: {
+  value: BannerValue;
+  onChange: (change: Partial<BannerValue>) => void;
+  options: SiteEditorOptions;
+  siteUrl: string | null;
+  textHint: string;
+  empty: string;
+}) {
   return (
     <div className="space-y-4">
       <Grid>
         <Field label="Title, bold part">
-          <Input dir="auto" value={section.titleBold} onChange={(e) => onChange({ ...section, titleBold: e.target.value })} />
+          <Input dir="auto" value={value.titleBold} onChange={(e) => onChange({ titleBold: e.target.value })} />
         </Field>
         <Field label="Title, the rest">
-          <Input dir="auto" value={section.titleRest} onChange={(e) => onChange({ ...section, titleRest: e.target.value })} />
+          <Input dir="auto" value={value.titleRest} onChange={(e) => onChange({ titleRest: e.target.value })} />
         </Field>
       </Grid>
-      <Field label="Text under the title" hint="The three fields empty = banners only, without the title card.">
-        <Textarea dir="auto" rows={2} value={section.text} onChange={(e) => onChange({ ...section, text: e.target.value })} />
+      <Field label="Text under the title" hint={textHint}>
+        <Textarea dir="auto" rows={2} value={value.text} onChange={(e) => onChange({ text: e.target.value })} />
       </Field>
       <ItemList
         label="Banners"
-        items={section.slides}
-        onChange={(slides) => onChange({ ...section, slides })}
+        items={value.slides}
+        onChange={(slides) => onChange({ slides })}
         create={() => ({ image: "", alt: "", href: "" })}
         addLabel="Add Banner"
-        empty="No banners yet. They rotate every 5 seconds."
+        empty={empty}
         max={10}
         render={(slide, patch) => (
           <div className="space-y-2">
@@ -98,9 +201,27 @@ function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
   );
 }
 
-// ---------------------------------------------------------------- tour finder
-const SHOW_LABELS = { sale: "Tours on sale", all: "All tours", world: "The tours of a world" } as const;
+// ---------------------------------------------------------------- hero
+function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
+  return (
+    <div className="space-y-4">
+      <Notice tone="info">
+        These are the general banners of the page. A category tile of the Tour finder can carry banners of its own (open the tile, &quot;Banner of this
+        tile&quot;): while a customer has that tile chosen, its banners show here instead.
+      </Notice>
+      <BannerFields
+        value={section}
+        onChange={(change) => onChange({ ...section, ...change })}
+        options={options}
+        siteUrl={siteUrl}
+        textHint="The three fields empty = banners only, without the title card."
+        empty="No banners yet. They rotate every 5 seconds."
+      />
+    </div>
+  );
+}
 
+// ---------------------------------------------------------------- tour finder
 function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) {
   return (
     <div className="space-y-4">
@@ -117,63 +238,109 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
           icon: "",
           show: "world" as const,
           world: "",
+          term: "",
+          tours: [],
           allLabel: "הכל",
           color: "",
           search: "filters" as const,
-          featuredTitle: "",
-          featured: [],
+          pillTags: [],
+          banner: { titleBold: "", titleRest: "", text: "", slides: [] },
+          rows: [],
         })}
         addLabel="Add Category Tile"
         empty="No category tiles: the grid shows every tour."
         max={8}
-        render={(tab, patch) => (
-          <div className="space-y-3">
-            <Grid>
-              <Field label="Name on the tile">
-                <Input dir="auto" value={tab.label} onChange={(e) => patch({ label: e.target.value })} />
-              </Field>
-              <Field label="What the tile shows">
-                <select
-                  value={tab.show}
-                  onChange={(e) => patch({ show: e.target.value as typeof tab.show })}
-                  className={cn(selectClass, "w-full")}
-                >
-                  {(Object.keys(SHOW_LABELS) as (keyof typeof SHOW_LABELS)[]).map((key) => (
-                    <option key={key} value={key}>
-                      {SHOW_LABELS[key]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {tab.show === "world" && (
-                <Field label="World" hint="The tours whose Categories & Tags include this world.">
-                  <TermSelect kind="audiences" value={tab.world} onChange={(world) => patch({ world })} options={options} />
+        render={(tab, patch) => {
+          const termKind = TAB_TERM_KIND[tab.show];
+          return (
+            <div className="space-y-3">
+              <Grid>
+                <Field label="Name on the tile">
+                  <Input dir="auto" value={tab.label} onChange={(e) => patch({ label: e.target.value })} />
                 </Field>
+                <Field label="What the tile shows" hint="The tile fills itself: a tour that joins the world, the tag or the sale shows after the next Revalidate Pages.">
+                  {selectOf(tab.show, TAB_SHOWS, TOUR_SOURCE_LABELS, (show) => patch({ show, term: "" }))}
+                </Field>
+                {tab.show === "world" && (
+                  <Field label="World" hint="The tours whose Categories & Tags include this world.">
+                    <TermSelect kind="audiences" value={tab.world} onChange={(world) => patch({ world })} options={options} />
+                  </Field>
+                )}
+                {termKind && (
+                  <Field label={termLabel(tab.show)}>
+                    <TermSelect kind={termKind} value={tab.term} onChange={(term) => patch({ term })} options={options} />
+                  </Field>
+                )}
+                <Field label={'Name of the "all" pill'} hint="The first trip-type pill of this tile.">
+                  <Input dir="auto" value={tab.allLabel} onChange={(e) => patch({ allLabel: e.target.value })} />
+                </Field>
+                <Field label="Search under the pills">
+                  <select value={tab.search} onChange={(e) => patch({ search: e.target.value as typeof tab.search })} className={cn(selectClass, "w-full")}>
+                    <option value="filters">Destination and season lists</option>
+                    <option value="text">Free text search</option>
+                  </select>
+                </Field>
+                <ColorInput label="Search button color" value={tab.color} onChange={(color) => patch({ color })} />
+              </Grid>
+              {tab.show === "manual" && (
+                <ToursPicker label="Tours of this tile" value={tab.tours} onChange={(tours) => patch({ tours })} options={options} max={48} />
               )}
-              <Field label={'Name of the "all" pill'} hint="The first trip-type pill of this tile.">
-                <Input dir="auto" value={tab.allLabel} onChange={(e) => patch({ allLabel: e.target.value })} />
-              </Field>
-              <Field label="Search under the pills">
-                <select
-                  value={tab.search}
-                  onChange={(e) => patch({ search: e.target.value as typeof tab.search })}
-                  className={cn(selectClass, "w-full")}
-                >
-                  <option value="filters">Destination and season lists</option>
-                  <option value="text">Free text search</option>
-                </select>
-              </Field>
-              <ColorInput label="Search button color" value={tab.color} onChange={(color) => patch({ color })} />
-            </Grid>
-            <ImageUrlField label="Icon" value={tab.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="Square icon, shown at 86 x 86." />
-            <Field label="Featured row title" hint="A row of picked tours above the grid, on this tile only. Empty = no featured row.">
-              <Input dir="auto" value={tab.featuredTitle} onChange={(e) => patch({ featuredTitle: e.target.value })} />
-            </Field>
-            {tab.featuredTitle.trim() !== "" && (
-              <ToursPicker label="Featured tours" value={tab.featured} onChange={(featured) => patch({ featured })} options={options} max={12} />
-            )}
-          </div>
-        )}
+              <ImageUrlField label="Icon" value={tab.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="Square icon, shown at 86 x 86." />
+
+              <Fold title="Banner of this tile" summary={tab.banner.slides.length ? `${tab.banner.slides.length} banners of its own` : "The page's general banners"}>
+                <p className="text-sm text-muted-foreground">
+                  While a customer has this tile chosen, these banners replace the banners at the top of the page. No banners here = the general ones stay.
+                </p>
+                <BannerFields
+                  value={tab.banner}
+                  onChange={(change) => patch({ banner: { ...tab.banner, ...change } })}
+                  options={options}
+                  siteUrl={siteUrl}
+                  textHint="The three fields empty = the title card of the general banners stays."
+                  empty="No banners of its own: the general banners stay."
+                />
+              </Fold>
+
+              <Fold title="Trip-type pills" summary={tab.pillTags.length ? `${tab.pillTags.length} picked` : "Automatic"}>
+                <p className="text-sm text-muted-foreground">
+                  Empty = the tile builds its pills by itself, from the tags of its tours. Pick tags to show only those, in this order.
+                </p>
+                <ItemList
+                  items={tab.pillTags.map((slug) => ({ slug }))}
+                  onChange={(items) => patch({ pillTags: items.map((item) => item.slug) })}
+                  create={() => ({ slug: "" })}
+                  addLabel="Add Pill"
+                  empty="Automatic: the tags of the tile's tours."
+                  max={24}
+                  render={(item, patchItem) => <TermSelect kind="tags" value={item.slug} onChange={(slug) => patchItem({ slug })} options={options} ariaLabel="Tag" />}
+                />
+              </Fold>
+
+              <Fold title="Rows of this tile" summary={tab.rows.length ? `${tab.rows.length} ${tab.rows.length === 1 ? "row" : "rows"}` : "None"}>
+                <p className="text-sm text-muted-foreground">
+                  Rows of tours of this tile only, under its search and above the tour grid: best sellers, a holiday, tours you pick. They step aside as soon as
+                  the customer searches or picks a trip type, so the results come first.
+                </p>
+                <ItemList
+                  items={tab.rows}
+                  onChange={(rows) => patch({ rows })}
+                  create={() => ({ id: newId("row"), title: "", source: "manual" as const, term: "", tours: [], limit: 8 })}
+                  addLabel="Add Row"
+                  empty="No rows: the tile goes straight to the tour grid."
+                  max={6}
+                  render={(row, patchRow) => (
+                    <div className="space-y-3">
+                      <Field label="Row title">
+                        <Input dir="auto" value={row.title} onChange={(e) => patchRow({ title: e.target.value })} />
+                      </Field>
+                      <TourRuleFields rule={row} onChange={patchRow} options={options} hint="Up to 4 tours show as one line; more than 4 slide." />
+                    </div>
+                  )}
+                />
+              </Fold>
+            </div>
+          );
+        }}
       />
       <ItemList
         label="Trip-type pills of a sale tile"
@@ -197,7 +364,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
 // ---------------------------------------------------------------- simple sections
 function LeadForm({ section, onChange }: FormProps<"lead_form">) {
   return (
-    <Field label="Title on the home page" hint="Empty = the lead form title set in Header & Footer > Contact details.">
+    <Field label="Title of the form" hint="Empty = the lead form title set in Header & Footer > Contact details.">
       <Input dir="auto" value={section.title} onChange={(e) => onChange({ ...section, title: e.target.value })} />
     </Field>
   );
@@ -206,30 +373,54 @@ function LeadForm({ section, onChange }: FormProps<"lead_form">) {
 function TermTilesForm({ section, onChange, options, siteUrl }: FormProps<"artists"> | FormProps<"destinations">) {
   const kind = section.type;
   const noun = kind === "artists" ? "Artist" : "Destination";
+  const plural = kind === "artists" ? "artists" : "destinations";
   const update = (change: Partial<typeof section>) => (onChange as (s: typeof section) => void)({ ...section, ...change });
+  const termKind = TOUR_SOURCE_KIND[section.source as TourSource];
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => update({ title })} />
-      <ItemList
-        label={`${noun} tiles`}
-        items={section.items}
-        onChange={(items) => update({ items })}
-        create={() => ({ slug: "", image: "" })}
-        addLabel={`Add ${noun}`}
-        max={24}
-        render={(item, patch) => (
-          <div className="space-y-2">
-            <TermSelect kind={kind} value={item.slug} onChange={(slug) => patch({ slug })} options={options} ariaLabel={noun} />
-            <ImageUrlField
-              label="Tile picture"
-              value={item.image}
-              onChange={(image) => patch({ image })}
-              siteUrl={siteUrl}
-              hint={`Empty = the first hero image of the ${noun.toLowerCase()}.`}
-            />
-          </div>
+      <Grid>
+        <Field label={`Which ${plural}`} hint={`Automatic = the section fills itself; a ${noun.toLowerCase()} without a picture is skipped.`}>
+          {selectOf(section.mode, ["manual", "auto"] as const, FILL_LABELS, (mode) => update({ mode }))}
+        </Field>
+        {section.mode === "auto" && (
+          <>
+            <Field label={`The ${plural} of which tours`} hint={`"All of them" lists every ${noun.toLowerCase()}, the ones with the most tours first.`}>
+              {selectOf<TileSource>(section.source, TILE_SOURCES, TILE_SOURCE_LABELS, (source) => update({ source, term: "" }))}
+            </Field>
+            {termKind && (
+              <Field label={termLabel(section.source as TourSource)}>
+                <TermSelect kind={termKind} value={section.term} onChange={(term) => update({ term })} options={options} />
+              </Field>
+            )}
+            <Field label="How many at most">
+              <Input type="number" min={1} max={24} dir="ltr" value={section.limit} onChange={(e) => update({ limit: clamp(e.target.value, 24) })} />
+            </Field>
+          </>
         )}
-      />
+      </Grid>
+      {section.mode === "manual" && (
+        <ItemList
+          label={`${noun} tiles`}
+          items={section.items}
+          onChange={(items) => update({ items })}
+          create={() => ({ slug: "", image: "" })}
+          addLabel={`Add ${noun}`}
+          max={24}
+          render={(item, patch) => (
+            <div className="space-y-2">
+              <TermSelect kind={kind} value={item.slug} onChange={(slug) => patch({ slug })} options={options} ariaLabel={noun} />
+              <ImageUrlField
+                label="Tile picture"
+                value={item.image}
+                onChange={(image) => patch({ image })}
+                siteUrl={siteUrl}
+                hint={`Empty = the first hero image of the ${noun.toLowerCase()}.`}
+              />
+            </div>
+          )}
+        />
+      )}
     </div>
   );
 }
@@ -238,36 +429,48 @@ function BannersForm({ section, onChange, options, siteUrl }: FormProps<"banners
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
-      <ItemList
-        label="Banners"
-        items={section.items}
-        onChange={(items) => onChange({ ...section, items })}
-        create={() => ({ title: "", subtitle: "", cta: "", href: "", newTab: false, image: "", overlayColor: "", buttonColor: "" })}
-        addLabel="Add Banner"
-        max={8}
-        render={(banner, patch, index) => (
-          <div className="space-y-2">
-            <Grid>
-              <Field label="Title">
-                <Input dir="auto" value={banner.title} onChange={(e) => patch({ title: e.target.value })} />
-              </Field>
-              <Field label="Line under the title">
-                <Input dir="auto" value={banner.subtitle} onChange={(e) => patch({ subtitle: e.target.value })} />
-              </Field>
-              <Field label="Button text">
-                <Input dir="auto" value={banner.cta} onChange={(e) => patch({ cta: e.target.value })} />
-              </Field>
-              <Field label="Button link" hint="Without a text and a link there is no button.">
-                <LinkInput value={banner.href} onChange={(href) => patch({ href })} options={options} />
-              </Field>
-              <ColorInput label="Color of the text box" value={banner.overlayColor} onChange={(overlayColor) => patch({ overlayColor })} withOpacity />
-              <ColorInput label="Button color" value={banner.buttonColor} onChange={(buttonColor) => patch({ buttonColor })} withOpacity />
-              <NewTabSwitch id={`${section.id}-banner-${index}-tab`} checked={banner.newTab} onChange={(newTab) => patch({ newTab })} />
-            </Grid>
-            <ImageUrlField label="Picture" value={banner.image} onChange={(image) => patch({ image })} siteUrl={siteUrl} />
-          </div>
-        )}
-      />
+      <Field label="Which banners" hint="Automatic = one banner per tour of a rule: the tour's picture and name, and a button to its page.">
+        {selectOf(section.mode, ["manual", "auto"] as const, FILL_LABELS, (mode) => onChange({ ...section, mode }))}
+      </Field>
+      {section.mode === "auto" ? (
+        <>
+          <TourRuleFields rule={section} onChange={(change) => onChange({ ...section, ...change })} options={options} maxLimit={12} pickLabel="Tours of the banners" />
+          <Field label="Button text" hint='Empty = "לפרטים". The button takes the color of the tour&apos;s world.'>
+            <Input dir="auto" value={section.autoCta} onChange={(e) => onChange({ ...section, autoCta: e.target.value })} />
+          </Field>
+        </>
+      ) : (
+        <ItemList
+          label="Banners"
+          items={section.items}
+          onChange={(items) => onChange({ ...section, items })}
+          create={() => ({ title: "", subtitle: "", cta: "", href: "", newTab: false, image: "", overlayColor: "", buttonColor: "" })}
+          addLabel="Add Banner"
+          max={8}
+          render={(banner, patch, index) => (
+            <div className="space-y-2">
+              <Grid>
+                <Field label="Title">
+                  <Input dir="auto" value={banner.title} onChange={(e) => patch({ title: e.target.value })} />
+                </Field>
+                <Field label="Line under the title">
+                  <Input dir="auto" value={banner.subtitle} onChange={(e) => patch({ subtitle: e.target.value })} />
+                </Field>
+                <Field label="Button text">
+                  <Input dir="auto" value={banner.cta} onChange={(e) => patch({ cta: e.target.value })} />
+                </Field>
+                <Field label="Button link" hint="Without a text and a link there is no button.">
+                  <LinkInput value={banner.href} onChange={(href) => patch({ href })} options={options} />
+                </Field>
+                <ColorInput label="Color of the text box" value={banner.overlayColor} onChange={(overlayColor) => patch({ overlayColor })} withOpacity />
+                <ColorInput label="Button color" value={banner.buttonColor} onChange={(buttonColor) => patch({ buttonColor })} withOpacity />
+                <NewTabSwitch id={`${section.id}-banner-${index}-tab`} checked={banner.newTab} onChange={(newTab) => patch({ newTab })} />
+              </Grid>
+              <ImageUrlField label="Picture" value={banner.image} onChange={(image) => patch({ image })} siteUrl={siteUrl} />
+            </div>
+          )}
+        />
+      )}
     </div>
   );
 }
@@ -301,13 +504,42 @@ function ReasonsForm({ section, onChange, siteUrl }: FormProps<"reasons">) {
   );
 }
 
+const REVIEW_SOURCE_LABELS = { manual: "Typed here", google: "The company's Google reviews" } as const;
+
 function ReviewsForm({ section, onChange }: FormProps<"reviews">) {
+  const google = section.source === "google";
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
-      <Notice tone="info">The world and tag pages of the site show these same reviews.</Notice>
+      <Grid>
+        <Field label="Where the reviews come from" hint="Google's reviews are read every night; the newest ones show by themselves.">
+          {selectOf(section.source, ["manual", "google"] as const, REVIEW_SOURCE_LABELS, (source) => onChange({ ...section, source }))}
+        </Field>
+        {google && (
+          <>
+            <Field label="At least how many stars">
+              <select value={section.minRating} onChange={(e) => onChange({ ...section, minRating: clamp(e.target.value, 5) })} className={cn(selectClass, "w-full")}>
+                {[5, 4, 3, 2, 1].map((stars) => (
+                  <option key={stars} value={stars}>
+                    {stars === 5 ? "5 stars only" : `${stars} stars and up`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="How many reviews at most">
+              <Input type="number" min={1} max={24} dir="ltr" value={section.limit} onChange={(e) => onChange({ ...section, limit: clamp(e.target.value, 24) })} />
+            </Field>
+          </>
+        )}
+      </Grid>
+      {google && <GoogleReviewsPanel minRating={section.minRating} limit={section.limit} />}
+      <Notice tone="info">
+        {google
+          ? "The reviews typed below are kept: the site shows them while Google has no review to show."
+          : "The world and tag pages of the site show the reviews of the home page, unless they carry reviews of their own."}
+      </Notice>
       <ItemList
-        label="Reviews"
+        label={google ? "Typed reviews (shown while Google has none)" : "Reviews"}
         items={section.items}
         onChange={(items) => onChange({ ...section, items })}
         create={() => ({ name: "", text: "" })}
@@ -329,43 +561,15 @@ function ReviewsForm({ section, onChange }: FormProps<"reviews">) {
 }
 
 function SliderForm({ section, onChange, options }: FormProps<"slider">) {
-  const kind = TOUR_SOURCE_KIND[section.source];
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
-      <Grid>
-        <Field label="Which tours" hint="The row fills itself: a tour that gets the tag shows up after the next Revalidate Pages.">
-          <select
-            value={section.source}
-            onChange={(e) => onChange({ ...section, source: e.target.value as TourSource, term: "" })}
-            className={cn(selectClass, "w-full")}
-          >
-            {TOUR_SOURCES.map((source) => (
-              <option key={source} value={source}>
-                {TOUR_SOURCE_LABELS[source]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {kind && (
-          <Field label={TOUR_SOURCE_LABELS[section.source].replace("The tours of a ", "").replace(/^./, (c) => c.toUpperCase())}>
-            <TermSelect kind={kind} value={section.term} onChange={(term) => onChange({ ...section, term })} options={options} />
-          </Field>
-        )}
-        <Field label="How many tours at most">
-          <Input
-            type="number"
-            min={1}
-            max={24}
-            dir="ltr"
-            value={section.limit}
-            onChange={(e) => onChange({ ...section, limit: Math.min(24, Math.max(1, Math.trunc(Number(e.target.value)) || 1)) })}
-          />
-        </Field>
-      </Grid>
-      {section.source === "manual" && (
-        <ToursPicker label="Tours in this row" value={section.tours} onChange={(tours) => onChange({ ...section, tours })} options={options} />
-      )}
+      <TourRuleFields
+        rule={section}
+        onChange={(change) => onChange({ ...section, ...change })}
+        options={options}
+        hint="The row fills itself: a tour that gets the tag shows up after the next Revalidate Pages."
+      />
       <Grid>
         <Field label={'"See more" button text'} hint="Empty = no button.">
           <Input dir="auto" value={section.moreLabel} onChange={(e) => onChange({ ...section, moreLabel: e.target.value })} />
@@ -417,6 +621,14 @@ function ImageForm({ section, onChange, options, siteUrl }: FormProps<"image">) 
   );
 }
 
+/** A built-in part of a term page has nothing to fill in: what it is and how to use it. */
+const BLOCK_NOTES: Record<"subcategories" | "term_tours" | "term_description", string> = {
+  subcategories:
+    "The tags attached to this world, as buttons in the world's color. Attach a tag on the tag's own screen (its World field). Nothing shows while the world has none.",
+  term_tours: "Every tour that carries this term, with its search. It fills itself. Move it up or down among the other parts, or switch it off to hide it.",
+  term_description: "The text of the Description field, further down this screen. Move it to where the page should say it, or switch it off.",
+};
+
 /** The form of one section, by its type. */
 export function SectionForm({
   section,
@@ -455,5 +667,9 @@ export function SectionForm({
       return <TextForm section={section} {...shared} />;
     case "image":
       return <ImageForm section={section} {...shared} />;
+    case "subcategories":
+    case "term_tours":
+    case "term_description":
+      return <Notice tone="info">{BLOCK_NOTES[section.type]}</Notice>;
   }
 }

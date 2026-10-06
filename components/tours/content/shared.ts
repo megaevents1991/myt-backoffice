@@ -6,7 +6,8 @@
  * actions and the client components import the same types and labels.
  */
 import { matchesSearch } from "@/lib/search";
-import type { HomeSection } from "@/lib/tours/site-content";
+import type { FooterTiles, HomeSection } from "@/lib/tours/site-content";
+import type { EasyLayout, EasyText } from "@/lib/tours/wp-html";
 import type { SiteEditorOptions } from "@/lib/tours/site-options";
 
 /** Every content / leads / settings action answers with this. Expected failures never throw. */
@@ -469,8 +470,13 @@ export interface TermForm {
   externalUrl: string;
   /** A tag that is a sub-category of a world: that audience's slug ("" = none). */
   worldSlug: string;
-  /** A world's own page sections (sliders, banners, text...), shown under its hero and sub-categories. */
+  /**
+   * The page of a destination, a world, a tag or a category, top to bottom under its picture:
+   * its built-in parts (tour list, description, sub-categories) and the sections staff added.
+   */
   sections: HomeSection[];
+  /** What this page does with the tiles above the footer. */
+  footerTiles: FooterTiles;
 }
 
 export interface TermEditorData {
@@ -481,7 +487,7 @@ export interface TermEditorData {
   pages: { id: string; name: string }[];
   /** The company's worlds - what a tag picks its world from. */
   worlds: { slug: string; name: string }[];
-  /** What the pickers of a world's page sections choose from (worlds only). */
+  /** What the pickers of the page's sections choose from (null for a kind whose page is not built from sections). */
   options: SiteEditorOptions | null;
   /** The address of the term's page on the site. */
   path: string;
@@ -590,6 +596,13 @@ export interface CmsPageForm {
   seoTitle: string;
   seoDescription: string;
   isActive: boolean;
+  /**
+   * The text of an imported page that has a plain editor (a legal page, a FAQ page), in the
+   * fields of its layout. Empty on every other page.
+   */
+  easy: EasyText;
+  /** What this page does with the tiles above the footer. */
+  footerTiles: FooterTiles;
 }
 
 export interface CmsPageEditorData {
@@ -599,6 +612,10 @@ export interface CmsPageEditorData {
   form: CmsPageForm;
   /** Made in the backoffice (not imported from WordPress): the site draws it with the general page template. */
   created: boolean;
+  /** Set on an imported page whose text is edited in plain fields instead of its HTML (lib/tours/wp-html.ts). */
+  easyLayout: EasyLayout | null;
+  /** What the link pickers choose from. */
+  options: SiteEditorOptions;
   siteUrl: string | null;
 }
 

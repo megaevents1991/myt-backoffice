@@ -9,7 +9,8 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
-import { Notice } from "@/components/tours/ui";
+import { Notice, Section } from "@/components/tours/ui";
+import { FooterTilesField, pruneTiles } from "@/components/tours/site/site-fields";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
@@ -20,11 +21,14 @@ import type { ActionResult } from "@/components/tours/content/shared";
 
 type HomeData = SiteDocEditorData<"home">;
 
+/** The document as it is saved: tiles nobody filled in are dropped. */
+const cleaned = (form: HomeDoc): HomeDoc => ({ ...form, footerTiles: { ...form.footerTiles, items: pruneTiles(form.footerTiles.items) } });
+
 export function HomepageEditor({ initial, options }: { initial: HomeData; options: SiteEditorOptions }) {
   // the version the next save must name; it moves with every successful save
   const version = useRef(initial.updatedAt);
   const save = useCallback(async (form: HomeDoc): Promise<ActionResult<HomeData>> => {
-    const result = await saveSiteDoc("home", form, version.current);
+    const result = await saveSiteDoc("home", cleaned(form), version.current);
     if (result.success) version.current = result.data.updatedAt;
     return result as ActionResult<HomeData>;
   }, []);
@@ -35,7 +39,7 @@ export function HomepageEditor({ initial, options }: { initial: HomeData; option
   const problem = useMemo(() => {
     const inSection = sectionsProblem(sections);
     if (inSection) return inSection;
-    const parsed = homeSchema.safeParse(form);
+    const parsed = homeSchema.safeParse(cleaned(form));
     return parsed.success ? null : parsed.error.issues[0].message;
   }, [form, sections]);
 
@@ -57,6 +61,10 @@ export function HomepageEditor({ initial, options }: { initial: HomeData; option
       )}
 
       <SectionsBoard sections={sections} onChange={(next) => set("sections", next)} options={options} siteUrl={saved.siteUrl} />
+
+      <Section title="Tiles above the footer" description="What the home page shows above the footer.">
+        <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={options} siteUrl={saved.siteUrl} />
+      </Section>
       {saved.updatedBy && <p className="text-sm text-muted-foreground">Last saved by {saved.updatedBy}</p>}
 
       <StickySaveBar

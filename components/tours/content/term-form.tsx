@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { RotateCcw } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/page-header";
@@ -14,10 +16,13 @@ import { PublishSiteButton } from "@/components/tours/content/publish-site-butto
 import { BackLink, CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
 import { siteAssetUrl, termKindLabel, type TermEditorData, type TermForm } from "@/components/tours/content/shared";
-import { ColorInput } from "@/components/tours/site/site-fields";
+import { ColorInput, FooterTilesField, pruneTiles } from "@/components/tours/site/site-fields";
 import { SectionsBoard, sectionsProblem } from "@/components/tours/site/sections-board";
-import { WORLD_SECTION_TYPES } from "@/lib/tours/site-content";
+import { TERM_BLOCK_TYPES, TERM_SECTION_TYPES, defaultTermLayout, isTermPageKind } from "@/lib/tours/site-content";
 import { cn } from "@/lib/utils";
+
+/** The lead form and the reviews a page starts with: "Reset the order" puts them back, so it drops the ones already there. */
+const DEFAULT_PART_IDS = ["b_lead_form", "b_reviews"];
 
 /** What the page of each kind is, in one line under the title. */
 const KIND_NOTES: Record<string, string> = {
@@ -31,10 +36,13 @@ const KIND_NOTES: Record<string, string> = {
 export function TermFormEditor({ initial }: { initial: TermEditorData }) {
   const { saved, form, set, isDirty, isSaving, submit, discard } = useContentForm<TermForm, TermEditorData>(
     initial,
-    (values) => saveTourTerm(initial.id, values),
+    // tiles nobody filled in are dropped before the save
+    (values) => saveTourTerm(initial.id, { ...values, footerTiles: { ...values.footerTiles, items: pruneTiles(values.footerTiles.items) } }),
   );
   const isWorld = saved.kind === "audiences";
-  const problem = !form.name.trim() ? "Name is required" : isWorld ? sectionsProblem(form.sections) : null;
+  // the page of a destination, a world, a tag or a category is built like the home page
+  const pageKind = isTermPageKind(saved.kind) ? saved.kind : null;
+  const problem = !form.name.trim() ? "Name is required" : pageKind ? sectionsProblem(form.sections) : null;
   const isTag = saved.kind === "tags";
   const liveUrl = saved.form.isActive ? siteAssetUrl(saved.siteUrl, saved.path) : null;
 
@@ -124,17 +132,29 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
         </Section>
       )}
 
-      {isWorld && saved.options && (
+      {pageKind && saved.options && (
         <Section
-          title="Sections of the world's page"
-          description="What the world's page shows under its picture and its sub-categories, above the tour list: automatic sliders, banners, pictures and text. Empty = the page goes straight to the tour list."
+          title="The page, top to bottom"
+          description="What the page shows under its picture and title, in this order. The built-in parts (the tour list, the description) can be moved or switched off; add sliders, banners, pictures, text, reviews or a lead form anywhere between them, like on the home page."
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => set("sections", defaultTermLayout(pageKind, form.sections.filter((s) => !TERM_BLOCK_TYPES.includes(s.type) && !DEFAULT_PART_IDS.includes(s.id))))}
+              title="Put the built-in parts back in the order the site started with. The sections you added stay."
+            >
+              <RotateCcw />
+              Reset the order
+            </Button>
+          }
         >
           <SectionsBoard
             sections={form.sections}
             onChange={(sections) => set("sections", sections)}
             options={saved.options}
             siteUrl={saved.siteUrl}
-            kinds={WORLD_SECTION_TYPES}
+            kinds={TERM_SECTION_TYPES}
           />
         </Section>
       )}
@@ -158,6 +178,12 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
           folder="terms"
         />
       </Section>
+
+      {saved.options && (
+        <Section title="Tiles above the footer" description="What this page shows above the footer.">
+          <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={saved.options} siteUrl={saved.siteUrl} />
+        </Section>
+      )}
 
       <Section title="SEO" description="What search engines and the browser tab show for this page.">
         <Field label="Title" hint={`${form.seoTitle.length} characters. Up to 60 recommended. Empty = the site's own wording.`}>

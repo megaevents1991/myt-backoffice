@@ -27,7 +27,9 @@ import { createTourCmsPage, saveTourCmsPage } from "@/lib/actions/tours-content-
 import { ActiveChip, Field, Notice, Section } from "@/components/tours/ui";
 import { activeColumn, contentColumn, editColumn } from "@/components/tours/content/columns";
 import { ImageUrlField } from "@/components/tours/content/fields";
+import { EasyTextEditor } from "@/components/tours/content/easy-text-editor";
 import { HtmlField } from "@/components/tours/content/html-field";
+import { FooterTilesField, pruneTiles } from "@/components/tours/site/site-fields";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { BackLink, CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/tours/content/save-bar";
 import { useContentForm } from "@/components/tours/content/use-content-form";
@@ -185,7 +187,8 @@ function AddCmsPageDialog({ onClose }: { onClose: () => void }) {
 export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
   const { saved, form, set, isDirty, isSaving, submit, discard } = useContentForm<CmsPageForm, CmsPageEditorData>(
     initial,
-    (values) => saveTourCmsPage(initial.id, values),
+    // tiles nobody filled in are dropped before the save
+    (values) => saveTourCmsPage(initial.id, { ...values, footerTiles: { ...values.footerTiles, items: pruneTiles(values.footerTiles.items) } }),
   );
   const isPost = saved.kind === "post";
   const problem = !form.title.trim() ? "Title is required" : saved.created && !form.path.trim() ? "The page needs an address" : null;
@@ -248,19 +251,34 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
         <ImageUrlField label="Picture" value={form.image} onChange={(image) => set("image", image)} siteUrl={saved.siteUrl} folder="pages" />
       </Section>
 
-      <Section>
-        <HtmlField
-          label={isPost ? "Post content" : "Page content"}
-          value={form.contentHtml}
-          onChange={(value) => set("contentHtml", value)}
-          siteUrl={saved.siteUrl}
-          rows={22}
-          hint={
-            saved.created
-              ? "Write with the visual editor: headings, lists, links, bold and italic. The site adds its own styling."
-              : "The preview shows the content without the site's styling, so a page imported from WordPress looks plainer here than on the site."
-          }
-        />
+      {saved.easyLayout ? (
+        // an imported legal / FAQ page: its text in plain fields instead of its HTML
+        <EasyTextEditor layout={saved.easyLayout} value={form.easy} onChange={(easy) => set("easy", easy)} siteUrl={saved.siteUrl} />
+      ) : (
+        <Section>
+          {!saved.created && !isPost && (
+            <Notice tone="info">
+              This page came with the site and is built from a special layout (pictures, tiles, tabs), so its content is still edited as HTML. The legal pages and
+              the FAQ pages have a plain text editor.
+            </Notice>
+          )}
+          <HtmlField
+            label={isPost ? "Post content" : "Page content"}
+            value={form.contentHtml}
+            onChange={(value) => set("contentHtml", value)}
+            siteUrl={saved.siteUrl}
+            rows={22}
+            hint={
+              saved.created
+                ? "Write with the visual editor: headings, lists, links, bold and italic. The site adds its own styling."
+                : "The preview shows the content without the site's styling, so a page imported from WordPress looks plainer here than on the site."
+            }
+          />
+        </Section>
+      )}
+
+      <Section title="Tiles above the footer" description={`What this ${isPost ? "post" : "page"} shows above the footer.`}>
+        <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={saved.options} siteUrl={saved.siteUrl} />
       </Section>
 
       <Section title="SEO" description="What search engines and social networks show for this page.">

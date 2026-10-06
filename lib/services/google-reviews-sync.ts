@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase-server";
+import { toursDb } from "@/lib/tours/db";
 
 /**
  * Mirrors the Google reviews of the Mega Events business profile into
@@ -470,9 +471,29 @@ async function summaryFromMirror(placeId: string) {
   );
 }
 
-export async function syncGoogleReviews(): Promise<GoogleReviewsSyncResult> {
+/**
+ * The Google profiles the tours companies named in their general document
+ * (tours.site_content, field googlePlaceId - migration 20261006100000). Their
+ * reviews are mirrored into the same two tables, each under its own Place ID.
+ */
+export async function tourCompanyPlaceIds(): Promise<string[]> {
+  const { data, error } = await toursDb().from("site_content").select("data").eq("key", "general");
+  if (error) throw new Error(`site_content read: ${error.message}`);
+  const ids = (data ?? []).map((row) => {
+    const doc = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? (row.data as Record<string, unknown>) : {};
+    return typeof doc.googlePlaceId === "string" ? doc.googlePlaceId.trim() : "";
+  });
+  return [...new Set(ids.filter((id) => /^[A-Za-z0-9_-]{16,80}$/.test(id)))];
+}
+
+/**
+ * Mirrors one Google profile. Without an argument it is the Mega Events profile
+ * (the env override or DEFAULT_PLACE_ID), exactly as before; a tours company's
+ * profile is passed by its Place ID.
+ */
+export async function syncGoogleReviews(placeIdOverride?: string): Promise<GoogleReviewsSyncResult> {
   const apiKey = process.env.NEXT_SECRET_GOOGLE_PLACES_API_KEY;
-  const placeId = process.env.NEXT_SECRET_GOOGLE_PLACE_ID || DEFAULT_PLACE_ID;
+  const placeId = placeIdOverride || process.env.NEXT_SECRET_GOOGLE_PLACE_ID || DEFAULT_PLACE_ID;
   const source: ReviewSource = apiKey ? "places" : "elfsight";
 
   // The source row must exist before reviews reference it.
