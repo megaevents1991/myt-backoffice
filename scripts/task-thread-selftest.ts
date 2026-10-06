@@ -3,6 +3,12 @@
 import { randomUUID } from "crypto";
 import { diffActivities } from "../lib/services/task-activity";
 import { isValidTaskAttachmentPath } from "../lib/tasks/attachment-path";
+import {
+  insertImageToken,
+  removeImageToken,
+  renumberImageTokens,
+  splitInlineImages,
+} from "../lib/tasks/inline-images";
 import { mentionsStillInBody } from "../lib/tasks/mentions";
 import { assignedByMap, matchesOwner, type AssigneeChangeRow } from "../lib/tasks/owner-filter";
 import {
@@ -370,6 +376,37 @@ check("owner: late = tasks I opened that are late", [
   matchesOwner({ ...owned("tom", null, "todo", "liz"), late: false }, "late", "liz"),
   matchesOwner({ ...owned("tom", "alon", "todo", null), late: true }, "late", "alon"),
 ], [true, false, false, true]);
+
+// ── pictures inside a comment (lib/tasks/inline-images.ts) ──────────────────
+check("picture: marker goes in under the line being written",
+  insertImageToken("שורה ראשונה\nשורה שנייה", 11, 1),
+  { body: "שורה ראשונה\n[תמונה 1]\nשורה שנייה", cursor: 22 });
+check("picture: marker in an empty box", insertImageToken("", 0, 1), { body: "[תמונה 1]\n", cursor: 10 });
+check("picture: marker at the end of the text", insertImageToken("ראה כאן", 99, 2).body, "ראה כאן\n[תמונה 2]\n");
+check("picture: removed picture takes its line with it",
+  removeImageToken("לפני\n[תמונה 1]\nאחרי\n[תמונה 2]\n", 1), "לפני\nאחרי\n[תמונה 2]\n");
+check("picture: a marker typed inside a sentence is removed too",
+  removeImageToken("ראה [תמונה 3] כאן", 3), "ראה  כאן");
+check("picture: composer numbers become positions, in one pass",
+  renumberImageTokens("[תמונה 2]\nטקסט\n[תמונה 3]\n[תמונה 9]", new Map([[2, 1], [3, 2]])),
+  "[תמונה 1]\nטקסט\n[תמונה 2]\n[תמונה 9]");
+check("picture: a comment is cut at its markers",
+  splitInlineImages("כך זה נראה:\n[תמונה 1]\nוכך צריך:\n[תמונה 2]\nתודה", [true, true]).parts,
+  [
+    { kind: "text", text: "כך זה נראה:" },
+    { kind: "image", index: 0 },
+    { kind: "text", text: "וכך צריך:" },
+    { kind: "image", index: 1 },
+    { kind: "text", text: "תודה" },
+  ]);
+const mixed = splitInlineImages("[תמונה 2]\n[תמונה 1]\n[תמונה 1]\n[תמונה 7]", [false, true]);
+check("picture: only a marker of one of the comment's own pictures is drawn, once",
+  [mixed.parts, [...mixed.inlined]],
+  [[{ kind: "image", index: 1 }, { kind: "text", text: "[תמונה 1]\n[תמונה 1]\n[תמונה 7]" }], [1]]);
+check("picture: a comment with no marker is one block of text, nothing inlined",
+  [splitInlineImages("סתם תגובה\nבשתי שורות", [true]).parts, splitInlineImages("סתם", [true]).inlined.size],
+  [[{ kind: "text", text: "סתם תגובה\nבשתי שורות" }], 0]);
+check("picture: an empty comment has no parts", splitInlineImages("", [true]).parts, []);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

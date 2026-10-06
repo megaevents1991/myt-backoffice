@@ -15,6 +15,12 @@ import {
   uploadTaskFile,
 } from "@/lib/tasks/attachment-upload";
 import { mentionsStillInBody } from "@/lib/tasks/mentions";
+import {
+  insertImageToken,
+  removeImageToken,
+  renumberImageTokens,
+  splitInlineImages,
+} from "@/lib/tasks/inline-images";
 import { useAuth } from "@/contexts/auth-context";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -59,6 +65,20 @@ interface PendingUpload {
 interface ComposerAttachment extends TaskAttachment {
   /** Local object URL for the pre-send thumbnail only - never sent to the server. */
   previewUrl: string;
+  /**
+   * Pictures only: the number in this picture's "[תמונה N]" marker while the comment is being
+   * written (lib/tasks/inline-images.ts). Rewritten to its final position when the comment is sent.
+   */
+  label?: number;
+}
+
+/** The writing box grows with the text, up to this share of the screen (then it scrolls). */
+const COMPOSER_MAX_VH = 60;
+
+function fitToText(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight + 2, (window.innerHeight * COMPOSER_MAX_VH) / 100)}px`;
 }
 
 interface MentionTrigger {
@@ -155,7 +175,18 @@ export function TaskThread({
   const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The next picture's marker number in the comment being written (never reused, so a
+  // removed picture's number cannot come back as another picture).
+  const labelRef = useRef(0);
+  // Where the writer's cursor last was - a picture attached with the paperclip button
+  // (the box has lost focus by then) still lands where they were writing.
+  const cursorRef = useRef<number | null>(null);
+
+  // A long comment is written in a box that shows all of it (Alon 06.10: "the bubble is tiny").
+  useEffect(() => fitToText(textareaRef.current), [body]);
+  useEffect(() => fitToText(editRef.current), [editText, editingId]);
   // Every live preview blob URL, tracked outside state: the unmount cleanup below
   // runs with the FIRST render's closure, where `attachments` is always [].
   const previewUrlsRef = useRef<Set<string>>(new Set());
@@ -225,10 +256,27 @@ export function TaskThread({
           toast({ title: result.error, variant: "destructive" });
           continue;
         }
+        // A picture is drawn where the writer was: its marker goes in at the cursor, on a line
+        // of its own. A PDF stays a chip under the comment.
+        const label = isImageMime(result.attachment.mime) ? ++labelRef.current : undefined;
         setAttachments((prev) => [
           ...prev,
-          { ...result.attachment, previewUrl: makePreviewUrl(result.sent) },
+          { ...result.attachment, previewUrl: makePreviewUrl(result.sent), label },
         ]);
+        if (label !== undefined) {
+          const el = textareaRef.current;
+          const at = document.activeElement === el ? el?.selectionStart : cursorRef.current;
+          let caret = 0;
+          setBody((prev) => {
+            const next = insertImageToken(prev, at ?? prev.length, label);
+            caret = next.cursor;
+            return next.body;
+          });
+          requestAnimationFrame(() => {
+            cursorRef.current = caret;
+            if (document.activeElement === el) el?.setSelectionRange(caret, caret);
+          });
+        }
       } catch (error) {
         // A shrink/upload that throws (bad image, network, server action error) must not
         // leave a spinner behind - the finally below removes this file's placeholder.
@@ -241,16 +289,21 @@ export function TaskThread({
   }
 
   function removeAttachment(path: string) {
-    setAttachments((prev) => {
-      const target = prev.find((a) => a.path === path);
-      if (target) releasePreviewUrl(target.previewUrl);
-      return prev.filter((a) => a.path !== path);
-    });
+    const target = attachments.find((a) => a.path === path);
+    if (!target) return;
+    releasePreviewUrl(target.previewUrl);
+    setAttachments((prev) => prev.filter((a) => a.path !== path));
+    // Its marker goes with it - a "[תמונה 2]" with no picture behind it would be sent as text.
+    if (target.label !== undefined) {
+      const label = target.label;
+      setBody((prev) => removeImageToken(prev, label));
+    }
   }
 
   function onBodyChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = event.target.value;
     setBody(value);
+    cursorRef.current = event.target.selectionStart;
     const trigger = findMentionTrigger(value, event.target.selectionStart);
     setMention(trigger);
     setHighlighted(0);
@@ -338,9 +391,15 @@ export function TaskThread({
       }));
       // Prune mention IDs whose @<label> no longer appears in the body text
       const prunedMentions = mentionsStillInBody(trimmed, pickedMentions);
+      // The composer's picture numbers become positions in THIS comment's attachments -
+      // what the thread (and anyone reading the stored text) counts by.
+      const positions = new Map<number, number>();
+      attachments.forEach((a, index) => {
+        if (a.label !== undefined) positions.set(a.label, index + 1);
+      });
       const result = await addTaskComment({
         taskId,
-        body: trimmed,
+        body: renumberImageTokens(trimmed, positions),
         attachments: payloadAttachments,
         mentions: prunedMentions,
       });
@@ -350,6 +409,8 @@ export function TaskThread({
       }
       attachments.forEach((a) => releasePreviewUrl(a.previewUrl));
       setBody("");
+      labelRef.current = 0;
+      cursorRef.current = null;
       setAttachments([]);
       setMentions([]);
       setPickedMentions([]);
@@ -414,6 +475,10 @@ export function TaskThread({
           const canEdit = isOwn && !row.deleted_at;
           const canDelete = !row.deleted_at && (isOwn || isAdmin);
           const isEditing = editingId === row.id;
+          const inline = splitInlineImages(
+            row.body ?? "",
+            row.attachments.map((a) => isImageMime(a.mime)),
+          );
           const isNew =
             !!newSince &&
             !isOwn &&
@@ -504,10 +569,12 @@ export function TaskThread({
                 ) : isEditing ? (
                   <div className="space-y-2">
                     <Textarea
+                      ref={editRef}
                       dir="auto"
                       value={editText}
                       onChange={(event) => setEditText(event.target.value)}
-                      rows={3}
+                      rows={4}
+                      className="min-h-[6rem] resize-y"
                     />
                     <div className="flex gap-2">
                       <Button size="sm" onClick={() => saveEdit(row.id)} disabled={!editText.trim()}>
@@ -520,15 +587,36 @@ export function TaskThread({
                   </div>
                 ) : (
                   <>
-                    {row.body && (
-                      <p dir="auto" className="whitespace-pre-wrap text-sm">
-                        {row.body}
-                      </p>
+                    {/* A picture with a "[תמונה N]" marker is drawn at its marker, in the text. */}
+                    {inline.parts.map((part, partIndex) =>
+                      part.kind === "text" ? (
+                        <p key={partIndex} dir="auto" className="whitespace-pre-wrap text-sm">
+                          {part.text}
+                        </p>
+                      ) : (
+                        <button
+                          key={partIndex}
+                          type="button"
+                          className="block max-w-full overflow-hidden rounded border"
+                          onClick={() =>
+                            setLightbox({
+                              url: row.attachment_urls[part.index] ?? "",
+                              alt: row.attachments[part.index].name,
+                            })
+                          }
+                        >
+                          <img
+                            src={row.attachment_urls[part.index] || undefined}
+                            alt={row.attachments[part.index].name}
+                            className="max-h-72 w-auto max-w-full object-contain"
+                          />
+                        </button>
+                      ),
                     )}
-                    {row.attachments.length > 0 && (
+                    {row.attachments.length > inline.inlined.size && (
                       <div className="flex flex-wrap gap-2 pt-1">
                         {row.attachments.map((attachment, index) =>
-                          isImageMime(attachment.mime) ? (
+                          inline.inlined.has(index) ? null : isImageMime(attachment.mime) ? (
                             <button
                               key={attachment.path}
                               type="button"
@@ -578,12 +666,16 @@ export function TaskThread({
             id="task-thread-body"
             ref={textareaRef}
             dir="auto"
-            rows={3}
+            rows={5}
             value={body}
-            placeholder="כתוב תגובה… (Ctrl+Enter לשליחה, @ לאזכור, אפשר להדביק צילום מסך או לצרף PDF)"
+            placeholder="כתוב תגובה… (Ctrl+Enter לשליחה, @ לאזכור). צילום מסך שמדביקים נכנס בדיוק איפה שהסמן נמצא, מתחת לשורה שכתבת."
+            className="min-h-[7.5rem] resize-y text-sm leading-relaxed"
             onChange={onBodyChange}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            onSelect={(event) => {
+              cursorRef.current = event.currentTarget.selectionStart;
+            }}
             onBlur={() => setMention(null)}
           />
           {mention && filteredStaff.length > 0 && (
@@ -617,7 +709,15 @@ export function TaskThread({
             {attachments.map((attachment) => (
               <div key={attachment.path} className="group relative h-16 w-16 overflow-hidden rounded border">
                 {isImageMime(attachment.mime) ? (
-                  <img src={attachment.previewUrl} alt={attachment.name} className="h-full w-full object-cover" />
+                  <>
+                    <img src={attachment.previewUrl} alt={attachment.name} className="h-full w-full object-cover" />
+                    {attachment.label !== undefined && (
+                      // Which marker in the text this picture is.
+                      <span className="absolute inset-x-0 bottom-0 bg-background/85 text-center text-[10px] leading-4">
+                        תמונה {attachment.label}
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <div
                     title={attachment.name}
