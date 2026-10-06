@@ -14,6 +14,7 @@ import {
   createHousePackageFromSpec,
   loadBuildOptions,
   loadHousePackageForEvent,
+  loadInventory,
   loadReadyEvent,
   refreshHousePackage,
   searchBuildFlights,
@@ -27,19 +28,23 @@ import {
 } from "@/lib/services/ready-package";
 import {
   READY_MAX_TRAVELERS_CAP,
+  anySwap,
   canGoLive,
   flightLabel,
   hotelLabel,
   isDay,
   parseSpecInput,
+  parseSwap,
   specFromComposition,
   type CompositionLike,
   type FlightLike,
   type HotelLike,
 } from "@/lib/ready-package";
+import type { Json } from "@/types/database.types";
 import {
   READY_PACKAGE_MODES,
   type ReadyBuildOptions,
+  type ReadyInventory,
   type ReadyPackageMode,
   type ReadyPackageView,
 } from "@/types/ready-package.types";
@@ -210,33 +215,25 @@ export async function setReadyPackageMode(eventId: number, mode: ReadyPackageMod
   }
 }
 
+/**
+ * Which pieces the customer may swap on the site (ticket / flight / hotel, each on its own).
+ * The party-size ceiling is no longer an option: it is the site's own cap.
+ */
 export async function setReadyPackageOptions(
   eventId: number,
-  options: { maxTravelers?: number; allowEdit?: boolean },
+  options: { swap: unknown },
 ): Promise<ReadyActionResult> {
   await requireStaff();
   const id = validId(eventId);
   if (!id) return { ok: false, error: "Invalid event." };
-  const update: { max_travelers?: number; allow_edit?: boolean } = {};
-  if (options.maxTravelers !== undefined) {
-    const max = Math.floor(Number(options.maxTravelers));
-    if (!Number.isInteger(max) || max < 1 || max > READY_MAX_TRAVELERS_CAP) {
-      return { ok: false, error: `Max travellers is 1 to ${READY_MAX_TRAVELERS_CAP}.` };
-    }
-    update.max_travelers = max;
-  }
-  if (options.allowEdit !== undefined) update.allow_edit = options.allowEdit === true;
-  if (Object.keys(update).length === 0) return { ok: false, error: "Nothing to change." };
+  const swap = parseSwap(options?.swap);
+  if (!swap) return { ok: false, error: "Invalid choice of pieces." };
   try {
     const pkg = await loadHousePackageForEvent(id);
     if (!pkg) return { ok: false, error: "This event has no ready package." };
-    const defaultSize = pkg.spec?.defaultTravelers ?? pkg.num_travelers;
-    if (update.max_travelers !== undefined && update.max_travelers < defaultSize) {
-      return {
-        ok: false,
-        error: `The package was built for ${defaultSize} travellers - the max cannot be lower.`,
-      };
-    }
+    if (!pkg.spec) return { ok: false, error: "This package has no stored pieces - build it again." };
+    // The breakdown lives in the spec; allow_edit keeps saying "something is open" for older readers.
+    const update = { spec: { ...pkg.spec, swap } as unknown as Json, allow_edit: anySwap(swap) };
     const { error } = await supabaseTyped.from("prepared_packages").update(update).eq("id", pkg.id);
     if (error) {
       console.error("setReadyPackageOptions:", JSON.stringify(error));
@@ -246,7 +243,7 @@ export async function setReadyPackageOptions(
       action: "ready_package.options",
       entityType: "event",
       entityId: id,
-      changes: update,
+      changes: { swap },
       metadata: { package_id: pkg.id },
     });
     await revalidateMain();
@@ -297,13 +294,17 @@ const partySize = (value: unknown): number | null => {
   return Number.isInteger(n) && n >= 1 && n <= READY_MAX_TRAVELERS_CAP ? n : null;
 };
 
-/** The tickets on sale and the event's default travel window - what the builder opens with. */
-export async function getReadyBuildOptions(eventId: number): Promise<ReadyBuildOptionsResult> {
+/**
+ * What the builder opens with, in ONE action: the tickets on sale, the event's default travel
+ * window and our own inventory (flight blocks, hotel rooms) for this party.
+ */
+export async function getReadyBuildOptions(eventId: number, travelers = 2): Promise<ReadyBuildOptionsResult> {
   await requireStaff();
   const id = validId(eventId);
-  if (!id) return { ok: false, error: "Invalid event." };
+  const pax = partySize(travelers);
+  if (!id || !pax) return { ok: false, error: "Invalid event." };
   try {
-    const options = await loadBuildOptions(id);
+    const options = await loadBuildOptions(id, pax);
     if (!options) return { ok: false, error: "The event was not found or has passed." };
     if (options.tickets.length === 0) return { ok: false, error: "This event has no ticket on sale." };
     return { ok: true, options };
@@ -378,14 +379,37 @@ export async function suggestReadyBuild(eventId: number, travelers: number): Pro
   }
 }
 
+export type ReadyInventoryResult =
+  | { ok: true; inventory: ReadyInventory }
+  | { ok: false; error: string };
+
+/**
+ * Our own inventory linked to the event for this party - flight blocks and hotel rooms. A
+ * database read (no supplier is searched), so the builder shows it the moment it opens.
+ */
+export async function getReadyInventory(eventId: number, travelers: number): Promise<ReadyInventoryResult> {
+  await requireStaff();
+  const id = validId(eventId);
+  const pax = partySize(travelers);
+  if (!id || !pax) return { ok: false, error: "Invalid event." };
+  try {
+    const inventory = await loadInventory(id, pax);
+    if (!inventory) return { ok: false, error: "The event was not found or has passed." };
+    return { ok: true, inventory };
+  } catch (error) {
+    console.error("getReadyInventory:", error);
+    return { ok: false, error: "Could not load our inventory." };
+  }
+}
+
 /**
  * Saves the chosen ticket + flight + hotel as the event's ready package. The
- * browser names the pieces (`spec`); they are looked up and priced again here.
- * `closed` = the customer cannot swap a piece.
+ * browser names the pieces (`spec`, with which of them the customer may swap);
+ * they are looked up and priced again here.
  */
 export async function buildReadyPackage(
   eventId: number,
-  input: { spec: unknown; closed?: boolean },
+  input: { spec: unknown },
 ): Promise<ReadyActionResult> {
   const session = await requireStaff();
   const id = validId(eventId);
@@ -397,7 +421,7 @@ export async function buildReadyPackage(
       eventId: id,
       spec,
       createdBy: session.sub,
-      allowEdit: typeof input.closed === "boolean" ? !input.closed : undefined,
+      swap: spec.swap,
     });
     if (!result.ok) return result;
     await logAudit({
@@ -410,7 +434,7 @@ export async function buildReadyPackage(
         ticket: spec.ticket.category,
         flight: spec.flight.mode,
         hotel: spec.hotel.mode,
-        closed: input.closed === true,
+        swap: result.row.spec?.swap ?? null,
       },
     });
     await revalidateMain();

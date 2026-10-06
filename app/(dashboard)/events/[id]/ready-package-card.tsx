@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, ExternalLink, Loader2, PackagePlus, RefreshCw } from "lucide-react";
+import { Copy, ExternalLink, Eye, EyeOff, Globe, Loader2, PackagePlus, Pencil, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -20,15 +18,47 @@ import {
   type ReadyActionResult,
   type ReadyCardData,
 } from "@/lib/actions/ready-package-actions";
-import { READY_MAX_TRAVELERS_CAP, targetSizes } from "@/lib/ready-package";
+import { SWAP_ALL, SWAP_NONE, anySwap, targetSizes } from "@/lib/ready-package";
 import { ReadyPackageBuilder } from "./ready-package-builder";
-import type { ReadyPackageMode, ReadyRefreshStatus } from "@/types/ready-package.types";
+import {
+  READY_PIECES,
+  type ReadyPackageMode,
+  type ReadyPiece,
+  type ReadyRefreshStatus,
+  type ReadySwap,
+} from "@/types/ready-package.types";
 
-const MODE_HELP: Record<ReadyPackageMode, string> = {
-  off: "Regular flow. The package is kept, nothing opens on it.",
-  preview: "Hidden from customers - a click on the site card still opens the regular flow. Only the link below opens the package.",
-  live: "A click on the event card on the site opens this package.",
-};
+/** The three states, as an answer to "is it on the site?". */
+const MODES: {
+  value: ReadyPackageMode;
+  label: string;
+  icon: typeof Globe;
+  /** One sentence: what a customer and what staff get in this state. */
+  says: string;
+  active: string;
+}[] = [
+  {
+    value: "off",
+    label: "Off",
+    icon: EyeOff,
+    says: "Not on the site. The package is kept, but nothing opens it - not even the link.",
+    active: "border-foreground/30 bg-muted text-foreground",
+  },
+  {
+    value: "preview",
+    label: "Preview",
+    icon: Eye,
+    says: "Not on the site yet. Customers get the regular flow; only the link below opens the package, for our own checks.",
+    active: "border-amber-500/50 bg-amber-500/15 text-amber-800 dark:text-amber-200",
+  },
+  {
+    value: "live",
+    label: "Live on the site",
+    icon: Globe,
+    says: "ON the site. A click on the event card opens this package for every customer.",
+    active: "border-emerald-500/50 bg-emerald-500/15 text-emerald-800 dark:text-emerald-200",
+  },
+];
 
 const STATUS_STYLE: Record<ReadyRefreshStatus, string> = {
   ok: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -37,20 +67,23 @@ const STATUS_STYLE: Record<ReadyRefreshStatus, string> = {
 };
 
 const STATUS_LABEL: Record<ReadyRefreshStatus, string> = {
-  ok: "All sizes priced",
-  partial: "Some sizes missing",
+  ok: "Every size priced",
+  partial: "Some sizes are not offered",
   broken: "Cannot open",
 };
+
+const PIECE_LABEL: Record<ReadyPiece, string> = { ticket: "Ticket", flight: "Flight", hotel: "Hotel" };
 
 const when = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "never";
 
 /**
  * The event's ready package ("חבילה מוכנה"): one house-built ticket + flight + hotel that a
- * click on the event card opens, as a visual summary with a traveller picker. The package is
- * built in the portal wizard and ADOPTED here; this card prices it for every party size
- * (one call per size - each is a flight search and a hotel search through the site) and
- * decides who sees it: nobody (off), staff only (preview), or every customer (live).
+ * click on the event card opens, as a visual one-page summary with a traveller picker. It is
+ * built right here ("Build closed package") - or adopted from the partner portal - and this card
+ * prices it for every party size the site sells (one call per size - each is a flight search
+ * and a hotel search through the site), says which pieces the customer may swap, and above all
+ * answers ONE question at the top: is it on the site (Live), only on our link (Preview), or Off.
  */
 export function ReadyPackageCard({ eventId }: { eventId: number }) {
   const { toast } = useToast();
@@ -58,9 +91,10 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
-  const [choosing, setChoosing] = useState(false);
-  // The in-place builder is opened on request: it loads the event's tickets only then.
+  // "Change a piece" / "Build closed package": the in-place builder. It loads nothing until opened.
   const [building, setBuilding] = useState(false);
+  // The older way - a package built in the partner portal - is offered on request only.
+  const [adopting, setAdopting] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const stopRef = useRef(false);
 
@@ -96,8 +130,9 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
   );
 
   /** One call per size: a whole package in one request would outlast the function window. */
-  const priceSizes = async (sizes: number[]) => {
+  const priceSizes = async (sizes: number[], after?: string) => {
     stopRef.current = false;
+    const missed: number[] = [];
     const problems: string[] = [];
     for (let i = 0; i < sizes.length && !stopRef.current; i++) {
       setBusy(`Pricing ${sizes[i]} traveller${sizes[i] === 1 ? "" : "s"} (${i + 1}/${sizes.length})`);
@@ -107,14 +142,19 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
       if (!res.ok) problems.push(res.error);
       else {
         setData(res.data);
-        if (res.message) problems.push(res.message);
+        if (res.message) {
+          missed.push(sizes[i]);
+          problems.push(res.message);
+        }
       }
     }
     setBusy(null);
+    // A size the pieces cannot serve is not an error - the site simply does not offer it.
     toast({
-      title: problems.length === 0 ? "Ready package priced" : "Ready package priced, with gaps",
-      description: problems.length === 0 ? `${sizes.length} party size(s) are up to date.` : problems.join(" · "),
-      variant: problems.length === 0 ? undefined : "destructive",
+      title: problems.length === 0 ? "Ready package priced" : `Priced - ${missed.length || problems.length} size(s) are not offered`,
+      description: [after, problems.length === 0 ? `${sizes.length} party size(s) are up to date.` : problems.join(" · ")]
+        .filter(Boolean)
+        .join(" "),
     });
   };
 
@@ -126,7 +166,7 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
     );
     setBusy(null);
     if (!settle(res) || !res.ok || !res.data.view) return;
-    setChoosing(false);
+    setAdopting(false);
     setPicked(null);
     // Every size, the built one included: the adopted composition may be days old, and a fresh
     // search is what gives it today's price (and the hotel's photo).
@@ -140,9 +180,11 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
     return settle(res);
   };
 
+  const saveSwap = (swap: ReadySwap) => run("Saving", () => setReadyPackageOptions(eventId, { swap }));
+
   const view = data?.view ?? null;
   const candidates = data?.candidates ?? [];
-  const showPicker = !view || choosing;
+  const mode = MODES.find((m) => m.value === view?.mode) ?? MODES[0];
 
   return (
     <Card id="section-ready-package" data-editor-section="Ready package" className="scroll-mt-20">
@@ -150,15 +192,15 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
         <CardTitle className="flex items-center gap-2">
           Ready package
           {view && (
-            <Badge variant="outline" className={cn(view.mode === "live" && STATUS_STYLE.ok)}>
-              {view.mode === "live" ? "Live" : view.mode === "preview" ? "Preview" : "Off"}
+            <Badge variant="outline" className={mode.active}>
+              {view.mode === "live" ? "Live on the site" : view.mode === "preview" ? "Preview - not on the site" : "Off"}
             </Badge>
           )}
         </CardTitle>
         <CardDescription>
           One chosen ticket + flight + hotel. A click on the event card on the site lands the customer straight on
-          a visual summary of it, with a traveller picker - no steps to walk. Nothing changes for the site until
-          the mode is Live.
+          a one-page summary of it, with a traveller picker - no steps to walk. Building and saving it changes
+          nothing on the site: it goes live only when you switch it to Live below.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -170,6 +212,35 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
 
         {!loading && view && (
           <>
+            <div className={cn("space-y-2.5 rounded-md border p-3", mode.active)} data-ready-mode={view.mode}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-sm font-semibold">Is it on the site?</span>
+                <div className="flex overflow-hidden rounded-md border bg-background text-foreground" role="group" aria-label="Ready package mode">
+                  {MODES.map((m) => {
+                    const Icon = m.icon;
+                    const on = view.mode === m.value;
+                    return (
+                      <button
+                        key={m.value}
+                        type="button"
+                        aria-pressed={on}
+                        disabled={!!busy}
+                        onClick={() => !on && run("Saving", () => setReadyPackageMode(eventId, m.value))}
+                        className={cn(
+                          "flex items-center gap-1.5 border-l px-3 py-1.5 text-sm font-medium transition-colors first:border-l-0 disabled:opacity-60",
+                          on ? m.active : "hover:bg-muted/60",
+                        )}
+                      >
+                        <Icon className="h-4 w-4" aria-hidden />
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="text-sm">{mode.says}</p>
+            </div>
+
             <div className="rounded-md border p-3 text-sm space-y-1.5">
               <div><span className="text-muted-foreground">Ticket: </span>{view.ticketLabel}</div>
               <div><span className="text-muted-foreground">Flight: </span>{view.flightLabel}</div>
@@ -180,81 +251,67 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Party sizes:</span>
-              {targetSizes(view.maxTravelers).map((n) => (
-                <Badge
-                  key={n}
-                  variant="outline"
-                  className={cn(view.sizes.includes(n) ? STATUS_STYLE.ok : "text-muted-foreground line-through")}
-                  title={view.sizes.includes(n) ? "Priced - the picker offers it" : "Not priced - the picker does not offer it"}
-                >
-                  {n}
-                </Badge>
-              ))}
-              {view.refreshStatus && (
-                <Badge variant="outline" className={STATUS_STYLE[view.refreshStatus]}>
-                  {STATUS_LABEL[view.refreshStatus]}
-                </Badge>
-              )}
-              <span className="text-muted-foreground">· priced {when(view.refreshedAt)}</span>
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Party sizes on the site:</span>
+                {targetSizes(view.maxTravelers).map((n) => (
+                  <Badge
+                    key={n}
+                    variant="outline"
+                    className={cn(view.sizes.includes(n) ? STATUS_STYLE.ok : "text-muted-foreground line-through")}
+                    title={view.sizes.includes(n) ? "Priced - the picker offers it" : "Not priced - the picker does not offer it"}
+                  >
+                    {n}
+                  </Badge>
+                ))}
+                {view.refreshStatus && (
+                  <Badge variant="outline" className={STATUS_STYLE[view.refreshStatus]}>
+                    {STATUS_LABEL[view.refreshStatus]}
+                  </Badge>
+                )}
+                <span className="text-muted-foreground">· priced {when(view.refreshedAt)}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                No limit to set: the package is priced for every party the site sells (1 to {view.maxTravelers}), and a
+                size its flight, hotel or ticket cannot serve is simply not offered.
+              </p>
+              {view.refreshNote && <p className="text-sm text-muted-foreground">{view.refreshNote}</p>}
             </div>
-            {view.refreshNote && <p className="text-sm text-muted-foreground">{view.refreshNote}</p>}
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-1.5">
-                <Label>Mode</Label>
-                <Select
-                  value={view.mode}
-                  disabled={!!busy}
-                  onValueChange={(mode) =>
-                    run("Saving", () => setReadyPackageMode(eventId, mode as ReadyPackageMode))
-                  }
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="off">Off</SelectItem>
-                    <SelectItem value="preview">Preview (staff only)</SelectItem>
-                    <SelectItem value="live">Live</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                <span className="font-medium">The customer may swap:</span>
+                {READY_PIECES.map((piece) => (
+                  <label key={piece} className="flex cursor-pointer items-center gap-2">
+                    <Checkbox
+                      checked={view.swap[piece]}
+                      disabled={!!busy}
+                      onCheckedChange={(v) => saveSwap({ ...view.swap, [piece]: v === true })}
+                    />
+                    {PIECE_LABEL[piece]}
+                  </label>
+                ))}
+                <span className="flex items-center gap-1">
+                  <Button type="button" variant="ghost" size="sm" disabled={!!busy || !anySwap(view.swap)} onClick={() => saveSwap(SWAP_NONE)}>
+                    Nothing
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={!!busy || (view.swap.ticket && view.swap.flight && view.swap.hotel)}
+                    onClick={() => saveSwap(SWAP_ALL)}
+                  >
+                    Everything
+                  </Button>
+                </span>
               </div>
-              <div className="space-y-1.5">
-                <Label>Max travellers</Label>
-                <Select
-                  value={String(view.maxTravelers)}
-                  disabled={!!busy}
-                  onValueChange={async (value) => {
-                    const max = Number(value);
-                    const ok = await run("Saving", () => setReadyPackageOptions(eventId, { maxTravelers: max }));
-                    if (!ok) return;
-                    const missing = targetSizes(max).filter((n) => !view.sizes.includes(n));
-                    if (missing.length > 0) await priceSizes(missing);
-                  }}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: READY_MAX_TRAVELERS_CAP }, (_, i) => i + 1).map((n) => (
-                      <SelectItem key={n} value={String(n)} disabled={n < view.defaultTravelers}>
-                        {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-                <Label htmlFor="ready-allow-edit" className="cursor-pointer">
-                  Customer may swap pieces
-                </Label>
-                <Switch
-                  id="ready-allow-edit"
-                  checked={view.allowEdit}
-                  disabled={!!busy}
-                  onCheckedChange={(allowEdit) => run("Saving", () => setReadyPackageOptions(eventId, { allowEdit }))}
-                />
-              </div>
+              <p className="text-sm text-muted-foreground">
+                {anySwap(view.swap)
+                  ? "A ticked piece gets a small \"החלפה\" link on its card; the customer opens the regular step for it and comes back to the package. An unticked piece is fixed."
+                  : "A closed package: the customer changes only the number of travellers."}
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">{MODE_HELP[view.mode]}</p>
 
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" size="sm" disabled={!!busy} onClick={() => priceSizes(targetSizes(view.maxTravelers))}>
@@ -289,8 +346,18 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
               >
                 <Copy className="h-4 w-4" /> Copy link
               </Button>
-              <Button type="button" variant="ghost" size="sm" disabled={!!busy} onClick={() => setChoosing((v) => !v)}>
-                {choosing ? "Keep this package" : "Replace"}
+              <Button
+                type="button"
+                variant={building ? "outline" : "ghost"}
+                size="sm"
+                disabled={!!busy}
+                onClick={() => {
+                  setBuilding((v) => !v);
+                  setAdopting(false);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                {building ? "Keep this package" : "Change a piece"}
               </Button>
               <Button
                 type="button"
@@ -314,73 +381,92 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
           </>
         )}
 
-        {!loading && showPicker && (
+        {!loading && (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                size="sm"
-                variant={building ? "outline" : "default"}
-                disabled={!!busy}
-                onClick={() => setBuilding((v) => !v)}
-              >
-                <PackagePlus className="h-4 w-4" />
-                {building ? "Close the builder" : view ? "Build a new closed package" : "Build closed package"}
-              </Button>
-              {!building && (
-                <span className="text-sm text-muted-foreground">
-                  Choose the ticket, the flight and the hotel right here - or let it compose them.
-                </span>
-              )}
-            </div>
+            {!view && (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={building ? "outline" : "default"}
+                  disabled={!!busy}
+                  onClick={() => setBuilding((v) => !v)}
+                >
+                  <PackagePlus className="h-4 w-4" />
+                  {building ? "Close the builder" : "Build closed package"}
+                </Button>
+                {!building && (
+                  <span className="text-sm text-muted-foreground">
+                    Choose the exact ticket, flight and hotel - ours or a supplier&apos;s - or let it compose them.
+                  </span>
+                )}
+              </div>
+            )}
             {building && (
               <ReadyPackageBuilder
+                // "Change a piece" starts from what the package holds; a first build starts empty.
+                key={view ? `change-${view.packageId}` : "new"}
                 eventId={eventId}
                 disabled={!!busy}
+                initial={
+                  view?.spec
+                    ? { spec: view.spec, swap: view.swap, flightLabel: view.flightLabel, hotelLabel: view.hotelLabel }
+                    : null
+                }
                 onBuilt={async (built) => {
                   setData(built);
                   setBuilding(false);
-                  setChoosing(false);
                   if (!built.view) return;
                   // The built size was looked up and priced a moment ago - only the others are left.
-                  const { maxTravelers, defaultTravelers } = built.view;
-                  await priceSizes(targetSizes(maxTravelers).filter((n) => n !== defaultTravelers));
+                  const { maxTravelers, defaultTravelers, mode: savedMode } = built.view;
+                  await priceSizes(
+                    targetSizes(maxTravelers).filter((n) => n !== defaultTravelers),
+                    savedMode === "live"
+                      ? "Saved - the site already shows the new package."
+                      : "Saved in Preview: customers do not see it yet. Switch it to Live to put it on the site.",
+                  );
                 }}
               />
             )}
-            {candidates.length > 0 && (
-              <>
-                <p className="pt-1 text-sm font-medium">Or use a package built in the partner portal</p>
-                <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-                  {candidates.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      disabled={!!c.problem || !!busy}
-                      onClick={() => setPicked(c.id)}
-                      className={cn(
-                        "w-full rounded-md border p-2.5 text-left text-sm transition-colors",
-                        picked === c.id ? "border-primary bg-primary/5" : "hover:bg-muted/50",
-                        c.problem && "cursor-not-allowed opacity-60",
-                      )}
-                    >
-                      <div className="font-medium">
-                        {c.ticket} · {c.travelers} traveller{c.travelers === 1 ? "" : "s"}
-                        <span className="font-normal text-muted-foreground">
-                          {" "}· {c.partnerCode ?? "house"} · {when(c.createdAt)}
-                        </span>
-                      </div>
-                      <div className="text-muted-foreground">{c.flight}</div>
-                      <div className="text-muted-foreground">{c.hotel}</div>
-                      {c.problem && <div className="mt-1 text-destructive">{c.problem}</div>}
-                    </button>
-                  ))}
-                </div>
-                <Button type="button" size="sm" disabled={!picked || !!busy} onClick={adopt}>
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {busy ?? "Use as the ready package"}
+            {candidates.length > 0 && !building && (
+              <div className="space-y-2">
+                <Button type="button" variant="link" size="sm" className="h-auto p-0" disabled={!!busy} onClick={() => setAdopting((v) => !v)}>
+                  {adopting ? "Hide the portal packages" : `Or use a package built in the partner portal (${candidates.length})`}
                 </Button>
-              </>
+                {adopting && (
+                  <>
+                    <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                      {candidates.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          disabled={!!c.problem || !!busy}
+                          onClick={() => setPicked(c.id)}
+                          className={cn(
+                            "w-full rounded-md border p-2.5 text-left text-sm transition-colors",
+                            picked === c.id ? "border-primary bg-primary/5" : "hover:bg-muted/50",
+                            c.problem && "cursor-not-allowed opacity-60",
+                          )}
+                        >
+                          <div className="font-medium">
+                            {c.ticket} · {c.travelers} traveller{c.travelers === 1 ? "" : "s"}
+                            <span className="font-normal text-muted-foreground">
+                              {" "}· {c.partnerCode ?? "house"} · {when(c.createdAt)}
+                            </span>
+                          </div>
+                          <div className="text-muted-foreground">{c.flight}</div>
+                          <div className="text-muted-foreground">{c.hotel}</div>
+                          {c.problem && <div className="mt-1 text-destructive">{c.problem}</div>}
+                        </button>
+                      ))}
+                    </div>
+                    <Button type="button" size="sm" disabled={!picked || !!busy} onClick={adopt}>
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {busy ?? "Use as the ready package"}
+                    </Button>
+                  </>
+                )}
+              </div>
             )}
           </div>
         )}

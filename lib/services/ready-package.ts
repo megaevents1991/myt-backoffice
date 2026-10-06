@@ -34,7 +34,7 @@ import {
 } from "@/lib/services/package-snapshots";
 import {
   READY_MAX_TRAVELERS_CAP,
-  clampMaxTravelers,
+  anySwap,
   flightLabel,
   flightSpecOf,
   hasMeal,
@@ -43,12 +43,14 @@ import {
   matchFlight,
   matchHotelOption,
   offlineHotelUnitsFor,
+  parseSwap,
   pickSuggestedFlight,
   pickSuggestedHotel,
   readyMode,
   readyPreviewUrl,
   specFromComposition,
   summarizeRefresh,
+  swapOf,
   targetSizes,
   variantSizes,
   type CompositionLike,
@@ -66,9 +68,11 @@ import type {
   ReadyBuildOptions,
   ReadyFlightChoice,
   ReadyHotelChoice,
+  ReadyInventory,
   ReadyPackageMode,
   ReadyPackageSpec,
   ReadyPackageView,
+  ReadySwap,
   ReadyTicketChoice,
   ReadyRefreshStatus,
   ReadyVariant,
@@ -497,7 +501,9 @@ export async function refreshHousePackage(
   opts: { sizes?: number[]; dryRun?: boolean; deadline?: number } = {},
 ): Promise<RefreshSummary> {
   const spec = pkg.spec;
-  const max = clampMaxTravelers(pkg.max_travelers);
+  // No limit of its own: every size up to the site's cap (the row's `max_travelers`
+  // is kept at that cap below, for main - it is no longer something staff set).
+  const max = READY_MAX_TRAVELERS_CAP;
   const variants: ReadyVariants = {};
   for (const size of variantSizes(pkg.variants, max)) variants[String(size)] = pkg.variants![String(size)];
 
@@ -552,6 +558,7 @@ export async function refreshHousePackage(
   if (!opts.dryRun) {
     const update: {
       variants: Json;
+      max_travelers: number;
       refreshed_at: string;
       refresh_status: string;
       refresh_note: string | null;
@@ -563,6 +570,8 @@ export async function refreshHousePackage(
       num_travelers?: number;
     } = {
       variants: variants as unknown as Json,
+      // What main reads as the top of the picker - lifts a row saved under the old per-package max.
+      max_travelers: max,
       refreshed_at: new Date().toISOString(),
       refresh_status: status,
       refresh_note: note,
@@ -624,19 +633,22 @@ async function saveHousePackage(input: {
   spec: ReadyPackageSpec;
   first: ReadyVariant;
   createdBy: string | null;
-  /** May the customer swap pieces? Undefined = keep what the row has (a new row: yes). */
-  allowEdit?: boolean;
+  /** Which pieces the customer may swap. Undefined = keep what the row has (a new row: all of them). */
+  swap?: ReadySwap;
 }): Promise<CreateHouseResult> {
-  const { event, spec, first } = input;
-  if (spec.defaultTravelers > READY_MAX_TRAVELERS_CAP) {
+  const { event, first } = input;
+  if (input.spec.defaultTravelers > READY_MAX_TRAVELERS_CAP) {
     return {
       ok: false,
-      error: `The package is for ${spec.defaultTravelers} travellers - a ready package is for up to ${READY_MAX_TRAVELERS_CAP}.`,
+      error: `The package is for ${input.spec.defaultTravelers} travellers - a ready package is for up to ${READY_MAX_TRAVELERS_CAP}.`,
     };
   }
-  const variants: ReadyVariants = { [String(spec.defaultTravelers)]: first };
 
   const existing = await loadHousePackageForEvent(event.id);
+  // The breakdown rides in the spec, so a rebuilt package keeps what staff decided.
+  const swap = input.swap ?? parseSwap(input.spec.swap) ?? swapOf(existing?.spec, existing?.allow_edit);
+  const spec: ReadyPackageSpec = { ...input.spec, swap };
+  const variants: ReadyVariants = { [String(spec.defaultTravelers)]: first };
   const columns = {
     event_order_info: first.event_order_info as unknown as Json,
     flight_order_info: first.flight_order_info as unknown as Json | null,
@@ -650,9 +662,10 @@ async function saveHousePackage(input: {
     // Only the built size is priced yet - the card builds the rest.
     refresh_status: "partial",
     refresh_note: null,
-    // A package built for more than the row's max would never open on its own size.
-    max_travelers: Math.max(clampMaxTravelers(existing?.max_travelers), spec.defaultTravelers),
-    ...(input.allowEdit !== undefined ? { allow_edit: input.allowEdit } : {}),
+    // The site's cap - a package has no limit of its own.
+    max_travelers: READY_MAX_TRAVELERS_CAP,
+    // What an older reader of the row sees: open when at least one piece is.
+    allow_edit: anySwap(swap),
   };
 
   let token: string;
@@ -672,7 +685,6 @@ async function saveHousePackage(input: {
       partner_tracking_code: null,
       created_by: input.createdBy,
       event_id: event.id,
-      allow_edit: input.allowEdit ?? true,
       price_adjust_per_person: 0,
     });
     if (error) {
@@ -729,7 +741,7 @@ export async function createHousePackageFromSpec(input: {
   eventId: number;
   spec: ReadyPackageSpec;
   createdBy: string | null;
-  allowEdit?: boolean;
+  swap?: ReadySwap;
 }): Promise<CreateHouseResult> {
   const event = await loadReadyEvent(input.eventId);
   if (!event || !isLive(event)) return { ok: false, error: "The event was not found or has passed." };
@@ -745,7 +757,7 @@ export async function createHousePackageFromSpec(input: {
     spec: input.spec,
     first: built.variant,
     createdBy: input.createdBy,
-    allowEdit: input.allowEdit,
+    swap: input.swap,
   });
 }
 
@@ -802,14 +814,28 @@ function defaultWindow(event: ReadyEventRow): { departureDate: string; returnDat
 const ticketsOnSale = (event: ReadyEventRow): ReadyTicketChoice[] =>
   (event.tickets_and_rates ?? [])
     .filter((t) => t && t.available !== false)
-    .map((t) => ({ id: t.id ?? null, category: t.category, price: Number(t.price) || 0 }))
-    .sort((a, b) => a.price - b.price);
+    .map((t) => ({
+      id: t.id ?? null,
+      category: t.category,
+      price: Number(t.price) || 0,
+      supplier: t.supplier ?? null,
+      stock: t.supplier === "static" && typeof t.stock === "number" ? t.stock : null,
+    }))
+    // Our own stock first (it is what staff look for), then by price.
+    .sort((a, b) => Number(b.supplier === "static") - Number(a.supplier === "static") || a.price - b.price);
 
-/** What the builder opens with. */
-export async function loadBuildOptions(eventId: number): Promise<ReadyBuildOptions | null> {
+/**
+ * What the builder opens with: the tickets on sale, the default travel window and our own
+ * inventory for `travelers` - one read, so the builder's mount is a single action.
+ */
+export async function loadBuildOptions(eventId: number, travelers: number): Promise<ReadyBuildOptions | null> {
   const event = await loadReadyEvent(eventId);
   if (!event || !isLive(event)) return null;
-  return { tickets: ticketsOnSale(event), ...defaultWindow(event) };
+  const [flights, hotels] = await Promise.all([
+    offlineFlightChoices(event, travelers),
+    offlineHotelChoices(event, travelers),
+  ]);
+  return { tickets: ticketsOnSale(event), ...defaultWindow(event), inventory: { flights, hotels } };
 }
 
 function toFlightChoice(offer: LiveFlightOffer, pax: number): ReadyFlightChoice | null {
@@ -948,6 +974,43 @@ async function offlineHotelChoices(event: ReadyEventRow, pax: number): Promise<R
   return choices;
 }
 
+/** Flight blocks of our own inventory linked to the event that can still seat this party. */
+async function offlineFlightChoices(event: ReadyEventRow, pax: number): Promise<ReadyFlightChoice[]> {
+  const { data, error } = await megaEventsFlights()
+    .select(FLIGHT_COLUMNS)
+    .contains("event_ids", [event.id])
+    .or("is_deleted.is.null,is_deleted.eq.false")
+    .order("price", { ascending: true });
+  if (error) {
+    console.error("ready-package: inventory flights failed", JSON.stringify(error));
+    return [];
+  }
+  const rows = (data ?? []) as unknown as FlightRow[];
+  const choices: ReadyFlightChoice[] = [];
+  for (const row of rows) {
+    if (new Date(row.outbound_departure_time).getTime() <= Date.now()) continue;
+    if ((row.initial_quantity ?? 0) - (row.consumed_quantity ?? 0) < pax) continue;
+    const choice = toFlightChoice(buildFlightSnapshot(row, pax) as unknown as LiveFlightOffer, pax);
+    if (choice) choices.push(choice);
+  }
+  return choices;
+}
+
+/**
+ * Our own inventory linked to the event, for one party size - what the builder
+ * shows before any search: a database read, no supplier call. A block or a room
+ * that cannot seat the party is left out.
+ */
+export async function loadInventory(eventId: number, travelers: number): Promise<ReadyInventory | null> {
+  const event = await loadReadyEvent(eventId);
+  if (!event || !isLive(event)) return null;
+  const [flights, hotels] = await Promise.all([
+    offlineFlightChoices(event, travelers),
+    offlineHotelChoices(event, travelers),
+  ]);
+  return { flights, hotels };
+}
+
 export type HotelChoicesResult =
   | { ok: true; hotels: ReadyHotelChoice[] }
   | { ok: false; error: string };
@@ -1013,7 +1076,9 @@ export async function suggestBuild(input: {
   const notes: string[] = [];
 
   const onSale = ticketsOnSale(event);
-  const ticket = input.category ? onSale.find((t) => t.category === input.category) : onSale[0];
+  const ticket = input.category
+    ? onSale.find((t) => t.category === input.category)
+    : [...onSale].sort((a, b) => a.price - b.price)[0];
   if (!ticket) return { ok: false, error: "No ticket on sale matches." };
 
   const { departureDate, returnDate } = defaultWindow(event);
@@ -1093,7 +1158,7 @@ export async function composeAuto(input: {
 // ---------------------------------------------------------------------------
 
 export function toReadyView(pkg: HousePackageRow, event: ReadyEventRow): ReadyPackageView {
-  const max = clampMaxTravelers(pkg.max_travelers);
+  const max = READY_MAX_TRAVELERS_CAP;
   const defaultTravelers = pkg.spec?.defaultTravelers ?? pkg.num_travelers;
   const sizes = variantSizes(pkg.variants, max);
   const shown = pkg.variants?.[String(defaultTravelers)] ?? (sizes.length > 0 ? pkg.variants![String(sizes[0])] : null);
@@ -1105,6 +1170,8 @@ export function toReadyView(pkg: HousePackageRow, event: ReadyEventRow): ReadyPa
     // The event decides: a house row the event no longer points at is off.
     mode: event.ready_package_token === pkg.share_token ? readyMode(event.ready_package_mode) : "off",
     allowEdit: pkg.allow_edit !== false,
+    swap: swapOf(pkg.spec, pkg.allow_edit),
+    spec: pkg.spec,
     maxTravelers: max,
     defaultTravelers,
     sizes,

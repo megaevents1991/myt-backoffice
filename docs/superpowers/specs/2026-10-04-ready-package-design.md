@@ -125,3 +125,24 @@ price floor are what stand there today).
 
 Backoffice first (migration), then main. Everything `off`. One `preview` package for
 QA, then a QA form for Alon.
+
+## After Alon's QA (2026-10-06)
+
+His form (15 of 20 pass, 3 skipped) and his note on the task changed four things above:
+
+1. **The landing is a first page.** No "כמעט שם" popup, no 15-minute countdown. On
+   desktop it is a one-pager: the package wide, and a narrow column beside it with the
+   travellers, the total, the terms and the pay button. Every piece says how many it
+   holds; the hotel names its rooms.
+2. **Swap per piece** replaces the single "customer may swap pieces" switch:
+   `spec.swap = { ticket, flight, hotel }`. `allow_edit` stays as "at least one piece
+   is open". No migration.
+3. **No maximum to set** (decision 2 above said "1..max"): the picker goes up to the
+   site's own cap on tickets per order (9), and a size that cannot be priced is not
+   offered. On the site the package's ticket also passes the ticket step's own live
+   rules for the chosen quantity, so a size the supplier cannot sell drops out there.
+4. **The card answers "is it on the site?" first** - Off / Preview / Live on the site -
+   and the builder lists our own inventory (flight blocks, rooms, our ticket stock)
+   before any search; "Change a piece" reopens it on the current package.
+
+Still not built: a live re-search of the flight and hotel at the moment of booking.

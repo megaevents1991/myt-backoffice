@@ -44,12 +44,24 @@ export type ReadyHotelSpec =
       checkout: string;
     };
 
+export const READY_PIECES = ["ticket", "flight", "hotel"] as const;
+export type ReadyPiece = (typeof READY_PIECES)[number];
+
+/** Which pieces the customer may swap on the site ("החלפה" on that card). */
+export type ReadySwap = { ticket: boolean; flight: boolean; hotel: boolean };
+
 export type ReadyPackageSpec = {
   ticket: { id: string | null; category: string };
   flight: ReadyFlightSpec;
   hotel: ReadyHotelSpec;
   /** The party size the package was built for - the picker opens on it. */
   defaultTravelers: number;
+  /**
+   * Per piece: may the customer swap it. Absent (packages saved before 06.10) = every piece
+   * follows the row's `allow_edit`. `allow_edit` itself stays "at least one piece is open",
+   * so an older reader of the row is never wrong about a fully closed package.
+   */
+  swap?: ReadySwap;
 };
 
 /** One priced composition, in the shapes main round-trips through reservations.*_order_info. */
@@ -76,7 +88,12 @@ export type ReadyPackageView = {
   packageId: number;
   token: string;
   mode: ReadyPackageMode;
+  /** At least one piece is open to the customer (the row's `allow_edit`). */
   allowEdit: boolean;
+  /** Per piece: may the customer swap it. */
+  swap: ReadySwap;
+  /** The pieces as stored - what "Change a piece" opens the builder on. Null on a row with no identity. */
+  spec: ReadyPackageSpec | null;
   maxTravelers: number;
   defaultTravelers: number;
   /** Sizes with a priced variant, ascending. */
@@ -138,11 +155,29 @@ export type ReadyHotelChoice = {
   offline: boolean;
 };
 
-export type ReadyTicketChoice = { id: string | null; category: string; price: number };
+export type ReadyTicketChoice = {
+  id: string | null;
+  category: string;
+  price: number;
+  /** Who sells it ("tixstock", "livetickets", ...; "static" = our own stock). Null on an older ticket. */
+  supplier: string | null;
+  /** Our own stock only: the seats we hold. */
+  stock: number | null;
+};
 
-/** What the builder opens with: the tickets on sale and the event's default travel window. */
+/**
+ * Our own inventory linked to the event, for one party size: flight blocks and hotel rooms.
+ * A database read - no supplier is searched - so the builder shows it the moment it opens.
+ */
+export type ReadyInventory = {
+  flights: ReadyFlightChoice[];
+  hotels: ReadyHotelChoice[];
+};
+
+/** What the builder opens with: the tickets on sale, the default travel window, our inventory. */
 export type ReadyBuildOptions = {
   tickets: ReadyTicketChoice[];
   departureDate: string;
   returnDate: string;
+  inventory: ReadyInventory;
 };

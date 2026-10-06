@@ -1,6 +1,10 @@
 // Run: npx tsx scripts/ready-package-selftest.ts
 import assert from "node:assert/strict";
 import {
+  READY_MAX_TRAVELERS_CAP,
+  SWAP_ALL,
+  SWAP_NONE,
+  anySwap,
   canGoLive,
   clampMaxTravelers,
   flightSpecOf,
@@ -9,12 +13,14 @@ import {
   matchHotelOption,
   offlineHotelUnitsFor,
   parseSpecInput,
+  parseSwap,
   pickSuggestedFlight,
   pickSuggestedHotel,
   readyMode,
   readyPreviewUrl,
   specFromComposition,
   summarizeRefresh,
+  swapOf,
   targetSizes,
   variantSizes,
 } from "../lib/ready-package";
@@ -26,10 +32,25 @@ assert.equal(readyMode("preview"), "preview");
 assert.equal(readyMode(null), "off", "a missing column is off");
 assert.equal(readyMode("paused"), "off", "an unknown future mode is off");
 
-assert.equal(clampMaxTravelers(undefined), 4);
-assert.equal(clampMaxTravelers(9), 6, "capped");
-assert.equal(clampMaxTravelers(0), 4);
+// No limit of its own: anything unusable, or above the site's cap, is the site's cap (9).
+assert.equal(READY_MAX_TRAVELERS_CAP, 9, "the site's own cap on tickets per order");
+assert.equal(clampMaxTravelers(undefined), 9);
+assert.equal(clampMaxTravelers(12), 9, "capped");
+assert.equal(clampMaxTravelers(0), 9);
 assert.deepEqual(targetSizes(3), [1, 2, 3]);
+assert.equal(targetSizes(READY_MAX_TRAVELERS_CAP).length, 9);
+
+// ── swapping: which pieces the customer may change ──────────────────────────
+assert.deepEqual(swapOf(null, true), SWAP_ALL, "an older package: everything follows allow_edit");
+assert.deepEqual(swapOf({}, false), SWAP_NONE);
+assert.deepEqual(swapOf(undefined, null), SWAP_ALL, "a missing column is editable, as before");
+const hotelOnly = { ticket: false, flight: false, hotel: true };
+assert.deepEqual(swapOf({ swap: hotelOnly }, false), hotelOnly, "the breakdown wins over allow_edit");
+assert.deepEqual(swapOf({ swap: { ticket: true } }, false), SWAP_NONE, "a partial breakdown is no breakdown");
+assert.equal(parseSwap({ ticket: "yes", flight: true, hotel: true }), null, "booleans only");
+assert.equal(parseSwap([true, true, true]), null);
+assert.equal(anySwap(hotelOnly), true);
+assert.equal(anySwap(SWAP_NONE), false, "a closed package");
 
 // ── identity ────────────────────────────────────────────────────────────────
 const liveFlight = {
@@ -272,7 +293,11 @@ assert.deepEqual(
 assert.deepEqual(parseSpecInput({ ...goodSpec, flight: { mode: "offline", offlineId: "42" } })?.flight, { mode: "offline", offlineId: 42 });
 assert.equal(parseSpecInput(null), null);
 assert.equal(parseSpecInput({ ...goodSpec, ticket: {} }), null, "no ticket");
-assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 7 }), null, "above the cap");
+assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 10 }), null, "above the site's cap");
+assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 9 })?.defaultTravelers, 9);
+assert.deepEqual(parseSpecInput({ ...goodSpec, swap: hotelOnly })?.swap, hotelOnly, "the breakdown rides in the spec");
+assert.equal(parseSpecInput({ ...goodSpec, swap: { hotel: true } }), null, "a posted breakdown must be whole");
+assert.equal("swap" in (parseSpecInput(goodSpec) ?? {}), false, "none posted = none stored (the row's is kept)");
 assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 0 }), null);
 assert.equal(parseSpecInput({ ...goodSpec, flight: { mode: "charter" } }), null, "an unknown mode");
 assert.equal(parseSpecInput({ ...goodSpec, flight: { ...goodSpec.flight, departureDate: "11/03/2027" } }), null, "a date that is not YYYY-MM-DD");

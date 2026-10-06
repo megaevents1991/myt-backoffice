@@ -13,21 +13,70 @@ import { cn } from "@/lib/utils";
 import {
   buildReadyPackage,
   getReadyBuildOptions,
+  getReadyInventory,
   searchReadyFlights,
   searchReadyHotels,
   suggestReadyBuild,
   type ReadyCardData,
 } from "@/lib/actions/ready-package-actions";
-import { READY_MAX_TRAVELERS_CAP, mealLabel } from "@/lib/ready-package";
-import type {
-  ReadyBuildOptions,
-  ReadyFlightChoice,
-  ReadyHotelChoice,
-  ReadyPackageSpec,
+import { READY_MAX_TRAVELERS_CAP, SWAP_ALL, SWAP_NONE, anySwap, mealLabel } from "@/lib/ready-package";
+import {
+  READY_PIECES,
+  type ReadyBuildOptions,
+  type ReadyFlightChoice,
+  type ReadyFlightSpec,
+  type ReadyHotelChoice,
+  type ReadyHotelSpec,
+  type ReadyInventory,
+  type ReadyPackageSpec,
+  type ReadyPiece,
+  type ReadySwap,
+  type ReadyTicketChoice,
 } from "@/types/ready-package.types";
+
+/** What "Change a piece" opens the builder on: the package as it stands. */
+export type ReadyBuilderInitial = {
+  spec: ReadyPackageSpec;
+  swap: ReadySwap;
+  flightLabel: string;
+  hotelLabel: string;
+};
 
 const FLIGHT_ROWS = 40;
 const HOTEL_ROWS = 60;
+
+const PIECE_LABEL: Record<ReadyPiece, string> = { ticket: "Ticket", flight: "Flight", hotel: "Hotel" };
+
+const SUPPLIER_LABEL: Record<string, string> = {
+  tixstock: "TixStock",
+  livetickets: "LiveTickets",
+  xs2event: "XS2Event",
+  p1: "P1",
+};
+
+const ticketLine = (t: ReadyTicketChoice): string =>
+  [
+    t.category,
+    `$${t.price}`,
+    t.supplier === "static"
+      ? `our stock${t.stock != null ? ` (${t.stock} seats)` : ""}`
+      : t.supplier
+        ? (SUPPLIER_LABEL[t.supplier] ?? t.supplier)
+        : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+const ticketKeyOf = (t: ReadyTicketChoice): string => t.id ?? t.category;
+
+/** The dates a stored package was built on - "Change a piece" opens on them. */
+const specDates = (spec: ReadyPackageSpec): { departureDate: string; returnDate: string } | null => {
+  if (spec.flight.mode === "live") {
+    return { departureDate: spec.flight.departureDate, returnDate: spec.flight.returnDate };
+  }
+  if (spec.hotel.mode === "live") return { departureDate: spec.hotel.checkin, returnDate: spec.hotel.checkout };
+  return null;
+};
 
 /** "26/11 06:00" from a supplier's ISO time, as written (their local time). */
 const when = (iso: string): string => `${iso.slice(8, 10)}/${iso.slice(5, 7)} ${iso.slice(11, 16)}`;
@@ -43,8 +92,20 @@ const flightLine = (f: ReadyFlightChoice): string =>
     .filter(Boolean)
     .join(" · ");
 
+const flightNote = (f: ReadyFlightChoice): string =>
+  `${f.outbound.from} → ${f.outbound.to}, lands ${when(f.outbound.arrival)} · back lands ${when(f.inbound.arrival)}`;
+
 const hotelLine = (h: ReadyHotelChoice): string =>
   [h.name, h.stars ? `${h.stars}★` : "", h.roomName, mealLabel(h.meal)].filter(Boolean).join(" · ");
+
+const hotelNote = (h: ReadyHotelChoice): string =>
+  [
+    `$${h.totalPrice.toLocaleString("en-US")} for the stay`,
+    h.refundable ? "free cancellation" : "non-refundable",
+    h.distanceM != null ? `${(h.distanceM / 1000).toFixed(1)} km from the centre` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
 const tag = "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
 
@@ -91,40 +152,81 @@ function Row({
   );
 }
 
+/** Our own inventory for a piece, shown before any search - or one line saying there is none. */
+function InventoryBlock({
+  kind,
+  empty,
+  children,
+}: {
+  kind: "flight" | "hotel";
+  empty: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5 rounded-md border border-dashed p-2.5">
+      <p className="text-sm font-medium">Our inventory</p>
+      {empty ? (
+        <p className="text-sm text-muted-foreground">
+          {kind === "flight"
+            ? "No flight block of ours is linked to this event for this party size. Link one under Offline Flights and it shows here."
+            : "No room of ours is linked to this event for this party size. Link one under Offline Hotels and it shows here."}
+        </p>
+      ) : (
+        <div className="space-y-1.5">{children}</div>
+      )}
+    </div>
+  );
+}
+
 /**
- * "Build closed package": the event's ready package, built right here - a ticket of the event,
- * a flight and a hotel from the same searches the site runs (our inventory on top), or all three
- * filled by "Compose automatically". The browser only NAMES the pieces; saving looks them up and
- * prices them again on the server. Nothing is searched until staff ask - opening an event costs
- * no supplier call.
+ * "Build closed package": the event's ready package, built right here - a ticket of the event
+ * (ours or a supplier's), a flight and a hotel from OUR inventory (listed the moment the builder
+ * opens) or from the same searches the site runs, or all three filled by "Compose automatically".
+ * Opened on an existing package ("Change a piece") it starts from what the package holds: a piece
+ * staff do not touch is kept as it is. The browser only NAMES the pieces; saving looks them up and
+ * prices them again on the server. No supplier is searched until staff ask.
  */
 export function ReadyPackageBuilder({
   eventId,
   disabled,
+  initial,
   onBuilt,
 }: {
   eventId: number;
   disabled?: boolean;
+  initial?: ReadyBuilderInitial | null;
   onBuilt: (data: ReadyCardData) => void | Promise<void>;
 }) {
   const [options, setOptions] = useState<ReadyBuildOptions | null>(null);
+  const [inventory, setInventory] = useState<ReadyInventory>({ flights: [], hotels: [] });
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"options" | "compose" | "flights" | "hotels" | "save" | null>("options");
+  const [busy, setBusy] = useState<"options" | "inventory" | "compose" | "flights" | "hotels" | "save" | null>(
+    "options",
+  );
   const [notes, setNotes] = useState<string[]>([]);
 
-  const [travelers, setTravelers] = useState(2);
+  const [travelers, setTravelers] = useState(initial?.spec.defaultTravelers ?? 2);
   const [ticketKey, setTicketKey] = useState("");
   const [departureDate, setDepartureDate] = useState("");
   const [returnDate, setReturnDate] = useState("");
-  const [closed, setClosed] = useState(true);
+  // A new package starts closed (Dor: "a closed event"); a changed one keeps what staff decided.
+  const [swap, setSwap] = useState<ReadySwap>(initial?.swap ?? SWAP_NONE);
 
-  const [noFlight, setNoFlight] = useState(false);
+  // A piece of the current package staff have not replaced: its identity rides into the new spec as is.
+  const [keptFlight, setKeptFlight] = useState<ReadyFlightSpec | null>(
+    initial && initial.spec.flight.mode !== "none" ? initial.spec.flight : null,
+  );
+  const [keptHotel, setKeptHotel] = useState<ReadyHotelSpec | null>(
+    initial && initial.spec.hotel.mode !== "none" ? initial.spec.hotel : null,
+  );
+
+  const [noFlight, setNoFlight] = useState(initial?.spec.flight.mode === "none");
   const [flights, setFlights] = useState<ReadyFlightChoice[] | null>(null);
   const [flight, setFlight] = useState<ReadyFlightChoice | null>(null);
   const [directOnly, setDirectOnly] = useState(true);
   const [bagOnly, setBagOnly] = useState(false);
 
-  const [noHotel, setNoHotel] = useState(false);
+  const [noHotel, setNoHotel] = useState(initial?.spec.hotel.mode === "none");
   const [hotels, setHotels] = useState<ReadyHotelChoice[] | null>(null);
   const [hotel, setHotel] = useState<ReadyHotelChoice | null>(null);
   const [hotelQuery, setHotelQuery] = useState("");
@@ -133,7 +235,8 @@ export function ReadyPackageBuilder({
 
   useEffect(() => {
     let alive = true;
-    getReadyBuildOptions(eventId)
+    // One action: tickets, the default dates and our inventory for the opening party size.
+    getReadyBuildOptions(eventId, initial?.spec.defaultTravelers ?? 2)
       .then((res) => {
         if (!alive) return;
         if (!res.ok) {
@@ -141,20 +244,28 @@ export function ReadyPackageBuilder({
           return;
         }
         setOptions(res.options);
-        setDepartureDate(res.options.departureDate);
-        setReturnDate(res.options.returnDate);
-        const first = res.options.tickets[0];
-        setTicketKey(first ? first.id ?? first.category : "");
+        setInventory(res.options.inventory);
+        const dates = (initial && specDates(initial.spec)) || res.options;
+        setDepartureDate(dates.departureDate);
+        setReturnDate(dates.returnDate);
+        const current = initial
+          ? res.options.tickets.find((t) => !!initial.spec.ticket.id && t.id === initial.spec.ticket.id) ??
+            res.options.tickets.find((t) => t.category === initial.spec.ticket.category)
+          : undefined;
+        const first = current ?? res.options.tickets[0];
+        setTicketKey(first ? ticketKeyOf(first) : "");
       })
       .catch(() => alive && setError("Could not load the event."))
       .finally(() => alive && setBusy(null));
     return () => {
       alive = false;
     };
+    // `initial` is read once, when the builder opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
-  /** A flight or a hotel is priced for one party and one pair of dates - change either and it is gone. */
-  const forget = () => {
+  /** A searched flight or hotel is priced for one party and one pair of dates - change either and it is gone. */
+  const forgetSearches = () => {
     setFlights(null);
     setFlight(null);
     setHotels(null);
@@ -162,20 +273,43 @@ export function ReadyPackageBuilder({
     setNotes([]);
   };
 
+  const changeDates = (next: { departureDate?: string; returnDate?: string }) => {
+    if (next.departureDate !== undefined) setDepartureDate(next.departureDate);
+    if (next.returnDate !== undefined) setReturnDate(next.returnDate);
+    forgetSearches();
+    // A kept flight or hotel belongs to the old dates.
+    setKeptFlight(null);
+    setKeptHotel(null);
+  };
+
+  const changeTravelers = async (next: number) => {
+    setTravelers(next);
+    forgetSearches();
+    // Inventory rooms are counted per party; a kept online piece is the same piece for any size.
+    setKeptHotel((kept) => (kept?.mode === "offline" ? null : kept));
+    setBusy("inventory");
+    const res = await getReadyInventory(eventId, next).catch(() => null);
+    setBusy(null);
+    if (res?.ok) setInventory(res.inventory);
+    else setError(res?.error ?? "Could not load our inventory.");
+  };
+
   const ticket = useMemo(
-    () => options?.tickets.find((t) => (t.id ?? t.category) === ticketKey) ?? null,
+    () => options?.tickets.find((t) => ticketKeyOf(t) === ticketKey) ?? null,
     [options, ticketKey],
   );
 
+  // Our inventory has its own block above the search - a searched list never repeats it.
   const shownFlights = useMemo(
-    () => (flights ?? []).filter((f) => f.offline || ((!directOnly || f.direct) && (!bagOnly || f.checkedBag))),
+    () => (flights ?? []).filter((f) => !f.offline && (!directOnly || f.direct) && (!bagOnly || f.checkedBag)),
     [flights, directOnly, bagOnly],
   );
   const shownHotels = useMemo(() => {
     const q = hotelQuery.trim().toLowerCase();
     return (hotels ?? []).filter(
       (h) =>
-        (h.offline || h.stars >= minStars) &&
+        !h.offline &&
+        h.stars >= minStars &&
         (!mealOnly || h.meal !== "nomeal") &&
         (!q || h.name.toLowerCase().includes(q)),
     );
@@ -226,29 +360,34 @@ export function ReadyPackageBuilder({
     }
     setDepartureDate(res.departureDate);
     setReturnDate(res.returnDate);
-    setTicketKey(res.ticket.id ?? res.ticket.category);
+    setTicketKey(ticketKeyOf(res.ticket));
     setFlights(null);
     setHotels(null);
     setFlight(res.flight);
+    setKeptFlight(null);
     setNoFlight(false);
     setHotel(res.hotel);
+    setKeptHotel(null);
     setNoHotel(false);
     setNotes(res.notes);
   };
 
-  const ready = !!ticket && (noFlight || !!flight) && (noHotel || !!hotel);
+  const flightSpec: ReadyFlightSpec | null = noFlight ? { mode: "none" } : (flight?.spec ?? keptFlight);
+  const hotelSpec: ReadyHotelSpec | null = noHotel ? { mode: "none" } : (hotel?.spec ?? keptHotel);
+  const ready = !!ticket && !!flightSpec && !!hotelSpec;
 
   const save = async () => {
-    if (!ticket || !ready) return;
+    if (!ticket || !flightSpec || !hotelSpec) return;
     const spec: ReadyPackageSpec = {
       ticket: { id: ticket.id, category: ticket.category },
-      flight: noFlight || !flight ? { mode: "none" } : flight.spec,
-      hotel: noHotel || !hotel ? { mode: "none" } : hotel.spec,
+      flight: flightSpec,
+      hotel: hotelSpec,
       defaultTravelers: travelers,
+      swap,
     };
     setBusy("save");
     setError(null);
-    const res = await buildReadyPackage(eventId, { spec, closed }).catch(() => null);
+    const res = await buildReadyPackage(eventId, { spec }).catch(() => null);
     setBusy(null);
     if (!res || !res.ok) {
       setError(res?.error ?? "Could not save the ready package.");
@@ -260,27 +399,21 @@ export function ReadyPackageBuilder({
   if (busy === "options") {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading the event&apos;s tickets
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading the event&apos;s tickets and our inventory
       </div>
     );
   }
   if (!options) return <p className="text-sm text-destructive">{error ?? "Could not load the event."}</p>;
 
   const perPerson = (n: number) => `$${n.toLocaleString("en-US")} pp`;
+  const closed = !anySwap(swap);
 
   return (
     <div className="space-y-4 rounded-md border p-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1.5">
           <Label>Built for</Label>
-          <Select
-            value={String(travelers)}
-            disabled={locked}
-            onValueChange={(value) => {
-              setTravelers(Number(value));
-              forget();
-            }}
-          >
+          <Select value={String(travelers)} disabled={locked} onValueChange={(value) => changeTravelers(Number(value))}>
             <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
@@ -301,10 +434,7 @@ export function ReadyPackageBuilder({
             className="w-40"
             value={departureDate}
             disabled={locked}
-            onChange={(e) => {
-              setDepartureDate(e.target.value);
-              forget();
-            }}
+            onChange={(e) => changeDates({ departureDate: e.target.value })}
           />
         </div>
         <div className="space-y-1.5">
@@ -315,10 +445,7 @@ export function ReadyPackageBuilder({
             className="w-40"
             value={returnDate}
             disabled={locked}
-            onChange={(e) => {
-              setReturnDate(e.target.value);
-              forget();
-            }}
+            onChange={(e) => changeDates({ returnDate: e.target.value })}
           />
         </div>
         <Button type="button" variant="outline" size="sm" disabled={locked} onClick={compose}>
@@ -327,8 +454,10 @@ export function ReadyPackageBuilder({
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        The hotel stay follows the flight dates. &quot;Compose automatically&quot; fills all three by a plain rule - cheapest
-        ticket, cheapest direct flight with a checked bag, cheapest 4★ with a meal - and you change what does not fit.
+        Choose each piece yourself - our inventory is listed first, the site&apos;s searches come on request. The hotel
+        stay follows the flight dates. &quot;Compose automatically&quot; fills all three by a plain rule (cheapest
+        ticket, cheapest direct flight with a checked bag, cheapest 4★ with a meal) and you change what does not fit.
+        The party size here is only the one it is BUILT for: on the site the customer picks their own number.
       </p>
       {notes.length > 0 && <p className="text-sm text-amber-700 dark:text-amber-300">{notes.join(" · ")}</p>}
 
@@ -340,23 +469,25 @@ export function ReadyPackageBuilder({
           </SelectTrigger>
           <SelectContent>
             {options.tickets.map((t) => (
-              <SelectItem key={t.id ?? t.category} value={t.id ?? t.category}>
-                {t.category} · ${t.price}
+              <SelectItem key={ticketKeyOf(t)} value={ticketKeyOf(t)}>
+                {ticketLine(t)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {!options.tickets.some((t) => t.supplier === "static") && (
+          <p className="text-sm text-muted-foreground">
+            This event has no ticket of our own stock. Add one under Suppliers &amp; zones → &quot;Our own ticket&quot; and it
+            is listed here first.
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Label>2. Flight</Label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox
-              checked={noFlight}
-              disabled={locked}
-              onCheckedChange={(v) => setNoFlight(v === true)}
-            />
+            <Checkbox checked={noFlight} disabled={locked} onCheckedChange={(v) => setNoFlight(v === true)} />
             No flight in this package
           </label>
         </div>
@@ -368,13 +499,31 @@ export function ReadyPackageBuilder({
                 {flightLine(flight)} · {perPerson(flight.pricePerPerson)}
                 {flight.offline && " · our inventory"}
               </div>
+            ) : keptFlight && initial ? (
+              <div className="rounded-md border border-primary bg-primary/5 p-2.5 text-sm">
+                <span className="font-medium">Kept from the package: </span>
+                {initial.flightLabel}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">No flight chosen yet.</p>
             )}
+            <InventoryBlock kind="flight" empty={inventory.flights.length === 0}>
+              {inventory.flights.map((f) => (
+                <Row
+                  key={f.key}
+                  selected={flight?.key === f.key}
+                  onPick={() => setFlight(f)}
+                  title={flightLine(f)}
+                  price={perPerson(f.pricePerPerson)}
+                  note={flightNote(f)}
+                  inventory
+                />
+              ))}
+            </InventoryBlock>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="button" variant="outline" size="sm" disabled={locked || !datesOk} onClick={findFlights}>
                 {busy === "flights" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                {busy === "flights" ? "Searching (up to 30s)" : flights ? "Search again" : "Search flights"}
+                {busy === "flights" ? "Searching (up to 30s)" : flights ? "Search again" : "Search online flights"}
               </Button>
               {flights && (
                 <>
@@ -396,8 +545,8 @@ export function ReadyPackageBuilder({
                     onPick={() => setFlight(f)}
                     title={flightLine(f)}
                     price={perPerson(f.pricePerPerson)}
-                    note={`${f.outbound.from} → ${f.outbound.to}, lands ${when(f.outbound.arrival)} · back lands ${when(f.inbound.arrival)}`}
-                    inventory={f.offline}
+                    note={flightNote(f)}
+                    inventory={false}
                   />
                 ))}
                 {shownFlights.length === 0 && (
@@ -430,9 +579,27 @@ export function ReadyPackageBuilder({
                 {hotelLine(hotel)} · {perPerson(hotel.pricePerPerson)}
                 {hotel.offline && " · our inventory"}
               </div>
+            ) : keptHotel && initial ? (
+              <div className="rounded-md border border-primary bg-primary/5 p-2.5 text-sm">
+                <span className="font-medium">Kept from the package: </span>
+                {initial.hotelLabel}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">No hotel chosen yet.</p>
             )}
+            <InventoryBlock kind="hotel" empty={inventory.hotels.length === 0}>
+              {inventory.hotels.map((h) => (
+                <Row
+                  key={h.key}
+                  selected={hotel?.key === h.key}
+                  onPick={() => setHotel(h)}
+                  title={hotelLine(h)}
+                  price={perPerson(h.pricePerPerson)}
+                  note={hotelNote(h)}
+                  inventory
+                />
+              ))}
+            </InventoryBlock>
             <div className="flex flex-wrap items-center gap-3">
               <Input
                 aria-label="Hotel name"
@@ -450,7 +617,7 @@ export function ReadyPackageBuilder({
               />
               <Button type="button" variant="outline" size="sm" disabled={locked || !datesOk} onClick={findHotels}>
                 {busy === "hotels" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                {busy === "hotels" ? "Searching (up to 30s)" : hotels ? "Search again" : "Search hotels"}
+                {busy === "hotels" ? "Searching (up to 30s)" : hotels ? "Search again" : "Search online hotels"}
               </Button>
               {hotels && (
                 <>
@@ -480,14 +647,8 @@ export function ReadyPackageBuilder({
                     onPick={() => setHotel(h)}
                     title={hotelLine(h)}
                     price={perPerson(h.pricePerPerson)}
-                    note={[
-                      `$${h.totalPrice.toLocaleString("en-US")} for the stay`,
-                      h.refundable ? "free cancellation" : "non-refundable",
-                      h.distanceM != null ? `${(h.distanceM / 1000).toFixed(1)} km from the centre` : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                    inventory={h.offline}
+                    note={hotelNote(h)}
+                    inventory={false}
                   />
                 ))}
                 {shownHotels.length === 0 && (
@@ -512,17 +673,42 @@ export function ReadyPackageBuilder({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-        <div className="flex items-center gap-3">
-          <Switch id="ready-closed" checked={closed} disabled={locked} onCheckedChange={setClosed} />
-          <Label htmlFor="ready-closed" className="cursor-pointer">
-            Closed package - the customer cannot swap a piece
-          </Label>
+      <div className="space-y-3 border-t pt-3">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Switch
+              id="ready-closed"
+              checked={closed}
+              disabled={locked}
+              onCheckedChange={(on) => setSwap(on ? SWAP_NONE : SWAP_ALL)}
+            />
+            <Label htmlFor="ready-closed" className="cursor-pointer">
+              Closed package - the customer cannot swap anything
+            </Label>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+            <span className="text-muted-foreground">Or open only some pieces - the customer may swap:</span>
+            {READY_PIECES.map((piece) => (
+              <label key={piece} className="flex items-center gap-2">
+                <Checkbox
+                  checked={swap[piece]}
+                  disabled={locked}
+                  onCheckedChange={(v) => setSwap((prev) => ({ ...prev, [piece]: v === true }))}
+                />
+                {PIECE_LABEL[piece]}
+              </label>
+            ))}
+          </div>
         </div>
-        <Button type="button" size="sm" disabled={locked || !ready} onClick={save}>
-          {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {busy === "save" ? "Saving (looking the pieces up again)" : "Save as the ready package"}
-        </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Saving does not put it on the site: it is saved in Preview, and you switch it to Live on the card.
+          </p>
+          <Button type="button" size="sm" disabled={locked || !ready} onClick={save}>
+            {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {busy === "save" ? "Saving (looking the pieces up again)" : "Save as the ready package"}
+          </Button>
+        </div>
       </div>
     </div>
   );

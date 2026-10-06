@@ -14,13 +14,19 @@ import {
   type ReadyPackageMode,
   type ReadyPackageSpec,
   type ReadyRefreshStatus,
+  type ReadySwap,
   type ReadyVariants,
 } from "../types/ready-package.types";
 
-/** Top of the traveller picker when staff set nothing. */
-export const READY_MAX_TRAVELERS_DEFAULT = 4;
-/** The most a picker may offer - a bigger party is a group quote, not a click. */
-export const READY_MAX_TRAVELERS_CAP = 6;
+/**
+ * Top of the traveller picker: the SITE's own cap on tickets per order (main's
+ * ticket step MAX_TICKETS, and its 1..9 traveller select) - a bigger party is a
+ * group quote there too. A ready package has no limit of its own (Alon 06.10:
+ * "like the site today"): it is priced for every size up to this, and a size
+ * that cannot be priced is simply not offered. Mirrored in main's
+ * lib/events/readyPackage.ts.
+ */
+export const READY_MAX_TRAVELERS_CAP = 9;
 
 /** `events.ready_package_mode` as read: anything but a known mode is "off". */
 export function readyMode(value: unknown): ReadyPackageMode {
@@ -29,11 +35,48 @@ export function readyMode(value: unknown): ReadyPackageMode {
     : "off";
 }
 
+/** A party-size ceiling as read: anything unusable, or above the site's cap, is the cap. */
 export function clampMaxTravelers(value: unknown): number {
   const n = Math.floor(Number(value));
-  if (!Number.isFinite(n) || n < 1) return READY_MAX_TRAVELERS_DEFAULT;
+  if (!Number.isFinite(n) || n < 1) return READY_MAX_TRAVELERS_CAP;
   return Math.min(READY_MAX_TRAVELERS_CAP, n);
 }
+
+// ---------------------------------------------------------------------------
+// Swapping: which pieces the customer may change on the site
+// ---------------------------------------------------------------------------
+
+export const SWAP_ALL: ReadySwap = { ticket: true, flight: true, hotel: true };
+export const SWAP_NONE: ReadySwap = { ticket: false, flight: false, hotel: false };
+
+/** A stored or posted `swap`, read strictly: three booleans or nothing. */
+export function parseSwap(raw: unknown): ReadySwap | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  if (
+    typeof value.ticket !== "boolean" ||
+    typeof value.flight !== "boolean" ||
+    typeof value.hotel !== "boolean"
+  ) {
+    return null;
+  }
+  return { ticket: value.ticket, flight: value.flight, hotel: value.hotel };
+}
+
+/**
+ * Per piece: may the customer swap it. The spec's own answer when it has one;
+ * a package saved before the breakdown existed follows the row's `allow_edit`
+ * for every piece. Mirrored in main's lib/events/readyPackage.ts.
+ */
+export function swapOf(
+  spec: { swap?: unknown } | null | undefined,
+  allowEdit: boolean | null | undefined,
+): ReadySwap {
+  return parseSwap(spec?.swap) ?? (allowEdit === false ? SWAP_NONE : SWAP_ALL);
+}
+
+/** The row's `allow_edit` for a breakdown: open when at least one piece is. */
+export const anySwap = (swap: ReadySwap): boolean => swap.ticket || swap.flight || swap.hotel;
 
 /** The sizes a refresh builds: 1..max. */
 export function targetSizes(maxTravelers: number): number[] {
@@ -505,5 +548,9 @@ export function parseSpecInput(raw: unknown): ReadyPackageSpec | null {
     };
   } else return null;
 
-  return { ticket, flight, hotel, defaultTravelers: travelers };
+  // A posted breakdown must be whole; none at all = the caller decides (keep the row's).
+  const swap = root.swap === undefined ? undefined : parseSwap(root.swap);
+  if (swap === null) return null;
+
+  return { ticket, flight, hotel, defaultTravelers: travelers, ...(swap ? { swap } : {}) };
 }
