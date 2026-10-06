@@ -27,6 +27,25 @@
 
 begin;
 
+-- 17. Google reviews of a tours company ---------------------------------------
+-- Undoes 20261006100000. The two views only read public.google_reviews /
+-- public.google_review_sources, which belong to Mega Events and stay. The mirrored
+-- reviews of a tours company's profile stay in those tables too (they are keyed by
+-- their own Place ID and nothing of Mega Events reads them); the googlePlaceId field
+-- in the general document is harmless and stays. A site section that asked for
+-- Google's reviews falls back to the typed ones (the views are optional for its build).
+-- provision_company() needs no step of its own: sections 15 / 14 / 12 put back an
+-- older body that does not create the views.
+do $rb17$
+declare s text;
+begin
+  for s in select schema_name from public.companies loop
+    execute format('drop view if exists %I.google_reviews', s);
+    execute format('drop view if exists %I.google_review_source', s);
+  end loop;
+end
+$rb17$;
+
 -- 16. a lead's follow-up day and staff notes ----------------------------------
 -- Undoes 20261005200000. The follow-up days and the notes staff wrote are lost.
 drop index if exists public.leads_follow_up_idx;
