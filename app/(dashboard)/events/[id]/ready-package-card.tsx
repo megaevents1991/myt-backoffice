@@ -18,7 +18,7 @@ import {
   type ReadyActionResult,
   type ReadyCardData,
 } from "@/lib/actions/ready-package-actions";
-import { SWAP_ALL, SWAP_NONE, anySwap, targetSizes } from "@/lib/ready-package";
+import { SWAP_ALL, SWAP_NONE, anySwap, pairSizes, targetSizes } from "@/lib/ready-package";
 import { ReadyPackageBuilder } from "./ready-package-builder";
 import {
   READY_PIECES,
@@ -168,9 +168,9 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
     if (!settle(res) || !res.ok || !res.data.view) return;
     setAdopting(false);
     setPicked(null);
-    // Every size, the built one included: the adopted composition may be days old, and a fresh
-    // search is what gives it today's price (and the hotel's photo).
-    await priceSizes(targetSizes(res.data.view.maxTravelers));
+    // Every size sold, the built one included: the adopted composition may be days old, and a
+    // fresh search is what gives it today's price (and the hotel's photo).
+    await priceSizes(res.data.view.allowed);
   };
 
   const run = async (label: string, action: () => Promise<ReadyActionResult>): Promise<boolean> => {
@@ -183,6 +183,14 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
   const saveSwap = (swap: ReadySwap) => run("Saving", () => setReadyPackageOptions(eventId, { swap }));
 
   const view = data?.view ?? null;
+
+  /** Which party sizes are sold. A size that was just switched on is priced right away. */
+  const saveSizes = async (next: number[]) => {
+    if (!view) return;
+    const added = next.filter((n) => !view.allowed.includes(n));
+    const ok = await run("Saving", () => setReadyPackageOptions(eventId, { sizes: next }));
+    if (ok && added.length > 0) await priceSizes(added);
+  };
   const candidates = data?.candidates ?? [];
   const mode = MODES.find((m) => m.value === view?.mode) ?? MODES[0];
 
@@ -251,30 +259,65 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
               </div>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-2 rounded-md border p-3" data-ready-sizes>
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Party sizes on the site:</span>
-                {targetSizes(view.maxTravelers).map((n) => (
-                  <Badge
-                    key={n}
-                    variant="outline"
-                    className={cn(view.sizes.includes(n) ? STATUS_STYLE.ok : "text-muted-foreground line-through")}
-                    title={view.sizes.includes(n) ? "Priced - the picker offers it" : "Not priced - the picker does not offer it"}
-                  >
-                    {n}
-                  </Badge>
-                ))}
+                <span className="font-medium">Sold to parties of:</span>
+                {targetSizes(view.maxTravelers).map((n) => {
+                  const sold = view.allowed.includes(n);
+                  const priced = view.sizes.includes(n);
+                  const built = n === view.defaultTravelers;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      aria-pressed={sold}
+                      disabled={!!busy || built}
+                      onClick={() => saveSizes(sold ? view.allowed.filter((s) => s !== n) : [...view.allowed, n])}
+                      title={
+                        built
+                          ? "The size it was built for - always sold"
+                          : !sold
+                            ? "Not sold - click to sell this party size"
+                            : priced
+                              ? "On the site - click to stop selling this party size"
+                              : "Sold, but its flight, hotel or ticket could not be priced for this size - not on the site until it can"
+                      }
+                      className={cn(
+                        "h-8 min-w-8 rounded-md border px-2 text-sm font-medium tabular-nums transition-colors disabled:cursor-default",
+                        !sold
+                          ? "text-muted-foreground/60 line-through hover:bg-muted/50"
+                          : priced
+                            ? STATUS_STYLE.ok
+                            : STATUS_STYLE.partial,
+                      )}
+                    >
+                      {n}
+                    </button>
+                  );
+                })}
+                <span className="flex items-center gap-1">
+                  <Button type="button" variant="ghost" size="sm" disabled={!!busy} onClick={() => saveSizes(pairSizes())}>
+                    Pairs only
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" disabled={!!busy} onClick={() => saveSizes(targetSizes(view.maxTravelers))}>
+                    All
+                  </Button>
+                </span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Click a number to sell, or stop selling, that party size - the site&apos;s picker offers only these.
+                Green = on the site. Amber = sold, but the flight, hotel or ticket could not be priced for it, so it
+                is not offered until it can. Crossed out = not sold. The size it was built for (
+                {view.defaultTravelers}) always stays.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 {view.refreshStatus && (
                   <Badge variant="outline" className={STATUS_STYLE[view.refreshStatus]}>
                     {STATUS_LABEL[view.refreshStatus]}
                   </Badge>
                 )}
-                <span className="text-muted-foreground">· priced {when(view.refreshedAt)}</span>
+                <span className="text-muted-foreground">priced {when(view.refreshedAt)}</span>
               </div>
-              <p className="text-sm text-muted-foreground">
-                No limit to set: the package is priced for every party the site sells (1 to {view.maxTravelers}), and a
-                size its flight, hotel or ticket cannot serve is simply not offered.
-              </p>
               {view.refreshNote && <p className="text-sm text-muted-foreground">{view.refreshNote}</p>}
             </div>
 
@@ -314,7 +357,7 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" disabled={!!busy} onClick={() => priceSizes(targetSizes(view.maxTravelers))}>
+              <Button type="button" variant="outline" size="sm" disabled={!!busy} onClick={() => priceSizes(view.allowed)}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {busy ?? "Refresh prices"}
               </Button>
@@ -417,10 +460,10 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
                   setData(built);
                   setBuilding(false);
                   if (!built.view) return;
-                  // The built size was looked up and priced a moment ago - only the others are left.
-                  const { maxTravelers, defaultTravelers, mode: savedMode } = built.view;
+                  // The built size was looked up and priced a moment ago - only the other sold sizes are left.
+                  const { allowed, defaultTravelers, mode: savedMode } = built.view;
                   await priceSizes(
-                    targetSizes(maxTravelers).filter((n) => n !== defaultTravelers),
+                    allowed.filter((n) => n !== defaultTravelers),
                     savedMode === "live"
                       ? "Saved - the site already shows the new package."
                       : "Saved in Preview: customers do not see it yet. Switch it to Live to put it on the site.",

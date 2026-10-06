@@ -4,6 +4,7 @@ import {
   READY_MAX_TRAVELERS_CAP,
   SWAP_ALL,
   SWAP_NONE,
+  allowedSizes,
   anySwap,
   canGoLive,
   clampMaxTravelers,
@@ -12,6 +13,8 @@ import {
   matchFlight,
   matchHotelOption,
   offlineHotelUnitsFor,
+  pairSizes,
+  parseSizes,
   parseSpecInput,
   parseSwap,
   pickSuggestedFlight,
@@ -51,6 +54,27 @@ assert.equal(parseSwap({ ticket: "yes", flight: true, hotel: true }), null, "boo
 assert.equal(parseSwap([true, true, true]), null);
 assert.equal(anySwap(hotelOnly), true);
 assert.equal(anySwap(SWAP_NONE), false, "a closed package");
+
+// ── party sizes: which ones staff sell ──────────────────────────────────────
+assert.deepEqual(pairSizes(), [2, 4, 6, 8], "sold in pairs");
+assert.deepEqual(allowedSizes({ defaultTravelers: 2 }), [1, 2, 3, 4, 5, 6, 7, 8, 9], "nothing chosen = every size");
+assert.deepEqual(allowedSizes(null), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+assert.deepEqual(allowedSizes({ sizes: [4, 2, 2, 8, 6], defaultTravelers: 2 }), [2, 4, 6, 8], "unique, ascending");
+assert.deepEqual(allowedSizes({ sizes: [2, 4], defaultTravelers: 3 }), [2, 3, 4], "the built size is always sold");
+assert.deepEqual(allowedSizes({ sizes: [2, 12], defaultTravelers: 2 }), [1, 2, 3, 4, 5, 6, 7, 8, 9], "an unsound list is no list");
+assert.equal(parseSizes([]), null, "no size at all is not a choice");
+assert.equal(parseSizes([2, "4"]), null, "numbers only");
+assert.equal(parseSizes([0, 2]), null);
+assert.equal(parseSizes("2,4"), null);
+assert.equal(
+  summarizeRefresh({ defaultTravelers: 2, maxTravelers: 9, sizes: [2, 4], built: [2, 4], failures: [] }).status,
+  "ok",
+  "every SOLD size priced = ok, whatever the other sizes are",
+);
+assert.equal(
+  summarizeRefresh({ defaultTravelers: 2, maxTravelers: 9, sizes: [2, 4, 6], built: [2, 4], failures: [] }).status,
+  "partial",
+);
 
 // ── identity ────────────────────────────────────────────────────────────────
 const liveFlight = {
@@ -297,6 +321,8 @@ assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 10 }), null, "above
 assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 9 })?.defaultTravelers, 9);
 assert.deepEqual(parseSpecInput({ ...goodSpec, swap: hotelOnly })?.swap, hotelOnly, "the breakdown rides in the spec");
 assert.equal(parseSpecInput({ ...goodSpec, swap: { hotel: true } }), null, "a posted breakdown must be whole");
+assert.deepEqual(parseSpecInput({ ...goodSpec, sizes: [8, 2, 4, 6] })?.sizes, [2, 4, 6, 8], "the sizes sold ride in the spec");
+assert.equal(parseSpecInput({ ...goodSpec, sizes: [2, 10] }), null, "a posted size list must be sound");
 assert.equal("swap" in (parseSpecInput(goodSpec) ?? {}), false, "none posted = none stored (the row's is kept)");
 assert.equal(parseSpecInput({ ...goodSpec, defaultTravelers: 0 }), null);
 assert.equal(parseSpecInput({ ...goodSpec, flight: { mode: "charter" } }), null, "an unknown mode");

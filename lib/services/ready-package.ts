@@ -34,6 +34,7 @@ import {
 } from "@/lib/services/package-snapshots";
 import {
   READY_MAX_TRAVELERS_CAP,
+  allowedSizes,
   anySwap,
   flightLabel,
   flightSpecOf,
@@ -43,6 +44,7 @@ import {
   matchFlight,
   matchHotelOption,
   offlineHotelUnitsFor,
+  parseSizes,
   parseSwap,
   pickSuggestedFlight,
   pickSuggestedHotel,
@@ -504,8 +506,13 @@ export async function refreshHousePackage(
   // No limit of its own: every size up to the site's cap (the row's `max_travelers`
   // is kept at that cap below, for main - it is no longer something staff set).
   const max = READY_MAX_TRAVELERS_CAP;
+  // The sizes staff sell it to (all of them unless they chose - pairs only, say). A size
+  // that is not sold holds no variant, which is how the site knows not to offer it.
+  const allowed = allowedSizes(spec ?? { defaultTravelers: pkg.num_travelers });
   const variants: ReadyVariants = {};
-  for (const size of variantSizes(pkg.variants, max)) variants[String(size)] = pkg.variants![String(size)];
+  for (const size of variantSizes(pkg.variants, max)) {
+    if (allowed.includes(size)) variants[String(size)] = pkg.variants![String(size)];
+  }
 
   const failures: SizeFailure[] = [];
   const notes: string[] = [];
@@ -520,7 +527,7 @@ export async function refreshHousePackage(
     for (const key of Object.keys(variants)) delete variants[key];
     failures.push({ size: defaultSize, reason: "the event is gone or has passed" });
   } else {
-    const wanted = (opts.sizes ?? targetSizes(max)).filter((n) => n >= 1 && n <= max);
+    const wanted = (opts.sizes ?? allowed).filter((n) => allowed.includes(n));
     const ordered = [...new Set(wanted)].sort(
       (a, b) => Number(b === defaultSize) - Number(a === defaultSize) || a - b,
     );
@@ -548,6 +555,7 @@ export async function refreshHousePackage(
   const { status, note } = summarizeRefresh({
     defaultTravelers: defaultSize,
     maxTravelers: max,
+    sizes: allowed,
     built: sizes,
     failures,
     notes,
@@ -647,7 +655,15 @@ async function saveHousePackage(input: {
   const existing = await loadHousePackageForEvent(event.id);
   // The breakdown rides in the spec, so a rebuilt package keeps what staff decided.
   const swap = input.swap ?? parseSwap(input.spec.swap) ?? swapOf(existing?.spec, existing?.allow_edit);
-  const spec: ReadyPackageSpec = { ...input.spec, swap };
+  // So do the party sizes staff sell it to; the built size is always one of them.
+  const chosenSizes = parseSizes(input.spec.sizes) ?? parseSizes(existing?.spec?.sizes);
+  const spec: ReadyPackageSpec = {
+    ...input.spec,
+    swap,
+    ...(chosenSizes
+      ? { sizes: allowedSizes({ sizes: chosenSizes, defaultTravelers: input.spec.defaultTravelers }) }
+      : {}),
+  };
   const variants: ReadyVariants = { [String(spec.defaultTravelers)]: first };
   const columns = {
     event_order_info: first.event_order_info as unknown as Json,
@@ -1160,7 +1176,8 @@ export async function composeAuto(input: {
 export function toReadyView(pkg: HousePackageRow, event: ReadyEventRow): ReadyPackageView {
   const max = READY_MAX_TRAVELERS_CAP;
   const defaultTravelers = pkg.spec?.defaultTravelers ?? pkg.num_travelers;
-  const sizes = variantSizes(pkg.variants, max);
+  const allowed = allowedSizes(pkg.spec ?? { defaultTravelers });
+  const sizes = variantSizes(pkg.variants, max).filter((n) => allowed.includes(n));
   const shown = pkg.variants?.[String(defaultTravelers)] ?? (sizes.length > 0 ? pkg.variants![String(sizes[0])] : null);
   const ticket = shown?.event_order_info as { category?: string; price_per_ticket?: number } | undefined;
   const status = pkg.refresh_status;
@@ -1174,6 +1191,7 @@ export function toReadyView(pkg: HousePackageRow, event: ReadyEventRow): ReadyPa
     spec: pkg.spec,
     maxTravelers: max,
     defaultTravelers,
+    allowed,
     sizes,
     pricePerPerson: shown?.price_per_person ?? null,
     refreshedAt: pkg.refreshed_at,

@@ -28,11 +28,13 @@ import {
 } from "@/lib/services/ready-package";
 import {
   READY_MAX_TRAVELERS_CAP,
+  allowedSizes,
   anySwap,
   canGoLive,
   flightLabel,
   hotelLabel,
   isDay,
+  parseSizes,
   parseSpecInput,
   parseSwap,
   specFromComposition,
@@ -216,24 +218,42 @@ export async function setReadyPackageMode(eventId: number, mode: ReadyPackageMod
 }
 
 /**
- * Which pieces the customer may swap on the site (ticket / flight / hotel, each on its own).
- * The party-size ceiling is no longer an option: it is the site's own cap.
+ * Two things staff decide about a ready package, each on its own:
+ *  - `swap`: which pieces the customer may swap on the site (ticket / flight / hotel);
+ *  - `sizes`: which party sizes it is sold to (e.g. [2, 4, 6, 8] = pairs only). The built size
+ *    always stays. A size that stops being sold loses its priced variant here, so it leaves the
+ *    site's picker at once; a size newly sold is priced by the card right after.
+ * There is no ceiling to set beyond that: the top is the site's own cap.
  */
 export async function setReadyPackageOptions(
   eventId: number,
-  options: { swap: unknown },
+  options: { swap?: unknown; sizes?: unknown },
 ): Promise<ReadyActionResult> {
   await requireStaff();
   const id = validId(eventId);
   if (!id) return { ok: false, error: "Invalid event." };
-  const swap = parseSwap(options?.swap);
-  if (!swap) return { ok: false, error: "Invalid choice of pieces." };
+  const swap = options?.swap === undefined ? undefined : parseSwap(options.swap);
+  if (swap === null) return { ok: false, error: "Invalid choice of pieces." };
+  const chosen = options?.sizes === undefined ? undefined : parseSizes(options.sizes);
+  if (chosen === null) return { ok: false, error: "Choose at least one party size (1 to 9)." };
+  if (!swap && !chosen) return { ok: false, error: "Nothing to change." };
   try {
     const pkg = await loadHousePackageForEvent(id);
     if (!pkg) return { ok: false, error: "This event has no ready package." };
     if (!pkg.spec) return { ok: false, error: "This package has no stored pieces - build it again." };
+    const sizes = chosen
+      ? allowedSizes({ sizes: chosen, defaultTravelers: pkg.spec.defaultTravelers })
+      : undefined;
+    const update: { spec: Json; allow_edit?: boolean; variants?: Json } = {
+      spec: { ...pkg.spec, ...(swap ? { swap } : {}), ...(sizes ? { sizes } : {}) } as unknown as Json,
+    };
     // The breakdown lives in the spec; allow_edit keeps saying "something is open" for older readers.
-    const update = { spec: { ...pkg.spec, swap } as unknown as Json, allow_edit: anySwap(swap) };
+    if (swap) update.allow_edit = anySwap(swap);
+    if (sizes) {
+      update.variants = Object.fromEntries(
+        Object.entries(pkg.variants ?? {}).filter(([size]) => sizes.includes(Number(size))),
+      ) as unknown as Json;
+    }
     const { error } = await supabaseTyped.from("prepared_packages").update(update).eq("id", pkg.id);
     if (error) {
       console.error("setReadyPackageOptions:", JSON.stringify(error));
@@ -243,7 +263,7 @@ export async function setReadyPackageOptions(
       action: "ready_package.options",
       entityType: "event",
       entityId: id,
-      changes: { swap },
+      changes: { ...(swap ? { swap } : {}), ...(sizes ? { sizes } : {}) },
       metadata: { package_id: pkg.id },
     });
     await revalidateMain();

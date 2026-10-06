@@ -84,6 +84,46 @@ export function targetSizes(maxTravelers: number): number[] {
   return Array.from({ length: max }, (_, i) => i + 1);
 }
 
+// ---------------------------------------------------------------------------
+// Party sizes: which ones staff sell
+// ---------------------------------------------------------------------------
+
+/** A list of party sizes, read strictly: whole numbers within the site's cap, unique, ascending. null = not one. */
+export function parseSizes(raw: unknown): number[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const sizes = new Set<number>();
+  for (const value of raw) {
+    const n = typeof value === "number" ? value : Number.NaN;
+    if (!Number.isInteger(n) || n < 1 || n > READY_MAX_TRAVELERS_CAP) return null;
+    sizes.add(n);
+  }
+  return [...sizes].sort((a, b) => a - b);
+}
+
+/** "Sold in pairs": the even party sizes (2, 4, 6, 8). */
+export const pairSizes = (): number[] =>
+  targetSizes(READY_MAX_TRAVELERS_CAP).filter((n) => n % 2 === 0);
+
+/**
+ * The party sizes staff sell this package to (Dor 06.10: "it must be set in the
+ * backoffice" - pairs only, or any other choice). The spec's own list when it
+ * has one, else every size up to the site's cap. The size the package was built
+ * for is always among them: it is the one the package opens on.
+ * The site needs no rule of its own - a size that is not sold holds no variant,
+ * and the picker offers exactly the sizes that do.
+ */
+export function allowedSizes(
+  spec: { sizes?: unknown; defaultTravelers?: unknown } | null | undefined,
+): number[] {
+  const chosen = parseSizes(spec?.sizes) ?? targetSizes(READY_MAX_TRAVELERS_CAP);
+  const built = Number(spec?.defaultTravelers);
+  const withBuilt =
+    Number.isInteger(built) && built >= 1 && built <= READY_MAX_TRAVELERS_CAP && !chosen.includes(built)
+      ? [...chosen, built]
+      : chosen;
+  return [...withBuilt].sort((a, b) => a - b);
+}
+
 /** The day of a supplier time as written - their local time, no timezone maths. */
 export const isoDay = (value: string | null | undefined): string =>
   String(value ?? "").slice(0, 10);
@@ -356,11 +396,13 @@ export type SizeFailure = { size: number; reason: string };
 export function summarizeRefresh(input: {
   defaultTravelers: number;
   maxTravelers: number;
+  /** The sizes staff sell (`allowedSizes`); absent = every size up to the max. */
+  sizes?: number[];
   built: number[];
   failures: SizeFailure[];
   notes?: string[];
 }): { status: ReadyRefreshStatus; note: string | null } {
-  const wanted = targetSizes(input.maxTravelers);
+  const wanted = input.sizes ?? targetSizes(input.maxTravelers);
   const built = new Set(input.built);
   const missing = wanted.filter((n) => !built.has(n));
   const lines = [
@@ -552,5 +594,16 @@ export function parseSpecInput(raw: unknown): ReadyPackageSpec | null {
   const swap = root.swap === undefined ? undefined : parseSwap(root.swap);
   if (swap === null) return null;
 
-  return { ticket, flight, hotel, defaultTravelers: travelers, ...(swap ? { swap } : {}) };
+  // The same for the sizes sold: a posted list must be sound; none = keep the row's.
+  const sizes = root.sizes === undefined ? undefined : parseSizes(root.sizes);
+  if (sizes === null) return null;
+
+  return {
+    ticket,
+    flight,
+    hotel,
+    defaultTravelers: travelers,
+    ...(swap ? { swap } : {}),
+    ...(sizes ? { sizes } : {}),
+  };
 }

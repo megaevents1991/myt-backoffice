@@ -62,6 +62,12 @@ export type ReadyPackageSpec = {
    * so an older reader of the row is never wrong about a fully closed package.
    */
   swap?: ReadySwap;
+  /**
+   * The party sizes staff sell this package to (e.g. [2, 4, 6, 8] = pairs only). Absent = every
+   * size up to the site's cap. The built size is always sold (`allowedSizes`). A size that is not
+   * sold holds no variant - which is all the site needs to know.
+   */
+  sizes?: number[];
 };
 
 /** One priced composition, in the shapes main round-trips through reservations.*_order_info. */
@@ -96,7 +102,9 @@ export type ReadyPackageView = {
   spec: ReadyPackageSpec | null;
   maxTravelers: number;
   defaultTravelers: number;
-  /** Sizes with a priced variant, ascending. */
+  /** The party sizes staff sell it to, ascending (every size up to the cap unless they chose). */
+  allowed: number[];
+  /** Sold sizes with a priced variant, ascending - what the site's picker offers. */
   sizes: number[];
   pricePerPerson: number | null;
   refreshedAt: string | null;

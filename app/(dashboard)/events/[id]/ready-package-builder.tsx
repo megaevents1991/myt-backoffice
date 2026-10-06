@@ -19,7 +19,15 @@ import {
   suggestReadyBuild,
   type ReadyCardData,
 } from "@/lib/actions/ready-package-actions";
-import { READY_MAX_TRAVELERS_CAP, SWAP_ALL, SWAP_NONE, anySwap, mealLabel } from "@/lib/ready-package";
+import {
+  READY_MAX_TRAVELERS_CAP,
+  SWAP_ALL,
+  SWAP_NONE,
+  anySwap,
+  mealLabel,
+  pairSizes,
+  targetSizes,
+} from "@/lib/ready-package";
 import {
   READY_PIECES,
   type ReadyBuildOptions,
@@ -211,6 +219,9 @@ export function ReadyPackageBuilder({
   const [returnDate, setReturnDate] = useState("");
   // A new package starts closed (Dor: "a closed event"); a changed one keeps what staff decided.
   const [swap, setSwap] = useState<ReadySwap>(initial?.swap ?? SWAP_NONE);
+  // Which party sizes it is sold to: every size, pairs only, or (a changed package) whatever the
+  // card already holds. The card's numbers fine-tune it afterwards.
+  const [soldTo, setSoldTo] = useState<"all" | "pairs" | "keep">(initial?.spec.sizes ? "keep" : "all");
 
   // A piece of the current package staff have not replaced: its identity rides into the new spec as is.
   const [keptFlight, setKeptFlight] = useState<ReadyFlightSpec | null>(
@@ -384,6 +395,12 @@ export function ReadyPackageBuilder({
       hotel: hotelSpec,
       defaultTravelers: travelers,
       swap,
+      // "keep" sends none: the server keeps the list the package already has.
+      ...(soldTo === "pairs"
+        ? { sizes: pairSizes() }
+        : soldTo === "all"
+          ? { sizes: targetSizes(READY_MAX_TRAVELERS_CAP) }
+          : {}),
     };
     setBusy("save");
     setError(null);
@@ -427,6 +444,21 @@ export function ReadyPackageBuilder({
           </Select>
         </div>
         <div className="space-y-1.5">
+          <Label>Sold to</Label>
+          <Select value={soldTo} disabled={locked} onValueChange={(value) => setSoldTo(value as typeof soldTo)}>
+            <SelectTrigger className="w-52">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Every party size (1-{READY_MAX_TRAVELERS_CAP})</SelectItem>
+              <SelectItem value="pairs">Pairs only (2, 4, 6, 8)</SelectItem>
+              {initial?.spec.sizes && (
+                <SelectItem value="keep">As set on the card ({initial.spec.sizes.join(", ")})</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="ready-depart">Departure</Label>
           <Input
             id="ready-depart"
@@ -457,7 +489,8 @@ export function ReadyPackageBuilder({
         Choose each piece yourself - our inventory is listed first, the site&apos;s searches come on request. The hotel
         stay follows the flight dates. &quot;Compose automatically&quot; fills all three by a plain rule (cheapest
         ticket, cheapest direct flight with a checked bag, cheapest 4★ with a meal) and you change what does not fit.
-        The party size here is only the one it is BUILT for: on the site the customer picks their own number.
+        &quot;Built for&quot; is only the party it is built on and opens with; &quot;Sold to&quot; says which party sizes the
+        customer may pick on the site (the card&apos;s numbers fine-tune it later).
       </p>
       {notes.length > 0 && <p className="text-sm text-amber-700 dark:text-amber-300">{notes.join(" · ")}</p>}
 
