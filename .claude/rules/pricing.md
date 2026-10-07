@@ -25,6 +25,11 @@ every customer price is wrong.
   uses it too (`tixstockTicketPriceUsd`, 2026-10-07): with its own formula (no 3.5%, rounded to
   nearest) it wrote every price 3.5% under what the order page charges, four times a day, and
   the first visitor wrote it back. Never price a TixStock ticket with an inline formula.
+- **And ONE choice of listing:** the price is the cheapest listing the SITE would sell to a
+  pair - `listingsTheSiteSells` (`lib/tixstock-listings.ts`, main's three rules mirrored: not
+  an excluded section, not a restricted view, the seller splits to two). "Any listing with 2+
+  seats" stored tickets at a third of what the order page offers. A rule changed in main
+  changes there too.
 - The **main app** then adds the final `NEXT_PUBLIC_MARKUP` (175 ILS) and converts USD→ILS.
   Do NOT add that 175 here, and do NOT convert currencies that the main app will convert.
 - **Sports ticket prices are in cents** in storage - the main app divides by 100. Store

@@ -18,6 +18,10 @@ import {
   eventsWithOpenSupplierGapTask,
   openSupplierGapTask,
 } from "@/lib/services/supplier-gap-tasks";
+import {
+  listingsTheSiteSells,
+  type TixStockListingRuleFields,
+} from "@/lib/tixstock-listings";
 import { logAudit } from "@/lib/audit";
 import { revalidateMain } from "@/lib/revalidate-main";
 
@@ -92,10 +96,11 @@ export interface TixStockPriceSyncOptions {
   eventIds?: number[];
 }
 
-/** The slice of a TixStock /tickets/feed listing this sync reads. */
-export interface TixStockFeedTicket {
-  seat_details?: { category?: string };
-  number_of_tickets_for_sale?: { quantity_available?: number };
+/**
+ * The slice of a TixStock /tickets/feed listing this sync reads: what the site's
+ * three listing rules look at (lib/tixstock-listings.ts) and the price.
+ */
+export interface TixStockFeedTicket extends TixStockListingRuleFields {
   proceed_price?: { amount?: string; currency?: string };
   face_value?: { currency?: string };
 }
@@ -132,6 +137,17 @@ export function tixstockTicketPriceUsd(cost: number, currency: string): number {
         : multiCurrencyExchangeRateService.convertToUSD(amount, cur),
   );
 }
+
+/** One listing through the formula. A listing that names no currency is GBP, TixStock's own. */
+const listingPriceUsd = (listing: TixStockFeedTicket): number =>
+  tixstockTicketPriceUsd(
+    parseFloat(listing.proceed_price?.amount || "0"),
+    (
+      listing.proceed_price?.currency ||
+      listing.face_value?.currency ||
+      "GBP"
+    ).toUpperCase(),
+  );
 
 /** Also read by the price advisor's supplier quote (price-alternatives.ts) - one feed reader, not two. */
 export const fetchTixStockFeed = (tixstockEventId: string): Promise<TixStockFeedTicket[]> =>
@@ -222,7 +238,12 @@ export async function syncTixStockPrices(
     // the full rows (500+ events with jsonb) were most of this query's weight.
     type SyncEvent = Pick<
       Event,
-      "id" | "name" | "date" | "tickets_and_rates" | "deactivated_reason"
+      | "id"
+      | "name"
+      | "date"
+      | "tickets_and_rates"
+      | "tx_excluded_sections"
+      | "deactivated_reason"
     >;
     // Upcoming events only: a show that already happened has no price to keep
     // and nothing to take off the site. They were a quarter of the run (138 of
@@ -244,11 +265,13 @@ export async function syncTixStockPrices(
     // sync, only the event-level switch waits.
     let canDeactivate = true;
     let { data, error } = await loadEvents(
-      "id,name,date,tickets_and_rates,deactivated_reason",
+      "id,name,date,tickets_and_rates,tx_excluded_sections,deactivated_reason",
     );
     if ((error as { code?: string } | null)?.code === "42703") {
       canDeactivate = false;
-      ({ data, error } = await loadEvents("id,name,date,tickets_and_rates"));
+      ({ data, error } = await loadEvents(
+        "id,name,date,tickets_and_rates,tx_excluded_sections",
+      ));
     }
 
     if (error) throw error;
@@ -308,6 +331,17 @@ export async function syncTixStockPrices(
           return;
         }
 
+        // Only a listing the site would sell to a pair sets a price - main's own
+        // three rules (lib/tixstock-listings.ts): not in a section staff excluded
+        // on the map, not a restricted view, and the seller splits to two. Until
+        // 2026-10-07 any listing with 2+ seats did, and a ticket could be stored
+        // at a third of what the order page offers. Availability, further down,
+        // still reads the whole feed.
+        const sellable = listingsTheSiteSells(
+          sourceTickets,
+          event.tx_excluded_sections ?? [],
+        );
+
         let eventUpdated = false;
         const updatedTicketsAndRates = event.tickets_and_rates.map(
           (ticket: EventTicket) => {
@@ -317,44 +351,28 @@ export async function syncTixStockPrices(
               return ticket;
             }
 
-            // Find all TixStock listings matching this category with at least 2
-            // available. Normalized compare: TixStock restyles venue category
-            // names over time (Bernabeu 2026-09), an exact match silently
-            // stopped updating every Real Madrid home game.
+            // This category's listings among those the site would sell to a
+            // pair. Normalized compare: TixStock restyles venue category names
+            // over time (Bernabeu 2026-09), an exact match silently stopped
+            // updating every Real Madrid home game.
             const ourCategory = normalizeSupplierCategory(ticket.category);
-            const matching = sourceTickets.filter((t) => {
-              const sourceCategory = normalizeSupplierCategory(
-                t.seat_details?.category,
-              );
-              const qty = t.number_of_tickets_for_sale?.quantity_available ?? 0;
-              return (
-                !!ourCategory && sourceCategory === ourCategory && qty >= 2
-              );
-            });
+            const matching = sellable.filter(
+              (t) =>
+                !!ourCategory &&
+                normalizeSupplierCategory(t.seat_details?.category) === ourCategory,
+            );
 
             if (matching.length === 0) {
               console.log(
-                `  No matching tickets (qty>=2) for category "${ticket.category}", skipping.`,
+                `  No listing the site would sell to a pair for category "${ticket.category}", skipping.`,
               );
               ticketsSkipped++;
               return ticket;
             }
 
-            // Cheapest proceed_price among matches
-            const cheapest = matching.reduce((min, t) => {
-              const price = parseFloat(t.proceed_price?.amount || "0");
-              const minPrice = parseFloat(min.proceed_price?.amount || "0");
-              return price < minPrice ? t : min;
-            });
-
-            const rawPrice = parseFloat(cheapest.proceed_price?.amount || "0");
-            const currency = (
-              cheapest.proceed_price?.currency ||
-              cheapest.face_value?.currency ||
-              "GBP"
-            ).toUpperCase();
-
-            const newPrice = tixstockTicketPriceUsd(rawPrice, currency);
+            // The cheapest of them AS PRICED, which is what main stores: every
+            // listing through the formula, then the minimum.
+            const newPrice = Math.min(...matching.map(listingPriceUsd));
 
             if (newPrice > 0 && newPrice !== ticket.price) {
               console.log(
