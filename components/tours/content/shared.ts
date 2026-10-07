@@ -7,7 +7,7 @@
  */
 import { matchesSearch } from "@/lib/search";
 import type { FooterTiles, HomeSection } from "@/lib/tours/site-content";
-import type { EasyLayout, EasyText } from "@/lib/tours/wp-html";
+import type { EasyLayout, EasyText, PageNote } from "@/lib/tours/wp-html";
 import type { SiteEditorOptions } from "@/lib/tours/site-options";
 
 /** Every content / leads / settings action answers with this. Expected failures never throw. */
@@ -614,6 +614,8 @@ export interface CmsPageEditorData {
   created: boolean;
   /** Set on an imported page whose text is edited in plain fields instead of its HTML (lib/tours/wp-html.ts). */
   easyLayout: EasyLayout | null;
+  /** Set on an imported address that has no words of its own: why, and where its content is managed. */
+  note: PageNote | null;
   /** What the link pickers choose from. */
   options: SiteEditorOptions;
   siteUrl: string | null;

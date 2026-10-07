@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { EmptyLine, Field, Notice, Section } from "@/components/tours/ui";
-import { RowControls, moved } from "@/components/tours/content/fields";
+import { ImageUrlField, RowControls, moved } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { EasyLayout, EasyText } from "@/lib/tours/wp-html";
 
@@ -20,6 +20,14 @@ const LAYOUT_NOTES: Record<EasyLayout, string> = {
   legal: "This page came with the site. Its text is edited here like any text: headings, lists, links, bold. The page keeps its look.",
   faq: "This page came with the site. Edit its opening text and its topics here; each topic opens on the site when a customer clicks its title.",
   faq_home: "This page came with the site. Edit its heading and its opening text here; the tiles to the FAQ pages under them are part of the page.",
+  about:
+    "This page came with the site. Edit its heading, its text and the picture beside the text here. The row of links to the other \"about\" pages and the tiles under the text are part of the page.",
+  contact:
+    "This page came with the site. Edit its two headings and its opening text here. The phone, the address and the opening hours under the form are set in Header & Footer > Contact details.",
+  form_page: "This page came with the site. Edit the text above the form and the text under it here. The form itself is part of the page.",
+  blog: "This page lists the blog posts by itself, newest first. Edit its heading and its opening lines here. Each post is edited on its own screen (Blog posts, on the list of Content Pages).",
+  leaders:
+    "This page lists the group leaders by itself; each leader is edited in Tours > Group Leaders. Edit the line under the page title, and the closing heading and text, here.",
 };
 
 type Topic = EasyText["faq"][number];
@@ -132,6 +140,58 @@ export function EasyTextEditor({
             <TopicsEditor topics={value.faq} onChange={(faq) => onChange({ ...value, faq })} siteUrl={siteUrl} />
           </Section>
         </>
+      )}
+      {layout === "about" && (
+        <>
+          <Section>
+            <Field label="Heading" hint="The bold line above the text." className="md:max-w-xl">
+              <Input dir="auto" value={value.heading} onChange={(e) => onChange({ ...value, heading: e.target.value })} />
+            </Field>
+            <HtmlField label="Page text" value={value.body} onChange={(body) => onChange({ ...value, body })} siteUrl={siteUrl} rows={16} />
+          </Section>
+          <Section title="Picture beside the text" description="Shown next to the text on a computer and under it on a phone.">
+            <ImageUrlField label="Picture" value={value.image} onChange={(image) => onChange({ ...value, image })} siteUrl={siteUrl} folder="pages" />
+            <Field label="What the picture shows" hint="One short line, read aloud to visitors who cannot see the picture." className="md:max-w-xl">
+              <Input dir="auto" value={value.imageAlt} onChange={(e) => onChange({ ...value, imageAlt: e.target.value })} />
+            </Field>
+          </Section>
+        </>
+      )}
+      {layout === "contact" && (
+        <Section>
+          <Field label="Heading" className="md:max-w-xl">
+            <Input dir="auto" value={value.heading} onChange={(e) => onChange({ ...value, heading: e.target.value })} />
+          </Field>
+          <HtmlField label="Opening text" value={value.intro} onChange={(intro) => onChange({ ...value, intro })} siteUrl={siteUrl} rows={6} hint="The lines between the heading and the form." />
+          <Field label="Heading above the form" className="md:max-w-xl">
+            <Input dir="auto" value={value.heading2} onChange={(e) => onChange({ ...value, heading2: e.target.value })} />
+          </Field>
+        </Section>
+      )}
+      {layout === "form_page" && (
+        <Section>
+          <HtmlField label="Text above the form" value={value.intro} onChange={(intro) => onChange({ ...value, intro })} siteUrl={siteUrl} rows={8} />
+          <HtmlField label="Text under the form" value={value.after} onChange={(after) => onChange({ ...value, after })} siteUrl={siteUrl} rows={6} />
+        </Section>
+      )}
+      {layout === "blog" && (
+        <Section>
+          <Field label="Heading" className="md:max-w-xl">
+            <Input dir="auto" value={value.heading} onChange={(e) => onChange({ ...value, heading: e.target.value })} />
+          </Field>
+          <HtmlField label="Opening lines" value={value.intro} onChange={(intro) => onChange({ ...value, intro })} siteUrl={siteUrl} rows={5} hint="The lines above the posts." />
+        </Section>
+      )}
+      {layout === "leaders" && (
+        <Section>
+          <Field label="Line under the page title" className="md:max-w-xl">
+            <Input dir="auto" value={value.heading} onChange={(e) => onChange({ ...value, heading: e.target.value })} />
+          </Field>
+          <Field label="Closing heading" hint="The heading of the text under the leaders." className="md:max-w-xl">
+            <Input dir="auto" value={value.heading2} onChange={(e) => onChange({ ...value, heading2: e.target.value })} />
+          </Field>
+          <HtmlField label="Closing text" value={value.after} onChange={(after) => onChange({ ...value, after })} siteUrl={siteUrl} rows={12} />
+        </Section>
       )}
     </>
   );

@@ -247,19 +247,33 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
         )}
       </Section>
 
-      <Section description={isPost ? "The picture at the top of the post and on its tile in the blog." : "The picture at the top of the page, behind the title. Empty = the site's default picture."}>
-        <ImageUrlField label="Picture" value={form.image} onChange={(image) => set("image", image)} siteUrl={saved.siteUrl} folder="pages" />
-      </Section>
+      {saved.note ? (
+        // an imported address with no words of its own: say where its content lives instead of showing an editor
+        <Notice tone="info">
+          {saved.note.note}
+          {saved.note.href && (
+            <>
+              {" "}
+              <Link href={saved.note.href} className="font-medium underline">
+                {saved.note.linkLabel ?? "Open"}
+              </Link>
+            </>
+          )}
+        </Notice>
+      ) : (
+        <Section description={isPost ? "The picture at the top of the post and on its tile in the blog." : "The picture at the top of the page, behind the title. Empty = the site's default picture."}>
+          <ImageUrlField label="Picture" value={form.image} onChange={(image) => set("image", image)} siteUrl={saved.siteUrl} folder="pages" />
+        </Section>
+      )}
 
-      {saved.easyLayout ? (
-        // an imported legal / FAQ page: its text in plain fields instead of its HTML
+      {saved.note ? null : saved.easyLayout ? (
+        // an imported page: its words in plain fields instead of its HTML
         <EasyTextEditor layout={saved.easyLayout} value={form.easy} onChange={(easy) => set("easy", easy)} siteUrl={saved.siteUrl} />
       ) : (
         <Section>
           {!saved.created && !isPost && (
             <Notice tone="info">
-              This page came with the site and is built from a special layout (pictures, tiles, tabs), so its content is still edited as HTML. The legal pages and
-              the FAQ pages have a plain text editor.
+              This page came with the site and has no plain editor yet, so its content is edited as HTML. The preview under the field shows what the HTML holds.
             </Notice>
           )}
           <HtmlField
@@ -277,9 +291,11 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
         </Section>
       )}
 
-      <Section title="Tiles above the footer" description={`What this ${isPost ? "post" : "page"} shows above the footer.`}>
-        <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={saved.options} siteUrl={saved.siteUrl} />
-      </Section>
+      {!saved.note && (
+        <Section title="Tiles above the footer" description={`What this ${isPost ? "post" : "page"} shows above the footer.`}>
+          <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={saved.options} siteUrl={saved.siteUrl} />
+        </Section>
+      )}
 
       <Section title="SEO" description="What search engines and social networks show for this page.">
         <Field label="Title" hint={`${form.seoTitle.length} characters. Up to 60 recommended.`}>

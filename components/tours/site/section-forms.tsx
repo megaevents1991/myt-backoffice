@@ -17,6 +17,7 @@ import { ImageUrlField } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
+  REVIEWS_MAX,
   TAB_SHOWS,
   TAB_TERM_KIND,
   TILE_SOURCES,
@@ -29,6 +30,7 @@ import {
   type TileSource,
   type TourSource,
 } from "@/lib/tours/site-content";
+import { FormReviewsPicker } from "@/components/tours/site/form-reviews-picker";
 import { GoogleReviewsPanel } from "@/components/tours/site/google-reviews-panel";
 import { ColorInput, ItemList, LinkInput, TermSelect, ToursPicker } from "@/components/tours/site/site-fields";
 
@@ -504,7 +506,7 @@ function ReasonsForm({ section, onChange, siteUrl }: FormProps<"reasons">) {
   );
 }
 
-const REVIEW_SOURCE_LABELS = { manual: "Typed here", google: "The company's Google reviews" } as const;
+const REVIEW_SOURCE_LABELS = { manual: "The reviews listed here (typed, or picked from the feedback forms)", google: "The company's Google reviews" } as const;
 
 function ReviewsForm({ section, onChange }: FormProps<"reviews">) {
   const google = section.source === "google";
@@ -538,18 +540,38 @@ function ReviewsForm({ section, onChange }: FormProps<"reviews">) {
           ? "The reviews typed below are kept: the site shows them while Google has no review to show."
           : "The world and tag pages of the site show the reviews of the home page, unless they carry reviews of their own."}
       </Notice>
+      <div className="flex flex-wrap items-center gap-3">
+        <FormReviewsPicker
+          takenRefs={section.items.map((item) => item.ref).filter(Boolean)}
+          room={REVIEWS_MAX - section.items.length}
+          onAdd={(picked) => onChange({ ...section, items: [...section.items, ...picked].slice(0, REVIEWS_MAX) })}
+        />
+        <p className="text-sm text-muted-foreground">Answers customers left on the feedback forms. You choose which ones show; each is copied into the list below.</p>
+      </div>
       <ItemList
-        label={google ? "Typed reviews (shown while Google has none)" : "Reviews"}
+        label={google ? "Typed and picked reviews (shown while Google has none)" : "Reviews"}
         items={section.items}
         onChange={(items) => onChange({ ...section, items })}
-        create={() => ({ name: "", text: "" })}
+        create={() => ({ name: "", text: "", rating: 0, ref: "" })}
         addLabel="Add Review"
-        max={24}
+        max={REVIEWS_MAX}
         render={(review, patch) => (
           <div className="space-y-2">
-            <Field label="Who wrote it">
-              <Input dir="auto" value={review.name} onChange={(e) => patch({ name: e.target.value })} />
-            </Field>
+            <Grid>
+              <Field label="Who wrote it" hint={review.ref ? "Picked from a feedback form. Shorten the name if the customer should not be named in full." : undefined}>
+                <Input dir="auto" value={review.name} onChange={(e) => patch({ name: e.target.value })} />
+              </Field>
+              <Field label="Stars" hint="Drawn above the text on the site.">
+                <select value={review.rating} onChange={(e) => patch({ rating: Math.min(5, Math.max(0, Math.trunc(Number(e.target.value)) || 0)) })} className={cn(selectClass, "w-full")}>
+                  <option value={0}>No stars</option>
+                  {[5, 4, 3, 2, 1].map((stars) => (
+                    <option key={stars} value={stars}>
+                      {stars} {stars === 1 ? "star" : "stars"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </Grid>
             <Field label="The review" hint="A new line starts a new paragraph. The site shows up to 9 lines.">
               <Textarea dir="auto" rows={4} value={review.text} onChange={(e) => patch({ text: e.target.value })} />
             </Field>

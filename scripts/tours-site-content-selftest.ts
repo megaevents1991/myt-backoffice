@@ -15,7 +15,8 @@ import {
   termSectionsSchema,
   type HomeSection,
 } from "../lib/tours/site-content";
-import { cleanEasy, easyFromHtml, readEasy, simplifyHtml } from "../lib/tours/wp-html";
+import { EMPTY_EASY, PAGE_NOTES, cleanEasy, easyFromHtml, easyLayoutOfPath, leadersSiteText, mediaPath, readEasy, simplifyHtml } from "../lib/tours/wp-html";
+import { canFeedReviews, formReviewCandidate, formReviewRef, formReviewShape, type FormReviewField } from "../lib/tours/form-reviews";
 import { isSimpleHtml } from "../components/tours/content/shared";
 
 let failed = 0;
@@ -95,14 +96,74 @@ const faqHtml = `<div>${widget("text-editor", '<h5 class="h4 text-primary"><stro
 const faq = easyFromHtml("faq", faqHtml);
 check("a FAQ page: its opening text", faq.intro, "<h3><strong>פתיחה</strong></h3>");
 check("a FAQ page: its topics, in order", faq.faq, [{ q: "שאלות כלליות", a: "<p><strong>שאלה?</strong></p><p>תשובה</p>" }, { q: "מזוודות", a: "<p>משקל</p>" }]);
-check("what staff saved wins over the imported text, field by field", readEasy("faq", { intro: "<p>חדש</p>" }, faqHtml), { body: "", heading: "", intro: "<p>חדש</p>", faq: faq.faq });
-check("a save keeps the fields of the layout only, and drops a topic without a title", cleanEasy("faq", { body: "<p>לא שייך</p>", heading: "כותרת", intro: " <p>פתיחה</p> ", faq: [{ q: " נושא ", a: "<p>א</p><script>x</script>" }, { q: "", a: "<p>ריק</p>" }] }), {
-  body: "",
-  heading: "",
-  intro: "<p>פתיחה</p>",
-  faq: [{ q: "נושא", a: "<p>א</p>" }],
-});
+check("what staff saved wins over the imported text, field by field", readEasy("faq", { intro: "<p>חדש</p>" }, faqHtml), { ...EMPTY_EASY, intro: "<p>חדש</p>", faq: faq.faq });
+check(
+  "a save keeps the fields of the layout only, and drops a topic without a title",
+  cleanEasy("faq", { ...EMPTY_EASY, body: "<p>לא שייך</p>", heading: "כותרת", intro: " <p>פתיחה</p> ", image: "/media/x.jpg", faq: [{ q: " נושא ", a: "<p>א</p><script>x</script>" }, { q: "", a: "<p>ריק</p>" }] }),
+  { ...EMPTY_EASY, intro: "<p>פתיחה</p>", faq: [{ q: "נושא", a: "<p>א</p>" }] },
+);
 check("untouched text compares equal, so nothing is stored", JSON.stringify(cleanEasy("faq", readEasy("faq", undefined, faqHtml))) === JSON.stringify(cleanEasy("faq", faq)), true);
+
+// ---- the imported pages that were still HTML: about, contact, the cancellation form, the blog, the leaders
+check("every about page has the about editor", ["/about/", "/about/our-team/", "/about/a/b/", "/aboutus/"].map(easyLayoutOfPath), ["about", "about", null, null]);
+check("the pages with a plain editor, by address", ["/contact/", "/cancellation-form/", "/mega-blog/", "/מלווי-הקבוצות-שלנו/", "/faq/", "/new-page/"].map(easyLayoutOfPath), ["contact", "form_page", "blog", "leaders", "faq_home", null]);
+const heading = (text: string) => widget("heading", `<h2 class="elementor-heading-title elementor-size-default">${text}</h2>`);
+const aboutHtml = `<div>${heading("סינון אודות")}${heading("מאז 1994")}${widget("text-editor", "<p>אנחנו <strong>מגה</strong></p>")}${widget("image", '<img decoding="async" width="1024" height="683" src="https://newsite.megatr.co.il/wp-content/uploads/2025/12/team-1024x683.jpg" class="attachment-large" alt="הצוות" />')}${heading("הכי חמים במגה פמילי")}</div>`;
+check("an about page: its heading (not a template's), its text and its picture", easyFromHtml("about", aboutHtml), {
+  ...EMPTY_EASY,
+  heading: "מאז 1994",
+  body: "<p>אנחנו <strong>מגה</strong></p>",
+  image: "/media/2025/12/team.jpg",
+  imageAlt: "הצוות",
+});
+check("a picture staff chose replaces the imported one, the rest stays", readEasy("about", { image: "https://cdn.example/new.jpg" }, aboutHtml).image, "https://cdn.example/new.jpg");
+check("a WordPress upload is served from /media/, in its original size", mediaPath("https://newsite.megatr.co.il/wp-content/uploads/2026/07/a%20b-300x200.png"), "/media/2026/07/a b.png");
+const contactHtml = `<div>${heading("לא מצאתם?")}${widget("text-editor", "<p>כתבו לנו</p>")}${heading("טופס")}</div>`;
+check("the contact page: two headings and the opening text", easyFromHtml("contact", contactHtml), { ...EMPTY_EASY, heading: "לא מצאתם?", intro: "<p>כתבו לנו</p>", heading2: "טופס" });
+check("the contact page without headings opens with the words the site prints", easyFromHtml("contact", "").heading2, "כתבו לנו ונמצא חופשה במיוחד בשבילכם");
+const formHtml = `<div>${widget("text-editor", "<p>לפני</p>")}${widget("form", "<form></form>")}${widget("text-editor", "<p>אחרי</p>")}</div>`;
+check("the cancellation page: the text above the form and the text under it", easyFromHtml("form_page", formHtml), { ...EMPTY_EASY, intro: "<p>לפני</p>", after: "<p>אחרי</p>" });
+check("the blog page opens with the words the site prints", easyFromHtml("blog", "").heading, "מגה בלוג - מסביב לעולם עם מגה תיירות");
+const extras = { instructorsPage: { subtitle: ["הכירו את הצוות", "המסור שלנו"], notFoundTitle: "לא מצאתם?", notFoundHtml: '<p class="x">כ-100 מלווים</p>' } };
+check("the leaders page opens with the words the site keeps for it", easyFromHtml("leaders", "", leadersSiteText(extras)), {
+  ...EMPTY_EASY,
+  heading: "הכירו את הצוות המסור שלנו",
+  heading2: "לא מצאתם?",
+  after: "<p>כ-100 מלווים</p>",
+});
+check("no extras row: the leaders page still opens, with the built-in words", easyFromHtml("leaders", "", leadersSiteText(null)).heading2, "לא מצאתם את מה שחיפשתם?");
+check("a save of the leaders page keeps its three fields", cleanEasy("leaders", { ...EMPTY_EASY, heading: " שורה ", heading2: "כותרת", after: "<p>טקסט</p><script>x</script>", body: "<p>לא שייך</p>" }), {
+  ...EMPTY_EASY,
+  heading: "שורה",
+  heading2: "כותרת",
+  after: "<p>טקסט</p>",
+});
+check("the old shop addresses are left out of the list, the home page is not", [PAGE_NOTES["/cart/"]?.retired, PAGE_NOTES["/shop/"]?.retired, PAGE_NOTES["/"]?.retired, PAGE_NOTES["/"]?.href], [true, true, undefined, "/tours/homepage"]);
+
+// ---- reviews picked from a feedback form
+const oldReviews = home.sections.find((s) => s.type === "reviews");
+check("a review typed before stars existed has none, and no mark", oldReviews?.type === "reviews" ? oldReviews.items : null, [{ name: "דנה", text: "מעולה", rating: 0, ref: "" }]);
+const field = (id: number, type: string, position: number, more: Partial<FormReviewField> = {}): FormReviewField => ({ id, type, position, staffOnly: false, reviewScore: false, max: 5, ...more });
+const feedback = formReviewShape([
+  field(59, "long_text", 17),
+  field(5, "short_text", 1, { staffOnly: true }),
+  field(7, "date", 2, { staffOnly: true }),
+  field(9, "short_text", 4),
+  field(18, "rating", 13),
+  field(12, "rating", 7, { reviewScore: true }),
+  field(13, "rating", 8, { reviewScore: true }),
+]);
+check("a form's review: the customer's name, the first scored rating, the free text, the staff's trip fields", [feedback.name?.id, feedback.rating?.id, feedback.texts.map((f) => f.id), feedback.trip.map((f) => f.id)], [9, 12, [59], [5, 7]]);
+check("a form with no free text cannot feed reviews", canFeedReviews(formReviewShape([field(1, "short_text", 0), field(2, "rating", 1)])), false);
+const answer = { id: 301, submittedAt: "2026-08-20T10:00:00Z", answers: { "5": "רונית", "7": "2026-08-12", "9": " משפחת כהן ", "12": 5, "13": 3, "59": " היה מושלם\nתודה " } };
+check("an answer as a review", formReviewCandidate(feedback, answer, "BBC-124"), { id: 301, name: "משפחת כהן", text: "היה מושלם\nתודה", rating: 5, date: "2026-08-20T10:00:00Z", trip: "BBC-124 · רונית · 12.08.2026" });
+check("stars alone are not a review", formReviewCandidate(feedback, { ...answer, answers: { ...answer.answers, "59": "  " } }), null);
+check("a rating on another scale is read out of 5", formReviewCandidate(formReviewShape([field(1, "long_text", 0), field(2, "rating", 1, { max: 10 })]), { id: 1, submittedAt: "", answers: { "1": "טוב", "2": 8 } })?.rating, 4);
+check("no stars given = no stars shown", formReviewCandidate(feedback, { ...answer, answers: { "59": "טקסט" } })?.rating, 0);
+check("a picked review carries the mark of its answer", formReviewRef(301), "form:301");
+const picked = { id: "rev", type: "reviews", visible: true, title: "", items: [{ name: "משפחת כהן", text: "היה מושלם", rating: 5, ref: "form:301" }] };
+check("a picked review is saved with its stars and its mark", homeSchema.safeParse({ sections: [picked] }).success, true);
+check("six stars are refused", homeSchema.safeParse({ sections: [{ ...picked, items: [{ ...picked.items[0], rating: 6 }] }] }).success, false);
 
 if (failed) {
   console.error(`\n${failed} FAILED`);

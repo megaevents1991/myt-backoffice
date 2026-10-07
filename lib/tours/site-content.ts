@@ -317,6 +317,10 @@ const reasonsSection = z.object({
   items: z.array(z.object({ icon: image, title: text(120), text: text(400) })).max(8),
 });
 
+/** How many reviews one section holds, and how long one may be. */
+export const REVIEWS_MAX = 24;
+export const REVIEW_TEXT_MAX = 3000;
+
 const reviewsSection = z.object({
   ...base,
   type: z.literal("reviews"),
@@ -325,7 +329,18 @@ const reviewsSection = z.object({
   source: z.enum(["manual", "google"]).default("manual"),
   minRating: z.number().int().min(1).max(5).default(4),
   limit: z.number().int().min(1).max(24).default(8),
-  items: z.array(z.object({ name: text(120), text: z.string().trim().min(1, "A review needs a text").max(3000) })).max(24),
+  items: z
+    .array(
+      z.object({
+        name: text(120),
+        text: z.string().trim().min(1, "A review needs a text").max(REVIEW_TEXT_MAX),
+        /** Stars the site draws above the text; 0 = none. */
+        rating: z.number().int().min(0).max(5).default(0),
+        /** Where a picked review came from ("form:<answer id>"), so the picker can mark it as already taken; "" = typed here. */
+        ref: text(80).default(""),
+      }),
+    )
+    .max(REVIEWS_MAX),
 });
 
 const sliderSection = z.object({

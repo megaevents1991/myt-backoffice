@@ -73,7 +73,7 @@ import {
   readTermSections,
   termSectionsSchema,
 } from "@/lib/tours/site-content";
-import { EASY_PAGE_LAYOUTS, EMPTY_EASY, cleanEasy, readEasy, type EasyLayout } from "@/lib/tours/wp-html";
+import { EMPTY_EASY, PAGE_NOTES, cleanEasy, easyLayoutOfPath, leadersSiteText, readEasy, type EasyLayout, type EasyText } from "@/lib/tours/wp-html";
 import { siteEditorOptions } from "@/lib/tours/site-options";
 import { todayIso } from "@/lib/tours/format";
 
@@ -384,7 +384,7 @@ const cmsPageSchema = z.object({
   seoTitle: shortText,
   seoDescription: shortText,
   isActive: z.boolean(),
-  // the plain text of an imported legal / FAQ page (lib/tours/wp-html.ts); ignored on every other page
+  // the plain text of an imported page (lib/tours/wp-html.ts); ignored on a page made in the backoffice
   easy: z.object({
     body: htmlText,
     heading: z.string().trim().max(300),
@@ -392,6 +392,10 @@ const cmsPageSchema = z.object({
     faq: z
       .array(z.object({ q: z.string().trim().max(300, "A topic title is up to 300 characters"), a: z.string().max(120_000, "The text of a topic is too long") }))
       .max(60, "Up to 60 topics on a page"),
+    heading2: z.string().trim().max(300),
+    after: z.string().max(40_000, "The closing text is too long"),
+    image: imagePath,
+    imageAlt: z.string().trim().max(300),
   }),
   footerTiles: footerTilesSchema,
 });
@@ -1845,10 +1849,21 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
 }
 
 // ================================================================ content pages
-/** An imported legal / FAQ page has a plain editor for its text; a page made in the backoffice never needs one. */
-const easyLayoutOf = (row: TourCmsPage): EasyLayout | null => (isCreatedPage(row) ? null : (EASY_PAGE_LAYOUTS[row.path] ?? null));
+/** An imported page has a plain editor for its words; a page or post made in the backoffice never needs one. */
+const easyLayoutOf = (row: TourCmsPage): EasyLayout | null => (isCreatedPage(row) || row.kind !== "page" ? null : easyLayoutOfPath(row.path));
 
-const cmsPageEditor = (company: Company, row: TourCmsPage): Omit<CmsPageEditorData, "options"> => {
+/**
+ * The words the site keeps outside a page's own markup, which its plain editor opens with:
+ * the leaders page reads them from the "extras" row of the import. Every other page has none.
+ */
+async function siteTextOf(company: Company, row: TourCmsPage): Promise<Partial<EasyText>> {
+  if (easyLayoutOf(row) !== "leaders") return {};
+  const { data, error } = await toursDb().from("cms_pages").select("data").eq("company_id", company.id).eq("kind", "extras").limit(1);
+  if (error) throw error;
+  return leadersSiteText(data?.[0]?.data);
+}
+
+const cmsPageEditor = (company: Company, row: TourCmsPage, siteText: Partial<EasyText>): Omit<CmsPageEditorData, "options"> => {
   // the import left the SEO fields inside `data`; the column wins once it is filled
   const column = asObject(row.seo);
   const original = asObject(asObject(row.data).seo);
@@ -1873,11 +1888,12 @@ const cmsPageEditor = (company: Company, row: TourCmsPage): Omit<CmsPageEditorDa
       seoTitle: pick("title"),
       seoDescription: pick("description"),
       isActive: row.is_active,
-      easy: easyLayout ? readEasy(easyLayout, data.easy, row.content_html ?? "") : EMPTY_EASY,
+      easy: easyLayout ? readEasy(easyLayout, data.easy, row.content_html ?? "", siteText) : EMPTY_EASY,
       footerTiles: readFooterTiles(data.footerTiles),
     },
     created: isCreatedPage(row),
     easyLayout,
+    note: isCreatedPage(row) || row.kind !== "page" ? null : (PAGE_NOTES[row.path] ?? null),
     siteUrl: company.siteUrl,
   };
 };
@@ -1949,7 +1965,10 @@ export async function listTourCmsPages(): Promise<ActionResult<CmsPageListRow[]>
     const noContent = new Set(empty.map((r) => r.id));
     return {
       success: true,
-      data: pages.map((r) => ({
+      // an address of the old WordPress shop is not a page of the site: the list leaves it out
+      data: pages
+        .filter((r) => !(r.kind === "page" && PAGE_NOTES[r.path]?.retired))
+        .map((r) => ({
         id: r.id,
         kind: r.kind,
         path: r.path,
@@ -1969,7 +1988,8 @@ export async function getTourCmsPage(id: string): Promise<ActionResult<CmsPageEd
     const { company } = await requireCompany("tours");
     const row = await cmsPageRow(company, id);
     if (!row) return { success: false, error: "Page not found" };
-    return { success: true, data: { ...cmsPageEditor(company, row), options: await siteEditorOptions(company) } };
+    const [siteText, options] = await Promise.all([siteTextOf(company, row), siteEditorOptions(company)]);
+    return { success: true, data: { ...cmsPageEditor(company, row, siteText), options } };
   } catch (e) {
     return failure(e, "Failed to load the page");
   }
@@ -2047,7 +2067,8 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     const input = parsed.data;
     const before = await cmsPageRow(company, id);
     if (!before) return { success: false, error: "Page not found" };
-    const shown = cmsPageEditor(company, before).form;
+    const siteText = await siteTextOf(company, before);
+    const shown = cmsPageEditor(company, before, siteText).form;
 
     const patch = new RowPatch();
     patch.set("title", before.title, input.title, "title");
@@ -2058,8 +2079,8 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     patch.setData("image", dataText(stored, "image"), input.image);
     // the day only; an untouched WordPress timestamp is left as it is
     if (input.date !== dataText(stored, "date").slice(0, 10)) patch.setData("date", dataText(stored, "date"), input.date);
-    // The plain text of an imported legal / FAQ page. Text staff never changed compares equal to what
-    // the page came with, so nothing is stored and the site keeps reading the imported markup.
+    // The plain text of an imported page. Text staff never changed compares equal to what the page
+    // came with, so nothing is stored and the site keeps reading the imported markup (or its own words).
     const easyLayout = easyLayoutOf(before);
     if (easyLayout) {
       const easy = cleanEasy(easyLayout, input.easy);
@@ -2111,7 +2132,7 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     }
     const fresh = await cmsPageRow(company, id);
     if (!fresh) return { success: false, error: "Page not found" };
-    return { success: true, data: { ...cmsPageEditor(company, fresh), options: await siteEditorOptions(company) } };
+    return { success: true, data: { ...cmsPageEditor(company, fresh, siteText), options: await siteEditorOptions(company) } };
   } catch (e) {
     return failure(e, "Failed to save the page");
   }

@@ -16,12 +16,15 @@ import { requireCompany, type Company } from "@/lib/company";
 import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
 import { actionFail, plainFail, type ActionResult } from "@/lib/tours/action-kit";
-import { companyAudit, invalidInput } from "@/lib/tours/company-kit";
+import { asObject, companyAudit, invalidInput } from "@/lib/tours/company-kit";
 import { siteEditorOptions, type SiteEditorOptions } from "@/lib/tours/site-options";
 import {
   SITE_DOC_KEYS,
   SITE_DOC_SCHEMAS,
+  footerTilesSchema,
+  readFooterTiles,
   readSiteDoc,
+  type FooterTiles,
   type SiteDocKey,
   type SiteDocs,
 } from "@/lib/tours/site-content";
@@ -96,6 +99,81 @@ export async function getChromeEditor(): Promise<
     return { success: true, data: { general, header, footer, options } };
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the header and footer");
+  }
+}
+
+// ---------------------------------------------------------------- one tour's page
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** What a tour's page does with the tiles above the footer, as its card on the tour screen holds it. */
+export interface TourFooterTilesData {
+  form: FooterTiles;
+  /** Whether tour pages show the main tiles when a tour says nothing of its own (Header & Footer > Footer). */
+  shownOnTours: boolean;
+  options: SiteEditorOptions;
+  siteUrl: string | null;
+}
+
+async function tourRow(company: Company, id: string) {
+  if (!UUID.test(id)) return null;
+  const { data, error } = await toursDb().from("packages").select("id, name, data").eq("company_id", company.id).eq("id", id).is("is_deleted", null).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function tourFooterTiles(company: Company, row: { data: Json }): Promise<TourFooterTilesData> {
+  const [footer, options] = await Promise.all([docRow(company, "footer"), siteEditorOptions(company)]);
+  return {
+    form: readFooterTiles(asObject(row.data).footerTiles),
+    shownOnTours: readSiteDoc("footer", footer?.data ?? null).discoverOn.tours,
+    options,
+    siteUrl: company.siteUrl,
+  };
+}
+
+/** The tiles above the footer on one tour's page: follow the rule of tour pages, always show, hide, or its own tiles. */
+export async function getTourFooterTiles(packageId: string): Promise<ActionResult<TourFooterTilesData>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const row = await tourRow(company, packageId);
+    if (!row) return plainFail("Tour not found");
+    return { success: true, data: await tourFooterTiles(company, row) };
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to load the tiles of this tour");
+  }
+}
+
+/**
+ * Saves one tour's choice. It lives in the tour's `data` (tours.packages.data.footerTiles),
+ * next to what the import left there; only that key is written.
+ */
+export async function saveTourFooterTiles(packageId: string, form: unknown): Promise<ActionResult<TourFooterTilesData>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const parsed = footerTilesSchema.safeParse(form);
+    if (!parsed.success) return invalidInput(parsed.error);
+    const row = await tourRow(company, packageId);
+    if (!row) return plainFail("Tour not found");
+    const before = readFooterTiles(asObject(row.data).footerTiles);
+    const next = parsed.data;
+    if (JSON.stringify(before) !== JSON.stringify(next)) {
+      const data = { ...asObject(row.data), footerTiles: next } as unknown as Json;
+      const { error } = await toursDb().from("packages").update({ data }).eq("company_id", company.id).eq("id", packageId);
+      if (error) throw error;
+      await logAudit({
+        action: "update",
+        entityType: "tours_package",
+        entityId: packageId,
+        changes: { footerTiles: { from: before.mode, to: next.mode } },
+        metadata: { ...companyAudit(company), name: row.name, tiles: next.items.length },
+      });
+      revalidatePath(`/tours/packages/${packageId}`);
+    }
+    const fresh = await tourRow(company, packageId);
+    if (!fresh) return plainFail("Tour not found");
+    return { success: true, data: await tourFooterTiles(company, fresh) };
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to save the tiles of this tour");
   }
 }
 
