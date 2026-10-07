@@ -34,6 +34,16 @@ const MAX_ROWS = 10000;
 
 const NOT_CANCELLED = '("Cancelled","Deleted")';
 
+/** The two columns the route itself reads; the rest of a row passes through untouched. */
+type EventRow = { show_date: string; event_id: string };
+
+/** The order every set is read in - kept when two sets are merged into one list. */
+function byShowDateThenId(a: EventRow, b: EventRow): number {
+  if (a.show_date !== b.show_date) return a.show_date < b.show_date ? -1 : 1;
+  if (a.event_id === b.event_id) return 0;
+  return a.event_id < b.event_id ? -1 : 1;
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -71,80 +81,104 @@ export async function GET(request: NextRequest) {
     const leadIso = new Date(now + MIN_LEAD_MS).toISOString();
     const freshIso = new Date(now - STALE_SYNC_MS).toISOString();
 
-    // "Has tickets as far as we know": a measured count above zero, or an
-    // unknown count on a row the sync touched recently. A *stale* null means
-    // the event dropped out of the feed entirely — nothing to buy either way.
-    const hasTickets = `ticket_count.gt.0,and(ticket_count.is.null,last_synced.gte.${freshIso})`;
-    const noTickets = `ticket_count.eq.0,and(ticket_count.is.null,last_synced.lt.${freshIso})`;
-
-    const filtered = (count?: "exact") => {
-      let q = count
-        ? supabase.from("tixstock_events").select(EVENT_COLUMNS, { count })
-        : supabase.from("tixstock_events").select(EVENT_COLUMNS);
-
-      q = q.not("event_status", "in", NOT_CANCELLED).gte("show_date", leadIso);
+    // Future, not cancelled, matching the search - what every read below starts from.
+    const upcoming = () => {
+      let q = supabase
+        .from("tixstock_events")
+        .select(EVENT_COLUMNS)
+        .not("event_status", "in", NOT_CANCELLED)
+        .gte("show_date", leadIso);
       if (query) q = q.ilike("event_name", `%${query}%`);
-      if (withTickets) q = q.or(hasTickets);
       return q;
     };
+    type Upcoming = ReturnType<typeof upcoming>;
 
-    // Counted rather than returned, so the checkbox's "(N)" stays honest
-    // without shipping the rows it is describing.
-    let emptyQuery = supabase
-      .from("tixstock_events")
-      .select("event_id", { count: "exact", head: true })
-      .not("event_status", "in", NOT_CANCELLED)
-      .gte("show_date", leadIso)
-      .or(noTickets);
-    if (query) emptyQuery = emptyQuery.ilike("event_name", `%${query}%`);
-
-    // Supabase caps a single REST response at PAGE_SIZE rows, so this is still
-    // paged - but over the ~8k rows that survive the filters instead of ~50k,
-    // and the exact count is taken once instead of once per page (each one is
-    // a seq scan, and 50 of them is what tripped the statement timeout).
+    // Supabase caps a single REST response at PAGE_SIZE rows, so a set is read
+    // in pages, one after the other - each page re-runs the filter and sort,
+    // and eight of those at once died on the statement timeout (2026-08-29).
     //
-    // Sequential on purpose. Every page re-runs the filter and sort, so firing
-    // the ranges concurrently instead just puts 8 of those on the database at
-    // once - each one then takes longer than it did alone and they all die on
-    // the statement timeout. Measured 2026-08-29: sequential 4.4s, parallel
-    // 500 "canceling statement due to statement timeout".
-    const readPages = async () => {
-      const rows: unknown[] = [];
-      let total = 0;
+    // No exact count anywhere: counting is a read of the whole 116 MB table,
+    // and that is what answered 500 on 2026-10-06. A page that comes back
+    // short says the set ended; reaching MAX_ROWS says it did not.
+    const readSet = async (scope: (q: Upcoming) => Upcoming) => {
+      const rows: EventRow[] = [];
 
       for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
-        const first = from === 0;
         // event_id breaks ties. Hundreds of events share a show_date, and with
         // a non-total order Postgres is free to place tied rows differently
         // per query - so an OFFSET page could repeat a row the previous page
         // already returned and drop another entirely. Measured: 7 duplicates
         // and 7 missing rows across 8 pages before the tiebreaker.
-        const { data, error, count } = await filtered(first ? "exact" : undefined)
+        const { data, error } = await scope(upcoming())
           .order("show_date", { ascending: true })
           .order("event_id", { ascending: true })
           .range(from, from + PAGE_SIZE - 1);
 
         if (error) throw error;
-        if (first) total = count ?? 0;
-        if (data) rows.push(...data);
-        if (!data || data.length < PAGE_SIZE) break;
+        const page = (data ?? []) as unknown as EventRow[];
+        rows.push(...page);
+        if (page.length < PAGE_SIZE) return { rows, truncated: false };
       }
 
-      return { rows, total };
+      return { rows, truncated: true };
     };
 
-    const [{ rows, total }, empties] = await Promise.all([readPages(), emptyQuery]);
+    if (!withTickets) {
+      const all = await readSet((q) => q);
+      return NextResponse.json({
+        success: true,
+        data: all.rows,
+        meta: {
+          total: all.rows.length,
+          returned: all.rows.length,
+          // The screen counts the ticketless rows it is showing by itself.
+          hiddenEmpty: 0,
+          truncated: all.truncated,
+        },
+      });
+    }
 
-    if (empties.error) throw empties.error;
+    // "Has tickets as far as we know" is two sets, read as two plain filters
+    // so each walks its own small index (migration 20261007062437) - written
+    // as one OR, neither index applies and every page scans the whole table:
+    //   - a measured count above zero (~8,600 of 105,000 rows);
+    //   - an unknown count on a row the sync touched recently. A *stale* null
+    //     means the event dropped out of the feed - nothing to buy either way.
+    const noTickets = `ticket_count.eq.0,and(ticket_count.is.null,last_synced.lt.${freshIso})`;
+
+    // The checkbox's "(~N)": what the filter hides, without shipping the rows.
+    // The planner's estimate, not a count - 90,000 rows cannot be counted
+    // without reading them. Measured 2026-10-07: 89,535 against 89,543 real.
+    let emptyQuery = supabase
+      .from("tixstock_events")
+      .select("event_id", { count: "planned", head: true })
+      .not("event_status", "in", NOT_CANCELLED)
+      .gte("show_date", leadIso)
+      .or(noTickets);
+    if (query) emptyQuery = emptyQuery.ilike("event_name", `%${query}%`);
+
+    const [sellable, unknown, empties] = await Promise.all([
+      readSet((q) => q.gt("ticket_count", 0)),
+      readSet((q) => q.is("ticket_count", null).gte("last_synced", freshIso)),
+      emptyQuery,
+    ]);
+
+    // The number is a label, never a reason to fail the list.
+    if (empties.error) {
+      console.error("TixStock hidden-events estimate failed:", JSON.stringify(empties.error));
+    }
+
+    const merged = [...sellable.rows, ...unknown.rows].sort(byShowDateThenId);
+    const rows = merged.slice(0, MAX_ROWS);
 
     return NextResponse.json({
       success: true,
       data: rows,
       meta: {
-        total,
+        total: rows.length,
         returned: rows.length,
         hiddenEmpty: empties.count ?? 0,
-        truncated: rows.length < total,
+        truncated: sellable.truncated || unknown.truncated || merged.length > MAX_ROWS,
       },
     });
   } catch (error) {

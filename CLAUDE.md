@@ -552,6 +552,21 @@ own key, e.g. `allLinkRows` in `event-taxonomy-actions.ts` - the events table sh
 until then, and `/price-changes` lost its oldest 284 log rows). (2) server actions of one tab run one at a time - see
 "Opening a task = ONE action" under Tasks Hub. DB statistics: `npx supabase inspect db
 table-stats|index-stats|db-stats|bloat|vacuum-stats|outliers --linked` (read-only, no password needed).
+**Load check 2026-10-07 (migration `20261007062437`).** Measured, not inferred: the database runs on Supabase's smallest
+machine (Micro: 2 shared cores, 1 GB). CPU ~3%, 12 of 60 connections, 0 deadlocks - but swap was 74% full and moving,
+because the data (906 MB: `hotels` 617 MB, `tixstock_events` 134 MB) does not fit in memory; a cold read of a simple
+query can take 5-8 s. Vercel showed no load problem (0 throttles, ~0 timeouts). What the check changed:
+(1) **TixStock browse (`app/api/tixstock/events/route.ts`) takes no exact count** - a count reads the whole 116 MB table
+(90,000 of its 105,000 rows are future events with zero tickets) and that is what answered 500 on 06.10. "Has tickets" is
+read as TWO plain filters (`ticket_count > 0`; `ticket_count is null` + synced lately), each through its own partial
+index, and merged in the route - **written as one OR neither index applies**. The checkbox's "(~N)" is the planner's
+estimate (`count: "planned"`, 89,535 against 89,543 real). (2) **No index on a column a sync rewrites on every row**
+(`updated_at`, `last_synced`): it turns the sync's cheap (HOT) updates into full ones. (3) Supabase's advisor: the 17
+"Security Definer View" errors on `c_megafamily.*` are the tours site's public window (fixed columns, one company,
+published rows, read-only) - **do not flip them to `security_invoker`**, anon has no grant on `tours.*` and the site
+answers 503. `rls_enabled_no_policy` on every table is the design (service role only). Read the notes with
+`GET https://api.supabase.com/v1/projects/<ref>/advisors/{performance|security}` and run read-only SQL with
+`POST .../database/query` `{ query, read_only: true }` (both take `SUPABASE_ACCESS_TOKEN`).
 
 ### Directory Layout
 

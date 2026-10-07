@@ -344,8 +344,9 @@ export function TixStockEventsContent() {
     return filteredEvents.slice(start, start + eventPageSize);
   }, [filteredEvents, eventPage]);
 
-  // While hiding them the rows aren't loaded at all, so the count comes from
-  // the server; while showing them we can count what's on screen.
+  // While hiding them the rows aren't loaded at all, so the number comes from
+  // the server - an estimate, shown with "~"; while showing them we can count
+  // what's on screen.
   const emptyLabelCount = hideNoTickets ? hiddenEmpty : knownEmptyCount;
 
   // Multi-team batch (spec 2026-09-02, section 5): the selection ACCUMULATES
@@ -594,7 +595,8 @@ export function TixStockEventsContent() {
                   onCheckedChange={(v) => setHideNoTickets(v === true)}
                 />
                 Hide events without tickets
-                {emptyLabelCount > 0 && ` (${emptyLabelCount})`}
+                {emptyLabelCount > 0 &&
+                  ` (${hideNoTickets ? "~" : ""}${emptyLabelCount.toLocaleString()})`}
               </label>
 
               {truncated && (

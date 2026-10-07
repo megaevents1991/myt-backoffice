@@ -10,9 +10,9 @@ const NO_CACHE_HEADERS = {
 
 export interface TixStockEventsResult {
   events: TixStockEventDB[];
-  /** Rows matching the filters, before the server's row ceiling is applied. */
+  /** Rows returned. With `truncated` there are more - the server no longer counts them. */
   total: number;
-  /** Ticketless events the server filtered out - kept for the UI's "(N)". */
+  /** Ticketless events the server filtered out, for the UI's "(~N)" - an estimate, not a count. */
   hiddenEmpty: number;
   /** True when the server hit its row ceiling and the list is incomplete. */
   truncated: boolean;
