@@ -561,10 +561,21 @@ query can take 5-8 s. Vercel showed no load problem (0 throttles, ~0 timeouts). 
 read as TWO plain filters (`ticket_count > 0`; `ticket_count is null` + synced lately), each through its own partial
 index, and merged in the route - **written as one OR neither index applies**. The checkbox's "(~N)" is the planner's
 estimate (`count: "planned"`, 89,535 against 89,543 real). (2) **No index on a column a sync rewrites on every row**
-(`updated_at`, `last_synced`): it turns the sync's cheap (HOT) updates into full ones. (3) Supabase's advisor: the 17
-"Security Definer View" errors on `c_megafamily.*` are the tours site's public window (fixed columns, one company,
-published rows, read-only) - **do not flip them to `security_invoker`**, anon has no grant on `tours.*` and the site
-answers 503. `rls_enabled_no_policy` on every table is the design (service role only). Read the notes with
+(`updated_at`, `last_synced`): it turns the sync's cheap (HOT) updates into full ones. (3) **A company's site reads its schema through its OWN role (migrations `20261007080556` + `20261007081943`).** The
+views of `c_<slug>` are SECURITY DEFINER on purpose (one company, published rows, fixed columns; some values are derived
+from tables the site must never read - seats left from bookings, flights from our inventory). While `anon` could read
+them the advisor raised each as a critical "Security Definer View", and its fix - `security_invoker = on`, pressed by
+hand three times - cut the site off ("permission denied for table ..."; mega-family's build-time sync then keeps its old
+JSON WITHOUT an error) until the next tours migration re-created the views; that loop is why the errors "kept coming
+back". Now: role `site_megafamily` (a Supabase secret key with `secret_jwt_template {"role": "site_megafamily"}`, in the
+site's Vercel env as `CONTENT_SUPABASE_SITE_KEY`) reads the schema; `anon` / `authenticated` have nothing there, so the
+advisor is silent and the public anon key no longer reads the views or calls `submit_lead` / `site_booking`. **The rule
+lives in ONE function, `public.secure_company_schema(schema)`, which `reprovision_all_companies()` runs after every
+provision and which fails if anything in the schema is still open.** `provision_company()` is re-pasted whole into each
+tours migration and still carries `grant ... to anon` lines - dead letters, the wrapper's secure step has the last word;
+so **always call `reprovision_all_companies()`, never a bare `provision_company()`**, and **never set `security_invoker`
+on a site view**. A new company's site: mint its key the same way (role `site_<slug>`). `rls_enabled_no_policy` on
+every table is the design (service role only). Read the notes with
 `GET https://api.supabase.com/v1/projects/<ref>/advisors/{performance|security}` and run read-only SQL with
 `POST .../database/query` `{ query, read_only: true }` (both take `SUPABASE_ACCESS_TOKEN`).
 
