@@ -18,7 +18,15 @@ import {
   type ReadyActionResult,
   type ReadyCardData,
 } from "@/lib/actions/ready-package-actions";
-import { SWAP_ALL, SWAP_NONE, anySwap, pairSizes, targetSizes } from "@/lib/ready-package";
+import {
+  SWAP_ALL,
+  SWAP_NONE,
+  anySwap,
+  formatSizeNotes,
+  pairSizes,
+  parseSizeNotes,
+  targetSizes,
+} from "@/lib/ready-package";
 import { ReadyPackageBuilder } from "./ready-package-builder";
 import {
   READY_PIECES,
@@ -183,6 +191,10 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
   const saveSwap = (swap: ReadySwap) => run("Saving", () => setReadyPackageOptions(eventId, { swap }));
 
   const view = data?.view ?? null;
+  // What the last pricing said per party size. A note that names no size (the event
+  // is gone) is shown as it is.
+  const sizeNotes = parseSizeNotes(view?.refreshNote);
+  const noteLines = (formatSizeNotes(sizeNotes) ?? view?.refreshNote ?? "").split(" | ").filter(Boolean);
 
   /** Which party sizes are sold. A size that was just switched on is priced right away. */
   const saveSizes = async (next: number[]) => {
@@ -266,6 +278,7 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
                   const sold = view.allowed.includes(n);
                   const priced = view.sizes.includes(n);
                   const built = n === view.defaultTravelers;
+                  const said = sizeNotes.find((l) => l.size === n)?.text;
                   return (
                     <button
                       key={n}
@@ -279,8 +292,8 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
                           : !sold
                             ? "Not sold - click to sell this party size"
                             : priced
-                              ? "On the site - click to stop selling this party size"
-                              : "Sold, but its flight, hotel or ticket could not be priced for this size - not on the site until it can"
+                              ? `On the site${said ? ` (${said})` : ""} - click to stop selling this party size`
+                              : `Not on the site: ${said ?? "its flight, hotel or ticket could not be priced for this size"}`
                       }
                       className={cn(
                         "h-8 min-w-8 rounded-md border px-2 text-sm font-medium tabular-nums transition-colors disabled:cursor-default",
@@ -306,7 +319,7 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
               </div>
               <p className="text-sm text-muted-foreground">
                 Click a number to sell, or stop selling, that party size - the site&apos;s picker offers only these.
-                Green = on the site. Amber = sold, but the flight, hotel or ticket could not be priced for it, so it
+                Green = on the site. Amber = sold, but one of its pieces cannot serve that party (the reason is listed below), so it
                 is not offered until it can. Crossed out = not sold. The size it was built for (
                 {view.defaultTravelers}) always stays.
               </p>
@@ -318,7 +331,14 @@ export function ReadyPackageCard({ eventId }: { eventId: number }) {
                 )}
                 <span className="text-muted-foreground">priced {when(view.refreshedAt)}</span>
               </div>
-              {view.refreshNote && <p className="text-sm text-muted-foreground">{view.refreshNote}</p>}
+              {/* One line per reason: why a size is not on the site, or what changed on one that is. */}
+              {noteLines.length > 0 && (
+                <ul className="space-y-0.5 text-sm text-muted-foreground" data-ready-size-notes>
+                  {noteLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="space-y-2 rounded-md border p-3">

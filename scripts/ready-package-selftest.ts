@@ -23,6 +23,9 @@ import {
   readyPreviewUrl,
   specFromComposition,
   summarizeRefresh,
+  parseSizeNotes,
+  formatSizeNotes,
+  roomSplitWithoutTriple,
   swapOf,
   targetSizes,
   variantSizes,
@@ -280,6 +283,82 @@ assert.equal(
   "broken",
   "the default size missing = the package cannot open",
 );
+
+// ── why a size is not offered: one line per size, and it survives the next call ──────
+// The card prices ONE size per call. Each call used to rewrite the note with its own
+// failures alone, so the last size priced (9) erased what 3, 5, 6, 7 and 8 had said.
+assert.deepEqual(parseSizeNotes("3 travellers: no room | 5, 6 travellers: stock"), [
+  { size: 3, text: "no room" },
+  { size: 5, text: "stock" },
+  { size: 6, text: "stock" },
+]);
+assert.deepEqual(parseSizeNotes(null), []);
+assert.deepEqual(parseSizeNotes("the event is gone or has passed"), [], "a line with no size is not a size's line");
+assert.equal(
+  formatSizeNotes([{ size: 9, text: "stock" }, { size: 5, text: "stock" }, { size: 3, text: "no room" }]),
+  "3 travellers: no room | 5, 9 travellers: stock",
+  "sizes that share a reason share a line",
+);
+assert.equal(formatSizeNotes([]), null);
+const allNine = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const afterNine = summarizeRefresh({
+  defaultTravelers: 2,
+  maxTravelers: 9,
+  sizes: allNine,
+  built: [1, 2, 4],
+  failures: [{ size: 9, reason: "stock" }],
+  handled: [9],
+  previousNote: "3 travellers: no room | 5 travellers: stock",
+});
+assert.equal(afterNine.note, "3 travellers: no room | 5, 9 travellers: stock", "a call about 9 keeps what was said about 3 and 5");
+assert.equal(afterNine.status, "partial");
+assert.equal(
+  summarizeRefresh({
+    defaultTravelers: 2,
+    maxTravelers: 9,
+    sizes: allNine,
+    built: [1, 2, 3, 4],
+    failures: [],
+    notes: [{ size: 3, text: "two rooms" }],
+    handled: [3],
+    previousNote: "3 travellers: no room | 5 travellers: stock",
+  }).note,
+  "3 travellers: two rooms | 5 travellers: stock",
+  "a size that was visited again says only what this visit found",
+);
+assert.equal(
+  summarizeRefresh({
+    defaultTravelers: 2,
+    maxTravelers: 9,
+    sizes: [2, 4],
+    built: [2, 4],
+    failures: [],
+    handled: [2],
+    previousNote: "3 travellers: no room | 5 travellers: stock",
+  }).note,
+  null,
+  "a size that is no longer sold has nothing to say",
+);
+// a whole-package refresh (no `handled`) starts from a clean page, as before
+assert.equal(
+  summarizeRefresh({
+    defaultTravelers: 2,
+    maxTravelers: 4,
+    built: [1, 2, 4],
+    failures: [{ size: 3, reason: "no room" }],
+    previousNote: "4 travellers: old",
+  }).note,
+  "3 travellers: no room",
+);
+
+// ── a hotel with no room for three: the party sleeps in rooms of two and a single ──────
+assert.deepEqual(roomSplitWithoutTriple(3), [2, 1]);
+assert.deepEqual(roomSplitWithoutTriple(5), [2, 2, 1]);
+assert.deepEqual(roomSplitWithoutTriple(7), [2, 2, 2, 1]);
+assert.deepEqual(roomSplitWithoutTriple(9), [2, 2, 2, 2, 1]);
+for (const even of [1, 2, 4, 6, 8]) {
+  assert.equal(roomSplitWithoutTriple(even), null, `${even}: the usual split has no room of three`);
+}
 
 assert.equal(
   readyPreviewUrl("https://www.mega-events.co.il/", 812, "abc-123"),

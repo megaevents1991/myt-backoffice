@@ -388,10 +388,62 @@ export function variantSizes(
 
 export type SizeFailure = { size: number; reason: string };
 
+/** What the last visit to one party size had to say: why it is not sold, or what changed on it. */
+export type SizeNote = { size: number; text: string };
+
+const SIZE_LINE = /^(\d+(?:,\s*\d+)*) travellers: (.+)$/;
+
+/**
+ * `refresh_note` back into one line per size ("5, 6 travellers: x" names two sizes).
+ * A line that names no size is not a size's line and is dropped.
+ */
+export function parseSizeNotes(note: string | null | undefined): SizeNote[] {
+  const out: SizeNote[] = [];
+  for (const line of String(note ?? "").split(" | ")) {
+    const m = SIZE_LINE.exec(line.trim());
+    if (!m) continue;
+    for (const raw of m[1].split(",")) {
+      const size = Number(raw.trim());
+      if (Number.isInteger(size) && size >= 1) out.push({ size, text: m[2].trim() });
+    }
+  }
+  return out;
+}
+
+/** The note as it is stored: sizes that say the same thing share a line, smallest size first. */
+export function formatSizeNotes(lines: SizeNote[]): string | null {
+  const byText = new Map<string, number[]>();
+  for (const line of [...lines].sort((a, b) => a.size - b.size)) {
+    const sizes = byText.get(line.text) ?? [];
+    if (!sizes.includes(line.size)) sizes.push(line.size);
+    byText.set(line.text, sizes);
+  }
+  const out = [...byText.entries()].map(([text, sizes]) => `${sizes.join(", ")} travellers: ${text}`);
+  return out.length > 0 ? out.join(" | ").slice(0, 900) : null;
+}
+
+/**
+ * The same party in rooms of two and ONE single - for a hotel that has no room for three.
+ * A party is first searched the usual way (rooms of two, a trio takes one room of three);
+ * null when that split holds no room of three, so there is nothing else to try.
+ */
+export function roomSplitWithoutTriple(travelers: number): number[] | null {
+  const n = Math.floor(Number(travelers));
+  if (!Number.isInteger(n) || n < 3 || n % 2 === 0) return null;
+  return [...new Array<number>((n - 1) / 2).fill(2), 1];
+}
+
 /**
  * ok = every size up to the max is priced; partial = some are missing (the
  * picker simply does not offer them); broken = the DEFAULT size is missing, so
  * the package cannot open at all.
+ *
+ * The note holds one line per size. The editor's card prices ONE size per call, so a
+ * call says which sizes it visited (`handled`) and hands in the stored note: what
+ * earlier calls said about the OTHER sizes is kept. Until 2026-10-07 every call
+ * rewrote the note with its own failures alone - after a full pass only the last
+ * size (9) had a reason and nobody could tell why 3 or 5 were not on the site.
+ * Without `handled` (a whole-package refresh) the note is this run's alone.
  */
 export function summarizeRefresh(input: {
   defaultTravelers: number;
@@ -400,16 +452,23 @@ export function summarizeRefresh(input: {
   sizes?: number[];
   built: number[];
   failures: SizeFailure[];
-  notes?: string[];
+  /** What changed on a size that WAS priced (another room, two rooms instead of one). */
+  notes?: SizeNote[];
+  handled?: number[];
+  previousNote?: string | null;
 }): { status: ReadyRefreshStatus; note: string | null } {
   const wanted = input.sizes ?? targetSizes(input.maxTravelers);
   const built = new Set(input.built);
   const missing = wanted.filter((n) => !built.has(n));
-  const lines = [
-    ...input.failures.map((f) => `${f.size} travellers: ${f.reason}`),
+  const fresh: SizeNote[] = [
+    ...input.failures.map((f) => ({ size: f.size, text: f.reason })),
     ...(input.notes ?? []),
   ];
-  const note = lines.length > 0 ? lines.join(" | ").slice(0, 900) : null;
+  const visited = new Set([...(input.handled ?? []), ...fresh.map((l) => l.size)]);
+  const kept = input.handled
+    ? parseSizeNotes(input.previousNote).filter((l) => !visited.has(l.size) && wanted.includes(l.size))
+    : [];
+  const note = formatSizeNotes([...kept, ...fresh]);
   if (!built.has(input.defaultTravelers)) return { status: "broken", note };
   return { status: missing.length > 0 ? "partial" : "ok", note };
 }

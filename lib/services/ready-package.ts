@@ -50,6 +50,7 @@ import {
   pickSuggestedHotel,
   readyMode,
   readyPreviewUrl,
+  roomSplitWithoutTriple,
   specFromComposition,
   summarizeRefresh,
   swapOf,
@@ -59,6 +60,7 @@ import {
   type FlightLike,
   type HotelLike,
   type SizeFailure,
+  type SizeNote,
 } from "@/lib/ready-package";
 import type { Json } from "@/types/database.types";
 import type { EventTicket } from "@/types/app.types";
@@ -344,22 +346,39 @@ async function resolveHotel(
   if (spec.checkin <= new Date().toISOString().slice(0, 10)) {
     return { ok: false, reason: "the hotel's check-in has passed", transient: false };
   }
-  const res = await searchHotelsViaMain({
-    eventId: event.id,
-    checkin: spec.checkin,
-    checkout: spec.checkout,
-    travelers: pax,
-    // Narrows the serp result to this hotel before the result cap and the info call.
-    query: spec.hotelId,
-  });
+  const search = (rooms?: number[]) =>
+    searchHotelsViaMain({
+      eventId: event.id,
+      checkin: spec.checkin,
+      checkout: spec.checkout,
+      travelers: pax,
+      rooms,
+      // Narrows the serp result to this hotel before the result cap and the info call.
+      query: spec.hotelId,
+    });
+  const res = await search();
   if (!res.ok) return { ok: false, reason: "the hotel search failed", transient: true };
-  const match = matchHotelOption(spec, res.options);
+  let match = matchHotelOption(spec, res.options);
+  let roomsNote: string | undefined;
+  // An odd party is searched with one room of three, and many hotels have none (a
+  // twin-room hotel answered nothing for 3, so the package never sold to three although
+  // the same hotel sleeps them in two rooms). Same hotel, same promised meal, the party
+  // in rooms of two and a single - at what those rooms really cost.
+  const split = match ? null : roomSplitWithoutTriple(pax);
+  if (split) {
+    const again = await search(split);
+    if (!again.ok) return { ok: false, reason: "the hotel search failed", transient: true };
+    match = matchHotelOption(spec, again.options);
+    if (match) roomsNote = `${split.length} rooms (${split.join(" + ")}) - the hotel has no room for three`;
+  }
   if (!match) {
+    const tried = split ? " (one room of three and rooms of two + a single were both tried)" : "";
     return {
       ok: false,
-      reason: hasMeal(spec.meal)
-        ? "the hotel has no room with a meal on offer for this party size"
-        : "the hotel is not on offer for this party size",
+      reason:
+        (hasMeal(spec.meal)
+          ? "the hotel has no room with a meal on offer for this party size"
+          : "the hotel is not on offer for this party size") + tried,
       transient: false,
     };
   }
@@ -368,7 +387,7 @@ async function resolveHotel(
     info: match.option.snapshot as JsonObject,
     skipped: false,
     perPerson: match.option.price / pax,
-    note: match.note,
+    note: [roomsNote, match.note].filter(Boolean).join("; ") || undefined,
     image: match.option.image,
   };
 }
@@ -387,7 +406,10 @@ function resolveTicket(
   // Our own stock: seats we hold. The live count of what was sold is main's
   // (lib/own-stock.ts at booking); this only refuses a size the stock could never seat.
   if (ticket.supplier === "static" && typeof ticket.stock === "number" && ticket.stock < pax) {
-    return { ok: false, reason: "our own ticket stock is smaller than this party size" };
+    return {
+      ok: false,
+      reason: `the ticket is our own stock of ${ticket.stock} seats - a bigger party cannot sit on it (raise the stock, or build the package on a supplier's ticket)`,
+    };
   }
   return { ok: true, ticket };
 }
@@ -515,7 +537,9 @@ export async function refreshHousePackage(
   }
 
   const failures: SizeFailure[] = [];
-  const notes: string[] = [];
+  const notes: SizeNote[] = [];
+  // The sizes THIS call visited - what the stored note says about the others is kept.
+  let handled: number[] | undefined;
   let cut = false;
 
   const event = await loadReadyEvent(pkg.event_id);
@@ -531,15 +555,17 @@ export async function refreshHousePackage(
     const ordered = [...new Set(wanted)].sort(
       (a, b) => Number(b === defaultSize) - Number(a === defaultSize) || a - b,
     );
+    handled = [];
     for (const size of ordered) {
       if (opts.deadline && Date.now() > opts.deadline) {
         cut = true;
         break;
       }
+      handled.push(size);
       const result = await buildVariant(event, spec, size);
       if (result.ok) {
         variants[String(size)] = result.variant;
-        if (result.variant.note) notes.push(`${size} travellers: ${result.variant.note}`);
+        if (result.variant.note) notes.push({ size, text: result.variant.note });
         continue;
       }
       const kept = result.transient && !!variants[String(size)];
@@ -559,6 +585,8 @@ export async function refreshHousePackage(
     built: sizes,
     failures,
     notes,
+    handled,
+    previousNote: pkg.refresh_note,
   });
   const defaultVariant = variants[String(defaultSize)] ?? null;
   const pricePerPerson = defaultVariant?.price_per_person ?? null;

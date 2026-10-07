@@ -111,6 +111,11 @@ export async function searchHotelsViaMain(input: {
   travelers: number;
   /** Optional hotel-name filter, matched against the FULL serp result. */
   query?: string;
+  /**
+   * An explicit room split (adults per room) instead of the usual one - e.g. [2, 1]
+   * for a trio in a hotel that has no room for three. Its sum is the party.
+   */
+  rooms?: number[];
 }): Promise<LiveHotelSearchResult> {
   const eventId = Number(input.eventId);
   if (!Number.isFinite(eventId)) return { ok: false, error: "אירוע לא תקין" };
@@ -145,11 +150,18 @@ export async function searchHotelsViaMain(input: {
   // getRoomParams seeding the party from the traveler count.
   const travelers = Math.max(1, Math.min(20, Math.floor(input.travelers || 1)));
   const guests: { adults: number; children: number[] }[] = [];
-  let left = travelers;
-  while (left > 0) {
-    const take = left === 3 ? 3 : Math.min(2, left);
-    guests.push({ adults: take, children: [] });
-    left -= take;
+  const asked = (input.rooms ?? [])
+    .map((n) => Math.floor(Number(n)))
+    .filter((n) => n >= 1 && n <= 4);
+  if (asked.length > 0) {
+    for (const adults of asked) guests.push({ adults, children: [] });
+  } else {
+    let left = travelers;
+    while (left > 0) {
+      const take = left === 3 ? 3 : Math.min(2, left);
+      guests.push({ adults: take, children: [] });
+      left -= take;
+    }
   }
 
   try {
