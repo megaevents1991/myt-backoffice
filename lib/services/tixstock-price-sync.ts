@@ -2,8 +2,10 @@ import { supabase } from "@/lib/supabase-server";
 import type { Event, EventTicket } from "@/types/app.types";
 import { multiCurrencyExchangeRateService } from "@/lib/services/ticket-price-sync";
 import {
+  isSupplierCurrency,
   normalizeSupplierCategory,
   supplierEventId,
+  supplierPriceUsd,
   ticketSupplier,
 } from "@/lib/suppliers";
 import {
@@ -103,6 +105,32 @@ interface TixStockFeed {
   tickets: TixStockFeedTicket[];
   /** `meta.categories` names - sold-out ones included. null = the feed did not say. */
   categories: string[] | null;
+}
+
+/**
+ * What a TixStock listing sells for on the site, in USD: `supplierPriceUsd`
+ * (lib/suppliers.ts) - (cost + currency markup) -> USD -> +3.5% -> rounded up,
+ * the formula main prices the same listing with when a customer opens the event
+ * (main `lib/supplier-pricing.ts`). A currency we hold no markup for is priced
+ * as USD, as this sync always did.
+ *
+ * Until 2026-10-07 this sync had its own formula: no 3.5%, rounded to nearest.
+ * So four times a day it wrote every TixStock price 3.5% UNDER what the order
+ * page charges, and the first visitor to each event wrote it back up (main's
+ * live-ticket route stores the price it shows). In one day: 340 such rewrites,
+ * 859 of their 1,418 ticket prices moved by exactly 3.5% - a card and a feed
+ * price that dipped between the two, and a cache refresh on the site for each.
+ * Refresh the rates before a batch (the run does, at its start).
+ */
+export function tixstockTicketPriceUsd(cost: number, currency: string): number {
+  return supplierPriceUsd(
+    cost,
+    isSupplierCurrency(currency) ? currency : "USD",
+    (amount, cur) =>
+      cur === "USD"
+        ? amount
+        : multiCurrencyExchangeRateService.convertToUSD(amount, cur),
+  );
 }
 
 /** Also read by the price advisor's supplier quote (price-alternatives.ts) - one feed reader, not two. */
@@ -326,29 +354,7 @@ export async function syncTixStockPrices(
               "GBP"
             ).toUpperCase();
 
-            // Convert to USD with the same markup used elsewhere in the app
-            let priceInUSD: number;
-            if (currency === "GBP") {
-              priceInUSD = multiCurrencyExchangeRateService.convertToUSD(
-                rawPrice + 35,
-                "GBP",
-              );
-            } else if (currency === "EUR") {
-              priceInUSD = multiCurrencyExchangeRateService.convertToUSD(
-                rawPrice + 40,
-                "EUR",
-              );
-            } else if (currency === "ILS") {
-              priceInUSD = multiCurrencyExchangeRateService.convertToUSD(
-                rawPrice + 150,
-                "ILS",
-              );
-            } else {
-              // Already USD or unknown - apply flat markup
-              priceInUSD = rawPrice + 40;
-            }
-
-            const newPrice = Math.round(priceInUSD);
+            const newPrice = tixstockTicketPriceUsd(rawPrice, currency);
 
             if (newPrice > 0 && newPrice !== ticket.price) {
               console.log(

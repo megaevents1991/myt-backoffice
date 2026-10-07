@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import {
   carriesToAnotherFixture,
+  isSupplierCurrency,
   normalizeSupplierCategory,
   supplierEventId,
   supplierPriceUsd,
@@ -23,6 +24,8 @@ import {
   suggestZoneTiered,
 } from "../lib/venue-maps/zone-suggest";
 import { toLiveTicketsCategory } from "../lib/services/livetickets-offers";
+import { tixstockTicketPriceUsd } from "../lib/services/tixstock-price-sync";
+import { multiCurrencyExchangeRateService } from "../lib/services/ticket-price-sync";
 import { hasOwnStock, holdsSeats, ownSeating, seatsHeldByTicket, stockLeft } from "../lib/own-stock";
 import { isFixtureDrawing } from "../lib/services/venue-memory";
 import { applyLiveTicketsStock } from "../lib/services/attached-suppliers-sync";
@@ -90,6 +93,28 @@ assert.equal(normalizeSupplierCategory("Categoría 2 Fondo"), "categoria 2 fondo
 // (239.2 + 40) EUR at 1.15 → 321.08 → +3.5% → 332.3 → 333
 assert.equal(supplierPriceUsd(239.2, "EUR", (amount) => amount * 1.15), 333);
 assert.equal(supplierPriceUsd(100, "USD", (amount) => amount), 145);
+
+// The TixStock price sync writes THIS price (tixstockTicketPriceUsd), the one main charges
+// for the same listing. Its old formula left out the 3.5% and rounded to nearest: a £100
+// listing at 1.33 came out 180, and the first visitor rewrote it to 186 - four times a day.
+assert.equal(supplierPriceUsd(100, "GBP", (amount) => amount * 1.33), 186); // 135 * 1.33 * 1.035 = 185.83
+assert.equal(isSupplierCurrency("GBP"), true);
+assert.equal(isSupplierCurrency("CHF"), false);
+{
+  const rates = multiCurrencyExchangeRateService.getAllExchangeRates();
+  for (const currency of ["GBP", "EUR", "ILS"] as const) {
+    for (const cost of [0.5, 49.99, 100, 239.2, 1234.56]) {
+      assert.equal(
+        tixstockTicketPriceUsd(cost, currency),
+        supplierPriceUsd(cost, currency, (amount) => amount * rates[currency].rate),
+        `${cost} ${currency}`,
+      );
+    }
+  }
+  assert.equal(tixstockTicketPriceUsd(100, "USD"), 145);
+  // A currency we hold no markup for is priced as USD, as the sync always did.
+  assert.equal(tixstockTicketPriceUsd(100, "CHF"), 145);
+}
 
 /* zones on the drawing */
 const svg =

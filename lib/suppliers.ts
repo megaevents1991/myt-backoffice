@@ -121,6 +121,10 @@ export const SUPPLIER_CURRENCY_MARKUP = {
 } as const;
 export type SupplierCurrency = keyof typeof SUPPLIER_CURRENCY_MARKUP;
 
+/** A currency we hold a ticket markup for (same guard as main `lib/supplier-pricing.ts`). */
+export const isSupplierCurrency = (value: string): value is SupplierCurrency =>
+  value in SUPPLIER_CURRENCY_MARKUP;
+
 const CARD_FEE_MULTIPLIER = 1.035;
 
 /**

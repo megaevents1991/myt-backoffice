@@ -18,6 +18,13 @@ every customer price is wrong.
   (`skipped`/`error` rows too) and the run rotates least-recently-visited first.
   `?dry_run=1` = full report, zero writes.
 - **Per-currency markups applied here:** USD +$40, EUR +€40, GBP +£35, ILS +₪150.
+- **A live supplier's ticket price is ONE formula, the same in both repos:** `supplierPriceUsd`
+  (`lib/suppliers.ts`) = (cost + currency markup) → USD → **+3.5% → rounded UP**, identical to
+  main's `lib/supplier-pricing.ts`. Main prices the same listing with it when a customer opens
+  the event and WRITES that price back to `events.tickets_and_rates`. The TixStock price sync
+  uses it too (`tixstockTicketPriceUsd`, 2026-10-07): with its own formula (no 3.5%, rounded to
+  nearest) it wrote every price 3.5% under what the order page charges, four times a day, and
+  the first visitor wrote it back. Never price a TixStock ticket with an inline formula.
 - The **main app** then adds the final `NEXT_PUBLIC_MARKUP` (175 ILS) and converts USD→ILS.
   Do NOT add that 175 here, and do NOT convert currencies that the main app will convert.
 - **Sports ticket prices are in cents** in storage - the main app divides by 100. Store

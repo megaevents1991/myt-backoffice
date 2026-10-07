@@ -586,7 +586,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       steps: [
         {
           label: t("Provider ticket price", "מחיר כרטיס מהספק"),
-          sub: t("+$40 USD / +€40 / +£35 / +₪150 at sync", "+$40 / +€40 / +£35 / +₪150 בסנכרון"),
+          sub: t(
+            "+$40 USD / +€40 / +£35 / +₪150 at sync; a TixStock ticket then +3.5%, rounded up - the price the site charges",
+            "+$40 / +€40 / +£35 / +₪150 בסנכרון; בכרטיס TixStock עוד 3.5% ועיגול למעלה - המחיר שהאתר גובה",
+          ),
         },
         {
           label: t("Base flight price", "מחיר בסיס טיסה"),
