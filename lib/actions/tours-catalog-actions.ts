@@ -45,24 +45,33 @@ const nameField = z
   .max(300, "The name is too long (300 characters at most)");
 
 // ================================================================ categories & tags
-const termInput = z.object({ kind: z.string(), name: nameField });
+const termInput = z.object({ kind: z.string(), name: nameField, worldSlug: z.string().trim().max(200).optional() });
 
-type TermRow = { id: string; kind: string; slug: string; name: string; position: number; is_active: boolean };
-const termOf = (row: Pick<TermRow, "id" | "kind" | "name" | "is_active">) => ({
-  id: row.id,
-  kind: row.kind,
-  name: row.name,
-  isActive: row.is_active,
-});
+type TermRow = { id: string; kind: string; slug: string; name: string; position: number; is_active: boolean; data: unknown };
+/** The term as the tour editors pick it (TermOption): an audience with its address, a tag with its world. */
+const termOf = (row: Pick<TermRow, "id" | "kind" | "slug" | "name" | "is_active" | "data">) => {
+  const world = row.kind === "tags" && row.data && typeof row.data === "object" ? (row.data as Record<string, unknown>).worldSlug : null;
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    isActive: row.is_active,
+    ...(row.kind === "audiences" ? { slug: row.slug } : {}),
+    ...(typeof world === "string" && world ? { worldSlug: world } : {}),
+  };
+};
 
 /**
  * A category or tag of a kind a tour can be attached to. Same name in the same
- * kind (any case) -> the existing one.
+ * kind (any case) -> the existing one. A new tag can be born inside a world
+ * (`worldSlug`, that audience's slug): the tour editor shows it under that
+ * world from then on (Alon, 07.10.2026).
  */
 export async function createTourTerm(input: {
   kind: string;
   name: string;
-}): Promise<ActionResult<{ id: string; kind: string; name: string; isActive: boolean }>> {
+  worldSlug?: string;
+}): Promise<ActionResult<{ id: string; kind: string; name: string; isActive: boolean; slug?: string; worldSlug?: string }>> {
   try {
     const { company } = await requireCompany("tours");
     const parsed = termInput.safeParse(input);
@@ -79,11 +88,25 @@ export async function createTourTerm(input: {
     const label = TERM_KIND_LABELS[kind];
     const db = toursDb();
 
+    // a tag's world must be one of the company's worlds - anything else is dropped, not stored
+    let worldSlug = "";
+    if (kind === "tags" && parsed.data.worldSlug) {
+      const { data: world, error: worldError } = await db
+        .from("terms")
+        .select("slug")
+        .eq("company_id", company.id)
+        .eq("kind", "audiences")
+        .eq("slug", parsed.data.worldSlug)
+        .maybeSingle();
+      if (worldError) throw worldError;
+      worldSlug = world?.slug ?? "";
+    }
+
     for (let attempt = 1; ; attempt++) {
       const rows: TermRow[] = await fetchAll((from, to) =>
         db
           .from("terms")
-          .select("id, kind, slug, name, position, is_active")
+          .select("id, kind, slug, name, position, is_active, data")
           .eq("company_id", company.id)
           .eq("kind", kind)
           .order("id")
@@ -105,9 +128,9 @@ export async function createTourTerm(input: {
           position: nextPosition(rows),
           is_active: true,
           legacy_id: null,
-          data: {},
+          data: worldSlug ? { worldSlug } : {},
         })
-        .select("id, kind, name, is_active")
+        .select("id, kind, slug, name, is_active, data")
         .single();
       if (error?.code === UNIQUE_VIOLATION) {
         if (attempt < INSERT_ATTEMPTS) continue;
@@ -119,7 +142,7 @@ export async function createTourTerm(input: {
         action: "create",
         entityType: "tours_term",
         entityId: inserted.id,
-        changes: { kind, name, slug },
+        changes: { kind, name, slug, ...(worldSlug ? { worldSlug } : {}) },
         metadata: { ...companyAudit(company), kind, slug },
       });
       revalidatePath("/tours/terms");
@@ -127,6 +150,78 @@ export async function createTourTerm(input: {
     }
   } catch (e) {
     return failure(e, "Failed to add the category or tag");
+  }
+}
+
+const tagsWorldInput = z.object({ termIds: z.array(z.string().uuid()).min(1).max(100), worldSlug: z.string().trim().min(1).max(200) });
+
+/**
+ * Tags that belong to no world join one - the tour editor's "Add the ticked
+ * tags to <world>" (Alon, 07.10.2026: pull a tag that is not linked into the
+ * world). A tag that already has a world is left where it is; moving a tag
+ * between worlds is done on the tag itself (Categories & Tags). Answers the
+ * tags as they are now.
+ */
+export async function addTagsToWorld(input: {
+  termIds: string[];
+  worldSlug: string;
+}): Promise<ActionResult<{ id: string; kind: string; name: string; isActive: boolean; worldSlug?: string }[]>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const parsed = tagsWorldInput.safeParse(input);
+    if (!parsed.success) return invalidInput(parsed.error);
+    const { termIds, worldSlug } = parsed.data;
+    const db = toursDb();
+
+    const { data: world, error: worldError } = await db
+      .from("terms")
+      .select("slug, name")
+      .eq("company_id", company.id)
+      .eq("kind", "audiences")
+      .eq("slug", worldSlug)
+      .maybeSingle();
+    if (worldError) throw worldError;
+    if (!world) return plainFail("The world was not found");
+
+    const { data: rows, error } = await db
+      .from("terms")
+      .select("id, kind, slug, name, is_active, data")
+      .eq("company_id", company.id)
+      .eq("kind", "tags")
+      .in("id", termIds);
+    if (error) throw error;
+
+    const out: ReturnType<typeof termOf>[] = [];
+    const joined: string[] = [];
+    for (const row of rows ?? []) {
+      const data = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? (row.data as Record<string, unknown>) : {};
+      if (typeof data.worldSlug === "string" && data.worldSlug) {
+        out.push(termOf(row));
+        continue;
+      }
+      const next = { ...data, worldSlug: world.slug };
+      const { error: updateError } = await db
+        .from("terms")
+        .update({ data: next as never })
+        .eq("company_id", company.id)
+        .eq("id", row.id);
+      if (updateError) throw updateError;
+      joined.push(row.name);
+      out.push(termOf({ ...row, data: next }));
+    }
+    if (joined.length) {
+      await logAudit({
+        action: "update",
+        entityType: "tours_term",
+        entityId: null,
+        changes: { worldSlug: world.slug, tags: joined },
+        metadata: { ...companyAudit(company), kind: "tags", bulk: true },
+      });
+      revalidatePath("/tours/terms");
+    }
+    return actionOk(out, joined.length ? undefined : "Every one of these tags already belongs to a world - nothing changed.");
+  } catch (e) {
+    return failure(e, "Failed to add the tags to the world");
   }
 }
 

@@ -7,6 +7,16 @@
 import assert from "node:assert/strict";
 import { flightMoveDecision, subTourFromFlight, type FlightDates } from "@/lib/tours/sub-tours";
 import {
+  cleanPointsHtml,
+  filledDays,
+  htmlOfPoints,
+  isBlankDay,
+  pointsFromAnyHtml,
+  pointsOfHtml,
+  withTourDays,
+  type ItineraryDay,
+} from "@/components/tours/content/shared";
+import {
   adjustNumber,
   BAR_MITZVAH_LABEL,
   cellValue,
@@ -180,3 +190,33 @@ assert.deepEqual(rowChanges(loaded, { r1: { seasonId: "s1", barMitzvah: true, gi
 ]);
 
 console.log("tour-setup selftest: pricing sheet OK");
+
+// ---------------------------------------------------------------- the tour page: days and points (Alon, 07.10.2026)
+const day = (n: number, title = ""): ItineraryDay => ({ n, title, subtitle: "", html: "" });
+// "6 days" opens six blank days; a filled itinerary gets only the numbers it lacks, in their place
+assert.deepEqual(withTourDays([], 6).map((d) => d.n), [1, 2, 3, 4, 5, 6]);
+assert.deepEqual(withTourDays([day(1, "a"), day(3, "c")], 4).map((d) => `${d.n}${d.title}`), ["1a", "2", "3c", "4"]);
+const whole = [day(1, "a"), day(2, "b")];
+assert.equal(withTourDays(whole, 2), whole, "nothing to add: the same array, so the editor does not re-render or turn dirty");
+assert.equal(withTourDays(whole, null), whole);
+// a shorter tour drops the blank days past its length, never a written one
+assert.deepEqual(withTourDays([day(1, "a"), day(2), day(3), day(4, "z")], 2).map((d) => `${d.n}${d.title}`), ["1a", "2", "4z"]);
+// a blank day is never saved; a picture alone is content
+assert.equal(filledDays([day(1, "a"), day(2), { n: 3, title: "", subtitle: "", html: "<p>&nbsp;</p>" }]).length, 1);
+assert.equal(isBlankDay({ n: 1, title: "", subtitle: "", html: "", image: "/media/x.jpg" }), false);
+// "Additional info" as points: a plain list both ways, anything else stays HTML
+assert.deepEqual(pointsOfHtml(""), []);
+assert.deepEqual(pointsOfHtml("<ul><li>a &amp; b</li><li>c</li></ul>"), ["a & b", "c"]);
+assert.equal(pointsOfHtml("<p>hello</p>"), null);
+assert.equal(pointsOfHtml("<ul><li><strong>a</strong></li></ul>"), null);
+assert.equal(pointsOfHtml("<p>x</p><ul><li>a</li></ul>"), null);
+assert.deepEqual(pointsOfHtml(htmlOfPoints(["a b ", "", "<x>"])), ["a b ", "", "<x>"], "typing keeps its spaces and an empty new point");
+assert.equal(htmlOfPoints([]), "");
+assert.deepEqual(pointsOfHtml("<ul><li>a &#8211; b &ndash; c&#x5d0;</li></ul>"), ["a – b – cא"], "WordPress entities are read as text");
+assert.equal(pointsOfHtml("<ul><li>a &copy; b</li></ul>"), null, "an entity we cannot write back keeps the HTML editor");
+assert.deepEqual(pointsFromAnyHtml("<p>one</p><p>two<br>three</p><ul><li><b>four</b></li></ul>"), ["one", "two", "three", "four"]);
+assert.equal(cleanPointsHtml("<ul><li> a </li><li></li></ul>"), "<ul><li>a</li></ul>");
+assert.equal(cleanPointsHtml("<ul><li></li></ul>"), "", "a list of empty points is no text at all");
+assert.equal(cleanPointsHtml("<p>x</p>"), "<p>x</p>");
+
+console.log("tour-setup selftest: itinerary days and points OK");

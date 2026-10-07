@@ -201,6 +201,8 @@ export default function NewOfflineFlightSeriesPage() {
       .then((mode) => {
         setIsTours(mode.tours);
         if (!mode.tours) return;
+        // A tours company sells organized tours: the sub-tours are made unless staff untick it (Alon, 07.10.2026).
+        setOrganized((current) => ({ ...current, on: true }));
         getTourCodes()
           .then((res) =>
             res.success
@@ -577,6 +579,11 @@ export default function NewOfflineFlightSeriesPage() {
                 value={template.price}
                 onChange={(e) => set("price", e.target.value)}
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {isTours
+                  ? "What a seat is sold for. A tour is sold by its own price list (Tours > Departures > Prices), so this does not reach the customer - 0 is fine."
+                  : "What a seat is sold for - the flight part of the customer's price."}
+              </p>
             </div>
             <div>
               <Label>Seats per flight (ORG)</Label>
@@ -764,6 +771,10 @@ export default function NewOfflineFlightSeriesPage() {
                 value={template.cost_price}
                 onChange={(e) => set("cost_price", e.target.value)}
               />
+              <p className="mt-1 text-xs text-muted-foreground">
+                What we pay the supplier for a seat, in the cost currency. Staff only - never shown to a customer.
+                {isTours && " It shows beside each date's prices (Departures > Prices, Flight cost), so the margin is in sight."}
+              </p>
             </div>
             <div>
               <Label>Cost currency</Label>
@@ -824,6 +835,27 @@ export default function NewOfflineFlightSeriesPage() {
               onSelect={(selected) => setDates(selected ?? [])}
               className="rounded-md border"
             />
+            {dates.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm text-muted-foreground">Picked:</span>
+                {[...dates]
+                  .sort((a, b) => a.getTime() - b.getTime())
+                  .map((date) => (
+                    <button
+                      key={toIsoDate(date)}
+                      type="button"
+                      title="Remove this date"
+                      onClick={() => setDates((prev) => prev.filter((d) => toIsoDate(d) !== toIsoDate(date)))}
+                      className="rounded-md border bg-primary/5 px-2 py-0.5 text-xs font-medium tabular-nums hover:border-destructive hover:text-destructive"
+                    >
+                      {pad(date.getDate())}.{pad(date.getMonth() + 1)}.{String(date.getFullYear()).slice(2)} ×
+                    </button>
+                  ))}
+                <Button type="button" variant="ghost" size="sm" onClick={() => setDates([])}>
+                  Clear all
+                </Button>
+              </div>
+            )}
             <div className="flex items-end gap-4">
               <div>
                 <Label>Number of days</Label>
@@ -839,6 +871,10 @@ export default function NewOfflineFlightSeriesPage() {
                 {dates.length} date(s) selected → {dates.length} flight(s)
               </span>
             </div>
+            <p className="text-xs text-muted-foreground">
+              The return flight leaves this many days after the departure: 6 = out on the 1st, back on the 7th (6
+              nights). Click a marked day again to take it off.
+            </p>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setStep(1)}>
                 Back

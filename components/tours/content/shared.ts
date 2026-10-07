@@ -47,6 +47,81 @@ export interface ItineraryDay {
   image?: string;
 }
 
+/** A day nobody wrote anything in. The editor opens one per day of the tour's length; it is never saved. */
+export const isBlankDay = (day: ItineraryDay): boolean =>
+  !day.title.trim() && !day.subtitle.trim() && !day.image && !day.html.replace(/<[^>]*>|&nbsp;/g, "").trim();
+
+/** The days as they are saved: without the blank ones. */
+export const filledDays = (days: ItineraryDay[]): ItineraryDay[] => days.filter((day) => !isBlankDay(day));
+
+/**
+ * The itinerary with a blank day for every day number of the tour's length it
+ * does not have yet (Alon, 07.10.2026: "6 days" opens six days to fill). Blank
+ * days numbered past the length are dropped. Answers the same array when there
+ * is nothing to add or drop.
+ */
+export function withTourDays(days: ItineraryDay[], count: number | null | undefined): ItineraryDay[] {
+  if (!count || !Number.isInteger(count) || count < 1 || count > 60) return days;
+  const kept = days.filter((day) => !(isBlankDay(day) && day.n > count));
+  const have = new Set(kept.map((day) => day.n));
+  const missing: number[] = [];
+  for (let n = 1; n <= count; n++) if (!have.has(n)) missing.push(n);
+  if (missing.length === 0) return kept.length === days.length ? days : kept;
+  const next = [...kept];
+  const ordered = next.every((day, i) => i === 0 || next[i - 1].n <= day.n);
+  for (const n of missing) {
+    const blank: ItineraryDay = { n, title: "", subtitle: "", html: "" };
+    const at = ordered ? next.findIndex((day) => day.n > n) : -1;
+    if (at === -1) next.push(blank);
+    else next.splice(at, 0, blank);
+  }
+  return next;
+}
+
+// "Additional info" is stored as HTML. A plain list of points is <ul><li> - what the site draws as bullets.
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "–", mdash: "—", hellip: "…" };
+/** Entities as the characters they stand for; one this list does not know is left as it is. */
+const decodeText = (text: string): string =>
+  text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, body: string) => {
+    if (body[0] !== "#") return ENTITIES[body.toLowerCase()] ?? whole;
+    const code = body[1].toLowerCase() === "x" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+    return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  });
+const encodeText = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** The points of an HTML that is a plain list (or empty); null when it is anything else. */
+export function pointsOfHtml(html: string): string[] | null {
+  if (!html.trim()) return [];
+  const items = [...html.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)].map((m) => m[1]);
+  if (items.length === 0 || items.some((item) => /<[a-z]/i.test(item))) return null;
+  const outside = html.replace(/<(ul|ol)\b[^>]*>[\s\S]*?<\/\1>/gi, "").replace(/<[^>]*>|&nbsp;/g, "");
+  if (outside.trim()) return null;
+  const points = items.map(decodeText);
+  // an entity that stayed is one we cannot write back as it was - such a text keeps its HTML editor
+  return points.some((point) => /&[a-z]+;/i.test(point)) ? null : points;
+}
+
+export const htmlOfPoints = (points: string[]): string =>
+  points.length ? `<ul>${points.map((point) => `<li>${encodeText(point)}</li>`).join("")}</ul>` : "";
+
+/** Any HTML as points: a paragraph, a line or a list item each becomes one. Formatting is dropped. */
+export function pointsFromAnyHtml(html: string): string[] {
+  return decodeText(
+    html
+      .replace(/<br\s*\/?>|<\/(p|li|div|h[1-6]|tr)>/gi, "\n")
+      .replace(/<[^>]*>/g, ""),
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** A list of points as it is saved: no empty point. Other HTML passes untouched. */
+export function cleanPointsHtml(html: string): string {
+  const points = pointsOfHtml(html);
+  return points ? htmlOfPoints(points.map((point) => point.trim()).filter(Boolean)) : html;
+}
+
 export interface FaqItem {
   q: string;
   aHtml: string;
@@ -313,6 +388,10 @@ export interface TermOption {
   isActive: boolean;
   /** Set on an audience that is a world with a key: what a tour stores as its world. */
   world?: WorldOption;
+  /** An audience's address - what a tag of that world points at. */
+  slug?: string;
+  /** A tag that belongs to a world: that audience's slug. */
+  worldSlug?: string;
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   applyPastedPrices,
   copyDeparturePrices,
   createDeparture,
+  linkMatchingFlight,
 } from "@/lib/actions/tours-departure-actions";
 import {
   departureCode,
@@ -155,8 +156,21 @@ export function NewDepartureDialog({
       () => createDeparture({ seriesId: chosen.id, start_date: start, end_date: end, season: season || null }),
       (answer) => `Departure ${answer.data.code} created as a draft`,
     );
+    if (!result.success) {
+      setSaving(false);
+      return;
+    }
+    // a flight block that flies on this day is linked at once (Alon, 07.10.2026); none, or several, wait for the card
+    await run(
+      () => linkMatchingFlight(result.data.id),
+      (a) =>
+        a.data.linked
+          ? `Flight #${a.data.linked.flightId} linked to ${result.data.code} (${a.data.linked.seats} seats)`
+          : a.data.matches > 1
+            ? `${a.data.matches} flights fly on this day - choose one in the date's card, Flights tab`
+            : undefined,
+    );
     setSaving(false);
-    if (!result.success) return;
     setStart("");
     setEnd("");
     setSeason("");
@@ -170,7 +184,7 @@ export function NewDepartureDialog({
         <DialogHeader className="pe-8 text-start sm:text-start">
           <DialogTitle>New Departure</DialogTitle>
           <DialogDescription>
-            The departure is created as an unpublished draft. Its code is built from the series code and the departure date; route, currency and capacity come from the series.
+            The departure is created as an unpublished draft. Its code is built from the series code and the departure date; route, currency and capacity come from the series. A flight block that flies out on that day on the same route is linked to it at once.
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">

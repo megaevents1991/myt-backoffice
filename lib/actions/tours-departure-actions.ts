@@ -2027,6 +2027,56 @@ export async function removeFlightAllocation(allocationId: string): Promise<Acti
   }
 }
 
+/**
+ * A date opened by hand on a day a flight block already flies gets that block
+ * without a visit to its card (Alon, 07.10.2026). Only a sure match is taken:
+ * the one open block that leaves on the date's first day, lands and returns in
+ * the date's cities and still has seats both ways. No match, or more than one,
+ * links nothing and says how many there are - the card's Flights tab decides.
+ */
+export async function linkMatchingFlight(
+  departureId: string,
+): Promise<ActionResult<{ linked: { flightId: number; seats: number } | null; matches: number }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const core = await loadCore(company.id, departureId);
+    if (core.is_deleted) throw new UserError("The departure is deleted");
+    const db = toursDb();
+    const [seriesRow, own, candidates, extraRow] = await Promise.all([
+      db.from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", core.series_id).maybeSingle(),
+      db.from("flight_allocations").select("id").eq("company_id", company.id).eq("departure_id", departureId).limit(1),
+      listCandidateBlocks(departureId),
+      db.from("departures").select("capacity, origin_flight_id").eq("company_id", company.id).eq("id", departureId).maybeSingle(),
+    ]);
+    const extra = must(extraRow);
+    if ((must(own) ?? []).length) return ok({ linked: null, matches: 0 });
+    // a vacation package chooses its flights per package - only an organized tour's date takes a block by itself
+    const tour = must(await db.from("packages").select("kind").eq("company_id", company.id).eq("id", core.package_id).maybeSingle());
+    if (tour?.kind !== "organized") return ok({ linked: null, matches: 0 });
+    if (!candidates.success) return candidates;
+    const route = effectiveRoute(core, must(seriesRow));
+    const free = (b: CandidateBlock) => Math.min(b.initial_quantity - b.allocatedOutbound, b.initial_quantity - b.allocatedInbound);
+    const matches = candidates.data.filter(
+      (b) => b.outbound_departure_time.slice(0, 10) === core.start_date && checkBlockFitsDeparture(b, route, "both").ok && free(b) >= 1,
+    );
+    if (matches.length !== 1) return ok({ linked: null, matches: matches.length });
+
+    const block = matches[0];
+    const capacity = extra?.capacity ?? 0;
+    const seats = Math.max(1, Math.min(free(block), capacity > 0 ? capacity : free(block)));
+    const link = await addFlightAllocation(departureId, block.id, seats, "both");
+    if (!link.success) return link;
+    // Same days out and back: the date now follows its flight when the airline moves it, like a sub-tour a
+    // series opened. A date that ends on another day keeps its own dates.
+    if (extra?.origin_flight_id == null && block.inbound_departure_time.slice(0, 10) === core.end_date) {
+      must(await db.from("departures").update({ origin_flight_id: block.id }).eq("company_id", company.id).eq("id", departureId));
+    }
+    return ok({ linked: { flightId: block.id, seats }, matches: 1 }, link.warning);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
 // ---------------------------------------------------------------- create / delete
 /**
  * A new draft departure of a series. The code is the series code + month + day

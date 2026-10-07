@@ -7,7 +7,7 @@
  * picked for each date and keeps the hotels; then it opens the new tour's page,
  * where its Ready for the Site list says what is left.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -41,6 +41,7 @@ import { ImageUrlField, StringListEditor } from "@/components/tours/content/fiel
 import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
 import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { HtmlField } from "@/components/tours/content/html-field";
+import { PointsField } from "@/components/tours/content/points-field";
 import { PackageGeneralFields, PackageTermsPicker } from "@/components/tours/content/package-general-fields";
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
 import { createTour } from "@/lib/actions/tours-tour-actions";
@@ -51,9 +52,12 @@ import { departureCode } from "@/components/tours/departures/departure-utils";
 import { CURRENCIES, PRICE_MATRIX_ROWS } from "@/types/tours.types";
 import type { CardFlight } from "@/components/tours/departures/types";
 import {
+  cleanPointsHtml,
   createProblemsKey,
   EMPTY_PACKAGE_FORM,
+  filledDays,
   slugFromName,
+  withTourDays,
   type ItineraryDay,
   type NewTourContext,
   type NewTourSeries,
@@ -141,6 +145,10 @@ export function CreateTour({ context }: { context: NewTourContext }) {
   /** `${start}|${flightId}` -> seats */
   const [links, setLinks] = useState<Record<string, number>>({});
   const [days, setDays] = useState<ItineraryDay[]>([]);
+  // "6 days" opens six days to fill (Alon, 07.10.2026); a day left blank is not saved
+  useEffect(() => {
+    setDays((current) => withTourDays(current, form.days));
+  }, [form.days]);
   // what is created here joins the lists at once
   const [terms, setTerms] = useState(context.terms);
   const [leaders, setLeaders] = useState(context.leaders);
@@ -219,11 +227,11 @@ export function CreateTour({ context }: { context: NewTourContext }) {
     setSaving(true);
     const starts = new Set(filledDates.map((d) => d.start));
     const result = await createTour({
-      page: form,
+      page: { ...form, extraInfoHtml: cleanPointsHtml(form.extraInfoHtml) },
       series: { ...series, code },
       dates: filledDates,
       prices: parsedPrices.map(({ paxType, position, price }) => ({ paxType, position, price: price ?? null })),
-      itinerary: days,
+      itinerary: filledDays(days),
       flights: Object.entries(links)
         .map(([key, seats]) => {
           const [start, id] = key.split("|");
@@ -576,6 +584,7 @@ export function CreateTour({ context }: { context: NewTourContext }) {
           onChange={setDays}
           siteUrl={siteUrl}
           removeNote="The day will be removed from the itinerary."
+          tourDays={form.days}
         />
       </SectionCard>
 
@@ -584,13 +593,11 @@ export function CreateTour({ context }: { context: NewTourContext }) {
           <StringListEditor label="Included" value={form.included} onChange={(value) => set("included", value)} />
           <StringListEditor label="Not included" value={form.notIncluded} onChange={(value) => set("notIncluded", value)} />
         </div>
-        <HtmlField
+        <PointsField
           label="Additional info"
           value={form.extraInfoHtml}
           onChange={(value) => set("extraInfoHtml", value)}
           siteUrl={siteUrl}
-          rows={6}
-          hint="A plain list (bullets) shows on the site as bullet points."
         />
       </SectionCard>
 
@@ -618,8 +625,11 @@ export function CreateTour({ context }: { context: NewTourContext }) {
         <PackageTermsPicker
           terms={terms}
           value={form.termIds}
+          brand={form.brand}
           onChange={(ids) => set("termIds", ids)}
-          onTermCreated={(term) => setTerms((list) => [...list, term])}
+          onTermCreated={(term) =>
+            setTerms((list) => (list.some((t) => t.id === term.id) ? list.map((t) => (t.id === term.id ? { ...t, ...term } : t)) : [...list, term]))
+          }
         />
       </SectionCard>
 

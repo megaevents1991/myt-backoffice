@@ -45,7 +45,7 @@ import {
 
 const HINTS: Record<SheetView, string> = {
   departures:
-    "Every date with what the site shows on it: season, status, up to 3 labels, the bar / bat mitzvah mark, the double-room price, its discount and gift. A date with no flight yet can go on the site - the site says the flight details will follow.",
+    "Every date with what the site shows on it: season, status, up to 3 labels, the bar / bat mitzvah mark, the double-room price, its discount and gift. A date with no flight yet can go on the site - the site says the flight details will follow; \"Link flight\" in its Flight cell lists the blocks that fly on its days.",
   prices:
     "Prices are per person and final - the flight column is its cost, for the margin.",
   details: "The details of each date. Flight times, baggage and stops are the flight's own (Offline Flights).",
@@ -71,7 +71,7 @@ export function PricingSheet({
   /** The column set the sheet opens on. */
   defaultView?: SheetView;
   /** A code opens the date's card in place (the host mounts it); without it the code is a link to the card. */
-  onOpenCard?: (row: SheetRow) => void;
+  onOpenCard?: (row: SheetRow, tab?: "flights") => void;
   /** Initial filters from the address (the departures screen's links). */
   filters?: { season?: string; status?: string; q?: string };
 }) {
@@ -185,8 +185,20 @@ export function PricingSheet({
             <Ltr className="font-mono font-semibold">{row.flight.airlines}</Ltr> {row.flight.status}
           </span>
         ) : (
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-400" title="The date can be sold; the site says the flight details will follow">
-            No flight yet
+          <span className="flex items-center gap-2 text-xs">
+            <span className="font-medium text-amber-700 dark:text-amber-400" title="The date can be sold; the site says the flight details will follow">
+              No flight yet
+            </span>
+            {/* the card's Flights tab lists the blocks that fly on these days - one click links one */}
+            {onOpenCard ? (
+              <button type="button" className={linkClass} title="Choose the flight block of this date" onClick={() => onOpenCard(row, "flights")}>
+                Link flight
+              </button>
+            ) : (
+              <Link href={departureHref(row.code, "flights")} target="_blank" className={linkClass} title="Choose the flight block of this date">
+                Link flight
+              </Link>
+            )}
           </span>
         );
       case "morePromotions":
@@ -198,7 +210,7 @@ export function PricingSheet({
       default:
         return undefined;
     }
-  }, []);
+  }, [onOpenCard]);
 
   const optionsOf = useCallback((row: SheetRow, col: CoreColumn) => rowOptions(tourById.get(row.packageId), col.key), [tourById]);
 

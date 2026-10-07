@@ -22,7 +22,7 @@ import { setItineraryDates } from "@/lib/actions/tours-season-actions";
 import { Field, Section } from "@/components/tours/ui";
 import { DatesChecklist } from "@/components/tours/content/dates-checklist";
 import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
-import type { ItineraryVariant, PackageEditorData } from "@/components/tours/content/shared";
+import { filledDays, type ItineraryVariant, type PackageEditorData } from "@/components/tours/content/shared";
 import type { BoardRow } from "@/components/tours/departures/types";
 
 interface ItineraryEditorProps {
@@ -38,6 +38,8 @@ interface ItineraryEditorProps {
   rows: BoardRow[] | null;
   /** Dates were moved onto or off a variant. */
   onDatesChanged: () => void;
+  /** The tour's length (its Days field): a blank day waits for each one. */
+  tourDays?: number | null;
 }
 
 /**
@@ -57,6 +59,7 @@ export function ItineraryEditor({
   onVariantsChanged,
   rows,
   onDatesChanged,
+  tourDays,
 }: ItineraryEditorProps) {
   const confirm = useConfirm();
   const run = useActionToast();
@@ -114,7 +117,7 @@ export function ItineraryEditor({
               <span dir="ltr" className="font-mono text-[11px] text-muted-foreground">
                 {variant.key}
               </span>
-              <span className="text-xs text-muted-foreground">{variant.days.length} days</span>
+              <span className="text-xs text-muted-foreground">{filledDays(variant.days).length} days</span>
               {dirtyKeys.includes(variant.key) && (
                 <span className="h-2 w-2 rounded-full bg-amber-500" title="Unsaved changes" />
               )}
@@ -210,6 +213,7 @@ export function ItineraryEditor({
         days={active.days}
         onChange={(days) => patchActive({ days })}
         siteUrl={siteUrl}
+        tourDays={tourDays}
       />
 
       {dialogOpen && (
@@ -310,26 +314,39 @@ function VariantDates({
   );
 }
 
-function NewVariantDialog({
+/**
+ * A new variant, opened as a copy. From the Itinerary tab it proposes the
+ * reversed route; a season opens it with its own name and the same route
+ * (`suggest`), so the season gets its itinerary without leaving its tab.
+ */
+export function NewVariantDialog({
   packageId,
   sources,
   takenKeys,
   onClose,
   onCreated,
+  suggest,
 }: {
   packageId: string;
   sources: ItineraryVariant[];
   takenKeys: string[];
   onClose: () => void;
   onCreated: (data: PackageEditorData, key: string) => void;
+  /** Another starting point than the reversed route: the name and ID offered, on the source's own route. */
+  suggest?: { key: string; label: string };
 }) {
   const first = sources.find((v) => v.key === "main") ?? sources[0];
   const [sourceId, setSourceId] = useState(first?.id ?? "");
-  const [key, setKey] = useState(takenKeys.includes("reverse") ? "" : "reverse");
-  const [label, setLabel] = useState(takenKeys.includes("reverse") ? "" : "מסלול הפוך");
-  // the reversed route lands where the source returns from
-  const [arrivalCity, setArrivalCity] = useState(first?.returnCity ?? "");
-  const [returnCity, setReturnCity] = useState(first?.arrivalCity ?? "");
+  const offered = suggest ?? { key: "reverse", label: "מסלול הפוך" };
+  const [key, setKey] = useState(takenKeys.includes(offered.key) ? "" : offered.key);
+  const [label, setLabel] = useState(takenKeys.includes(offered.key) && !suggest ? "" : offered.label);
+  // the reversed route lands where the source returns from; a season's variant keeps the route
+  const ends = (source: ItineraryVariant | undefined) =>
+    suggest
+      ? { arrival: source?.arrivalCity ?? "", back: source?.returnCity ?? "" }
+      : { arrival: source?.returnCity ?? "", back: source?.arrivalCity ?? "" };
+  const [arrivalCity, setArrivalCity] = useState(ends(first).arrival);
+  const [returnCity, setReturnCity] = useState(ends(first).back);
   const [isPending, startTransition] = useTransition();
   const run = useActionToast();
 
@@ -369,7 +386,9 @@ function NewVariantDialog({
         <DialogHeader className="pt-4 text-start sm:text-start">
           <DialogTitle>New Itinerary Variant</DialogTitle>
           <DialogDescription>
-            The variant opens as a copy of an existing itinerary. After creating it, edit its days for the new direction.
+            {suggest
+              ? "The itinerary opens as a copy of an existing one. After creating it, edit its days for this season - right here, under the season."
+              : "The variant opens as a copy of an existing itinerary. After creating it, edit its days for the new direction."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -380,8 +399,8 @@ function NewVariantDialog({
                 setSourceId(id);
                 const source = sources.find((v) => v.id === id);
                 if (source) {
-                  setArrivalCity(source.returnCity);
-                  setReturnCity(source.arrivalCity);
+                  setArrivalCity(ends(source).arrival);
+                  setReturnCity(ends(source).back);
                 }
               }}
             >
@@ -391,7 +410,7 @@ function NewVariantDialog({
               <SelectContent>
                 {sources.map((v) => (
                   <SelectItem key={v.key} value={v.id ?? v.key}>
-                    {v.label || v.key} ({v.days.length} days)
+                    {v.label || v.key} ({filledDays(v.days).length} days)
                   </SelectItem>
                 ))}
               </SelectContent>

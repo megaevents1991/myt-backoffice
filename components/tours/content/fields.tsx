@@ -10,8 +10,8 @@
  * (lib/actions/tours-media-actions.ts) and the field gets its public URL. The
  * `folder` prop says where in the bucket the editor's uploads are filed.
  */
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ImageOff, Loader2, Plus, Trash2, TriangleAlert, Upload } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type DragEvent as ReactDragEvent, type HTMLAttributes, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, GripVertical, ImageOff, Loader2, Plus, Trash2, TriangleAlert, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,80 @@ export function moved<T>(list: T[], index: number, delta: -1 | 1): T[] {
   [next[index], next[target]] = [next[target], next[index]];
   return next;
 }
+
+/** Move an item of a list to another place; the items between shift by one. */
+export function movedTo<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+/**
+ * Drag a row by its grip onto another row to move it there (Alon, 07.10.2026);
+ * the arrows stay for the keyboard. Spread `row(index)` on the row and put a
+ * <DragGrip {...grip(index)} /> in it; `mark(index)` says on which side of a
+ * row the dragged one will land.
+ */
+export function useDragReorder(onMove: (from: number, to: number) => void) {
+  const [drag, setDrag] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
+  const end = () => {
+    setDrag(null);
+    setOver(null);
+  };
+  return {
+    dragging: drag,
+    grip: (index: number) => ({
+      draggable: true,
+      onDragStart: (event: ReactDragEvent<HTMLElement>) => {
+        event.dataTransfer.effectAllowed = "move";
+        // Firefox starts a drag only when it carries data
+        event.dataTransfer.setData("text/plain", String(index));
+        const row = event.currentTarget.closest("[data-drag-row]");
+        if (row) event.dataTransfer.setDragImage(row, 16, 16);
+        setDrag(index);
+      },
+      onDragEnd: end,
+    }),
+    row: (index: number) => ({
+      "data-drag-row": true,
+      onDragOver: (event: ReactDragEvent<HTMLElement>) => {
+        if (drag === null) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        if (over !== index) setOver(index);
+      },
+      onDrop: (event: ReactDragEvent<HTMLElement>) => {
+        if (drag === null) return;
+        event.preventDefault();
+        if (drag !== index) onMove(drag, index);
+        end();
+      },
+    }),
+    mark: (index: number): "before" | "after" | null =>
+      drag === null || over !== index || drag === index ? null : drag < index ? "after" : "before",
+  };
+}
+
+/** The grip a row is dragged by. */
+export function DragGrip(props: HTMLAttributes<HTMLSpanElement> & { draggable: boolean }) {
+  return (
+    <span
+      {...props}
+      aria-hidden
+      title="Drag to move"
+      className="flex h-8 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground hover:text-foreground active:cursor-grabbing"
+    >
+      <GripVertical className="h-4 w-4" />
+    </span>
+  );
+}
+
+/** The line that shows where a dragged row will land. */
+export const dropMarkClass = (mark: "before" | "after" | null): string =>
+  mark === "before" ? "shadow-[0_-2px_0_0_hsl(var(--primary))]" : mark === "after" ? "shadow-[0_2px_0_0_hsl(var(--primary))]" : "";
 
 /** Up / down / remove - the controls on every row of an ordered list. */
 export function RowControls({
@@ -510,6 +584,7 @@ export function StringListEditor({
   addLabel?: string;
   hint?: ReactNode;
 }) {
+  const drag = useDragReorder((from, to) => onChange(movedTo(value, from, to)));
   return (
     <div className="space-y-2">
       <Label>
@@ -517,7 +592,12 @@ export function StringListEditor({
       </Label>
       <ul className="space-y-1.5">
         {value.map((item, index) => (
-          <li key={index} className="flex items-center gap-2">
+          <li
+            key={index}
+            {...drag.row(index)}
+            className={cn("flex items-center gap-2 rounded-md", drag.dragging === index && "opacity-50", dropMarkClass(drag.mark(index)))}
+          >
+            {value.length > 1 && <DragGrip {...drag.grip(index)} />}
             <Input
               dir="auto"
               aria-label={`${label} ${index + 1}`}

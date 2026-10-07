@@ -2,8 +2,12 @@
 
 /**
  * The days of one itinerary: open a day to edit its route, subtitle, picture
- * and text; reorder, remove, add. One copy for the tour page's Itinerary tab
- * (each variant) and for Create Tour.
+ * and text; reorder (drag the grip, or the arrows), remove, add. One copy for
+ * the tour page's Itinerary tab (each variant), a season's own itinerary and
+ * Create Tour.
+ *
+ * The host opens a blank day for every day of the tour's length
+ * (shared.ts withTourDays); a day left blank is not saved.
  */
 import { useState } from "react";
 import { ChevronDown, Plus } from "lucide-react";
@@ -14,9 +18,9 @@ import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/components/confirm-provider";
 import { cn } from "@/lib/utils";
 import { EmptyLine, Field } from "@/components/tours/ui";
-import { ImageUrlField, RowControls } from "@/components/tours/content/fields";
+import { DragGrip, ImageUrlField, RowControls, dropMarkClass, movedTo, useDragReorder } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
-import type { ItineraryDay } from "@/components/tours/content/shared";
+import { isBlankDay, type ItineraryDay } from "@/components/tours/content/shared";
 
 const isSequential = (days: ItineraryDay[]) => days.every((day, index) => day.n === index + 1);
 /** Days numbered 1..N stay numbered 1..N after a move or a removal; hand-set numbers are kept. */
@@ -28,11 +32,14 @@ export function ItineraryDaysEditor({
   onChange,
   siteUrl,
   removeNote = "The day will be removed from the itinerary. The change is kept only when you save.",
+  tourDays,
 }: {
   days: ItineraryDay[];
   onChange: (days: ItineraryDay[]) => void;
   siteUrl: string | null;
   removeNote?: string;
+  /** The tour's length (its Days field): says why blank days are waiting to be filled. */
+  tourDays?: number | null;
 }) {
   const confirm = useConfirm();
   const [openDay, setOpenDay] = useState<number | null>(null);
@@ -40,23 +47,26 @@ export function ItineraryDaysEditor({
   const patchDay = (index: number, change: Partial<ItineraryDay>) =>
     onChange(days.map((day, i) => (i === index ? { ...day, ...change } : day)));
 
-  const moveDay = (index: number, delta: -1 | 1) => {
-    const target = index + delta;
-    if (target < 0 || target >= days.length) return;
-    const next = [...days];
-    // the content moves, the day numbers stay where they were
-    const [a, b] = [next[index], next[target]];
-    next[index] = { ...b, n: a.n };
-    next[target] = { ...a, n: b.n };
-    onChange(next);
-    setOpenDay((open) => (open === index ? target : open === target ? index : open));
+  /** The content moves, the day numbers stay where they were. */
+  const moveTo = (from: number, to: number) => {
+    if (to < 0 || to >= days.length || from === to) return;
+    const numbers = days.map((day) => day.n);
+    onChange(movedTo(days, from, to).map((day, index) => ({ ...day, n: numbers[index] })));
+    setOpenDay((open) => {
+      if (open === null) return open;
+      if (open === from) return to;
+      // the rows between the two places shift by one
+      if (from < to && open > from && open <= to) return open - 1;
+      if (from > to && open >= to && open < from) return open + 1;
+      return open;
+    });
   };
+  const drag = useDragReorder(moveTo);
 
   const removeDay = async (index: number) => {
     const day = days[index];
-    const hasText = day.title || day.subtitle || day.html;
     if (
-      hasText &&
+      !isBlankDay(day) &&
       !(await confirm({
         title: `Remove Day ${day.n}?`,
         description: removeNote,
@@ -76,14 +86,33 @@ export function ItineraryDaysEditor({
     setOpenDay(days.length);
   };
 
+  const blank = days.filter(isBlankDay).length;
+
   return (
     <div className="space-y-2">
       {days.length === 0 && <EmptyLine>This itinerary has no days yet. Add the first day.</EmptyLine>}
+      {blank > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {tourDays ? `The tour is ${tourDays} days, so a day was opened for each one. ` : ""}
+          {blank} day(s) are still empty - open a day to fill it. A day left empty is not saved and does not show on the site.
+        </p>
+      )}
       {days.map((day, index) => {
         const open = openDay === index;
+        const empty = isBlankDay(day);
         return (
-          <div key={index} className="rounded-lg border bg-card">
-            <div className="flex items-center gap-2 p-2 ps-3">
+          <div
+            key={index}
+            {...drag.row(index)}
+            className={cn(
+              "rounded-lg border bg-card",
+              empty && "border-dashed",
+              drag.dragging === index && "opacity-50",
+              dropMarkClass(drag.mark(index)),
+            )}
+          >
+            <div className="flex items-center gap-2 p-2 ps-2">
+              {days.length > 1 && <DragGrip {...drag.grip(index)} />}
               <button
                 type="button"
                 onClick={() => setOpenDay(open ? null : index)}
@@ -94,7 +123,11 @@ export function ItineraryDaysEditor({
                 <Badge variant="secondary" className="shrink-0">
                   Day {day.n}
                 </Badge>
-                <span className="min-w-0 truncate font-medium">{day.title || "Untitled"}</span>
+                {empty ? (
+                  <span className="min-w-0 truncate text-sm text-muted-foreground">Empty - click to fill</span>
+                ) : (
+                  <span className="min-w-0 truncate font-medium">{day.title || "Untitled"}</span>
+                )}
                 {day.subtitle && (
                   <span className="hidden min-w-0 truncate text-sm text-muted-foreground md:inline">{day.subtitle}</span>
                 )}
@@ -102,7 +135,7 @@ export function ItineraryDaysEditor({
               <RowControls
                 index={index}
                 count={days.length}
-                onMove={(delta) => moveDay(index, delta)}
+                onMove={(delta) => moveTo(index, index + delta)}
                 onRemove={() => void removeDay(index)}
                 removeLabel="Remove Day"
               />

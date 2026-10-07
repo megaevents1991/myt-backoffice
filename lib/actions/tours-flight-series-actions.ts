@@ -20,6 +20,10 @@
  * happens here, and the answer lists what was created, what was joined and what
  * was skipped with the reason. Running it again on the same series is safe - a
  * sub-tour that exists is joined, never duplicated.
+ *
+ * The same step runs on chosen flights (`flightIds`) from the flights sheet's
+ * "Create sub-tours": flights opened without a tour get their dates later,
+ * without building the series again (Alon, 07.10.2026).
  */
 import { revalidatePath } from "next/cache";
 
@@ -109,7 +113,10 @@ async function freeSlug(companyId: string, base: string, code: string): Promise<
 }
 
 export async function createSubToursFromFlightSeries(input: {
-  flightSeriesId: string;
+  /** The whole flight series (New Series)... */
+  flightSeriesId?: string;
+  /** ...or these flights only: the flights sheet's "Create sub-tours" on flights that were opened without a tour. */
+  flightIds?: number[];
   code: string;
   tourName?: string | null;
 }): Promise<ActionResult<SubToursResult>> {
@@ -119,18 +126,27 @@ export async function createSubToursFromFlightSeries(input: {
     if (!SERIES_CODE.test(code)) {
       throw new UserError("Tour code: 2 to 8 characters, letters (A-Z) and digits, starting with a letter (e.g. BBC)");
     }
-    if (!UUID.test(String(input.flightSeriesId ?? ""))) throw new UserError("Flight series not found");
+    const flightIds = Array.isArray(input.flightIds) ? [...new Set(input.flightIds)] : null;
+    if (flightIds) {
+      if (flightIds.length === 0 || flightIds.some((id) => !Number.isInteger(id) || id < 1)) throw new UserError("Choose the flights");
+      if (flightIds.length > MAX_SUB_TOURS) {
+        throw new UserError(`Up to ${MAX_SUB_TOURS} flights become sub-tours at a time - filter the sheet and run it again`);
+      }
+    } else if (!UUID.test(String(input.flightSeriesId ?? ""))) throw new UserError("Flight series not found");
     const db = toursDb();
 
-    // --- the flights of the series, in this company only
-    const { data: rows, error } = await flightsOf(company)
-      .select(FLIGHT_COLUMNS)
-      .eq("series_id", input.flightSeriesId)
-      .order("outbound_departure_time", { ascending: true });
+    // --- the flights of the series (or the chosen ones), in this company only
+    const scoped = flightsOf(company).select(FLIGHT_COLUMNS);
+    const { data: rows, error } = await (flightIds ? scoped.in("id", flightIds) : scoped.eq("series_id", input.flightSeriesId as string)).order(
+      "outbound_departure_time",
+      { ascending: true },
+    );
     if (error) throw new Error(error.message);
     type SeriesFlight = FlightDates & { is_deleted: boolean | null; block_status: string | null };
     const flights = ((rows ?? []) as unknown as SeriesFlight[]).filter((f) => !f.is_deleted);
-    if (flights.length === 0) throw new UserError("The flight series has no flights in the active company");
+    if (flights.length === 0) {
+      throw new UserError(flightIds ? "None of these flights is in the active company" : "The flight series has no flights in the active company");
+    }
     if (flights.length > MAX_SUB_TOURS) {
       throw new UserError(`Up to ${MAX_SUB_TOURS} flights become sub-tours at a time - split the series`);
     }
@@ -288,7 +304,13 @@ export async function createSubToursFromFlightSeries(input: {
       entityType: "tours_flight_series",
       entityId: null,
       changes: { code, package_id: packageId, created: created.map((c) => c.code), attached: attached.map((a) => a.code) },
-      metadata: { ...companyAudit(company), flight_series_id: input.flightSeriesId, created_tour: createdTour, skipped: skipped.length },
+      metadata: {
+        ...companyAudit(company),
+        flight_series_id: flightIds ? null : input.flightSeriesId,
+        flight_ids: flightIds,
+        created_tour: createdTour,
+        skipped: skipped.length,
+      },
     });
     revalidatePath("/tours/packages");
     revalidatePath(`/tours/packages/${packageId}`);

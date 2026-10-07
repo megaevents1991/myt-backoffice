@@ -17,7 +17,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { RotateCcw, Search } from "lucide-react";
+import { Plus, RotateCcw, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { useActionData } from "@/hooks/use-action-data";
 import { LoadError, Ltr, selectClass, Toggle } from "@/components/tours/ui";
 import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
+import { CreateSubToursDialog } from "@/components/tours/flights/create-sub-tours-dialog";
 import { stageOf } from "@/components/tours/flights/block-rules";
 import { SheetGrid, type SheetGroup, type SheetSaveAnswer } from "@/components/tours/sheet/sheet-grid";
 import { fmtLocalTime, type SheetColumn as CoreColumn, type SheetRowChange, type SheetValue } from "@/components/tours/sheet/sheet-core";
@@ -70,6 +71,8 @@ export function FlightsSheet() {
   const [series, setSeries] = useState<string | null>(null);
   const [noTour, setNoTour] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // "Create sub-tours" on a series: its flights that no date takes seats from
+  const [subTours, setSubTours] = useState<{ series: string; flightIds: number[] } | null>(null);
 
   const rowsById = useMemo(() => new Map((data?.rows ?? []).map((r) => [r.id, r])), [data]);
   const columns = useMemo(() => flightColumnsFor(view), [view]);
@@ -100,28 +103,50 @@ export function FlightsSheet() {
       const key = r.series ?? NO_SERIES;
       bySeries.set(key, [...(bySeries.get(key) ?? []), r]);
     }
-    return [...bySeries.entries()].map(([name, rows]) => ({
-      key: name || "(none)",
-      rows,
-      selectLabel: `Select the flights of ${name || "no series"}`,
-      header: (
-        <>
-          {name ? <Ltr className="font-mono text-sm font-bold">{name}</Ltr> : <span className="font-semibold">No series</span>}
-          <span className="text-xs text-muted-foreground">{rows.length} flight(s)</span>
-          <span className="text-xs text-muted-foreground">
-            <Ltr>
-              {fmtDate(rows[0].outDepart)} - {fmtDate(rows[rows.length - 1].inDepart)}
-            </Ltr>
-          </span>
-          {rows.some((r) => r.tours.length === 0) && (
-            <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-              {rows.filter((r) => r.tours.length === 0).length} with no sub-tour
+    return [...bySeries.entries()].map(([name, rows]) => {
+      // a cancelled or declined block carries no trip - the server would skip it too
+      const bare = rows.filter((r) => r.tours.length === 0 && !["cancelled", "declined"].includes(stageOf(r.status)));
+      return {
+        key: name || "(none)",
+        rows,
+        selectLabel: `Select the flights of ${name || "no series"}`,
+        header: (
+          <>
+            {name ? <Ltr className="font-mono text-sm font-bold">{name}</Ltr> : <span className="font-semibold">No series</span>}
+            <span className="text-xs text-muted-foreground">{rows.length} flight(s)</span>
+            <span className="text-xs text-muted-foreground">
+              <Ltr>
+                {fmtDate(rows[0].outDepart)} - {fmtDate(rows[rows.length - 1].inDepart)}
+              </Ltr>
             </span>
-          )}
-        </>
-      ),
-    }));
-  }, [data, search, status, series, noTour]);
+            {rows.some((r) => r.tours.length === 0) && (
+              <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                {rows.filter((r) => r.tours.length === 0).length} with no sub-tour
+              </span>
+            )}
+            {bare.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                disabled={dirty}
+                title={
+                  dirty
+                    ? "Save or discard your changes first"
+                    : "Open a date of a tour for each of these flights - the flight's dates, route and seats"
+                }
+                onClick={() => setSubTours({ series: name, flightIds: bare.map((r) => r.flightId) })}
+              >
+                <Plus />
+                Create sub-tours
+              </Button>
+            )}
+          </>
+        ),
+      };
+    });
+  }, [data, search, status, series, noTour, dirty]);
 
   const save = useCallback(
     async (changes: SheetRowChange[]): Promise<SheetSaveAnswer> => {
@@ -174,7 +199,7 @@ export function FlightsSheet() {
             ))}
           </span>
         ) : (
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-400" title="No sub-tour takes seats from this flight yet. Link it on the flight's page (Allocations), or open its series with a tour code.">
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-400" title="No sub-tour takes seats from this flight yet. Click &quot;Create sub-tours&quot; on the series row above, or link it to an existing date on the flight's page (Allocations).">
             No sub-tour
           </span>
         );
@@ -221,6 +246,15 @@ export function FlightsSheet() {
   if (!data) return <Skeleton className="h-96 w-full" />;
 
   return (
+    <>
+    {subTours && (
+      <CreateSubToursDialog
+        seriesName={subTours.series}
+        flightIds={subTours.flightIds}
+        onClose={() => setSubTours(null)}
+        onDone={() => void sheet.reload({ quiet: true })}
+      />
+    )}
     <SheetGrid<FlightSheetRow>
       columns={columns}
       allColumns={FLIGHT_COLUMNS}
@@ -340,5 +374,6 @@ export function FlightsSheet() {
         </Button>
       }
     />
+    </>
   );
 }

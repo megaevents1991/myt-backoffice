@@ -33,6 +33,7 @@ import {
   type TermOption,
   PACKAGE_KINDS,
   TERM_KIND_DATA_KEY,
+  isBlankDay,
   type ActionResult,
   type CmsPageEditorData,
   type CmsPageForm,
@@ -121,15 +122,18 @@ const TERM_SITE_FOLDER: Record<string, string> = {
 };
 
 /** A term as the tour editors pick it; an audience that is a world carries its key, its name and its color. */
-const termOption = (t: { id: string; kind: string; name: string; is_active: boolean; data: Json }): TermOption => {
+const termOption = (t: { id: string; kind: string; slug: string; name: string; is_active: boolean; data: Json }): TermOption => {
   const data = asObject(t.data);
   const key = dataText(data, "worldKey");
+  const worldSlug = t.kind === "tags" ? dataText(data, "worldSlug") : "";
   return {
     id: t.id,
     kind: t.kind,
     name: t.name,
     isActive: t.is_active,
+    ...(t.kind === "audiences" ? { slug: t.slug } : {}),
     ...(t.kind === "audiences" && key ? { world: { key, label: dataText(data, "brandName") || t.name, color: dataText(data, "color") } } : {}),
+    ...(worldSlug ? { worldSlug } : {}),
   };
 };
 
@@ -523,7 +527,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     fetchAll((from, to) =>
       db
         .from("terms")
-        .select("id, kind, name, is_active, data")
+        .select("id, kind, slug, name, is_active, data")
         .eq("company_id", company.id)
         .order("position")
         .order("name")
@@ -1069,7 +1073,7 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
       fetchAll((from, to) =>
         db
           .from("terms")
-          .select("id, kind, name, is_active, data")
+          .select("id, kind, slug, name, is_active, data")
           .eq("company_id", company.id)
           .order("position")
           .order("name")
@@ -1181,7 +1185,8 @@ export async function deleteTourPackage(id: string, withDates = false): Promise<
 
 // ---------------------------------------------------------------- itineraries
 const cleanDays = (days: z.infer<typeof daySchema>[]): Json =>
-  days.map((day) => {
+  // a day nobody wrote anything in is a placeholder of the editor, not a day of the trip (shared.ts isBlankDay)
+  days.filter((day) => !isBlankDay({ ...day, image: day.image || undefined })).map((day) => {
     const { image, ...rest } = day;
     return (image ? { ...rest, image } : rest) as Json;
   });

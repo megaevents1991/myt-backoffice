@@ -12,7 +12,7 @@
  * Promotion" puts one on every upcoming date of the season at once.
  */
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Loader2, Plus, Tag, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, CopyPlus, Loader2, Plus, Tag, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,16 +35,66 @@ import {
   saveTourSeason,
   setSeasonDates,
 } from "@/lib/actions/tours-season-actions";
+import { saveTourItinerary } from "@/lib/actions/tours-content-actions";
+import { ItineraryDaysEditor } from "@/components/tours/content/itinerary-days-editor";
+import { NewVariantDialog } from "@/components/tours/content/itinerary-editor";
 import {
   EMPTY_SEASON_FORM,
   SEASON_NAME_SUGGESTIONS,
+  filledDays,
+  withTourDays,
+  type ItineraryDay,
   type ItineraryVariant,
+  type PackageEditorData,
+  type PackageForm,
   type TourSeasonForm,
   type TourSeasonRow,
   type TourSeasonsData,
 } from "@/components/tours/content/shared";
 
 const NEW = "new";
+
+/** What a season can take from the tour page instead of being typed again (Alon, 07.10.2026). */
+const COPY_FIELDS = ["descriptionHtml", "attractions", "included", "notIncluded", "gallery"] as const;
+type CopyField = (typeof COPY_FIELDS)[number];
+const isEmpty = (value: string | string[]): boolean =>
+  typeof value === "string" ? !value.replace(/<[^>]*>|&nbsp;/g, "").trim() : value.length === 0;
+const withTourField = (draft: TourSeasonForm, tour: PackageForm, key: CopyField): TourSeasonForm => {
+  switch (key) {
+    case "descriptionHtml":
+      return { ...draft, descriptionHtml: tour.descriptionHtml };
+    case "attractions":
+      return { ...draft, attractions: [...tour.attractions] };
+    case "included":
+      return { ...draft, included: [...tour.included] };
+    case "notIncluded":
+      return { ...draft, notIncluded: [...tour.notIncluded] };
+    case "gallery":
+      return { ...draft, gallery: [...tour.gallery] };
+  }
+};
+
+/** The ID offered for a season's own itinerary: the season in English when it is a known one. */
+const SEASON_KEYS: Record<string, string> = {
+  קיץ: "summer",
+  חורף: "winter",
+  סתיו: "autumn",
+  אביב: "spring",
+  פסח: "pesach",
+  שבועות: "shavuot",
+  "חגי תשרי": "tishrei",
+  סוכות: "sukkot",
+  חנוכה: "hanukkah",
+  סילבסטר: "new-year",
+};
+const freeKey = (base: string, taken: string[]): string => {
+  if (!taken.includes(base)) return base;
+  for (let n = 2; ; n++) if (!taken.includes(`${base}-${n}`)) return `${base}-${n}`;
+};
+
+/** The days of an itinerary as they are saved - for telling an edit from what is stored. */
+const daysKey = (days: ItineraryDay[]): string =>
+  JSON.stringify(filledDays(days).map(({ image, ...day }) => (image ? { ...day, image } : day)));
 
 const formOf = (season: TourSeasonRow | null): TourSeasonForm =>
   season
@@ -65,13 +115,23 @@ export function TourSeasons({
   packageId,
   rows,
   variants,
+  dirtyKeys,
+  tour,
+  onItinerariesChanged,
   siteUrl,
   onChanged,
 }: {
   packageId: string;
   /** The tour's dates; null while they load. */
   rows: BoardRow[] | null;
+  /** The tour's itineraries as they are saved. */
   variants: ItineraryVariant[];
+  /** Keys of the itineraries with unsaved edits on the Itinerary tab - a season does not edit those. */
+  dirtyKeys: string[];
+  /** The tour page as it is in the editor: what "Copy from the tour page" takes. */
+  tour: PackageForm;
+  /** A season opened an itinerary of its own, or saved its days: the page takes the server's state. */
+  onItinerariesChanged: (data: PackageEditorData, change: { created?: string; saved?: string }) => void;
   siteUrl: string | null;
   /** Seasons or their dates changed: the page reloads its dates; with names, it keeps the tour's season list in step. */
   onChanged: (seasonNames: string[] | null) => void;
@@ -155,6 +215,9 @@ export function TourSeasons({
           rows={live}
           datesLoading={rows === null}
           variants={variants}
+          dirtyKeys={dirtyKeys}
+          tour={tour}
+          onItinerariesChanged={onItinerariesChanged}
           siteUrl={siteUrl}
           canMoveUp={index > 0}
           canMoveDown={index >= 0 && index < list.length - 1}
@@ -174,6 +237,9 @@ function SeasonEditor({
   rows,
   datesLoading,
   variants,
+  dirtyKeys,
+  tour,
+  onItinerariesChanged,
   siteUrl,
   canMoveUp,
   canMoveDown,
@@ -188,6 +254,9 @@ function SeasonEditor({
   rows: BoardRow[];
   datesLoading: boolean;
   variants: ItineraryVariant[];
+  dirtyKeys: string[];
+  tour: PackageForm;
+  onItinerariesChanged: (data: PackageEditorData, change: { created?: string; saved?: string }) => void;
   siteUrl: string | null;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -212,9 +281,32 @@ function SeasonEditor({
     setPicked(new Set(savedKey ? savedKey.split(",") : []));
   }, [savedKey]);
 
+  // The season's own itinerary, edited here (Alon, 07.10.2026): its days are saved with the season.
+  const variant = variants.find((v) => v.id !== null && v.id === draft.itineraryId && v.key !== "main") ?? null;
+  const variantBusyElsewhere = !!variant && dirtyKeys.includes(variant.key);
+  const variantDays = useMemo(() => (variant ? withTourDays(variant.days, tour.days) : []), [variant, tour.days]);
+  const [days, setDays] = useState<ItineraryDay[]>(variantDays);
+  useEffect(() => {
+    setDays(variantDays);
+  }, [variantDays]);
+  const daysDirty = !!variant && !variantBusyElsewhere && daysKey(days) !== daysKey(variant.days);
+  const [variantDialog, setVariantDialog] = useState(false);
+  const copySources = variants.filter((v) => v.id !== null);
+
+  const copyable = COPY_FIELDS.filter((key) => isEmpty(draft[key]) && !isEmpty(tour[key]));
+  const copyFromTour = (keys: readonly CopyField[]) =>
+    setDraft((d) => keys.reduce((next, key) => (isEmpty(next[key]) && !isEmpty(tour[key]) ? withTourField(next, tour, key) : next), d));
+  const copyButton = (key: CopyField, what: string) =>
+    copyable.includes(key) ? (
+      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => copyFromTour([key])}>
+        <Copy />
+        Copy the tour&apos;s {what}
+      </Button>
+    ) : null;
+
   const formDirty = JSON.stringify(draft) !== JSON.stringify(base);
   const datesDirty = [...picked].sort().join(",") !== savedKey;
-  const dirty = formDirty || datesDirty;
+  const dirty = formDirty || datesDirty || daysDirty;
   const name = draft.name.trim();
   const problem = !name
     ? "Give the season a name"
@@ -234,6 +326,17 @@ function SeasonEditor({
   const save = async () => {
     if (problem || busy) return;
     setBusy(true);
+    // the days of the season's own itinerary first: a failure there leaves the season as it was
+    let itinerary: { data: PackageEditorData; key: string } | null = null;
+    if (variant?.id && daysDirty) {
+      const { id, key, label, arrivalCity, returnCity } = variant;
+      const res = await run(() => saveTourItinerary(packageId, id, { label, arrivalCity, returnCity, days: filledDays(days) }));
+      if (!res.success) {
+        setBusy(false);
+        return;
+      }
+      itinerary = { data: res.data, key };
+    }
     const saved = await run(() => saveTourSeason(packageId, season?.id ?? null, draft), season ? "Season saved" : "Season created");
     if (saved.success && (datesDirty || (!season && picked.size > 0))) {
       await run(
@@ -242,6 +345,7 @@ function SeasonEditor({
       );
     }
     setBusy(false);
+    if (itinerary) onItinerariesChanged(itinerary.data, { saved: itinerary.key });
     if (saved.success) onSaved(saved.data, saved.data.id);
   };
 
@@ -286,17 +390,40 @@ function SeasonEditor({
             hint={
               usable.length
                 ? "The day-by-day plan the season's dates run. A date can still be given its own variant."
-                : "The tour has only the main itinerary. Open another variant on the Itinerary tab to give a season its own route."
+                : "The tour has only the main itinerary. \"New itinerary for this season\" opens a copy of it to change - here, without the Itinerary tab."
             }
           >
-            <select className={`${selectClass} w-full`} value={draft.itineraryId} onChange={(e) => set("itineraryId", e.target.value)}>
-              <option value="">Main itinerary</option>
-              {usable.map((v) => (
-                <option key={v.key} value={v.id ?? ""}>
-                  {v.label || v.key} ({v.days.length} days)
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className={`${selectClass} min-w-0 flex-1`}
+                value={draft.itineraryId}
+                onChange={(e) => set("itineraryId", e.target.value)}
+              >
+                <option value="">Main itinerary</option>
+                {usable.map((v) => (
+                  <option key={v.key} value={v.id ?? ""}>
+                    {v.label || v.key} ({v.days.length} days)
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={dirtyKeys.length > 0 || copySources.length === 0}
+                title={
+                  dirtyKeys.length > 0
+                    ? "The Itinerary tab has unsaved changes - save the page first (the new itinerary is a copy of what is saved)"
+                    : copySources.length === 0
+                      ? "The tour has no saved itinerary to copy yet - write the main itinerary on the Itinerary tab and save"
+                      : "Opens a copy of an existing itinerary for this season; its days are then edited below"
+                }
+                onClick={() => setVariantDialog(true)}
+              >
+                <CopyPlus />
+                New itinerary for this season
+              </Button>
+            </div>
           </Field>
         </div>
         {season && (
@@ -356,6 +483,29 @@ function SeasonEditor({
         )}
       </Section>
 
+      {variant && (
+        <Section
+          title={`The days of this season's itinerary: ${variant.label || variant.key}`}
+          description="The season's own day-by-day plan. Change, add, remove or drag the days here - they are saved with the season. The same itinerary is also on the Itinerary tab."
+        >
+          {variantBusyElsewhere ? (
+            <Notice tone="warning">
+              This itinerary has unsaved changes on the Itinerary tab. Save the page (the bar at the bottom) or discard them, then
+              edit its days here.
+            </Notice>
+          ) : (
+            <ItineraryDaysEditor
+              key={variant.id}
+              days={days}
+              onChange={setDays}
+              siteUrl={siteUrl}
+              tourDays={tour.days}
+              removeNote="The day will be removed from this season's itinerary. The change is kept only when you save the season."
+            />
+          )}
+        </Section>
+      )}
+
       <Section
         title="What this season says instead of the tour page"
         description={
@@ -363,35 +513,73 @@ function SeasonEditor({
             ? `This season has its own ${overrides.join(", ")}. Every field left empty shows the tour's own.`
             : "Everything here is optional: a field left empty shows the tour's own. Fill only what is different in this season."
         }
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={copyable.length === 0}
+            title={
+              copyable.length === 0
+                ? "Nothing to copy: every field here is filled, or the tour page has nothing in it"
+                : "Fills the fields that are empty here with what the tour page says, so you change it instead of typing it again"
+            }
+            onClick={() => copyFromTour(copyable)}
+          >
+            <Copy />
+            Copy from the tour page
+          </Button>
+        }
       >
-        <HtmlField
-          label="Description (empty = the tour's description)"
-          value={draft.descriptionHtml}
-          onChange={(value) => set("descriptionHtml", value)}
-          siteUrl={siteUrl}
-          rows={8}
-        />
-        <StringListEditor
-          label="Attractions (empty = the tour's)"
-          value={draft.attractions}
-          onChange={(value) => set("attractions", value)}
-          addLabel="Add Attraction"
-        />
-        <div className="grid gap-4 xl:grid-cols-2">
-          <StringListEditor label="Included (empty = the tour's)" value={draft.included} onChange={(value) => set("included", value)} />
-          <StringListEditor
-            label="Not included (empty = the tour's)"
-            value={draft.notIncluded}
-            onChange={(value) => set("notIncluded", value)}
+        {copyable.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Start from what the tour page already says: &ldquo;Copy from the tour page&rdquo; fills every empty field here, or copy one
+            field under it. A copied field is then the season&apos;s own - a later change on the tour page does not reach it.
+          </p>
+        )}
+        <div className="space-y-1">
+          <HtmlField
+            label="Description (empty = the tour's description)"
+            value={draft.descriptionHtml}
+            onChange={(value) => set("descriptionHtml", value)}
+            siteUrl={siteUrl}
+            rows={8}
           />
+          {copyButton("descriptionHtml", "description")}
         </div>
-        <ImageListEditor
-          label="Images - the gallery of the season (empty = the tour's)"
-          value={draft.gallery}
-          onChange={(value) => set("gallery", value)}
-          siteUrl={siteUrl}
-          folder="packages"
-        />
+        <div className="space-y-1">
+          <StringListEditor
+            label="Attractions (empty = the tour's)"
+            value={draft.attractions}
+            onChange={(value) => set("attractions", value)}
+            addLabel="Add Attraction"
+          />
+          {copyButton("attractions", `${tour.attractions.length} attractions`)}
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-1">
+            <StringListEditor label="Included (empty = the tour's)" value={draft.included} onChange={(value) => set("included", value)} />
+            {copyButton("included", `${tour.included.length} items`)}
+          </div>
+          <div className="space-y-1">
+            <StringListEditor
+              label="Not included (empty = the tour's)"
+              value={draft.notIncluded}
+              onChange={(value) => set("notIncluded", value)}
+            />
+            {copyButton("notIncluded", `${tour.notIncluded.length} items`)}
+          </div>
+        </div>
+        <div className="space-y-1">
+          <ImageListEditor
+            label="Images - the gallery of the season (empty = the tour's)"
+            value={draft.gallery}
+            onChange={(value) => set("gallery", value)}
+            siteUrl={siteUrl}
+            folder="packages"
+          />
+          {copyButton("gallery", `${tour.gallery.length} images`)}
+        </div>
         <StringListEditor
           label="Tags"
           value={draft.tags}
@@ -436,6 +624,24 @@ function SeasonEditor({
         }}
       />
       <BulkOutcomeDialog title="Add Promotion" outcome={outcome} onClose={() => setOutcome(null)} />
+      {variantDialog && (
+        <NewVariantDialog
+          packageId={packageId}
+          sources={copySources}
+          takenKeys={variants.map((v) => v.key)}
+          suggest={{
+            key: freeKey(SEASON_KEYS[name] ?? "season", variants.map((v) => v.key)),
+            label: name ? `מסלול ${name}` : "מסלול העונה",
+          }}
+          onClose={() => setVariantDialog(false)}
+          onCreated={(data, key) => {
+            setVariantDialog(false);
+            onItinerariesChanged(data, { created: key });
+            const created = data.itineraries.find((v) => v.key === key);
+            if (created?.id) set("itineraryId", created.id);
+          }}
+        />
+      )}
     </fieldset>
   );
 }

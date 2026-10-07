@@ -66,11 +66,12 @@ export function OrganizedSeriesFields({
           className="mt-0.5"
         />
         <span>
-          <span className="font-medium">Organized tour</span>
+          <span className="font-medium">Organized tour - create the sub-tours automatically</span>
           <span className="block text-xs text-muted-foreground">
             Every flight becomes a sub-tour (a date) of the tour with this code, with the flight&apos;s dates, route and
-            seats. A new code creates the tour as a draft. Prices and the season of each date are set later in Tours &gt;
-            Departures.
+            seats. A new code creates the tour as a draft. The next step after the flights are created is editing the
+            sub-tours (season, prices) in Tours &gt; Departures. Unticked: only the flights are created - their sub-tours
+            can be made later from the flights sheet (&ldquo;Create sub-tours&rdquo; on the series).
           </span>
         </span>
       </label>
@@ -155,54 +156,71 @@ export function OrganizedSeriesResult({
           {flights} flight(s) created
         </CardTitle>
         <CardDescription>
-          {result
-            ? `${result.createdTour ? "New draft tour" : "Tour"} "${result.tourName}": ${result.created.length} sub-tour(s) created, ${result.attached.length} existing joined, ${result.skipped.length} skipped.`
-            : "The flights exist, but no sub-tours were made."}
+          {result ? subToursLine(result) : "The flights exist, but no sub-tours were made."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         {error && <p className="text-destructive">{error}</p>}
-        {result && result.created.length + result.attached.length > 0 && (
-          <p className="font-mono text-xs" dir="ltr">
-            {[...result.created, ...result.attached].map((d) => d.code).join(" · ")}
-          </p>
-        )}
-        {result && (result.skipped.length > 0 || result.problems.length > 0) && (
-          <ul className="list-disc space-y-1 ps-5 text-amber-700 dark:text-amber-400">
-            {result.skipped.map((s) => (
-              <li key={`s${s.flightId}`}>
-                Flight #{s.flightId}: {s.reason}
-              </li>
-            ))}
-            {result.problems.map((p, i) => (
-              <li key={`p${i}`}>{p}</li>
-            ))}
-          </ul>
-        )}
+        <SubToursSummary result={result} />
         <div className="flex flex-wrap gap-2">
           {onRetry && (
             <Button onClick={onRetry} disabled={retrying}>
               {retrying ? "Creating the sub-tours..." : "Create the sub-tours again"}
             </Button>
           )}
-          {result && (
-            <>
-              <Button asChild>
-                <Link href={`/tours/departures?view=prices&tour=${result.packageId}`}>Set prices in Departures</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href={`/tours/packages/${result.packageId}?tab=${result.createdTour ? "general" : "dates"}`}>
-                  Open the tour
-                  <ExternalLink className="ms-1.5 h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </>
-          )}
+          {result && <SubToursNextSteps result={result} />}
           <Button asChild variant="ghost">
             <Link href="/offline-flights">Back to flights</Link>
           </Button>
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** One line of what the sub-tours step did. */
+export const subToursLine = (result: SubToursResult): string =>
+  `${result.createdTour ? "New draft tour" : "Tour"} "${result.tourName}": ${result.created.length} sub-tour(s) created, ${result.attached.length} existing joined, ${result.skipped.length} skipped.`;
+
+/** The codes that were made or joined, and what was skipped or did not link, with the reason. */
+export function SubToursSummary({ result }: { result: SubToursResult | null }) {
+  if (!result) return null;
+  return (
+    <>
+      {result.created.length + result.attached.length > 0 && (
+        <p className="font-mono text-xs" dir="ltr">
+          {[...result.created, ...result.attached].map((d) => d.code).join(" · ")}
+        </p>
+      )}
+      {(result.skipped.length > 0 || result.problems.length > 0) && (
+        <ul className="list-disc space-y-1 ps-5 text-amber-700 dark:text-amber-400">
+          {result.skipped.map((s) => (
+            <li key={`s${s.flightId}`}>
+              Flight #{s.flightId}: {s.reason}
+            </li>
+          ))}
+          {result.problems.map((p, i) => (
+            <li key={`p${i}`}>{p}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** Where the work goes on once the sub-tours exist: edit them (season, prices), or the tour's page. */
+export function SubToursNextSteps({ result }: { result: SubToursResult }) {
+  return (
+    <>
+      <Button asChild>
+        <Link href={`/tours/departures?view=departures&tour=${result.packageId}`}>Next: edit the sub-tours</Link>
+      </Button>
+      <Button asChild variant="outline">
+        <Link href={`/tours/packages/${result.packageId}?tab=${result.createdTour ? "general" : "dates"}`}>
+          Open the tour
+          <ExternalLink className="ms-1.5 h-3.5 w-3.5" />
+        </Link>
+      </Button>
+    </>
   );
 }

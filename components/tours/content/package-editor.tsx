@@ -37,6 +37,7 @@ import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor"
 import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { TourReadinessStrip, tourReadiness } from "@/components/tours/content/tour-readiness";
 import { HtmlField } from "@/components/tours/content/html-field";
+import { PointsField } from "@/components/tours/content/points-field";
 import { ItineraryEditor } from "@/components/tours/content/itinerary-editor";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import {
@@ -46,8 +47,11 @@ import {
   ViewOnSiteButton,
 } from "@/components/tours/content/save-bar";
 import {
+  cleanPointsHtml,
   createProblemsKey,
+  filledDays,
   siteAssetUrl,
+  withTourDays,
   type ItineraryVariant,
   type PackageEditorData,
   type PackageForm,
@@ -68,14 +72,26 @@ const TAB_LABELS: Record<Tab, string> = {
   terms: "Categories & Tags",
 };
 
-/** A variant as it is saved: an empty image is no image. */
+/** A variant as it is saved: an empty image is no image, and a blank day is not a day. */
 const variantKey = (variant: ItineraryVariant) =>
   JSON.stringify({
     label: variant.label.trim(),
     arrivalCity: variant.arrivalCity.trim().toUpperCase(),
     returnCity: variant.returnCity.trim().toUpperCase(),
-    days: variant.days.map(({ image, ...day }) => (image ? { ...day, image } : day)),
+    days: filledDays(variant.days).map(({ image, ...day }) => (image ? { ...day, image } : day)),
   });
+
+/** Every variant with a blank day for each day of the tour's length it lacks; the same list when none lacks one. */
+const withBlankDays = (variants: ItineraryVariant[], tourDays: number | null): ItineraryVariant[] => {
+  let changed = false;
+  const next = variants.map((variant) => {
+    const days = withTourDays(variant.days, tourDays);
+    if (days === variant.days) return variant;
+    changed = true;
+    return { ...variant, days };
+  });
+  return changed ? next : variants;
+};
 
 /**
  * The page of one tour - its "event page": details, content, dates with their
@@ -90,7 +106,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const run = useActionToast();
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState<PackageForm>(initial.form);
-  const [variants, setVariants] = useState<ItineraryVariant[]>(initial.itineraries);
+  const [variants, setVariants] = useState<ItineraryVariant[]>(() => withBlankDays(initial.itineraries, initial.form.days));
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [tab, setTab] = useUrlState<Tab>("tab", "general", TABS);
@@ -113,6 +129,11 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
   const set = <K extends keyof PackageForm>(key: K, value: PackageForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
+
+  // "6 days" opens six days to fill in every itinerary (Alon, 07.10.2026); a day left blank is never saved
+  useEffect(() => {
+    setVariants((current) => withBlankDays(current, form.days));
+  }, [form.days]);
 
   const formDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(saved.form), [form, saved.form]);
   const dirtyKeys = useMemo(() => {
@@ -144,7 +165,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
     let failed: string | null = null;
     try {
       if (formDirty) {
-        const result = await saveTourPackage(saved.id, form);
+        const result = await saveTourPackage(saved.id, { ...form, extraInfoHtml: cleanPointsHtml(form.extraInfoHtml) });
         if (result.success) {
           latest = result.data;
           formSaved = true;
@@ -156,7 +177,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             label: variant.label,
             arrivalCity: variant.arrivalCity,
             returnCity: variant.returnCity,
-            days: variant.days,
+            days: filledDays(variant.days),
           });
           if (!result.success) {
             failed = `${variant.label || variant.key}: ${result.error}`;
@@ -176,7 +197,10 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
       setSaved(fresh);
       if (formSaved) setForm(fresh.form);
       setVariants((current) =>
-        current.map((v) => (savedKeys.includes(v.key) ? (fresh.itineraries.find((f) => f.key === v.key) ?? v) : v)),
+        withBlankDays(
+          current.map((v) => (savedKeys.includes(v.key) ? (fresh.itineraries.find((f) => f.key === v.key) ?? v) : v)),
+          formSaved ? fresh.form.days : form.days,
+        ),
       );
     }
     setIsSaving(false);
@@ -190,7 +214,22 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
 
   const discard = () => {
     setForm(saved.form);
-    setVariants(saved.itineraries);
+    setVariants(withBlankDays(saved.itineraries, saved.form.days));
+  };
+
+  /** An itinerary was created, deleted or saved outside the page's own Save (Itinerary tab, a season): the server's state. */
+  const itinerariesChanged = (data: PackageEditorData, change: { created?: string; deleted?: string; saved?: string }) => {
+    // the form may hold unsaved edits - only the itineraries move to the server's state
+    setSaved((current) => ({ ...current, itineraries: data.itineraries }));
+    setVariants((current) => {
+      if (change.deleted) return current.filter((v) => v.key !== change.deleted);
+      const key = change.created ?? change.saved;
+      const fresh = data.itineraries.find((v) => v.key === key);
+      if (!fresh) return current;
+      const next = current.some((v) => v.key === key) ? current.map((v) => (v.key === key ? fresh : v)) : [...current, fresh];
+      return withBlankDays(next, form.days);
+    });
+    router.refresh();
   };
 
   const remove = async () => {
@@ -442,13 +481,11 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             </Section>
           </div>
           <Section>
-            <HtmlField
+            <PointsField
               label="Additional info"
               value={form.extraInfoHtml}
               onChange={(value) => set("extraInfoHtml", value)}
               siteUrl={siteUrl}
-              rows={8}
-              hint="A plain list (ul / li) shows on the site as bullet points. Any other HTML is shown as is."
             />
           </Section>
           <Section>
@@ -479,21 +516,13 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             dirtyKeys={dirtyKeys}
             siteUrl={siteUrl}
             rows={dates.data?.rows ?? null}
+            tourDays={form.days}
             onDatesChanged={() => {
               void dates.reload({ quiet: true });
               router.refresh();
             }}
             onChange={setVariants}
-            onVariantsChanged={(data, change) => {
-              // the form may hold unsaved edits - only the itineraries move to the server's state
-              setSaved((current) => ({ ...current, itineraries: data.itineraries }));
-              setVariants((current) => {
-                if (change.deleted) return current.filter((v) => v.key !== change.deleted);
-                const created = data.itineraries.find((v) => v.key === change.created);
-                return created ? [...current, created] : current;
-              });
-              router.refresh();
-            }}
+            onVariantsChanged={itinerariesChanged}
           />
         </TabsContent>
 
@@ -503,6 +532,9 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             packageId={saved.id}
             rows={dates.data?.rows ?? null}
             variants={saved.itineraries}
+            dirtyKeys={dirtyKeys}
+            tour={form}
+            onItinerariesChanged={itinerariesChanged}
             siteUrl={siteUrl}
             onChanged={(names) => {
               void dates.reload({ quiet: true });
@@ -585,8 +617,14 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
           <PackageTermsPicker
             terms={saved.terms}
             value={form.termIds}
+            brand={form.brand}
             onChange={(ids) => set("termIds", ids)}
-            onTermCreated={(term) => setSaved((s) => ({ ...s, terms: [...s.terms, term] }))}
+            onTermCreated={(term) =>
+              setSaved((s) => ({
+                ...s,
+                terms: s.terms.some((t) => t.id === term.id) ? s.terms.map((t) => (t.id === term.id ? { ...t, ...term } : t)) : [...s.terms, term],
+              }))
+            }
           />
         </TabsContent>
       </Tabs>

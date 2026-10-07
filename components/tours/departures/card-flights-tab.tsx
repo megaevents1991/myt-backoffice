@@ -8,7 +8,7 @@
  * city, so LTN and LHR are both London) and it still has seats to give. The
  * panel shows why a block does not fit; the server action decides.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, Loader2, Plus, Trash2 } from "lucide-react";
 import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
@@ -171,6 +171,12 @@ export function CardFlightsTab({
     if (result.success) setCandidates(result.data);
   };
 
+  // A date with no flight opens with the blocks that fly on its days already listed (Alon, 07.10.2026)
+  useEffect(() => {
+    if (!readOnly && data.allocations.length === 0) void loadCandidates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per date
+  }, [d.id]);
+
   const add = async (block: CandidateBlock, seats: number, legs: AllocationLegs) => {
     // A warning (dates a day or two apart) comes back with the success and is shown under the message.
     const result = await run(() => addFlightAllocation(d.id, block.id, seats, legs), "Block allocated to the departure");
@@ -258,8 +264,11 @@ export function CardFlightsTab({
         <div className="space-y-2 border-t pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold">Allocate a Flight Block</h3>
-              <p className="text-xs text-muted-foreground">The company&apos;s blocks that fly within two days of the departure dates. Both ends are checked, by city.</p>
+              <h3 className="text-sm font-semibold">Link a Flight Block</h3>
+              <p className="text-xs text-muted-foreground">
+                The company&apos;s blocks that fly within two days of the departure dates. Both ends are checked, by city.
+                &ldquo;Allocate&rdquo; gives the date seats of the block - that is the link.
+              </p>
             </div>
             <Button size="sm" variant="outline" onClick={loadCandidates} disabled={loading}>
               {loading ? <Loader2 className="animate-spin" /> : <Plus />}

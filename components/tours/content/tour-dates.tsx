@@ -245,8 +245,8 @@ export function TourDates({
           onSaved={onChanged}
           refreshKey={sheetKey}
           defaultView="departures"
-          onOpenCard={(row) => {
-            setTab("general");
+          onOpenCard={(row, cardTab) => {
+            setTab(cardTab ?? "general");
             setTarget({ id: row.id });
           }}
         />

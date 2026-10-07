@@ -111,9 +111,9 @@ export function DeparturesScreen() {
         focusTour={focusTour}
         refreshKey={refreshKey}
         filters={{ season: params.season, status: params.status, q: params.q || params.series }}
-        onOpenCard={(row) => {
+        onOpenCard={(row, cardTab) => {
           setCardTarget({ id: row.id, code: row.code });
-          setParams({ code: row.code, tab: "" });
+          setParams({ code: row.code, tab: cardTab ?? "" });
         }}
       />
 
