@@ -31,7 +31,7 @@ import {
   type SiteHeader,
   type SiteLink,
 } from "@/lib/tours/site-content";
-import { ColumnsEditor, LinkTree, TileList, pruneLinks, pruneTiles } from "@/components/tours/site/site-fields";
+import { ColumnsEditor, LinkTree, PictureTileList, TileList, pruneLinks, prunePictureTiles, pruneTiles } from "@/components/tours/site/site-fields";
 
 type ChromeKey = "general" | "header" | "footer";
 const KEYS: ChromeKey[] = ["header", "footer", "general"];
@@ -56,6 +56,7 @@ function cleaned<K extends ChromeKey>(key: K, form: Forms[K]): Forms[K] {
       menus: header.menus.map((menu) => ({ ...menu, items: pruneLinks(menu.items) })),
       links: pruneLinks(header.links),
       mobile: pruneLinks(header.mobile),
+      aboutMenu: pruneLinks(header.aboutMenu as SiteLink[]).map(({ label, href }) => ({ label, href })),
     } as Forms[K];
   }
   if (key === "footer") {
@@ -63,6 +64,7 @@ function cleaned<K extends ChromeKey>(key: K, form: Forms[K]): Forms[K] {
     return {
       ...footer,
       discover: pruneTiles(footer.discover),
+      hot: prunePictureTiles(footer.hot),
       columns: footer.columns.map((column) => ({ ...column, links: pruneLinks(column.links) })),
       mobileColumns: footer.mobileColumns
         .map((column) => ({ ...column, links: pruneLinks(column.links) }))
@@ -205,6 +207,12 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
           <Section title="Plain links" description="Links that sit in the header next to the menus, with no panel.">
             <LinkTree items={header.links as SiteLink[]} onChange={(links) => setHeader({ links })} options={options} depth={0} />
           </Section>
+          <Section
+            title="Menu of the about pages"
+            description={'The row of links at the top of every "about" page, which leads from one about page to the others. With no links here, the site shows the links those pages came with.'}
+          >
+            <LinkTree items={header.aboutMenu as SiteLink[]} onChange={(aboutMenu) => setHeader({ aboutMenu: aboutMenu.map(({ label, href }) => ({ label, href })) })} options={options} depth={0} />
+          </Section>
         </TabsContent>
 
         {/* ------------------------------------------------------------ mobile */}
@@ -248,6 +256,20 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
                 ))}
               </div>
             </div>
+          </Section>
+          <Section
+            title="Picture tiles"
+            description={'The row of picture tiles ("הכי חמים") near the bottom of the about pages, the FAQ pages, the blog posts and the leaders page. With no tiles here, the site shows the tiles those pages came with.'}
+          >
+            <div className="flex items-center gap-3 rounded-md border p-3 md:max-w-md">
+              <Switch id="footer-hot-visible" checked={footer.hotVisible} onCheckedChange={(hotVisible) => setFooter({ hotVisible })} />
+              <label htmlFor="footer-hot-visible" className="text-sm">
+                Show the picture tiles
+                <span className="block text-xs text-muted-foreground">Off = none of those pages shows the row.</span>
+              </label>
+            </div>
+            <TextInput label="Title" hint="Empty = the title the row came with." value={footer.hotTitle} onChange={(hotTitle) => setFooter({ hotTitle })} />
+            <PictureTileList items={footer.hot} onChange={(hot) => setFooter({ hot })} options={options} siteUrl={saved.footer.siteUrl} />
           </Section>
           <Section title="Newsletter box">
             <div className="grid gap-3 md:grid-cols-2">

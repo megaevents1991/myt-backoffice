@@ -19,15 +19,20 @@ import { actionFail, plainFail, type ActionResult } from "@/lib/tours/action-kit
 import { asObject, companyAudit, invalidInput } from "@/lib/tours/company-kit";
 import { siteEditorOptions, type SiteEditorOptions } from "@/lib/tours/site-options";
 import {
+  PICTURE_TILES_MAX,
   SITE_DOC_KEYS,
   SITE_DOC_SCHEMAS,
   footerTilesSchema,
   readFooterTiles,
   readSiteDoc,
   type FooterTiles,
+  type PictureTile,
   type SiteDocKey,
   type SiteDocs,
+  type SiteFooter,
+  type SiteHeader,
 } from "@/lib/tours/site-content";
+import { aboutMenuFromHtml, hotTilesFromExtras } from "@/lib/tours/wp-html";
 import type { Json } from "@/types/database.types";
 
 const SCOPE = "tours-site-actions";
@@ -68,6 +73,56 @@ async function editorData<K extends SiteDocKey>(company: Company, key: K): Promi
   };
 }
 
+/** What the site shows for a field of the header or footer document until staff save their own. */
+interface ChromeDefaults {
+  aboutMenu: SiteHeader["aboutMenu"];
+  hotTitle: string;
+  hot: PictureTile[];
+}
+const NO_DEFAULTS: ChromeDefaults = { aboutMenu: [], hotTitle: "", hot: [] };
+
+/**
+ * The links between the "about" pages and the picture tiles under them, as they came with
+ * the site: read out of the import (the markup of /about/, the "extras" row). The editor
+ * opens with them, so staff edit what the site shows today and the first save keeps it.
+ * A company without those rows has none, and a failed read never blocks the editor.
+ */
+async function chromeDefaults(company: Company): Promise<ChromeDefaults> {
+  try {
+    const db = toursDb();
+    const [about, extras] = await Promise.all([
+      db.from("cms_pages").select("content_html").eq("company_id", company.id).eq("kind", "page").eq("path", "/about/").limit(1),
+      db.from("cms_pages").select("data").eq("company_id", company.id).eq("kind", "extras").limit(1),
+    ]);
+    if (about.error) throw about.error;
+    if (extras.error) throw extras.error;
+    const hot = hotTilesFromExtras(extras.data?.[0]?.data);
+    return {
+      aboutMenu: aboutMenuFromHtml(about.data?.[0]?.content_html ?? "").slice(0, 12),
+      hotTitle: hot.title,
+      hot: hot.tiles.slice(0, PICTURE_TILES_MAX),
+    };
+  } catch (e) {
+    console.error(`${SCOPE}: chrome defaults`, e);
+    return NO_DEFAULTS;
+  }
+}
+
+/** The document as its editor opens it: a list staff never filled shows what the site shows today. */
+function withChromeDefaults<K extends SiteDocKey>(doc: SiteDocEditorData<K>, defaults: ChromeDefaults): SiteDocEditorData<K> {
+  if (doc.key === "header") {
+    const form = doc.form as SiteHeader;
+    if (form.aboutMenu.length > 0 || defaults.aboutMenu.length === 0) return doc;
+    return { ...doc, form: { ...form, aboutMenu: defaults.aboutMenu } as SiteDocs[K] };
+  }
+  if (doc.key === "footer") {
+    const form = doc.form as SiteFooter;
+    if (form.hot.length > 0 || defaults.hot.length === 0) return doc;
+    return { ...doc, form: { ...form, hot: defaults.hot, hotTitle: form.hotTitle || defaults.hotTitle } as SiteDocs[K] };
+  }
+  return doc;
+}
+
 /** The home page editor: the document and what its pickers choose from. */
 export async function getHomepageEditor(): Promise<ActionResult<{ doc: SiteDocEditorData<"home">; options: SiteEditorOptions }>> {
   try {
@@ -90,13 +145,14 @@ export async function getChromeEditor(): Promise<
 > {
   try {
     const { company } = await requireCompany("tours");
-    const [general, header, footer, options] = await Promise.all([
+    const [general, header, footer, options, defaults] = await Promise.all([
       editorData(company, "general"),
       editorData(company, "header"),
       editorData(company, "footer"),
       siteEditorOptions(company),
+      chromeDefaults(company),
     ]);
-    return { success: true, data: { general, header, footer, options } };
+    return { success: true, data: { general, header: withChromeDefaults(header, defaults), footer: withChromeDefaults(footer, defaults), options } };
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the header and footer");
   }
@@ -227,7 +283,10 @@ export async function saveSiteDoc(
     });
     revalidatePath("/tours/homepage");
     revalidatePath("/tours/site");
-    return { success: true, data: await editorData(company, docKey) };
+    const fresh = await editorData(company, docKey);
+    // the header and footer editors keep showing what the site shows for a list that is still empty
+    const shown = docKey === "header" || docKey === "footer" ? withChromeDefaults(fresh, await chromeDefaults(company)) : fresh;
+    return { success: true, data: shown };
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to save");
   }

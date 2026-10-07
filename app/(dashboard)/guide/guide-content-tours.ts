@@ -673,6 +673,15 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Change the picture tiles (\"הכי חמים\") and the menu of the about pages", "לשנות את אריחי התמונות (\"הכי חמים\") ואת התפריט של עמודי האודות"),
+        steps: [
+          t("Open [Header & Footer](/tours/site) → \"Footer\" → \"Picture tiles\". The list opens with the tiles the site shows today: change a name, a link or a picture, add or remove a tile, or change the \"Title\".", "פותחים את [הדר ופוטר](/tours/site) ← \"Footer\" ← \"Picture tiles\". הרשימה נפתחת עם האריחים שהאתר מציג היום: משנים שם, קישור או תמונה, מוסיפים או מסירים אריח, או משנים את ה-\"Title\"."),
+          t("\"Show the picture tiles\" off hides the row on every page that carries it (the about pages, the FAQ pages, the blog posts, the leaders page).", "כיבוי \"Show the picture tiles\" מסתיר את השורה בכל עמוד שמציג אותה (עמודי אודות, שאלות נפוצות, פוסטים בבלוג, עמוד המדריכים)."),
+          t("\"Header menu\" → \"Menu of the about pages\" holds the row of links at the top of every about page: rename a link, reorder with the arrows, add a page with \"Pick…\".", "ב-\"Header menu\" ← \"Menu of the about pages\" נמצאת שורת הקישורים שבראש כל עמוד אודות: משנים שם של קישור, מסדרים בחצים, מוסיפים עמוד ב-\"Pick…\"."),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
+        ],
+      },
+      {
         title: t("Give a phone its own footer", "לתת לנייד פוטר משלו"),
         steps: [
           t("Open [Header & Footer](/tours/site) → \"Mobile footer\". \"Copy from the Footer\" starts from the computer's columns.", "פותחים את [הדר ופוטר](/tours/site) ← \"Mobile footer\". \"Copy from the Footer\" מתחיל מהעמודות של המחשב."),
@@ -683,7 +692,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     ],
     points: [
       t("A link left empty only opens its sub-links.", "קישור שנשאר ריק רק פותח את תתי הקישורים שלו."),
-      t("\"Footer\" holds the tiles above the footer, the newsletter texts and the link columns.", "ב-\"Footer\" נמצאים האריחים שמעל הפוטר, הטקסטים של הניוזלטר ועמודות הקישורים."),
+      t("\"Footer\" holds the tiles above the footer, the picture tiles, the newsletter texts and the link columns.", "ב-\"Footer\" נמצאים האריחים שמעל הפוטר, אריחי התמונות, הטקסטים של הניוזלטר ועמודות הקישורים."),
+      t("The picture tiles and the about menu open with what the site shows today. With none of your own saved, the site keeps the ones it came with.", "אריחי התמונות ותפריט האודות נפתחים עם מה שהאתר מציג היום. בלי אריחים או קישורים משלכם, האתר נשאר עם אלה שהגיעו איתו."),
       t("With no columns in \"Mobile footer\", a phone shows the same columns as a computer.", "בלי עמודות ב-\"Mobile footer\", הנייד מציג את אותן עמודות של המחשב."),
       t("\"Contact details\" also holds the \"Google Place ID\" of the company: the profile its Google reviews are read from.", "ב-\"Contact details\" נמצא גם ה-\"Google Place ID\" של החברה: הפרופיל שממנו נקראות ביקורות הגוגל שלה."),
     ],

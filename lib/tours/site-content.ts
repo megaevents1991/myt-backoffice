@@ -73,10 +73,16 @@ export const headerSchema = z.object({
     .max(8, "Up to 8 menus in the header"),
   links: z.array(link1).max(12),
   mobile: z.array(link1).max(40),
+  /** The row of links between the "about" pages; empty = the links those pages came with. */
+  aboutMenu: z.array(link3).max(12, "Up to 12 links between the about pages").default([]),
 });
 export type SiteHeader = z.infer<typeof headerSchema>;
 
 const footerTile = z.object({ label: label("A tile"), href: menuHref, icon: image });
+/** A picture tile of the "hot" row under the about, FAQ, blog and leaders pages: a name on a cover picture. */
+const pictureTile = z.object({ label: label("A picture tile"), href: menuHref, image });
+export type PictureTile = z.infer<typeof pictureTile>;
+export const PICTURE_TILES_MAX = 9;
 const footerColumns = z
   .array(z.object({ heading: text(160), links: z.array(z.object({ label: label("A footer link"), href: menuHref })).max(24) }))
   .max(10, "Up to 10 columns in the footer");
@@ -104,6 +110,13 @@ export const footerSchema = z.object({
   /** The footer of a phone: its own columns (empty = the same columns as the desktop), opened by a tap or all open. */
   mobileColumns: footerColumns.default([]),
   mobileAccordion: z.boolean().default(false),
+  /**
+   * The row of picture tiles under the about, FAQ, blog and leaders pages: whether it shows,
+   * its title, and its tiles (no tiles = the ones those pages came with).
+   */
+  hotVisible: z.boolean().default(true),
+  hotTitle: text(160).default(""),
+  hot: z.array(pictureTile).max(PICTURE_TILES_MAX, `Up to ${PICTURE_TILES_MAX} picture tiles`).default([]),
 });
 export type SiteFooter = z.infer<typeof footerSchema>;
 
@@ -562,7 +575,7 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
     leadOptions: [],
     googlePlaceId: "",
   },
-  header: { menus: [], links: [], mobile: [] },
+  header: { menus: [], links: [], mobile: [], aboutMenu: [] },
   footer: {
     discoverTitle: "",
     discover: [],
@@ -573,6 +586,9 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
     columns: [],
     mobileColumns: [],
     mobileAccordion: false,
+    hotVisible: true,
+    hotTitle: "",
+    hot: [],
   },
   home: { sections: [], footerTiles: DEFAULT_FOOTER_TILES },
 };

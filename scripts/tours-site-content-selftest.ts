@@ -7,6 +7,7 @@
 // comes out as the small vocabulary the visual editor can hold.
 import {
   defaultTermLayout,
+  SITE_DOC_SCHEMAS,
   homeSchema,
   readFooterTiles,
   readSiteDoc,
@@ -15,7 +16,7 @@ import {
   termSectionsSchema,
   type HomeSection,
 } from "../lib/tours/site-content";
-import { EMPTY_EASY, PAGE_NOTES, cleanEasy, easyFromHtml, easyLayoutOfPath, leadersSiteText, mediaPath, readEasy, simplifyHtml } from "../lib/tours/wp-html";
+import { EMPTY_EASY, PAGE_NOTES, aboutMenuFromHtml, cleanEasy, easyFromHtml, easyLayoutOfPath, hotTilesFromExtras, leadersSiteText, mediaPath, readEasy, simplifyHtml } from "../lib/tours/wp-html";
 import { canFeedReviews, formReviewCandidate, formReviewRef, formReviewShape, type FormReviewField } from "../lib/tours/form-reviews";
 import { isSimpleHtml } from "../components/tours/content/shared";
 
@@ -139,6 +140,33 @@ check("a save of the leaders page keeps its three fields", cleanEasy("leaders", 
   after: "<p>טקסט</p>",
 });
 check("the old shop addresses are left out of the list, the home page is not", [PAGE_NOTES["/cart/"]?.retired, PAGE_NOTES["/shop/"]?.retired, PAGE_NOTES["/"]?.retired, PAGE_NOTES["/"]?.href], [true, true, undefined, "/tours/homepage"]);
+
+// ---- the menu of the about pages and the picture tiles under them
+const oldHeader = readSiteDoc("header", { menus: [], links: [{ label: "צור קשר", href: "/contact/" }], mobile: [] });
+check("a header saved before the about menu existed opens, with no about links of its own", [oldHeader.links.length, oldHeader.aboutMenu], [1, []]);
+const oldFooter = readSiteDoc("footer", { discoverTitle: "בואו לגלות עוד", discover: [], newsletterTitle: "", newsletterNote: "", contactTitle: "", columns: [] });
+check("a footer saved before the picture tiles existed opens: the row shows, with no tiles of its own", [oldFooter.discoverTitle, oldFooter.hotVisible, oldFooter.hotTitle, oldFooter.hot], ["בואו לגלות עוד", true, "", []]);
+const navItem = (href: string, text: string) => `<li class="menu-item"><a class="elementor-item" href="${href}">${text}</a></li>`;
+const navHtml = (items: string) => `<div class="elementor-element elementor-widget elementor-widget-nav-menu" data-id="n"><nav class="elementor-nav-menu--main"><ul>${items}</ul></nav><nav class="elementor-nav-menu--dropdown"><ul>${items}</ul></nav></div>`;
+const aboutNav = navHtml(navItem("/about/since-1994/", "מאז 1994") + navItem("https://newsite.megatr.co.il/about/our-team/", "הצוות <b>שלנו</b>") + navItem("#", "ריק"));
+check("the about menu as the pages came with it: each link once, in order, as a path of the site", aboutMenuFromHtml(`<div>${aboutNav}${widget("text-editor", "<p>טקסט</p>")}</div>`), [
+  { label: "מאז 1994", href: "/about/since-1994/" },
+  { label: "הצוות שלנו", href: "/about/our-team/" },
+]);
+check("a page with no menu has no about links", aboutMenuFromHtml(legalHtml), []);
+const hotExtras = { instructorsPage: { hotTitle: " הכי חמים ", hotTiles: [{ name: "איטליה", href: "/destinations/איטליה/", image: "https://newsite.megatr.co.il/wp-content/uploads/2025/12/italy-300x200.jpg" }, { name: "", href: "/", image: "/media/x.jpg" }, { name: "קצרים", image: "/media/2025/12/Shorts.jpg" }] } };
+check("the picture tiles as the site came with them", hotTilesFromExtras(hotExtras), {
+  title: "הכי חמים",
+  tiles: [
+    { label: "איטליה", href: "/destinations/איטליה/", image: "/media/2025/12/italy.jpg" },
+    { label: "קצרים", href: "/", image: "/media/2025/12/Shorts.jpg" },
+  ],
+});
+check("no extras row: no picture tiles to open with", hotTilesFromExtras(undefined), { title: "", tiles: [] });
+const footerWithHot = { ...oldFooter, hot: [{ label: "איטליה", href: "/destinations/איטליה/", image: "/media/2025/12/italy.jpg" }] };
+check("a footer with a picture tile is valid", SITE_DOC_SCHEMAS.footer.safeParse(footerWithHot).success, true);
+check("a picture tile needs a name", SITE_DOC_SCHEMAS.footer.safeParse({ ...footerWithHot, hot: [{ label: " ", href: "/", image: "" }] }).success, false);
+check("ten picture tiles are refused", SITE_DOC_SCHEMAS.footer.safeParse({ ...footerWithHot, hot: Array.from({ length: 10 }, () => footerWithHot.hot[0]) }).success, false);
 
 // ---- reviews picked from a feedback form
 const oldReviews = home.sections.find((s) => s.type === "reviews");

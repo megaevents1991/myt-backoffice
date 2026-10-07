@@ -261,6 +261,44 @@ export function leadersSiteText(extras: unknown): Partial<EasyText> {
 }
 
 /**
+ * The row of links between the "about" pages as it came with the site: the links of the
+ * page's first menu widget, each once, in order. The Header & Footer editor opens its
+ * "about" menu with them until staff save their own.
+ */
+export function aboutMenuFromHtml(contentHtml: string): { label: string; href: string }[] {
+  const [menu] = widgets(contentHtml || "", "nav-menu");
+  if (!menu) return [];
+  const out: { label: string; href: string }[] = [];
+  const seen = new Set<string>();
+  const re = /<a\b([^>]*)>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fixLinks(menu)))) {
+    const href = /\bhref="([^"]*)"/.exec(m[1])?.[1]?.trim() ?? "";
+    const text = m[2].replace(/<[^>]+>/g, "").trim();
+    if (!href || href === "#" || !text || seen.has(href)) continue;
+    seen.add(href);
+    out.push({ label: text, href });
+  }
+  return out;
+}
+
+/**
+ * The picture tiles under the about, FAQ, blog and leaders pages as they came with the
+ * site (the "extras" row, `data.instructorsPage.hotTiles` / `hotTitle`). The editor
+ * opens its picture tiles with them until staff save their own.
+ */
+export function hotTilesFromExtras(extras: unknown): { title: string; tiles: { label: string; href: string; image: string }[] } {
+  const root = extras && typeof extras === "object" && !Array.isArray(extras) ? (extras as Record<string, unknown>) : {};
+  const page = root.instructorsPage && typeof root.instructorsPage === "object" ? (root.instructorsPage as Record<string, unknown>) : {};
+  const tiles = (Array.isArray(page.hotTiles) ? page.hotTiles : []).flatMap((tile) => {
+    const o = tile && typeof tile === "object" ? (tile as Record<string, unknown>) : {};
+    if (!filled(o.name)) return [];
+    return [{ label: o.name.trim(), href: filled(o.href) ? o.href.trim() : "/", image: filled(o.image) ? mediaPath(o.image.trim()) : "" }];
+  });
+  return { title: filled(page.hotTitle) ? page.hotTitle.trim() : "", tiles };
+}
+
+/**
  * The text of an imported page as it came from WordPress, in the fields of its layout.
  * `siteText` = words the site keeps outside the page's markup (the leaders page).
  */

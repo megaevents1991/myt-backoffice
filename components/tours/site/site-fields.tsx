@@ -18,8 +18,10 @@ import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
   FOOTER_TILE_MODES,
   FOOTER_TILE_MODE_LABELS,
+  PICTURE_TILES_MAX,
   type FooterTileMode,
   type FooterTiles,
+  type PictureTile,
   type SiteFooter,
   type SiteLink,
 } from "@/lib/tours/site-content";
@@ -469,6 +471,42 @@ export function TileList({
 /** Drops the tiles nobody filled in, before a save. */
 export const pruneTiles = (items: FooterTile[]): FooterTile[] =>
   items.filter((tile) => tile.label.trim() !== "" || (tile.href.trim() !== "" && tile.href.trim() !== "#") || tile.icon.trim() !== "");
+
+/** The picture tiles under the about, FAQ, blog and leaders pages: a name on a cover picture, and where it leads. */
+export function PictureTileList({
+  items,
+  onChange,
+  options,
+  siteUrl,
+}: {
+  items: PictureTile[];
+  onChange: (items: PictureTile[]) => void;
+  options: SiteEditorOptions;
+  siteUrl: string | null;
+}) {
+  return (
+    <ItemList
+      items={items}
+      onChange={onChange}
+      create={() => ({ label: "", href: "", image: "" })}
+      addLabel="Add Picture Tile"
+      max={PICTURE_TILES_MAX}
+      render={(tile, patch) => (
+        <div className="space-y-2">
+          <div className="grid gap-2 md:grid-cols-2">
+            <Input dir="auto" aria-label="Tile name" placeholder="Tile name" value={tile.label} onChange={(e) => patch({ label: e.target.value })} />
+            <LinkInput value={tile.href === "#" ? "" : tile.href} onChange={(href) => patch({ href })} options={options} />
+          </div>
+          <ImageUrlField label="Picture" value={tile.image} onChange={(image) => patch({ image })} siteUrl={siteUrl} folder="pages" hint="A wide picture; the name is written on it in white." />
+        </div>
+      )}
+    />
+  );
+}
+
+/** Drops the picture tiles nobody filled in, before a save. */
+export const prunePictureTiles = (items: PictureTile[]): PictureTile[] =>
+  items.filter((tile) => tile.label.trim() !== "" || (tile.href.trim() !== "" && tile.href.trim() !== "#") || tile.image.trim() !== "");
 
 /**
  * What one page does with the tiles above the footer: follow the rule set in
