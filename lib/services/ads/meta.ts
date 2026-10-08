@@ -73,9 +73,17 @@ export function parseMetaInsight(raw: MetaInsightRaw, ctx: { accountId: string; 
 
 /**
  * Days per insights request. Measured on prod 2026-10-08: Meta needs more than 30 s to answer an adset-by-day window of 30 or
- * 90 days (graphGetAll's per-request 30 s timeout aborts it); 14 days answers in ~25 s (197 rows), a week well inside.
+ * 90 days (graphGetAll's per-request 30 s timeout aborts it); a 14-day window took 9-25 s (153-191 rows) and one of two
+ * 90-day runs still lost a window to the timeout, so a week it is - ~half that, with room to spare.
  */
-export const META_SPEND_CHUNK_DAYS = 14;
+export const META_SPEND_CHUNK_DAYS = 7;
+/** A window whose request timed out is asked once more before the whole spend read fails. */
+const META_SPEND_RETRIES = 1;
+
+function isTimeout(err: unknown): boolean {
+  const e = err as { name?: string; message?: string } | null;
+  return e?.name === "TimeoutError" || /timeout|aborted/i.test(e?.message ?? "");
+}
 
 /** Pure: inclusive yyyy-mm-dd windows of `chunkDays` days that cover since..until, the last one shorter. `since > until` (or a bad date) -> []. */
 export function dayChunks(since: string, until: string, chunkDays: number): { since: string; until: string }[] {
@@ -92,17 +100,26 @@ export function dayChunks(since: string, until: string, chunkDays: number): { si
   return out;
 }
 
-/** Daily adset-level spend between two yyyy-mm-dd days (inclusive). One insights request per `META_SPEND_CHUNK_DAYS` window, one after the other (Meta rate limits - never in parallel). */
+/** Daily adset-level spend between two yyyy-mm-dd days (inclusive). One insights request per `META_SPEND_CHUNK_DAYS` window, one after the other (Meta rate limits - never in parallel); a window that times out is retried `META_SPEND_RETRIES` times. */
 export async function fetchMetaSpend(opts: { accountId: string; since: string; until: string; currency: string; fxRate: number }): Promise<AdSpendRow[]> {
   const rows: AdSpendRow[] = [];
   for (const w of dayChunks(opts.since, opts.until, META_SPEND_CHUNK_DAYS)) {
-    const raws = await graphGetAll<MetaInsightRaw>(`/${opts.accountId}/insights`, {
+    const params = {
       level: "adset",
       time_increment: "1",
       time_range: JSON.stringify({ since: w.since, until: w.until }),
       fields: "campaign_id,adset_id,spend,impressions,clicks,actions,action_values",
       limit: "500",
-    });
+    };
+    let raws: MetaInsightRaw[] | null = null;
+    for (let attempt = 0; raws === null; attempt++) {
+      try {
+        raws = await graphGetAll<MetaInsightRaw>(`/${opts.accountId}/insights`, params);
+      } catch (err) {
+        if (attempt >= META_SPEND_RETRIES || !isTimeout(err)) throw err;
+        console.warn(`[meta] insights ${w.since}..${w.until} timed out, retrying`);
+      }
+    }
     for (const r of raws) rows.push(parseMetaInsight(r, opts));
   }
   return rows;

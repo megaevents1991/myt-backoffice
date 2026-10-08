@@ -22,11 +22,13 @@ assert.equal(pickLandingDomain(["megatr.co.il", "www.mega-events.co.il".replace(
 assert.equal(pickLandingDomain(["megatr.co.il", null, "megafamily.co.il"]), "megatr.co.il");
 assert.equal(pickLandingDomain([null, undefined]), null);
 
-// Meta spend is read in 14-day windows (one 30-day insights request outlasts Meta's answer time and the 30 s read timeout).
+// Meta spend is read in 7-day windows (one 30-day insights request outlasts Meta's answer time and the 30 s read timeout).
+assert.equal(META_SPEND_CHUNK_DAYS, 7);
 const ninety = dayChunks("2026-07-11", "2026-10-08", META_SPEND_CHUNK_DAYS);
-assert.equal(ninety.length, 7);
-assert.deepEqual(ninety[0], { since: "2026-07-11", until: "2026-07-24" });
-assert.deepEqual(ninety[6], { since: "2026-10-03", until: "2026-10-08" });
+assert.equal(ninety.length, 13);
+assert.deepEqual(ninety[0], { since: "2026-07-11", until: "2026-07-17" });
+assert.deepEqual(ninety[12], { since: "2026-10-03", until: "2026-10-08" });
+assert.deepEqual(dayChunks("2026-07-11", "2026-10-08", 14).length, 7);
 assert.deepEqual(dayChunks("2026-10-02", "2026-10-08", META_SPEND_CHUNK_DAYS), [{ since: "2026-10-02", until: "2026-10-08" }]);
 assert.deepEqual(dayChunks("2026-10-09", "2026-10-08", META_SPEND_CHUNK_DAYS), []);
 // Contiguous: every window starts the day after the previous one ends, so no day is read twice or skipped.
