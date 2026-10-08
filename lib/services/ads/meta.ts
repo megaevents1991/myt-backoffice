@@ -17,7 +17,7 @@ function token(): string {
   return t;
 }
 
-/** One Graph GET with paging (`paging.next`) - at most `maxPages` pages. */
+/** One Graph GET with paging (`paging.next`). Throws when more than `maxPages` pages remain or a 200 carries no `data` array - a short list must never pass for the whole answer. */
 export async function graphGetAll<T = Json>(path: string, params: Record<string, string>, maxPages = 20): Promise<T[]> {
   const out: T[] = [];
   const first = new URL(GRAPH + path);
@@ -28,10 +28,12 @@ export async function graphGetAll<T = Json>(path: string, params: Record<string,
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token()}` }, signal: AbortSignal.timeout(30_000) });
     const body = (await res.json().catch(() => ({}))) as { data?: T[]; paging?: { next?: string }; error?: { message: string; code: number } };
     if (!res.ok || body.error) throw new Error(`Meta ${path}: ${body.error?.message ?? res.status} (code ${body.error?.code ?? "-"})`);
-    out.push(...(body.data ?? []));
+    if (!Array.isArray(body.data)) throw new Error(`Meta ${path}: no data array in response`);
+    out.push(...body.data);
     url = body.paging?.next ?? null;
     pages += 1;
   }
+  if (url) throw new Error(`Meta ${path}: more than ${maxPages} pages`);
   return out;
 }
 
@@ -92,11 +94,13 @@ export function creativeLandingDomain(c: MetaCreative | undefined): string | nul
 
 /** Campaigns, adsets and ads of the account -> ad_entities rows (brand by rule on campaigns; the sync copies it down and keeps manual brands). */
 export async function fetchMetaEntities(opts: { accountId: string }): Promise<AdEntityRow[]> {
-  // /ads expands the creative, so a page of 500 answers "Please reduce the amount of data" (code 1) - 100 a page, up to 100 pages.
+  // The edges omit ARCHIVED rows unless asked (measured: 258 listed, 9 more archived) - and an archived campaign still has spend rows that need an entity + brand, so every status is requested.
+  const effective_status = JSON.stringify(["ACTIVE", "PAUSED", "ARCHIVED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES"]);
+  // /ads expands the creative, so a big page answers "Please reduce the amount of data" (code 1) - 500 and, once archived ads are in, 100 both did; 50 a page, up to 200 pages.
   const [campaigns, adsets, ads] = await Promise.all([
-    graphGetAll<{ id: string; name: string; effective_status: string; objective: string }>(`/${opts.accountId}/campaigns`, { fields: "id,name,effective_status,objective", limit: "500" }),
-    graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string }>(`/${opts.accountId}/adsets`, { fields: "id,name,effective_status,campaign_id", limit: "500" }),
-    graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string; adset_id: string; creative?: MetaCreative }>(`/${opts.accountId}/ads`, { fields: "id,name,effective_status,campaign_id,adset_id,creative{url_tags,link_url,object_story_spec,asset_feed_spec}", limit: "100" }, 100),
+    graphGetAll<{ id: string; name: string; effective_status: string; objective: string }>(`/${opts.accountId}/campaigns`, { fields: "id,name,effective_status,objective", effective_status, limit: "500" }),
+    graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string }>(`/${opts.accountId}/adsets`, { fields: "id,name,effective_status,campaign_id", effective_status, limit: "500" }),
+    graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string; adset_id: string; creative?: MetaCreative }>(`/${opts.accountId}/ads`, { fields: "id,name,effective_status,campaign_id,adset_id,creative{url_tags,link_url,object_story_spec,asset_feed_spec}", effective_status, limit: "50" }, 200),
   ]);
   const domainByCampaign = new Map<string, string>();
   for (const ad of ads) {
