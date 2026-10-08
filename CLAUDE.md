@@ -154,12 +154,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > Spend / Revenue / COGS / Net profit vs `monthly_profit_target_usd` / CAC / ROAS / POAS + a daily
 > spend-vs-revenue chart; `?range=` 7d / 30d / 90d / month and `?brand=` default Mega Events, both
 > kept in the URL), **מדיה** `media` (campaign `DataTable`, a row opens its adsets / ad groups, plus
-> the "לא זוהה" and "לא מיוחס" cards), **אינסטגרם** `instagram` (media grid, "ויראלי" badge),
-> **התראות** `alerts`, **הגדרות** `settings` (fee %, profit target, alert thresholds + emails, a
-> brand select per campaign, "סנכרן עכשיו" = `runMarketingSyncNow`, 50 s budget). Display currency
+> the "לא זוהה", "לא מיוחס" and "קמפיין של מותג אחר" cards), **אינסטגרם** `instagram` (media grid,
+> "ויראלי" badge), **התראות** `alerts`, **הגדרות** `settings` (fee %, profit target, alert thresholds
+> + emails, a brand select per campaign, "סנכרן עכשיו" = `runMarketingSyncNow`, 240 s budget inside
+> the page's `maxDuration` 300 - page.tsx + `vercel.json`, like `/price-light`; the brand table
+> reloads in place when it ends). The Settings tab loads with ONE action (`getMarketingSettingsPage`).
+> Settings are validated by the pure `validateSettingsPatch` (`lib/marketing/settings.ts`, selftest
+> `marketing-settings`: fee 0-100, days integer 1-60, viral 50-1000, bleed ₪0-1,000,000, target
+> $0-100M, at most 10 deduped emails) BEFORE anything is read or written. Display currency
 > is USD; the P&L read is cached 300 s (`unstable_cache`, tag `marketing-pnl`,
-> `lib/services/marketing-cache.ts`); every write is audited (`marketing.settings` /
-> `marketing.brand` / `marketing.sync_triggered`). The sync is the `marketingSync` cron (cron list).
+> `lib/services/marketing-cache.ts`; an ops save of the actual cost drops it); every write is audited
+> (`marketing.settings` / `marketing.brand` / `marketing.sync_triggered`). Paged reads go through ONE
+> `readAll` (`lib/services/marketing-db.ts`: order by the table's key, dedupe by it, throw past the
+> cap). The sync is the `marketingSync` cron (cron list).
 >
 > **Phase 0 - the numbers are real** (pure, `lib/services/reservation-pnl.ts`). Revenue =
 > `user_shown_price` (USD, the coupon is already inside it - never subtracted again) minus
@@ -170,8 +177,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > where `ticket_cost_source` says who wrote it: `live` (main's confirm-order, LiveTickets +
 > TixStock), `estimated` (the sync's `cogs` step, `lib/services/reservation-cogs-fill.ts`:
 > LiveTickets' category cost, XS2Event's net rate, else the markup inverted `price / 1.035 - 40`;
-> 200 Paid reservations of the last 120 days per run, never over a `live` / `manual` cost) or
-> `manual`. A ticket with no snapshot falls back to its SALE price flagged estimated, and ops'
+> 200 Paid reservations of the last 120 days per run, never over a `live` / `manual` cost; stops 20 s
+> before the run's budget and reports `remaining`) or `manual` (RESERVED - nothing writes it yet; ops'
+> real cost goes to `actual_cost_usd`). A ticket with no snapshot falls back to its SALE price flagged estimated, and ops'
 > **`actual_cost_usd`** (reservation edit page, "Actual supplier cost (USD)" + `actual_cost_note`)
 > beats the whole computed COGS. Anything standing in for a real cost shows "משוער N". Partner
 > commission is deliberately NOT in COGS (the partner P&L on `/partners` owns it; counting it here
@@ -179,8 +187,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > card is "Revenue" = `revenueUsd` of every Paid booking. Net = revenue - COGS - fee - spend;
 > POAS = net / spend, ROAS = revenue / spend, CAC = spend / purchases
 > (`lib/services/marketing-pnl.ts`). Those cards cover the orders credited to a paid campaign (the
-> chosen brand's, plus each platform's unresolved ones); the "לא מיוחס" revenue is printed beside
-> them, never inside.
+> chosen brand's, plus each platform's unresolved ones - those only for Mega Events / all, never for
+> "other": an unresolved touch is a click on OUR links). **Revenue never drops out of a brand view:**
+> a booking whose resolved campaign is outside the brand - or has no `ad_entities` row (no known brand
+> = "other", the same predicate the spend side uses) - lands in `Pnl.otherBrand` ("קמפיין של מותג
+> אחר"), printed beside the cards with "לא מיוחס", never inside. The net card is **"רווח נקי ממדיה"**
+> (`totals.netUsd`) with the "לא מיוחס" and "מותג אחר" nets under it; the monthly target (month range)
+> is held against the ALL-IN net = media + unattributed + other brand ("יעד ... מול רווח כולל $X").
+> Ranges are N calendar days INCLUSIVE of today (`rangeWindow`: 30d on 10-08 = 09-09..10-08).
 >
 > **Attribution = last PAID touch** (`lib/services/marketing-attribution.ts`: `paidTouchOf` over
 > the reservation's `utm_touches`, position 0 = the credited one first; an influencer touch at position 0 is never itself
@@ -198,22 +212,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > Settings tab is `manual` and the sync never touches it ("לפי חוק" hands it back).
 >
 > **Alerts** (`lib/services/marketing-alerts.ts`, mail through `sendMail`, no Slack):
-> `budget_bleed` - a Mega Events campaign past `budget_bleed_ils` (1,500) in `budget_bleed_days` (3)
-> with zero attributed purchases; `viral_post` - an IG post (not a story, 24 h old) whose
-> engagement beats `viral_pct` (200) % of the mean of the 30 before it (the grid badge reads the
-> same rule, `lib/marketing/engagement.ts`). `marketing_alerts` dedupes: mailed once when first seen,
+> `budget_bleed` "דימום תקציב" - a Mega Events campaign past `budget_bleed_ils` (1,500) in
+> `budget_bleed_days` (3) with zero attributed purchases; `viral_post` "פוסט ויראלי" - an IG post (not a
+> story, 24 h old, published within `VIRAL_MAX_AGE_DAYS` 7) whose engagement beats `viral_pct` (200) %
+> of the mean of the 30 before it (the grid badge reads the same rule, `lib/marketing/engagement.ts`,
+> WITHOUT the age cap - it is a display; both read the newest `IG_MEDIA_READ` 200 posts). The mail, the
+> tab and the guide use the same two names (`ALERT_KIND_LABEL`). `marketing_alerts` dedupes: mailed once when first seen,
 > again only after the condition cleared and fired anew; `last_mailed_at` is stamped BEFORE the send
-> and cleared if the send fails (retried next run). Thresholds live in `marketing_settings`, never
+> and cleared if the send fails (retried next run). Recipients = `alert_emails`, else
+> `NEXT_SECRET_ADMIN_EMAIL`. Thresholds live in `marketing_settings`, never
 > in code. **Pure modules + selftests** (`npx tsx scripts/<name>-selftest.ts`): `reservation-pnl`,
 > `ad-brand`, `reservation-cogs` (`estimateTicketCostUsd`), `marketing-attribution`, `marketing-pnl`,
-> `marketing-alerts`. **Main side** (myt-main `eff67c5`; deploy AFTER the backoffice migration):
+> `marketing-alerts`, `marketing-settings`. **Main side** (myt-main `eff67c5`, hardened in `971c78e`;
+> deploy AFTER the backoffice migration):
 > confirm-order snapshots the ticket's supplier cost into `ticket_cost_usd` /
 > `ticket_cost_source = 'live'` (`lib/ticket-cost.ts`: LiveTickets' offer cost; TixStock = the raw
 > `proceed_price` of the listing the site would sell, `lib/tixstock-feed.ts`; neither carries our
-> markup or the 3.5 %), and the confirmation page sends the REAL `user_shown_price` as the
-> `purchase` value (GTM no longer fires `value || 1500`). The insert retry on 42703 is STAGED: first
-> only the two cost keys are dropped, and only if that still fails the settlement keys too - so
-> before the migration an `agent_card` order is never charged in full. The public
+> markup or the 3.5 %; the snapshot has a 3 s deadline, so a slow supplier never holds up a checkout),
+> and the confirmation page sends the REAL `user_shown_price` as the `purchase` value (GTM no longer
+> fires `value || 1500`; the GA4 item `price` is per UNIT = total / quantity). The insert retry is
+> STAGED (`lib/reservation-insert.ts`, tested): the cost step retries on `42703` OR `PGRST204` and
+> strips only the two cost keys; the settlement step retries on `42703` only and strips the
+> settlement keys too - so before the migration an `agent_card` order is never charged in full. The public
 > `/api/livetickets/tickets` strips the cost fields. **Deferred on purpose:** campaign pause/resume
 > (write token, expires 2026-11-27), traffic / CVR (GA4 Data API), Search Console, Clarity, Ads
 > Library, retiring Mixpanel in main - they wait for the accesses in the doc "גישות חסרות -
@@ -833,7 +853,7 @@ fallback for manual triggers:
 - `taskOverdueAlerts` - Sunday-Thursday 06:30 UTC (`30 6 * * 0-4`, the office's working days): every task past its due date whose assignee has said nothing since is raised to whoever opened it, ONE mail per opener, again every `OVERDUE_REALERT_DAYS` (3) while it stays silent (`overdue_alert` activity rows are the dedupe). Reads every company's tasks on purpose. `?dry_run=1` = full report, nothing mailed or written. See "Editors assign + reminders + late alerts" under Tasks Hub.
 - `followUpReminder` - Sunday-Thursday 05:15 UTC (`15 5 * * 0-4`, morning in Israel): ONE mail with every reservation in `Follow-up` whose customer is waiting today - call-back day today, passed, or never set (`needsCallNow`); a later day stays out until it comes; nobody waiting = no mail (`lib/services/follow-up-reminder.ts`). A daily digest on purpose - no dedupe: a customer stays in it until the day is moved or the status changes. Recipient = Alon's Mega mailbox (`DEFAULT_FROM` in `lib/email.ts` - Dor, 04.10) unless `NEXT_SECRET_FOLLOW_UP_REMINDER_TO` (comma-separated) names others. `?dry_run=1` = full report (reservation ids + labels, no customer details), nothing mailed. See "Reservation Follow-up".
 - `weeklyTaskGen` - daily 06:00 UTC (`vercel.json` `0 6 * * *`); each rule runs only on its own UTC weekday (`dow`): runs every active `task_rules` row through its domain's generator (`lib/services/task-rules/*`) and `weekly-task-plan.ts`'s pure decision logic, creating one weekly-digest task per rule (source `recurring`) or one task per item under that domain's native source (`price_light`/`price_review`/`creative_gap`). Per-item rules are capped at 25 creates per run (`PER_ITEM_MAX_PER_RUN`) with one summary mail per assignee; the 270s budget is checked per created task. A generator that fails to load its data THROWS - never silently returns an empty list, which would auto-close open digests that are still valid. `?dry_run=1` reports what it would create with zero writes. See "Tasks Hub" above.
-- `marketingSync` - every 6 h at :20 (`vercel.json` `20 */6 * * *` = 00:20, 06:20, 12:20, 18:20 UTC), `maxDuration` 300, 270 s budget: the marketing dashboard's one sync (`lib/services/marketing-sync.ts`, spec section 4). Six steps in this order, each in its own try/catch so one source failing never skips the next: (1) `meta` - `lib/services/ads/meta.ts`, Graph `v26.0`: `act_<id>/insights` per adset per day for the last 7 days (Meta restates recent days) -> `ad_spend_daily`, and campaigns / adsets / ads (~1,800 ads, 50 a page) -> `ad_entities`; (2) `google` - `ads/google.ts`, `googleAds:search` on v25 with a JWT-signed service account and NO developer token: spend per ad group (per campaign for PERFORMANCE_MAX) -> `ad_spend_daily`, campaigns / ad groups / ads -> `ad_entities`, `click_view` of the last 3 days -> `ad_clicks`; (3) `instagram` - `ads/instagram.ts`: the newest 100 posts + live stories -> `ig_media` (per-post insights fill its counters and add today's row to `ig_media_insights_daily`), followers -> `ig_account_daily`; (4) `cogs` - `reservation-cogs-fill.ts`: an `estimated` `ticket_cost_usd` for up to 200 Paid reservations that have none; (5) `alerts` - the two rules, `marketing_alerts`, the alert mail; (6) `retention` - deletes `ad_clicks` older than 100 days and `ig_media_insights_daily` older than 180. `spend_usd` = `spend x fx_rate`, the ILS rate read once at the top of the run and stored on every row. A step that would start after the budget is spent is skipped; a backfill's click_view walk stops at the budget and says how many days are left. Params, on top of the bearer / `?key=`: `?dry_run=1` reads everything and writes and mails nothing; `?only=meta|google|instagram|cogs|alerts|retention` runs one step; `?backfill_days=N` widens the spend window (default 7, max 180) and the click_view walk (default 3 days, max 90) - for the one-off first run. **Mail:** a healthy run is silent (four mails a day would be noise); `NEXT_SECRET_ADMIN_EMAIL` gets "Marketing sync: N step(s) failed" naming each failed step, and the `alerts` step mails new alerts to `marketing_settings.alert_emails`. The `marketing-*` caches are invalidated once at the end. **Migration first:** `20261008120000` must be applied before the first prod tick, or every step fails on the missing tables and Dor is mailed four times a day. Measured (full dry run on prod, 2026-10-08): about 180 s of the 270 - Meta ~93 s (the ads edge is most of it), Instagram ~80 s. The screen's "סנכרן עכשיו" runs the same function with a 50 s budget. See "Marketing dashboard" above.
+- `marketingSync` - every six hours at 01:20, 07:20, 13:20 and 19:20 UTC (`vercel.json` `20 1,7,13,19 * * *`), `maxDuration` 300, 270 s budget: the marketing dashboard's one sync (`lib/services/marketing-sync.ts`, spec section 4). Six steps in this order, each in its own try/catch so one source failing never skips the next: (1) `meta` - `lib/services/ads/meta.ts`, Graph `v26.0`: `act_<id>/insights` per adset per day for the last 7 days (Meta restates recent days) -> `ad_spend_daily`, WRITTEN before the entity walk starts, then campaigns / adsets / ads (~1,800 ads, 50 a page) -> `ad_entities` (ACTIVE / PAUSED / ARCHIVED / CAMPAIGN_PAUSED / ADSET_PAUSED / IN_PROCESS / WITH_ISSUES on every edge - an archived campaign still has spend history and bookings; ads add PENDING_REVIEW / DISAPPROVED / PREAPPROVED / PENDING_BILLING_INFO. **DELETED cannot be asked for:** the account edges answer 400 code 100 / subcode 1815001 "deleted objects are not supported on this endpoint" (measured 2026-10-08) - a deleted Meta object is readable only by its own id, and that day no deleted or archived campaign had spend in the last 90 days); (2) `google` - `ads/google.ts`, `googleAds:search` on v25 with a JWT-signed service account and NO developer token: spend per ad group (per campaign for PERFORMANCE_MAX) -> `ad_spend_daily` (written first, same rule), then campaigns + ad groups -> `ad_entities` in every status, REMOVED included (a removed campaign keeps spend rows and bookings inside the 90-day backfill) - ads and asset groups are read only for the campaign's landing domain, never written; then `click_view` -> `ad_clicks`: the last 3 days on every run, and on a backfill each older day of the window that has no click row yet, walked OLDEST missing day first until the budget - so a backfill cut short resumes where it stopped when it is run again, and the note says how many days are still missing; (3) `instagram` - `ads/instagram.ts`: the newest 100 posts + live stories -> `ig_media` (per-post insights fill its counters and add today's row to `ig_media_insights_daily`), followers -> `ig_account_daily`; (4) `cogs` - `reservation-cogs-fill.ts`: an `estimated` `ticket_cost_usd` for up to 200 Paid reservations that have none, stopping 20 s before the budget (`deadlineMs`, `remaining` in the note); `ticket_cost_source = 'manual'` is RESERVED - nothing writes it; (5) `alerts` - the two rules, `marketing_alerts`, the alert mail; (6) `retention` - deletes `ad_clicks` older than 100 days and `ig_media_insights_daily` older than 180. `spend_usd` = `spend x fx_rate`, the UNROUNDED ILS rate (`getRawRate` on the exchange-rate service in `ticket-price-sync.ts`, which the sync imports DYNAMICALLY - that module throws at load without the supplier env), read once at the top of the run and stored on every row. **FX fallback:** when the rate refresh failed and ILS is still the built-in fallback, NO spend is written - `meta` / `google` fail "ILS rate unavailable (fallback) - spend not written, retried next tick" (their entities and clicks are still written). A step that would start after the budget is spent is reported `ok: false` "skipped: budget" (the run is not ok and the failure mail names it). `ad_entities`' manual-brand read tolerates ONLY a missing table (`42P01` / `PGRST205`). Params, on top of the bearer / `?key=`: `?dry_run=1` reads everything and writes and mails nothing; `?only=meta|google|instagram|cogs|alerts|retention` runs one step (any other value answers 400 `unknown step`); `?backfill_days=N` widens the spend window (default 7, max 180) and the click_view walk (default 3 days, max 90) - for the one-off first run. **Mail:** a healthy run is silent (four mails a day would be noise); `NEXT_SECRET_ADMIN_EMAIL` gets "Marketing sync: N step(s) failed" naming each failed step (step and note HTML-escaped, `lib/html-escape.ts`), and the `alerts` step mails new alerts to `marketing_settings.alert_emails`, falling back to `NEXT_SECRET_ADMIN_EMAIL` when that list is empty. The `marketing-*` caches are invalidated once at the end. **Migration first:** `20261008120000` must be applied before the first prod tick, or every step fails on the missing tables and Dor is mailed four times a day. Measured (full dry run on prod, 2026-10-08): about 180 s of the 270 - Meta ~93 s (the ads edge is most of it), Instagram ~80 s. The screen's "סנכרן עכשיו" runs the same function with a 240 s budget (the page's `maxDuration` is 300). See "Marketing dashboard" above.
 
 ### Environment Variables
 
