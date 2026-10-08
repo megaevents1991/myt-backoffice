@@ -256,6 +256,13 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
                 ))}
               </div>
             </div>
+            <div className="flex items-center gap-3 rounded-md border p-3 md:max-w-md">
+              <Switch id="tiles-on-mobile" checked={footer.discoverMobile} onCheckedChange={(discoverMobile) => setFooter({ discoverMobile })} />
+              <label htmlFor="tiles-on-mobile" className="text-sm">
+                Show the tiles on phones
+                <span className="block text-xs text-muted-foreground">Off = a phone shows no tiles above the footer, on any page (a single page can still ask for them in its own &quot;On phones&quot;).</span>
+              </label>
+            </div>
           </Section>
           <Section
             title="Picture tiles"

@@ -13,13 +13,16 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Field, Notice, selectClass } from "@/components/tours/ui";
-import { ImageUrlField } from "@/components/tours/content/fields";
+import { ImageListEditor, ImageUrlField } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
   REVIEWS_MAX,
+  SUMMARY_COLUMNS_MAX,
+  SUMMARY_IMAGES_MAX,
   TAB_SHOWS,
   TAB_TERM_KIND,
+  TERM_PICKS_MAX,
   TILE_SOURCES,
   TILE_SOURCE_LABELS,
   TOUR_SOURCES,
@@ -382,12 +385,15 @@ function TermTilesForm({ section, onChange, options, siteUrl }: FormProps<"artis
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => update({ title })} />
       <Grid>
-        <Field label={`Which ${plural}`} hint={`Automatic = the section fills itself; a ${noun.toLowerCase()} without a picture is skipped.`}>
+        <Field
+          label={`Which ${plural}`}
+          hint={`"I pick them" = the ${plural} you list here, in this order. "Automatic" = the section fills itself with the ${plural} of the tours of a rule (a world, a tag, a category, a destination, on sale) or all of them; a ${noun.toLowerCase()} without a picture is skipped.`}
+        >
           {selectOf(section.mode, ["manual", "auto"] as const, FILL_LABELS, (mode) => update({ mode }))}
         </Field>
         {section.mode === "auto" && (
           <>
-            <Field label={`The ${plural} of which tours`} hint={`"All of them" lists every ${noun.toLowerCase()}, the ones with the most tours first.`}>
+            <Field label={`The ${plural} of which tours`} hint={`"All of them" lists every ${noun.toLowerCase()}, the ones with the most tours first. A rule lists the ${plural} its tours go to, the most used first.`}>
               {selectOf<TileSource>(section.source, TILE_SOURCES, TILE_SOURCE_LABELS, (source) => update({ source, term: "" }))}
             </Field>
             {termKind && (
@@ -431,7 +437,10 @@ function BannersForm({ section, onChange, options, siteUrl }: FormProps<"banners
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
-      <Field label="Which banners" hint="Automatic = one banner per tour of a rule: the tour's picture and name, and a button to its page.">
+      <Field
+        label="Which banners"
+        hint='"I pick them" = banners you write here, each with its own picture, text and link. "Automatic" = one banner per tour of a rule (the tours of a world, a tag, a destination, a category, on sale, or tours you pick): the tour&apos;s picture and name, and a button to its page.'
+      >
         {selectOf(section.mode, ["manual", "auto"] as const, FILL_LABELS, (mode) => onChange({ ...section, mode }))}
       </Field>
       {section.mode === "auto" ? (
@@ -643,13 +652,91 @@ function ImageForm({ section, onChange, options, siteUrl }: FormProps<"image">) 
   );
 }
 
-/** A built-in part of a term page has nothing to fill in: what it is and how to use it. */
+/** What a built-in part of a term page is, and how to use it. */
 const BLOCK_NOTES: Record<"subcategories" | "term_tours" | "term_description", string> = {
   subcategories:
     "The tags attached to this world, as buttons in the world's color. Attach a tag on the tag's own screen (its World field). Nothing shows while the world has none.",
   term_tours: "Every tour that carries this term, with its search. It fills itself. Move it up or down among the other parts, or switch it off to hide it.",
   term_description: "The text of the Description field, further down this screen. Move it to where the page should say it, or switch it off.",
 };
+
+/** The tour list of a term page: which tours come first, and whether the rest follow. */
+function TermToursForm({ section, onChange, options }: FormProps<"term_tours">) {
+  return (
+    <div className="space-y-4">
+      <Notice tone="info">{BLOCK_NOTES.term_tours}</Notice>
+      <ToursPicker
+        label="Tours first"
+        value={section.tours}
+        onChange={(tours) => onChange({ ...section, tours })}
+        options={options}
+        max={TERM_PICKS_MAX}
+      />
+      <p className="text-xs text-muted-foreground">
+        These come first, in this order; every other tour of the page follows them. With none picked, the page keeps its own order. A picked tour that does not carry this
+        term is still shown here.
+      </p>
+      <div className="flex items-center gap-3 rounded-md border p-3 md:max-w-md">
+        <Switch id={`${section.id}-only`} checked={section.onlyPicked} onCheckedChange={(onlyPicked) => onChange({ ...section, onlyPicked })} />
+        <label htmlFor={`${section.id}-only`} className="text-sm">
+          Show only the tours picked
+          <span className="block text-xs text-muted-foreground">On = the other tours of the page are left out (with no tour picked, the page shows all of them).</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+/** The sub-categories of a world page: which of its tags to show, in which order. */
+function SubcategoriesForm({ section, onChange, options }: FormProps<"subcategories">) {
+  return (
+    <div className="space-y-4">
+      <Notice tone="info">{BLOCK_NOTES.subcategories}</Notice>
+      <ItemList
+        label="Sub-categories to show"
+        items={section.tags}
+        onChange={(tags) => onChange({ ...section, tags })}
+        create={() => ""}
+        addLabel="Add Sub-category"
+        empty="None picked: the page shows every tag attached to this world, in the order of the tags list."
+        max={TERM_PICKS_MAX}
+        render={(tag, _patch, index) => (
+          <TermSelect kind="tags" value={tag} onChange={(slug) => onChange({ ...section, tags: section.tags.map((t, i) => (i === index ? slug : t)) })} options={options} ariaLabel="Tag" />
+        )}
+      />
+      <p className="text-xs text-muted-foreground">With a list here, the page shows these tags only, in this order - also a tag that is not attached to this world.</p>
+    </div>
+  );
+}
+
+/** "<destination> on a fingertip": a heading, a row of pictures, a gray intro card and up to three text columns. */
+function SummaryForm({ section, onChange, siteUrl }: FormProps<"summary">) {
+  const setColumn = (index: number, html: string) => onChange({ ...section, columns: section.columns.map((c, i) => (i === index ? html : c)) });
+  return (
+    <div className="space-y-4">
+      <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} hint='The heading of the block, e.g. "אוסטריה על קצה המזלג".' />
+      <ImageListEditor
+        label="Pictures"
+        value={section.images}
+        onChange={(images) => onChange({ ...section, images: images.slice(0, SUMMARY_IMAGES_MAX) })}
+        siteUrl={siteUrl}
+        folder="terms"
+        hint={`A row of small pictures under the heading, five across on a computer. Up to ${SUMMARY_IMAGES_MAX}.`}
+      />
+      <HtmlField label="Intro (the gray card)" value={section.intro} onChange={(intro) => onChange({ ...section, intro })} siteUrl={siteUrl} rows={6} />
+      <ItemList
+        label="Text columns"
+        items={section.columns}
+        onChange={(columns) => onChange({ ...section, columns })}
+        create={() => ""}
+        addLabel="Add Column"
+        empty="No text columns: the block shows the heading, the pictures and the intro."
+        max={SUMMARY_COLUMNS_MAX}
+        render={(html, _patch, index) => <HtmlField label={`Column ${index + 1}`} value={html} onChange={(next) => setColumn(index, next)} siteUrl={siteUrl} rows={8} />}
+      />
+    </div>
+  );
+}
 
 /** The form of one section, by its type. */
 export function SectionForm({
@@ -689,8 +776,12 @@ export function SectionForm({
       return <TextForm section={section} {...shared} />;
     case "image":
       return <ImageForm section={section} {...shared} />;
+    case "summary":
+      return <SummaryForm section={section} {...shared} />;
     case "subcategories":
+      return <SubcategoriesForm section={section} {...shared} />;
     case "term_tours":
+      return <TermToursForm section={section} {...shared} />;
     case "term_description":
       return <Notice tone="info">{BLOCK_NOTES[section.type]}</Notice>;
   }

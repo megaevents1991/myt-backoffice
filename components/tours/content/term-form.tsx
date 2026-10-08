@@ -18,7 +18,7 @@ import { useContentForm } from "@/components/tours/content/use-content-form";
 import { siteAssetUrl, termKindLabel, type TermEditorData, type TermForm } from "@/components/tours/content/shared";
 import { ColorInput, FooterTilesField, pruneTiles } from "@/components/tours/site/site-fields";
 import { SectionsBoard, sectionsProblem } from "@/components/tours/site/sections-board";
-import { TERM_BLOCK_TYPES, TERM_SECTION_TYPES, defaultTermLayout, isTermPageKind } from "@/lib/tours/site-content";
+import { TERM_BLOCK_TYPES, TERM_SECTION_TYPES, defaultTermLayout, isTermPageKind, splitTermExtras } from "@/lib/tours/site-content";
 import { cn } from "@/lib/utils";
 
 /** The lead form and the reviews a page starts with: "Reset the order" puts them back, so it drops the ones already there. */
@@ -135,13 +135,17 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
       {pageKind && saved.options && (
         <Section
           title="The page, top to bottom"
-          description="What the page shows under its picture and title, in this order. The built-in parts (the tour list, the description) can be moved or switched off; add sliders, banners, pictures, text, reviews or a lead form anywhere between them, like on the home page."
+          description="What the page shows under its picture and title, in this order - everything the page shows is here, including what it came with (a reasons row, sliders, a summary). The built-in parts (the tour list, the description) can be moved or switched off; add sliders, banners, pictures, text, reviews or a lead form anywhere between them, like on the home page."
           actions={
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => set("sections", defaultTermLayout(pageKind, form.sections.filter((s) => !TERM_BLOCK_TYPES.includes(s.type) && !DEFAULT_PART_IDS.includes(s.id))))}
+              onClick={() => {
+                // the parts the page came with go back to where the site drew them; the rest stays where staff put it
+                const { rest, extras } = splitTermExtras(form.sections.filter((s) => !TERM_BLOCK_TYPES.includes(s.type) && !DEFAULT_PART_IDS.includes(s.id)));
+                set("sections", defaultTermLayout(pageKind, rest, extras));
+              }}
               title="Put the built-in parts back in the order the site started with. The sections you added stay."
             >
               <RotateCcw />
@@ -165,7 +169,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
           value={form.descriptionHtml}
           onChange={(value) => set("descriptionHtml", value)}
           siteUrl={saved.siteUrl}
-          hint="Shown on the page on the site. The text without formatting is also used as the search engine description."
+          hint='Shown on the page where the "Description" part is, above. The text without formatting is also used as the search engine description.'
         />
       </Section>
 

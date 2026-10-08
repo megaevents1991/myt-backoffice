@@ -6,7 +6,7 @@
  * actions and the client components import the same types and labels.
  */
 import { matchesSearch } from "@/lib/search";
-import type { FooterTiles, HomeSection } from "@/lib/tours/site-content";
+import type { FooterTiles, HomeSection, PictureTileMode } from "@/lib/tours/site-content";
 import type { EasyLayout, EasyText, PageNote } from "@/lib/tours/wp-html";
 import type { SiteEditorOptions } from "@/lib/tours/site-options";
 
@@ -682,6 +682,17 @@ export interface CmsPageForm {
   easy: EasyText;
   /** What this page does with the tiles above the footer. */
   footerTiles: FooterTiles;
+  /** Whether this page shows the row of picture tiles ("הכי חמים") near its bottom (the pages that carry one). */
+  pictureTiles: PictureTileMode;
+}
+
+/** One post as the blog page's screen lists it. */
+export interface BlogPostRow {
+  id: string;
+  title: string;
+  isActive: boolean;
+  /** yyyy-mm-dd, or "" when the post has no date. */
+  date: string;
 }
 
 export interface CmsPageEditorData {
@@ -689,6 +700,8 @@ export interface CmsPageEditorData {
   kind: string;
   path: string;
   form: CmsPageForm;
+  /** The posts the blog lists, newest first - on the blog page's own screen; empty elsewhere. */
+  posts: BlogPostRow[];
   /** Made in the backoffice (not imported from WordPress): the site draws it with the general page template. */
   created: boolean;
   /** Set on an imported page whose text is edited in plain fields instead of its HTML (lib/tours/wp-html.ts). */

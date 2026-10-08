@@ -7,15 +7,20 @@
 // comes out as the small vocabulary the visual editor can hold.
 import {
   defaultTermLayout,
+  FOOTER_TILE_MODE_LABELS,
+  NO_TERM_EXTRAS,
   SITE_DOC_SCHEMAS,
   homeSchema,
   readFooterTiles,
+  readPictureTileMode,
   readSiteDoc,
   readTermSections,
   sectionProblem,
+  splitTermExtras,
   termSectionsSchema,
   type HomeSection,
 } from "../lib/tours/site-content";
+import { REASONS_TITLE, termExtrasSections, unwrapImportedHtml } from "../lib/tours/term-extras";
 import { EMPTY_EASY, PAGE_NOTES, aboutMenuFromHtml, cleanEasy, easyFromHtml, easyLayoutOfPath, hotTilesFromExtras, leadersSiteText, mediaPath, readEasy, simplifyHtml } from "../lib/tours/wp-html";
 import { canFeedReviews, formReviewCandidate, formReviewRef, formReviewShape, type FormReviewField } from "../lib/tours/form-reviews";
 import { isSimpleHtml } from "../components/tours/content/shared";
@@ -52,7 +57,7 @@ const dest = home.sections[2] as Extract<HomeSection, { type: "destinations" }>;
 check("tiles stay picked by hand until staff choose automatic", [dest.mode, dest.items.length], ["manual", 1]);
 const reviews = home.sections[4] as Extract<HomeSection, { type: "reviews" }>;
 check("reviews stay typed until staff choose Google", [reviews.source, reviews.items.length], ["manual", 1]);
-check("the home page follows the footer rule until it chooses", home.footerTiles, { mode: "default", title: "", items: [] });
+check("the home page follows the footer rule until it chooses", home.footerTiles, { mode: "default", title: "", items: [], mobile: "default" });
 check("the document as the editor holds it saves as is", homeSchema.safeParse(home).success, true);
 
 // ---- what a save is refused for
@@ -192,6 +197,84 @@ check("a picked review carries the mark of its answer", formReviewRef(301), "for
 const picked = { id: "rev", type: "reviews", visible: true, title: "", items: [{ name: "משפחת כהן", text: "היה מושלם", rating: 5, ref: "form:301" }] };
 check("a picked review is saved with its stars and its mark", homeSchema.safeParse({ sections: [picked] }).success, true);
 check("six stars are refused", homeSchema.safeParse({ sections: [{ ...picked, items: [{ ...picked.items[0], rating: 6 }] }] }).success, false);
+
+// ---- what a term page came with from WordPress, as sections of its own (round 14, 08.10)
+const extrasRow = {
+  terms: {
+    "tags/חמישיות": {
+      reasons: [{ icon: "https://newsite.megatr.co.il/wp-content/uploads/2026/08/calendar-date.png", title: "קצר ומדויק", text: "טיול קצר" }, { icon: "", title: "", text: "" }],
+      destSlider: {
+        title: "היעדים המושלמים לחופשת 5 ימים",
+        slides: [{ href: "/destinations/פריז/", image: "/media/2026/08/paris.jpg", title: "פריז", text: "5 ימים של קסם", button: "לכל הטיולים" }, { href: "#", image: "", title: "", text: "" }],
+      },
+    },
+    "destinations/ספרד": {
+      summary: { title: "ספרד על קצה המזלג", gallery: ["/media/2026/08/a.jpg", "/media/2026/08/b.jpg"], blocks: ['<div class="x"><p>פתיח</p></div>', '<h2 class="y">כותרת</h2><p>טור</p>'] },
+    },
+  },
+};
+const tagExtras = termExtrasSections("tags", "חמישיות", extrasRow);
+check("a tag's reasons row and destination slider, as sections", [tagExtras.beforeTours.map((s) => s.id), tagExtras.afterLead.map((s) => s.id)], [["x_reasons"], ["x_destSlider"]]);
+check("the reasons keep their icon as a site path and get the title the site wrote", tagExtras.beforeTours[0], {
+  id: "x_reasons",
+  visible: true,
+  type: "reasons",
+  title: REASONS_TITLE,
+  items: [{ icon: "/media/2026/08/calendar-date.png", title: "קצר ומדויק", text: "טיול קצר" }],
+});
+check("a slide becomes a banner; an empty slide is dropped and a '#' link is no link", tagExtras.afterLead[0].type === "banners" ? tagExtras.afterLead[0].items : null, [
+  { title: "פריז", subtitle: "5 ימים של קסם", cta: "לכל הטיולים", href: "/destinations/פריז/", newTab: false, image: "/media/2026/08/paris.jpg", overlayColor: "", buttonColor: "" },
+]);
+const destExtras = termExtrasSections("destinations", "ספרד", extrasRow);
+check("a destination's summary: the intro card and the columns without the imported wrappers", destExtras.afterLead[0], {
+  id: "x_summary",
+  visible: true,
+  type: "summary",
+  title: "ספרד על קצה המזלג",
+  images: ["/media/2026/08/a.jpg", "/media/2026/08/b.jpg"],
+  intro: "<p>פתיח</p>",
+  columns: ["<h2>כותרת</h2><p>טור</p>"],
+});
+check("a term with nothing from WordPress has no extras", termExtrasSections("tags", "אחר", extrasRow), NO_TERM_EXTRAS);
+check("no extras row at all", termExtrasSections("tags", "חמישיות", null), NO_TERM_EXTRAS);
+const tagPage = readTermSections("tags", undefined, tagExtras);
+check("a tag page nobody arranged opens with the reasons above the tour list and the slider after the lead form", tagPage.map((s) => s.id), ["x_reasons", "b_term_tours", "b_term_description", "b_lead_form", "x_destSlider", "b_reviews"]);
+check("the page it opens with is a valid page to save", termSectionsSchema("tags").safeParse(tagPage).success, true);
+const destPage = readTermSections("destinations", undefined, destExtras);
+check("a destination page opens with its summary after the lead form", destPage.map((s) => s.id), ["b_term_description", "b_term_tours", "b_lead_form", "x_summary"]);
+check("a summary is no part of the home page", homeSchema.safeParse({ sections: [destPage[3]] }).success, false);
+const rearranged = [tagPage[4], tagPage[0], { id: "s_text", visible: true, type: "text", title: "", html: "" }] as HomeSection[];
+const split = splitTermExtras(rearranged);
+check("the reset tells the parts the page came with from the ones staff added", [split.rest.map((s) => s.id), split.extras.beforeTours.map((s) => s.id), split.extras.afterLead.map((s) => s.id)], [["s_text"], ["x_reasons"], ["x_destSlider"]]);
+check("the reset puts them back where the site drew them", defaultTermLayout("tags", split.rest, split.extras).map((s) => s.id), ["s_text", "x_reasons", "b_term_tours", "b_term_description", "b_lead_form", "x_destSlider", "b_reviews"]);
+
+// ---- the tour list and the sub-categories carry picks
+const oldBlocks = readTermSections("audiences", [
+  { id: "b_subcategories", visible: true, type: "subcategories" },
+  { id: "b_term_tours", visible: true, type: "term_tours" },
+  { id: "b_term_description", visible: true, type: "term_description" },
+]);
+check("a page saved before the picks existed opens with none", [oldBlocks[0], oldBlocks[1]], [
+  { id: "b_subcategories", visible: true, type: "subcategories", tags: [] },
+  { id: "b_term_tours", visible: true, type: "term_tours", tours: [], onlyPicked: false },
+]);
+check("a tour list with picks is saved", termSectionsSchema("tags").safeParse([{ id: "b_term_tours", visible: true, type: "term_tours", tours: ["a", "b"], onlyPicked: true }]).success, true);
+check("twenty-five picks are refused", termSectionsSchema("tags").safeParse([{ id: "b_term_tours", visible: true, type: "term_tours", tours: Array.from({ length: 25 }, (_, i) => `t${i}`), onlyPicked: false }]).success, false);
+
+// ---- an imported description opens without its Elementor wrappers
+const wrapped = '<div class="elementor-element elementor-widget-woocommerce-archive-description" data-id="77c27c6">\n<div class="term-description"><h2>קצת על טיולי משפחות</h2>\n<p>טיולים <strong>מאורגנים</strong> למשפחות.</p>\n</div> </div>';
+check("a description inside Elementor wrappers opens as its text", unwrapImportedHtml(wrapped), "<h2>קצת על טיולי משפחות</h2>\n<p>טיולים <strong>מאורגנים</strong> למשפחות.</p>");
+check("and is simple enough for the visual editor", isSimpleHtml(unwrapImportedHtml(wrapped)), true);
+const withPicture = '<div class="x"><p>טקסט</p><img src="/media/a.jpg" alt="תמונה"></div>';
+check("a description that carries a picture is left as it is", unwrapImportedHtml(withPicture), withPicture);
+check("a description that is already plain is unchanged", unwrapImportedHtml("<p>טקסט</p>"), "<p>טקסט</p>");
+
+// ---- the tiles above the footer on a phone, and the picture tiles of one page
+check("a footer saved before the phone switch shows the tiles on phones", readSiteDoc("footer", oldFooter).discoverMobile, true);
+check("a page's tiles choice saved before the phone answer follows the rule", readFooterTiles({ mode: "show", title: "", items: [] }).mobile, "default");
+check("a page may hide its tiles on phones", readFooterTiles({ mode: "default", title: "", items: [], mobile: "hide" }).mobile, "hide");
+check("a page draws its picture tiles unless it said so", [readPictureTileMode(undefined), readPictureTileMode("hide"), readPictureTileMode("x")], ["default", "hide", "default"]);
+check("the two tile modes that read alike read differently now", FOOTER_TILE_MODE_LABELS.default !== FOOTER_TILE_MODE_LABELS.show && !FOOTER_TILE_MODE_LABELS.show.startsWith("Always show"), true);
 
 if (failed) {
   console.error(`\n${failed} FAILED`);

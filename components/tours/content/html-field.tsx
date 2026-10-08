@@ -2,11 +2,13 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RichBodyEditor } from "@/components/templates/RichBodyEditor";
 import { cn } from "@/lib/utils";
 import { isSimpleHtml } from "@/components/tours/content/shared";
+import { simplifyHtml } from "@/lib/tours/wp-html";
 
 const escapeAttr = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
@@ -94,6 +96,8 @@ export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, cl
   const id = useId();
   // Text editor first, like the Mega Events editors - unless the stored HTML is more than it can keep.
   const [mode, setMode] = useState<Mode>(() => (isSimpleHtml(value) ? "visual" : "code"));
+  // "Visual Editor" was clicked on HTML the visual editor cannot keep: asks before the formatting is dropped
+  const [asking, setAsking] = useState(false);
   const preview = useDebounced(value, 350);
   const simple = useMemo(() => isSimpleHtml(value), [value]);
   const visual = mode === "visual" && simple;
@@ -105,29 +109,53 @@ export function HtmlField({ label, value, onChange, siteUrl, rows = 10, hint, cl
         <div className="inline-flex rounded-md border p-0.5 text-xs">
           <button
             type="button"
-            onClick={() => setMode("code")}
+            onClick={() => {
+              setMode("code");
+              setAsking(false);
+            }}
             className={cn("rounded px-2 py-1", !visual && "bg-muted font-medium text-foreground")}
           >
             HTML & Preview
           </button>
           <button
             type="button"
-            onClick={() => setMode("visual")}
-            disabled={!simple}
+            onClick={() => (simple ? setMode("visual") : setAsking(true))}
             title={
               simple
                 ? "Edit without code: headings, lists, links, bold and italic"
-                : "This field has formatting the visual editor would remove (classes, images or imported structure), so it is edited as code"
+                : "This field has formatting the visual editor cannot keep (classes, pictures or imported structure): the editor opens after that formatting is dropped"
             }
-            className={cn(
-              "rounded px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50",
-              visual && "bg-muted font-medium text-foreground",
-            )}
+            className={cn("rounded px-2 py-1", visual && "bg-muted font-medium text-foreground")}
           >
             Visual Editor
           </button>
         </div>
       </div>
+
+      {asking && !simple && (
+        <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
+          <p>
+            This text carries formatting the visual editor cannot keep: classes, inline styles, pictures, tables or imported structure. Editing without code keeps the words,
+            the headings, the lists, the links, bold and italic - and drops the rest.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                onChange(simplifyHtml(value));
+                setMode("visual");
+                setAsking(false);
+              }}
+            >
+              Drop the formatting and edit without code
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setAsking(false)}>
+              Keep the code
+            </Button>
+          </div>
+        </div>
+      )}
 
       {visual ? (
         // RichBodyEditor carries its own Visual / HTML tabs; the switch above is the

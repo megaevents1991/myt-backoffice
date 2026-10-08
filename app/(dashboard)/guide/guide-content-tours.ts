@@ -603,7 +603,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("Let tiles and banners fill themselves", "לתת לאריחים ולבאנרים להתמלא לבד"),
         steps: [
           t("Open a \"Destination tiles\", \"Artist tiles\" or \"Banners\" section and choose \"Automatic\" in the first list.", "פותחים סקשן \"Destination tiles\", \"Artist tiles\" או \"Banners\" ובוחרים \"Automatic\" ברשימה הראשונה."),
-          t("Choose the rule (the tours of a world, a tag, a category, on sale) and \"How many at most\". \"I pick them\" goes back to a list you build.", "בוחרים את הכלל (הטיולים של עולם, תגית, קטגוריה, במבצע) ואת \"How many at most\". \"I pick them\" מחזיר לרשימה שבונים ביד."),
+          t("Choose the rule (the tours of a world, a tag, a category, a destination, on sale, or tours you pick) and \"How many at most\". \"I pick them\" goes back to a list you build by hand, in your order.", "בוחרים את הכלל (הטיולים של עולם, תגית, קטגוריה, יעד, במבצע, או טיולים שבוחרים) ואת \"How many at most\". \"I pick them\" מחזיר לרשימה שבונים ביד, בסדר שלכם."),
         ],
       },
       {
@@ -667,8 +667,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("Decide where the tiles above the footer show", "לקבוע איפה מופיעים האריחים שמעל הפוטר"),
         steps: [
           t("Open [Header & Footer](/tours/site) → \"Footer\". \"Tiles above the footer\" holds the main tiles.", "פותחים את [הדר ופוטר](/tours/site) ← \"Footer\". ב-\"Tiles above the footer\" נמצאים האריחים הראשיים."),
-          t("Under \"Show the tiles on\" switch each kind of page on or off: the home page, content pages, category pages, tour pages.", "תחת \"Show the tiles on\" מדליקים או מכבים כל סוג עמוד: עמוד הבית, עמודי תוכן, עמודי קטגוריה, עמודי טיול."),
-          t("One page can go its own way: open that page (Homepage, a content page, a world, a tag, a category, a destination) and choose in \"Tiles above the footer\" > \"On this page\".", "עמוד אחד יכול לנהוג אחרת: פותחים את העמוד (עמוד הבית, עמוד תוכן, עולם, תגית, קטגוריה, יעד) ובוחרים ב-\"Tiles above the footer\" > \"On this page\"."),
+          t("Under \"Show the tiles on\" switch each kind of page on or off: the home page, content pages, category pages, tour pages. \"Show the tiles on phones\" off hides them on every phone.", "תחת \"Show the tiles on\" מדליקים או מכבים כל סוג עמוד: עמוד הבית, עמודי תוכן, עמודי קטגוריה, עמודי טיול. כיבוי \"Show the tiles on phones\" מסתיר אותם בכל נייד."),
+          t("One page can go its own way: open that page (Homepage, a content page, a world, a tag, a category, a destination) and choose in \"Tiles above the footer\" > \"On this page\": the rule of its kind of page, the main tiles even where the rule hides them, no tiles, or its own tiles. \"On phones\" says whether a phone shows them on that page.", "עמוד אחד יכול לנהוג אחרת: פותחים את העמוד (עמוד הבית, עמוד תוכן, עולם, תגית, קטגוריה, יעד) ובוחרים ב-\"Tiles above the footer\" > \"On this page\": הכלל של סוג העמוד, האריחים הראשיים גם כשהכלל מסתיר אותם, בלי אריחים, או אריחים משלו. \"On phones\" קובע אם נייד מציג אותם בעמוד הזה."),
           t("A tour has the same choice: open the tour in [Tours](/tours/packages), scroll to \"Tiles above the footer\" under the editor, click \"Edit\", choose, and \"Save the tiles\" (it saves apart from the tour).", "לטיול יש אותה בחירה: פותחים את הטיול ב[טיולים](/tours/packages), גוללים ל-\"Tiles above the footer\" מתחת לעורך, לוחצים \"Edit\", בוחרים, ו-\"Save the tiles\" (נשמר בנפרד מהטיול)."),
         ],
       },
@@ -677,6 +677,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Open [Header & Footer](/tours/site) → \"Footer\" → \"Picture tiles\". The list opens with the tiles the site shows today: change a name, a link or a picture, add or remove a tile, or change the \"Title\".", "פותחים את [הדר ופוטר](/tours/site) ← \"Footer\" ← \"Picture tiles\". הרשימה נפתחת עם האריחים שהאתר מציג היום: משנים שם, קישור או תמונה, מוסיפים או מסירים אריח, או משנים את ה-\"Title\"."),
           t("\"Show the picture tiles\" off hides the row on every page that carries it (the about pages, the FAQ pages, the blog posts, the leaders page).", "כיבוי \"Show the picture tiles\" מסתיר את השורה בכל עמוד שמציג אותה (עמודי אודות, שאלות נפוצות, פוסטים בבלוג, עמוד המדריכים)."),
+          t("To drop the row on ONE page (the leaders page, say): open that page in [Content Pages](/tours/pages) and choose \"Not on this page\" under \"Picture tiles\", at the bottom.", "כדי להוריד את השורה מעמוד אחד (למשל עמוד המדריכים): פותחים את העמוד ב[עמודי התוכן](/tours/pages) ובוחרים \"Not on this page\" תחת \"Picture tiles\", למטה."),
           t("\"Header menu\" → \"Menu of the about pages\" holds the row of links at the top of every about page: rename a link, reorder with the arrows, add a page with \"Pick…\".", "ב-\"Header menu\" ← \"Menu of the about pages\" נמצאת שורת הקישורים שבראש כל עמוד אודות: משנים שם של קישור, מסדרים בחצים, מוסיפים עמוד ב-\"Pick…\"."),
           t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
@@ -781,6 +782,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       t("The address of a page you added can change; the address of a page that came with the site is fixed, because menus and other pages link to it.", "את הכתובת של עמוד שהוספתם אפשר לשנות; הכתובת של עמוד שהגיע עם האתר קבועה, כי תפריטים ועמודים אחרים מקשרים אליו."),
       t("To put a new page in a menu, add a link to it in [Header & Footer](/tours/site): \"Pick…\" lists every page.", "כדי לשים עמוד חדש בתפריט, מוסיפים אליו קישור ב[הדר ופוטר](/tours/site): ב-\"Pick…\" מופיעים כל העמודים."),
       t("The preview shows the content without the site's styling, so it looks plainer here than on the site.", "התצוגה המקדימה מציגה את התוכן בלי העיצוב של האתר, אז כאן הוא נראה פשוט יותר מאשר באתר."),
+      t("The blog page lists every post that is \"Active on site\" by itself, newest first: a post is in the blog by being a post. The blog page's own screen lists them under \"Posts in the blog\", each a link to its editor.", "עמוד הבלוג מציג לבד כל פוסט שהוא \"Active on site\", מהחדש לישן: פוסט נמצא בבלוג כי הוא פוסט. במסך של עמוד הבלוג עצמו הם מופיעים תחת \"Posts in the blog\", כל אחד קישור לעורך שלו."),
+      t("A text that came with formatting the visual editor cannot keep opens as code. \"Visual Editor\" then offers to drop that formatting (classes, pictures, imported structure) and edit the words without code.", "טקסט שהגיע עם עיצוב שהעורך הוויזואלי לא יכול לשמור נפתח כקוד. \"Visual Editor\" מציע אז להוריד את העיצוב הזה (קלאסים, תמונות, מבנה מיובא) ולערוך את המילים בלי קוד."),
     ],
     links: [{ label: t("Content pages", "עמודי תוכן"), href: "/tours/pages" }],
   },
@@ -815,9 +818,10 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("Build the page of a world, a tag, a category or a destination", "לבנות את העמוד של עולם, תגית, קטגוריה או יעד"),
         steps: [
           t("Open it in [Categories & Tags](/tours/terms). \"The page, top to bottom\" lists what the page shows under its picture, like the home page.", "פותחים אותו ב[קטגוריות ותגיות](/tours/terms). \"The page, top to bottom\" מציג מה העמוד מראה מתחת לתמונה, כמו בעמוד הבית."),
-          t("The rows marked \"Built in\" (\"Tour list\", \"Description\", \"Sub-categories\") are always there: move them with the arrows, or hide one with its switch.", "השורות שמסומנות \"Built in\" (\"Tour list\", \"Description\", \"Sub-categories\") תמיד שם: מזיזים בחצים, או מסתירים במתג."),
-          t("\"Add Section\" adds a slider, banners, a picture, text, reviews or a lead form; move it above or below the tour list.", "\"Add Section\" מוסיף סליידר, באנרים, תמונה, טקסט, ביקורות או טופס פנייה; מזיזים אותו מעל או מתחת לרשימת הטיולים."),
-          t("\"Reset the order\" puts the built-in rows back where the site started; the sections you added stay. \"Save\", then \"Revalidate Pages\".", "\"Reset the order\" מחזיר את השורות המובנות למקום שבו האתר התחיל; הסקשנים שהוספתם נשארים. \"Save\", ואז \"Revalidate Pages\"."),
+          t("Everything the page shows is in the list - also what it came with from WordPress: the \"Reasons\" row (\"כל הסיבות לטייל איתנו\"), the sliders (as \"Banners\") and, on a destination, the \"Destination summary\" (\"<destination> על קצה המזלג\"). Edit them like any section, move them, or remove them.", "כל מה שהעמוד מציג נמצא ברשימה - גם מה שהגיע איתו מוורדפרס: שורת \"Reasons\" (\"כל הסיבות לטייל איתנו\"), הסליידרים (כ-\"Banners\") וביעד ה-\"Destination summary\" (\"<יעד> על קצה המזלג\"). עורכים אותם כמו כל סקשן, מזיזים, או מסירים."),
+          t("The rows marked \"Built in\" (\"Tour list\", \"Description\", \"Sub-categories\") are always there: move them with the arrows, or hide one with its switch. Open \"Tour list\" to put tours first (\"Tours first\") or to show only the ones you pick; open \"Sub-categories\" on a world to choose which tags show, in which order.", "השורות שמסומנות \"Built in\" (\"Tour list\", \"Description\", \"Sub-categories\") תמיד שם: מזיזים בחצים, או מסתירים במתג. פותחים את \"Tour list\" כדי לשים טיולים ראשונים (\"Tours first\") או להציג רק את מה שבחרתם; פותחים את \"Sub-categories\" בעולם כדי לבחור אילו תגיות מופיעות ובאיזה סדר."),
+          t("\"Add Section\" adds a slider, banners, a picture, text, reviews, a lead form or a destination summary; move it above or below the tour list.", "\"Add Section\" מוסיף סליידר, באנרים, תמונה, טקסט, ביקורות, טופס פנייה או סיכום יעד; מזיזים אותו מעל או מתחת לרשימת הטיולים."),
+          t("\"Reset the order\" puts the built-in rows and the parts the page came with back where the site started; the sections you added stay. \"Save\", then \"Revalidate Pages\".", "\"Reset the order\" מחזיר את השורות המובנות ואת החלקים שהעמוד הגיע איתם למקום שבו האתר התחיל; הסקשנים שהוספתם נשארים. \"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
       {
@@ -832,6 +836,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       t("Nothing is built by hand: a world page, a tag page and a destination page list their tours by themselves, and a home page slider can follow any of them.", "שום דבר לא נבנה ידנית: עמוד עולם, עמוד תגית ועמוד יעד מציגים את הטיולים שלהם לבד, וסליידר בעמוד הבית יכול לעקוב אחרי כל אחד מהם."),
       t("A world with a brand name gets a tile in the \"Worlds\" section of the [home page](/tours/homepage). Its color paints its page, its sub-categories and the cards of its tours.", "עולם עם שם מותג מקבל אריח בסקשן \"Worlds\" של [עמוד הבית](/tours/homepage). הצבע שלו צובע את העמוד שלו, את תת הקטגוריות ואת הכרטיסים של הטיולים שלו."),
       t("A slug can't change: the page's address on the site is made from it.", "את ה-slug אי אפשר לשנות: הכתובת של העמוד באתר נבנית ממנו."),
+      t("The \"Description\" opens as plain text in the visual editor - also a description that came with the site, which used to open as HTML code. It shows on the page where the \"Description\" row is.", "ה-\"Description\" נפתח כטקסט רגיל בעורך הוויזואלי - גם תיאור שהגיע עם האתר, שעד עכשיו נפתח כקוד HTML. הוא מוצג בעמוד במקום שבו שורת \"Description\" נמצאת."),
+      t("Until a page is saved from \"The page, top to bottom\", the site draws it as it came. From the first save, the site draws exactly what the list holds - a part removed from the list is gone from the page.", "עד שעמוד נשמר מ-\"The page, top to bottom\", האתר מציג אותו כפי שהגיע. מהשמירה הראשונה האתר מציג בדיוק את מה שברשימה - חלק שהוסר מהרשימה יורד מהעמוד."),
     ],
     links: [{ label: t("Categories & tags", "קטגוריות ותגיות"), href: "/tours/terms" }],
   },

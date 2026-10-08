@@ -16,9 +16,12 @@ import { EmptyLine, Field, selectClass } from "@/components/tours/ui";
 import { ImageUrlField, RowControls, moved } from "@/components/tours/content/fields";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
+  FOOTER_TILE_MOBILE_LABELS,
+  FOOTER_TILE_MOBILE_MODES,
   FOOTER_TILE_MODES,
   FOOTER_TILE_MODE_LABELS,
   PICTURE_TILES_MAX,
+  type FooterTileMobileMode,
   type FooterTileMode,
   type FooterTiles,
   type PictureTile,
@@ -525,19 +528,31 @@ export function FooterTilesField({
 }) {
   return (
     <div className="space-y-3">
-      <Field
-        label="On this page"
-        hint="The purple tiles and the newsletter box above the footer. The main tiles, and the kinds of page they show on, are set in Header & Footer > Footer."
-        className="md:max-w-md"
-      >
-        <select value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as FooterTileMode })} className={cn(selectClass, "w-full")}>
-          {FOOTER_TILE_MODES.map((mode) => (
-            <option key={mode} value={mode}>
-              {FOOTER_TILE_MODE_LABELS[mode]}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Field
+          label="On this page"
+          hint="The purple tiles and the newsletter box above the footer. The main tiles, and the kinds of page they show on, are set in Header & Footer > Footer."
+        >
+          <select value={value.mode} onChange={(e) => onChange({ ...value, mode: e.target.value as FooterTileMode })} className={cn(selectClass, "w-full")}>
+            {FOOTER_TILE_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {FOOTER_TILE_MODE_LABELS[mode]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {value.mode !== "hide" && (
+          <Field label="On phones" hint="Whether a phone shows the tiles of this page. Header & Footer says it for every page; this page can say otherwise.">
+            <select value={value.mobile} onChange={(e) => onChange({ ...value, mobile: e.target.value as FooterTileMobileMode })} className={cn(selectClass, "w-full")}>
+              {FOOTER_TILE_MOBILE_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {FOOTER_TILE_MOBILE_LABELS[mode]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+      </div>
       {value.mode === "custom" && (
         <>
           <Field label="Title above the tiles" hint="Empty = the title of the main tiles." className="md:max-w-md">

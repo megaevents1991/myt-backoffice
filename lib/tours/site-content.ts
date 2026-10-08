@@ -103,6 +103,8 @@ export const footerSchema = z.object({
   discoverTitle: text(160),
   discover: z.array(footerTile).max(8),
   discoverOn: z.object({ home: z.boolean(), pages: z.boolean(), terms: z.boolean(), tours: z.boolean() }).default(DEFAULT_DISCOVER_ON),
+  /** Whether the tiles above the footer show on a phone at all (a single page can say otherwise). */
+  discoverMobile: z.boolean().default(true),
   newsletterTitle: text(240),
   newsletterNote: text(240),
   contactTitle: text(160),
@@ -128,18 +130,39 @@ export type SiteFooter = z.infer<typeof footerSchema>;
 export const FOOTER_TILE_MODES = ["default", "show", "hide", "custom"] as const;
 export type FooterTileMode = (typeof FOOTER_TILE_MODES)[number];
 export const FOOTER_TILE_MODE_LABELS: Record<FooterTileMode, string> = {
-  default: "As set in Header & Footer",
-  show: "Always show the main tiles",
-  hide: "Hide on this page",
+  default: "Like the other pages of its kind (the rule of Header & Footer)",
+  show: "The main tiles, even where Header & Footer hides them",
+  hide: "No tiles on this page",
   custom: "This page's own tiles",
+};
+/** Whether one page shows its tiles above the footer on a phone: the rule of Header & Footer, or its own answer. */
+export const FOOTER_TILE_MOBILE_MODES = ["default", "show", "hide"] as const;
+export type FooterTileMobileMode = (typeof FOOTER_TILE_MOBILE_MODES)[number];
+export const FOOTER_TILE_MOBILE_LABELS: Record<FooterTileMobileMode, string> = {
+  default: "As set in Header & Footer",
+  show: "Show on phones too",
+  hide: "Hide on phones",
 };
 export const footerTilesSchema = z.object({
   mode: z.enum(FOOTER_TILE_MODES),
   title: text(160),
   items: z.array(footerTile).max(8),
+  mobile: z.enum(FOOTER_TILE_MOBILE_MODES).default("default"),
 });
 export type FooterTiles = z.infer<typeof footerTilesSchema>;
-export const DEFAULT_FOOTER_TILES: FooterTiles = { mode: "default", title: "", items: [] };
+export const DEFAULT_FOOTER_TILES: FooterTiles = { mode: "default", title: "", items: [], mobile: "default" };
+
+/**
+ * Whether one content page shows the row of picture tiles ("הכי חמים") near its bottom:
+ * as Header & Footer says, or not on this page (tours.cms_pages.data.pictureTiles).
+ */
+export const PICTURE_TILE_MODES = ["default", "hide"] as const;
+export type PictureTileMode = (typeof PICTURE_TILE_MODES)[number];
+export const PICTURE_TILE_MODE_LABELS: Record<PictureTileMode, string> = {
+  default: "As set in Header & Footer",
+  hide: "Not on this page",
+};
+export const readPictureTileMode = (stored: unknown): PictureTileMode => (stored === "hide" ? "hide" : "default");
 
 /** A page's stored choice as the editor works on it; anything unreadable follows the rule of its kind of page. */
 export function readFooterTiles(stored: unknown): FooterTiles {
@@ -278,13 +301,14 @@ const termItems = z.array(z.object({ slug: slug.refine((v) => v !== "", "Choose 
 /** How a tile or banner section is filled: items staff pick, or by itself from the tours of a rule. */
 export const FILL_MODES = ["manual", "auto"] as const;
 /** The rules an automatic tile section can follow: the destinations (or artists) of these tours. */
-export const TILE_SOURCES = ["all", "world", "tag", "category", "sale"] as const;
+export const TILE_SOURCES = ["all", "world", "tag", "category", "destination", "sale"] as const;
 export type TileSource = (typeof TILE_SOURCES)[number];
 export const TILE_SOURCE_LABELS: Record<TileSource, string> = {
   all: "All of them",
   world: "Of the tours of a world",
   tag: "Of the tours of a tag",
   category: "Of the tours of a category",
+  destination: "Of the tours of a destination",
   sale: "Of the tours on sale",
 };
 const tileFill = {
@@ -386,10 +410,35 @@ const imageSection = z.object({
   newTab: z.boolean(),
 });
 
+/**
+ * "<destination> on a fingertip": a heading, a row of pictures, a gray intro card and text
+ * columns (the destination pages came with one). Only a term page holds it.
+ */
+export const SUMMARY_IMAGES_MAX = 10;
+export const SUMMARY_COLUMNS_MAX = 3;
+const summaryHtml = z.string().max(20000, "The text is too long").transform(stripActiveHtml);
+const summarySection = z.object({
+  ...base,
+  type: z.literal("summary"),
+  title: text(160),
+  images: z.array(image).max(SUMMARY_IMAGES_MAX, `Up to ${SUMMARY_IMAGES_MAX} pictures`),
+  intro: summaryHtml,
+  columns: z.array(summaryHtml).max(SUMMARY_COLUMNS_MAX, `Up to ${SUMMARY_COLUMNS_MAX} text columns`),
+});
+
 // The parts every term page (a world, a tag, a category, a destination) is built with. They are
 // always in the page's list - staff move or hide them, never remove them.
-const subcategoriesBlock = z.object({ ...base, type: z.literal("subcategories") });
-const termToursBlock = z.object({ ...base, type: z.literal("term_tours") });
+/** How many tours or sub-categories a built-in part lets staff put first. */
+export const TERM_PICKS_MAX = 24;
+/** The world's sub-categories: the tags to show, in this order (empty = every tag attached to the world). */
+const subcategoriesBlock = z.object({ ...base, type: z.literal("subcategories"), tags: z.array(slug).max(TERM_PICKS_MAX).default([]) });
+/** The tour list: the tours that come first, in this order; `onlyPicked` = and nothing after them. */
+const termToursBlock = z.object({
+  ...base,
+  type: z.literal("term_tours"),
+  tours: z.array(slug).max(TERM_PICKS_MAX).default([]),
+  onlyPicked: z.boolean().default(false),
+});
 const termDescriptionBlock = z.object({ ...base, type: z.literal("term_description") });
 
 export const homeSectionSchema = z.discriminatedUnion("type", [
@@ -405,6 +454,7 @@ export const homeSectionSchema = z.discriminatedUnion("type", [
   worldsSection,
   textSection,
   imageSection,
+  summarySection,
   subcategoriesBlock,
   termToursBlock,
   termDescriptionBlock,
@@ -414,6 +464,8 @@ export type HomeSectionType = HomeSection["type"];
 
 /** The built-in parts of a term page. */
 export const TERM_BLOCK_TYPES: HomeSectionType[] = ["subcategories", "term_tours", "term_description"];
+/** Section types that only make sense on a term page (never offered or accepted on the home page). */
+export const TERM_ONLY_TYPES: HomeSectionType[] = [...TERM_BLOCK_TYPES, "summary"];
 
 const needsTerm = (source: string, term: string): boolean => Boolean(TOUR_SOURCE_KIND[source as TourSource]) && !term;
 
@@ -463,7 +515,7 @@ export const homeSchema = z
   .superRefine((doc, ctx) => {
     refineSections(doc.sections, ctx, ["sections"]);
     doc.sections.forEach((section, index) => {
-      if (TERM_BLOCK_TYPES.includes(section.type)) ctx.addIssue({ code: "custom", message: "This part belongs to a category page, not to the home page", path: ["sections", index, "type"] });
+      if (TERM_ONLY_TYPES.includes(section.type)) ctx.addIssue({ code: "custom", message: "This part belongs to a category page, not to the home page", path: ["sections", index, "type"] });
     });
   });
 export type HomeDoc = z.infer<typeof homeSchema>;
@@ -478,29 +530,70 @@ export const isTermPageKind = (kind: string): kind is TermPageKind => (TERM_PAGE
  * The section types staff can add to a term page. The page's picture and title
  * stay on top; the hero banners and the tour finder belong to the home page.
  */
-export const TERM_SECTION_TYPES: HomeSectionType[] = ["slider", "banners", "image", "text", "reasons", "destinations", "artists", "worlds", "lead_form", "reviews"];
+export const TERM_SECTION_TYPES: HomeSectionType[] = ["slider", "banners", "image", "text", "reasons", "destinations", "artists", "worlds", "lead_form", "reviews", "summary"];
 
-const block = (type: "subcategories" | "term_tours" | "term_description", visible = true): HomeSection => ({ id: `b_${type}`, visible, type });
+function block(type: "subcategories" | "term_tours" | "term_description", visible = true): HomeSection {
+  const common = { id: `b_${type}`, visible };
+  switch (type) {
+    case "subcategories":
+      return { ...common, type, tags: [] };
+    case "term_tours":
+      return { ...common, type, tours: [], onlyPicked: false };
+    case "term_description":
+      return { ...common, type };
+  }
+}
 const LEAD_BLOCK: HomeSection = { id: "b_lead_form", visible: true, type: "lead_form", title: "" };
 const REVIEWS_BLOCK: HomeSection = { id: "b_reviews", visible: true, type: "reviews", title: "", source: "manual", minRating: 4, limit: 8, items: [] };
 
 /**
+ * The sections a term page came with from WordPress (the "extras" of the import:
+ * the reasons row, the sliders, the "on a fingertip" summary), as sections staff
+ * can edit (lib/tours/term-extras.ts). Their ids start with `x_`. They sit in the
+ * default layout where the site has always drawn them: the reasons above the tour
+ * list, the sliders and the summary after the lead form.
+ */
+export interface TermExtrasSections {
+  beforeTours: HomeSection[];
+  afterLead: HomeSection[];
+}
+export const NO_TERM_EXTRAS: TermExtrasSections = { beforeTours: [], afterLead: [] };
+export const TERM_EXTRA_IDS = { reasons: "x_reasons", slider: "x_slider", destSlider: "x_destSlider", summary: "x_summary" } as const;
+const isExtraId = (id: string): boolean => id.startsWith("x_");
+
+/** The sections of a page that came with it from WordPress, apart from the rest, each where the site drew it. */
+export function splitTermExtras(sections: HomeSection[]): { rest: HomeSection[]; extras: TermExtrasSections } {
+  const extras: TermExtrasSections = { beforeTours: [], afterLead: [] };
+  const rest: HomeSection[] = [];
+  for (const section of sections) {
+    if (!isExtraId(section.id)) rest.push(section);
+    else if (section.id === TERM_EXTRA_IDS.reasons) extras.beforeTours.push(section);
+    else extras.afterLead.push(section);
+  }
+  return { rest, extras };
+}
+
+/**
  * A term page as it is before staff arrange it: the built-in parts in the order
  * the site has always drawn them, with the sections staff already added
- * (`added`) where the site drew those. The customer site holds the same order
- * (mega-family lib/home.ts termLayout) - change both together.
+ * (`added`) where the site drew those, and what the page came with from
+ * WordPress (`extras`) where the site has always drawn that. The customer site
+ * holds the same order (mega-family lib/home.ts termLayout) - change both together.
  */
-export function defaultTermLayout(kind: TermPageKind, added: HomeSection[] = []): HomeSection[] {
+export function defaultTermLayout(kind: TermPageKind, added: HomeSection[] = [], extras: TermExtrasSections = NO_TERM_EXTRAS): HomeSection[] {
+  const taken = new Set(added.map((s) => s.id));
+  const before = extras.beforeTours.filter((s) => !taken.has(s.id));
+  const after = extras.afterLead.filter((s) => !taken.has(s.id));
   switch (kind) {
     case "audiences":
-      return [block("subcategories"), ...added, block("term_tours"), block("term_description"), LEAD_BLOCK, REVIEWS_BLOCK];
+      return [block("subcategories"), ...added, ...before, block("term_tours"), block("term_description"), LEAD_BLOCK, ...after, REVIEWS_BLOCK];
     case "tags":
-      return [...added, block("term_tours"), block("term_description"), LEAD_BLOCK, REVIEWS_BLOCK];
+      return [...added, ...before, block("term_tours"), block("term_description"), LEAD_BLOCK, ...after, REVIEWS_BLOCK];
     case "destinations":
-      return [block("term_description"), ...added, block("term_tours"), LEAD_BLOCK];
+      return [block("term_description"), ...added, ...before, block("term_tours"), LEAD_BLOCK, ...after];
     case "categories":
       // a category page never showed its description: the part is there, switched off
-      return [...added, block("term_tours"), block("term_description", false), LEAD_BLOCK];
+      return [...added, ...before, block("term_tours"), block("term_description", false), LEAD_BLOCK, ...after];
   }
 }
 
@@ -526,14 +619,16 @@ export const termSectionsSchema = (kind: TermPageKind) =>
 /**
  * A term's stored page as the editor works on it. A page staff never arranged
  * (no tour list in the stored list) opens as the default layout around whatever
- * sections it already had.
+ * sections it already had, with what the page came with from WordPress
+ * (`extras`) as sections of its own - the site draws those until the page is
+ * arranged, and after that only what the arranged page holds.
  */
-export function readTermSections(kind: TermPageKind, stored: unknown): HomeSection[] {
+export function readTermSections(kind: TermPageKind, stored: unknown, extras: TermExtrasSections = NO_TERM_EXTRAS): HomeSection[] {
   const valid = (Array.isArray(stored) ? stored : []).flatMap((section) => {
     const one = homeSectionSchema.safeParse(section);
     return one.success && allowedOnTerm(kind, one.data.type) ? [one.data] : [];
   });
-  if (!valid.some((s) => s.type === "term_tours")) return defaultTermLayout(kind, valid.filter((s) => !TERM_BLOCK_TYPES.includes(s.type)));
+  if (!valid.some((s) => s.type === "term_tours")) return defaultTermLayout(kind, valid.filter((s) => !TERM_BLOCK_TYPES.includes(s.type)), extras);
   const layout = [...valid];
   // a built-in part that an older save did not know is put back, hidden where it was never shown
   for (const part of defaultTermLayout(kind)) {
@@ -580,6 +675,7 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
     discoverTitle: "",
     discover: [],
     discoverOn: DEFAULT_DISCOVER_ON,
+    discoverMobile: true,
     newsletterTitle: "",
     newsletterNote: "",
     contactTitle: "",
@@ -603,12 +699,15 @@ export interface SectionKind {
   single?: boolean;
   /** A built-in part of a term page: always in the list, moved or hidden but never added or removed. */
   builtIn?: boolean;
+  /** Offered on a term page only, never on the home page. */
+  termOnly?: boolean;
 }
 
 export const SECTION_KINDS: SectionKind[] = [
-  { type: "subcategories", label: "Sub-categories", description: "The tags attached to this world, as buttons in the world's color. Nothing shows while the world has none.", builtIn: true },
-  { type: "term_tours", label: "Tour list", description: "Every tour of this page, with its search. The page fills it by itself.", builtIn: true },
+  { type: "subcategories", label: "Sub-categories", description: "The tags attached to this world, as buttons in the world's color - all of them, or the ones you put first.", builtIn: true },
+  { type: "term_tours", label: "Tour list", description: "Every tour of this page, with its search. The page fills it by itself; you can put tours first, or show only the ones you pick.", builtIn: true },
   { type: "term_description", label: "Description", description: "The description written further down this screen.", builtIn: true },
+  { type: "summary", label: "Destination summary", description: "\"<destination> on a fingertip\": a heading, a row of pictures, a gray intro card and text columns.", termOnly: true },
   { type: "hero", label: "Hero banners", description: "The big rotating banners at the top, with the title card. A category tile can swap them for banners of its own.", single: true },
   { type: "tours", label: "Tour finder", description: "The category tiles, each with its banner, its tours and its rows, then the trip-type pills, the search and the tour grid.", single: true },
   { type: "slider", label: "Automatic tour slider", description: "A row of tours that fills itself: by world, tag, destination, category, sale, or tours you pick." },
@@ -647,8 +746,12 @@ export function newSection(type: HomeSectionType): HomeSection {
       return { ...common, type, title: "", items: [] };
     case "reviews":
       return { ...common, type, title: "", items: [], source: "manual", minRating: 4, limit: 8 };
+    case "summary":
+      return { ...common, type, title: "", images: [], intro: "", columns: [] };
     case "subcategories":
+      return { ...common, type, tags: [] };
     case "term_tours":
+      return { ...common, type, tours: [], onlyPicked: false };
     case "term_description":
       return { ...common, type };
     case "slider":
@@ -681,11 +784,17 @@ export function sectionSummary(section: HomeSection): string {
     case "reasons":
       return [section.title, `${section.items.length} items`].filter(Boolean).join(" · ");
     case "subcategories":
-      return "The tags attached to this world";
+      return section.tags.length ? `${section.tags.length} sub-categories, in this order` : "The tags attached to this world";
     case "term_tours":
-      return "Every tour of this page, with its search";
+      return section.onlyPicked && section.tours.length
+        ? `Only the ${section.tours.length} tours picked, with the search`
+        : section.tours.length
+          ? `${section.tours.length} tours first, then every tour of this page`
+          : "Every tour of this page, with its search";
     case "term_description":
       return "The description written below";
+    case "summary":
+      return [section.title, `${section.images.length} pictures`, `${section.columns.length + (section.intro.trim() ? 1 : 0)} text blocks`].filter(Boolean).join(" · ");
     case "slider":
       return [section.title, TOUR_SOURCE_LABELS[section.source], section.term].filter(Boolean).join(" · ");
     case "worlds":

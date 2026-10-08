@@ -42,6 +42,13 @@ import {
   type CmsPageKind,
   type CmsPageListRow,
 } from "@/components/tours/content/shared";
+import { PICTURE_TILE_MODES, PICTURE_TILE_MODE_LABELS, type PictureTileMode } from "@/lib/tours/site-content";
+import { cn } from "@/lib/utils";
+import { selectClass } from "@/components/tours/ui";
+import type { EasyLayout } from "@/lib/tours/wp-html";
+
+/** The imported pages that draw the row of picture tiles ("הכי חמים") near their bottom - a post does too. */
+const PICTURE_TILE_LAYOUTS: EasyLayout[] = ["about", "faq", "faq_home", "leaders"];
 
 const KIND_VIEW_LABELS: Record<CmsPageKind, string> = { page: "Pages", post: "Blog posts" };
 const isKind = (value: unknown): value is CmsPageKind => CMS_PAGE_KINDS.includes(value as CmsPageKind);
@@ -193,6 +200,8 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
   const isPost = saved.kind === "post";
   const problem = !form.title.trim() ? "Title is required" : saved.created && !form.path.trim() ? "The page needs an address" : null;
   const liveUrl = saved.form.isActive ? siteAssetUrl(saved.siteUrl, saved.path) : null;
+  // the pages that draw the picture tiles near their bottom get the choice to drop them
+  const hasPictureTiles = isPost || (saved.easyLayout !== null && PICTURE_TILE_LAYOUTS.includes(saved.easyLayout));
 
   return (
     <div className="space-y-4 pb-24">
@@ -291,9 +300,50 @@ export function CmsPageFormEditor({ initial }: { initial: CmsPageEditorData }) {
         </Section>
       )}
 
+      {saved.easyLayout === "blog" && (
+        <Section
+          title={`Posts in the blog (${saved.posts.length})`}
+          description='The blog lists every post that is "Active on site", newest first, by itself: a post is in the blog by being a post. To add one, click "Add Page or Post" on the list of Content Pages and choose "Blog post".'
+        >
+          {saved.posts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No posts yet.</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {saved.posts.map((post) => (
+                <li key={post.id}>
+                  <Link href={`/tours/pages/${post.id}`} className={cn("inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-sm hover:bg-muted", !post.isActive && "text-muted-foreground")}>
+                    <span dir="auto">{post.title}</span>
+                    {post.date && <span className="text-xs text-muted-foreground">{post.date}</span>}
+                    {!post.isActive && <span className="text-xs">(off)</span>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link href="/tours/pages" className="text-sm font-medium underline">
+            Open the list of Content Pages
+          </Link>
+        </Section>
+      )}
+
       {!saved.note && (
         <Section title="Tiles above the footer" description={`What this ${isPost ? "post" : "page"} shows above the footer.`}>
           <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={saved.options} siteUrl={saved.siteUrl} />
+          {hasPictureTiles && (
+            <Field
+              label='Picture tiles ("הכי חמים")'
+              hint="The row of picture tiles near the bottom of this page. The tiles themselves, and whether they show at all, are set in Header & Footer > Footer > Picture tiles."
+              className="md:max-w-md"
+            >
+              <select value={form.pictureTiles} onChange={(e) => set("pictureTiles", e.target.value as PictureTileMode)} className={cn(selectClass, "w-full")}>
+                {PICTURE_TILE_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {PICTURE_TILE_MODE_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
         </Section>
       )}
 

@@ -66,14 +66,19 @@ import { UUID, actionFail, fetchAll } from "@/lib/tours/action-kit";
 import { catalogSlug } from "@/lib/tours/catalog";
 import { asObject, companyAudit, invalidInput, type JsonObject } from "@/lib/tours/company-kit";
 import {
+  NO_TERM_EXTRAS,
+  PICTURE_TILE_MODES,
   footerTilesSchema,
   homeSectionSchema,
   isSiteColor,
   isTermPageKind,
   readFooterTiles,
+  readPictureTileMode,
   readTermSections,
   termSectionsSchema,
+  type TermExtrasSections,
 } from "@/lib/tours/site-content";
+import { termExtrasSections, unwrapImportedHtml } from "@/lib/tours/term-extras";
 import { EMPTY_EASY, PAGE_NOTES, cleanEasy, easyLayoutOfPath, leadersSiteText, readEasy, type EasyLayout, type EasyText } from "@/lib/tours/wp-html";
 import { siteEditorOptions } from "@/lib/tours/site-options";
 import { todayIso } from "@/lib/tours/format";
@@ -402,6 +407,7 @@ const cmsPageSchema = z.object({
     imageAlt: z.string().trim().max(300),
   }),
   footerTiles: footerTilesSchema,
+  pictureTiles: z.enum(PICTURE_TILE_MODES),
 });
 
 // ================================================================ trip pages
@@ -1451,12 +1457,14 @@ export async function listTourTerms(): Promise<ActionResult<TermListRow[]>> {
   }
 }
 
-async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; editor: TermEditorData } | null> {
+async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; editor: TermEditorData; extras: TermExtrasSections } | null> {
   if (!isUuid(id)) return null;
   const db = toursDb();
   const { data: row, error } = await db.from("terms").select("*").eq("company_id", company.id).eq("id", id).maybeSingle();
   if (error) throw error;
   if (!row) return null;
+  // what the page came with from WordPress (a reasons row, sliders, a summary), as sections the editor opens with
+  const extras = isTermPageKind(row.kind) ? termExtrasSections(row.kind, row.slug, await extrasRowOf(company)) : NO_TERM_EXTRAS;
   const { data: links, error: linksError } = await db
     .from("package_terms")
     .select("package_id, packages!inner(id, name, company_id, is_deleted)")
@@ -1484,7 +1492,9 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
       slug: row.slug,
       form: {
         name: row.name,
-        descriptionHtml: row.description_html ?? "",
+        // an imported description sits inside Elementor's widget wrappers, which the visual editor
+        // cannot hold: it opens without them (the site draws the same words)
+        descriptionHtml: unwrapImportedHtml(row.description_html ?? ""),
         heroImages: row.hero_images ?? [],
         position: row.position,
         isActive: row.is_active,
@@ -1495,7 +1505,7 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         icon: dataText(data, "icon"),
         externalUrl: dataText(data, "externalUrl"),
         worldSlug: dataText(data, "worldSlug"),
-        sections: isTermPageKind(row.kind) ? readTermSections(row.kind, data.sections) : [],
+        sections: isTermPageKind(row.kind) ? readTermSections(row.kind, data.sections, extras) : [],
         footerTiles: readFooterTiles(data.footerTiles),
       },
       pages,
@@ -1504,6 +1514,7 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
       path: dataText(data, "path") || `/${TERM_SITE_FOLDER[row.kind] ?? row.kind}/${row.slug}/`,
       siteUrl: company.siteUrl,
     },
+    extras,
   };
 }
 
@@ -1530,7 +1541,9 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
 
     const patch = new RowPatch();
     patch.set("name", before.name, input.name, "name");
-    if (patch.set("description_html", before.description_html, orNull(input.descriptionHtml), "descriptionHtml")) {
+    // the editor showed the description without its imported wrappers: a description nobody
+    // touched compares equal to what was shown, and stays as it was imported
+    if (input.descriptionHtml !== loaded.editor.form.descriptionHtml && patch.set("description_html", before.description_html, orNull(input.descriptionHtml), "descriptionHtml")) {
       // the site's meta description is the plain text of the same field
       patch.data.description = plainText(input.descriptionHtml);
     }
@@ -1558,7 +1571,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       // layout, so nothing is stored for it and the site keeps drawing it the way it always did.
       const page = termSectionsSchema(before.kind).safeParse(input.sections);
       if (!page.success) return invalidInput(page.error);
-      patch.setData("sections", readTermSections(before.kind, stored.sections) as unknown as Json, page.data as unknown as Json);
+      patch.setData("sections", readTermSections(before.kind, stored.sections, loaded.extras) as unknown as Json, page.data as unknown as Json);
     }
     patch.setData("footerTiles", readFooterTiles(stored.footerTiles) as unknown as Json, input.footerTiles as unknown as Json);
 
@@ -1858,17 +1871,40 @@ export async function saveTourHotel(id: string, form: HotelForm): Promise<Action
 const easyLayoutOf = (row: TourCmsPage): EasyLayout | null => (isCreatedPage(row) || row.kind !== "page" ? null : easyLayoutOfPath(row.path));
 
 /**
+ * The "extras" row of the import: what the old templates drew outside the pages' and
+ * terms' own fields (the leaders page texts, the picture tiles, per-term reasons /
+ * sliders / summaries). Null when the company has none.
+ */
+async function extrasRowOf(company: Company): Promise<Json | null> {
+  const { data, error } = await toursDb().from("cms_pages").select("data").eq("company_id", company.id).eq("kind", "extras").limit(1);
+  if (error) throw error;
+  return data?.[0]?.data ?? null;
+}
+
+/**
  * The words the site keeps outside a page's own markup, which its plain editor opens with:
  * the leaders page reads them from the "extras" row of the import. Every other page has none.
  */
 async function siteTextOf(company: Company, row: TourCmsPage): Promise<Partial<EasyText>> {
   if (easyLayoutOf(row) !== "leaders") return {};
-  const { data, error } = await toursDb().from("cms_pages").select("data").eq("company_id", company.id).eq("kind", "extras").limit(1);
-  if (error) throw error;
-  return leadersSiteText(data?.[0]?.data);
+  return leadersSiteText(await extrasRowOf(company));
 }
 
-const cmsPageEditor = (company: Company, row: TourCmsPage, siteText: Partial<EasyText>): Omit<CmsPageEditorData, "options"> => {
+/**
+ * The posts the blog page lists, for the blog page's own screen: every post, newest
+ * first, with whether it is on the site. Empty for any other page.
+ */
+async function blogPostsOf(company: Company, row: TourCmsPage): Promise<CmsPageEditorData["posts"]> {
+  if (easyLayoutOf(row) !== "blog") return [];
+  const rows = await fetchAll((from, to) =>
+    toursDb().from("cms_pages").select("id, title, is_active, data").eq("company_id", company.id).eq("kind", "post").order("id").range(from, to),
+  );
+  return rows
+    .map((post) => ({ id: post.id, title: post.title, isActive: post.is_active, date: dataText(asObject(post.data), "date").slice(0, 10) }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.title.localeCompare(b.title, "he")));
+}
+
+const cmsPageEditor = (company: Company, row: TourCmsPage, siteText: Partial<EasyText>): Omit<CmsPageEditorData, "options" | "posts"> => {
   // the import left the SEO fields inside `data`; the column wins once it is filled
   const column = asObject(row.seo);
   const original = asObject(asObject(row.data).seo);
@@ -1895,6 +1931,7 @@ const cmsPageEditor = (company: Company, row: TourCmsPage, siteText: Partial<Eas
       isActive: row.is_active,
       easy: easyLayout ? readEasy(easyLayout, data.easy, row.content_html ?? "", siteText) : EMPTY_EASY,
       footerTiles: readFooterTiles(data.footerTiles),
+      pictureTiles: readPictureTileMode(data.pictureTiles),
     },
     created: isCreatedPage(row),
     easyLayout,
@@ -1993,8 +2030,8 @@ export async function getTourCmsPage(id: string): Promise<ActionResult<CmsPageEd
     const { company } = await requireCompany("tours");
     const row = await cmsPageRow(company, id);
     if (!row) return { success: false, error: "Page not found" };
-    const [siteText, options] = await Promise.all([siteTextOf(company, row), siteEditorOptions(company)]);
-    return { success: true, data: { ...cmsPageEditor(company, row, siteText), options } };
+    const [siteText, options, posts] = await Promise.all([siteTextOf(company, row), siteEditorOptions(company), blogPostsOf(company, row)]);
+    return { success: true, data: { ...cmsPageEditor(company, row, siteText), options, posts } };
   } catch (e) {
     return failure(e, "Failed to load the page");
   }
@@ -2092,6 +2129,7 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
       patch.setData("easy", cleanEasy(easyLayout, shown.easy) as unknown as Json, easy as unknown as Json);
     }
     patch.setData("footerTiles", readFooterTiles(stored.footerTiles) as unknown as Json, input.footerTiles as unknown as Json);
+    patch.setData("pictureTiles", readPictureTileMode(stored.pictureTiles), input.pictureTiles);
     // The address of an imported page is fixed: the site serves it from its own route folder.
     if (isCreatedPage(before) && input.path.trim() !== "" && input.path.trim() !== before.path) {
       const next = pagePath(input.path);
@@ -2137,7 +2175,8 @@ export async function saveTourCmsPage(id: string, form: CmsPageForm): Promise<Ac
     }
     const fresh = await cmsPageRow(company, id);
     if (!fresh) return { success: false, error: "Page not found" };
-    return { success: true, data: { ...cmsPageEditor(company, fresh, siteText), options: await siteEditorOptions(company) } };
+    const [options, posts] = await Promise.all([siteEditorOptions(company), blogPostsOf(company, fresh)]);
+    return { success: true, data: { ...cmsPageEditor(company, fresh, siteText), options, posts } };
   } catch (e) {
     return failure(e, "Failed to save the page");
   }

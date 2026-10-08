@@ -55,12 +55,13 @@ export function SectionsBoard({
   onChange: (sections: HomeSection[]) => void;
   options: SiteEditorOptions;
   siteUrl: string | null;
-  /** The section types this page offers (default: all of them). */
+  /** The section types this page offers (default: every type of the home page). */
   kinds?: HomeSectionType[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  // a built-in part of a term page is always in the list: it is never added, and never removed
-  const offered = SECTION_KINDS.filter((kind) => !kind.builtIn && (!kinds || kinds.includes(kind.type)));
+  // a built-in part of a term page is always in the list: it is never added, and never removed;
+  // a part that only a term page holds is not offered on the home page
+  const offered = SECTION_KINDS.filter((kind) => !kind.builtIn && (kinds ? kinds.includes(kind.type) : !kind.termOnly));
   const patch = (id: string, section: HomeSection) => onChange(sections.map((s) => (s.id === id ? section : s)));
   const add = (type: HomeSectionType) => {
     const section = newSection(type);
