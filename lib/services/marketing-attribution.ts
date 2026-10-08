@@ -57,6 +57,7 @@ export function paidTouchOf(touches: UtmTouchLike[], lookups: AttributionLookups
   const ordered = [...touches].sort((a, b) => a.position - b.position);
   for (const t of ordered) {
     if (t.position === 0 && t.is_influencer) continue;
+    // Meta takes precedence: one touch with both fbclid and gclid reads as Meta (fbclid added at click time, gclid often copied into shared links).
     const hit = metaTouch(t, lookups) ?? googleTouch(t, lookups);
     if (hit) return hit;
   }
