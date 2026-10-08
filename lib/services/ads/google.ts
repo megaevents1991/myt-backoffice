@@ -44,20 +44,29 @@ export async function gaqlSearch<T = Record<string, unknown>>(customerId: string
   const token = await googleAccessToken();
   const out: T[] = [];
   let pageToken: string | undefined;
+  let pages = 0;
   do {
+    if (pages >= 100) throw new Error(`Google Ads: more than 100 pages for ${query.slice(0, 60)}`);
+    pages += 1;
     const res = await fetch(`${API}/customers/${customerId}/googleAds:search`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ query, ...(pageToken ? { pageToken } : {}) }),
       signal: AbortSignal.timeout(45_000),
     });
-    const body = (await res.json().catch(() => ({}))) as { results?: T[]; nextPageToken?: string; error?: { message: string; details?: { errors?: { message: string }[] }[] } };
-    if (!res.ok || body.error) {
-      const detail = body.error?.details?.flatMap((d) => d.errors ?? []).map((e) => e.message).join("; ");
-      throw new Error(`Google Ads: ${body.error?.message ?? res.status}${detail ? ` - ${detail}` : ""}`);
+    type Body = { results?: T[]; nextPageToken?: string; error?: { message: string; details?: { errors?: { message: string }[] }[] } };
+    const parsed = (await res.json().catch(() => null)) as Body | null;
+    if (!res.ok || parsed?.error) {
+      // The error path degrades: a non-JSON error body still reads "Google Ads: <status>".
+      const err = parsed?.error;
+      const detail = err?.details?.flatMap((d) => d.errors ?? []).map((e) => e.message).join("; ");
+      throw new Error(`Google Ads: ${err?.message ?? res.status}${detail ? ` - ${detail}` : ""}`);
     }
-    out.push(...(body.results ?? []));
-    pageToken = body.nextPageToken;
+    // A successful answer that cannot be parsed is NOT "no rows" (and on page 2+ it would drop the tail).
+    // A parsed object without `results` IS a legitimate empty page - Google omits the key when empty.
+    if (!parsed || typeof parsed !== "object") throw new Error("Google Ads: unreadable response");
+    out.push(...(parsed.results ?? []));
+    pageToken = parsed.nextPageToken;
   } while (pageToken);
   return out;
 }
@@ -90,7 +99,7 @@ export async function fetchGoogleEntities(opts: { customerId: string }): Promise
   const [camps, ags, ads, assets] = await Promise.all([
     gaqlSearch<Camp>(opts.customerId, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type FROM campaign WHERE campaign.status != 'REMOVED'"),
     gaqlSearch<Ag>(opts.customerId, "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id FROM ad_group WHERE ad_group.status != 'REMOVED'"),
-    gaqlSearch<Ad>(opts.customerId, "SELECT campaign.id, ad_group_ad.ad.final_urls FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED' AND campaign.status = 'ENABLED'"),
+    gaqlSearch<Ad>(opts.customerId, "SELECT campaign.id, ad_group_ad.ad.final_urls FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED'"),
     gaqlSearch<Asset>(opts.customerId, "SELECT campaign.id, asset_group.final_urls FROM asset_group WHERE asset_group.status != 'REMOVED'"),
   ]);
   const domain = new Map<string, string>();
