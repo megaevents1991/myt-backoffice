@@ -71,16 +71,41 @@ export function parseMetaInsight(raw: MetaInsightRaw, ctx: { accountId: string; 
   };
 }
 
-/** Daily adset-level spend between two yyyy-mm-dd days (inclusive). */
+/**
+ * Days per insights request. Measured on prod 2026-10-08: Meta needs more than 30 s to answer an adset-by-day window of 30 or
+ * 90 days (graphGetAll's per-request 30 s timeout aborts it); 14 days answers in ~25 s (197 rows), a week well inside.
+ */
+export const META_SPEND_CHUNK_DAYS = 14;
+
+/** Pure: inclusive yyyy-mm-dd windows of `chunkDays` days that cover since..until, the last one shorter. `since > until` (or a bad date) -> []. */
+export function dayChunks(since: string, until: string, chunkDays: number): { since: string; until: string }[] {
+  const DAY = 86_400_000;
+  const start = Date.parse(`${since}T00:00:00Z`);
+  const end = Date.parse(`${until}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [];
+  const step = Number.isFinite(chunkDays) ? Math.max(1, Math.floor(chunkDays)) : 1;
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const out: { since: string; until: string }[] = [];
+  for (let from = start; from <= end; from += step * DAY) {
+    out.push({ since: iso(from), until: iso(Math.min(from + (step - 1) * DAY, end)) });
+  }
+  return out;
+}
+
+/** Daily adset-level spend between two yyyy-mm-dd days (inclusive). One insights request per `META_SPEND_CHUNK_DAYS` window, one after the other (Meta rate limits - never in parallel). */
 export async function fetchMetaSpend(opts: { accountId: string; since: string; until: string; currency: string; fxRate: number }): Promise<AdSpendRow[]> {
-  const raws = await graphGetAll<MetaInsightRaw>(`/${opts.accountId}/insights`, {
-    level: "adset",
-    time_increment: "1",
-    time_range: JSON.stringify({ since: opts.since, until: opts.until }),
-    fields: "campaign_id,adset_id,spend,impressions,clicks,actions,action_values",
-    limit: "500",
-  });
-  return raws.map((r) => parseMetaInsight(r, opts));
+  const rows: AdSpendRow[] = [];
+  for (const w of dayChunks(opts.since, opts.until, META_SPEND_CHUNK_DAYS)) {
+    const raws = await graphGetAll<MetaInsightRaw>(`/${opts.accountId}/insights`, {
+      level: "adset",
+      time_increment: "1",
+      time_range: JSON.stringify({ since: w.since, until: w.until }),
+      fields: "campaign_id,adset_id,spend,impressions,clicks,actions,action_values",
+      limit: "500",
+    });
+    for (const r of raws) rows.push(parseMetaInsight(r, opts));
+  }
+  return rows;
 }
 
 interface MetaCreative { url_tags?: string; link_url?: string; object_story_spec?: { link_data?: { link?: string }; video_data?: { call_to_action?: { value?: { link?: string } } } }; asset_feed_spec?: { link_urls?: { website_url?: string }[] } }
