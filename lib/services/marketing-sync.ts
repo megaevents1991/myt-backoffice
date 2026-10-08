@@ -42,6 +42,8 @@ const CLICK_REFRESH_DAYS = 3;
 const CLICK_DAYS_MAX = 90;
 /** The ticket-cost fill stops this long before the run's budget, so the alerts / retention steps still fit. */
 const COGS_RESERVE_MS = 20_000;
+/** The Meta entity walk (~1,800 ads at 50 a page) measured ~75-95 s on prod; with less than this left after the spend read it waits for the next tick. */
+const META_ENTITIES_RESERVE_MS = 100_000;
 export const FX_UNAVAILABLE = "ILS rate unavailable (fallback) - spend not written, retried next tick";
 
 /** One batch may not hold the same conflict key twice ("ON CONFLICT DO UPDATE command cannot affect row a second time" fails the whole call) - the last row wins, as sequential upserts would. */
@@ -164,6 +166,13 @@ export async function runMarketingSync(opts: { dryRun: boolean; only?: SyncStep;
       a = await upsert("ad_spend_daily", spend, "platform,campaign_id,adset_key,day", opts.dryRun);
     }
     const spendNote = fxProblem ? fxNote : `${a} spend rows written`;
+    // A 90-day backfill's spend read alone takes ~180 s (13 windows); the entity walk ~90 s more. When the walk no longer
+    // fits, keep the spend (already written) and leave the entities to the next tick - every tick walks them anyway.
+    const left = startedAt.getTime() + budgetMs - Date.now();
+    if (left < META_ENTITIES_RESERVE_MS) {
+      if (fxProblem) throw new Error(`${fxNote} · entities skipped (budget)`);
+      return { rows: a, note: `${a} spend rows, entities skipped (budget: ${Math.round(left / 1000)} s left, next tick walks them)` };
+    }
     const b = await afterSpend(spendNote, "entities", async () => writeEntities(await fetchMetaEntities({ accountId }), "meta", opts.dryRun));
     if (fxProblem) throw new Error(`${fxNote} · ${b} entities`);
     return { rows: a + b, note: `${a} spend rows, ${b} entities` };

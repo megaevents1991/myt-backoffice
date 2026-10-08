@@ -77,12 +77,15 @@ export function parseMetaInsight(raw: MetaInsightRaw, ctx: { accountId: string; 
  * 90-day runs still lost a window to the timeout, so a week it is - ~half that, with room to spare.
  */
 export const META_SPEND_CHUNK_DAYS = 7;
-/** A window whose request timed out is asked once more before the whole spend read fails. */
-const META_SPEND_RETRIES = 1;
+/** A window whose request failed TRANSIENTLY is asked again this many times (after `META_RETRY_PAUSE_MS`) before the whole spend read fails. */
+const META_SPEND_RETRIES = 2;
+const META_RETRY_PAUSE_MS = 2_000;
 
-function isTimeout(err: unknown): boolean {
+/** Pure: a read timeout, or Meta's own "try again" answers - code 1 (unknown) / code 2 ("Service temporarily unavailable", seen on 2026-10-08 between two good 90-day reads). */
+export function isTransientMetaError(err: unknown): boolean {
   const e = err as { name?: string; message?: string } | null;
-  return e?.name === "TimeoutError" || /timeout|aborted/i.test(e?.message ?? "");
+  const msg = e?.message ?? "";
+  return e?.name === "TimeoutError" || /timeout|aborted/i.test(msg) || /\(code [12]\)$/.test(msg);
 }
 
 /** Pure: inclusive yyyy-mm-dd windows of `chunkDays` days that cover since..until, the last one shorter. `since > until` (or a bad date) -> []. */
@@ -116,8 +119,9 @@ export async function fetchMetaSpend(opts: { accountId: string; since: string; u
       try {
         raws = await graphGetAll<MetaInsightRaw>(`/${opts.accountId}/insights`, params);
       } catch (err) {
-        if (attempt >= META_SPEND_RETRIES || !isTimeout(err)) throw err;
-        console.warn(`[meta] insights ${w.since}..${w.until} timed out, retrying`);
+        if (attempt >= META_SPEND_RETRIES || !isTransientMetaError(err)) throw err;
+        console.warn(`[meta] insights ${w.since}..${w.until} failed transiently (${(err as Error)?.message}), retrying`);
+        await new Promise((r) => setTimeout(r, META_RETRY_PAUSE_MS));
       }
     }
     for (const r of raws) rows.push(parseMetaInsight(r, opts));
