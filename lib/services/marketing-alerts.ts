@@ -46,15 +46,39 @@ export function viralPostAlerts(input: { media: { id: string; posted_at: string 
   return out;
 }
 
+/** A failed read must never look like "no rows": an empty spend list reads as "no candidates" and would resolve every open alert. */
+export function rowsOrThrow<T>(table: string, res: { data: T[] | null; error: { message: string } | null }): T[] {
+  if (res.error) throw new Error(`alerts read ${table}: ${res.error.message}`);
+  return res.data ?? [];
+}
+
+export interface OpenAlertRow { kind: string; key: string; last_mailed_at: string | null }
+
+/**
+ * Pure: what a run does with the candidates against the OPEN alert rows.
+ * fresh = not open yet (written); toMail = fresh + still-live open alerts whose mail never went out (last_mailed_at null -
+ * a failed sendMail must be retried next run), deduped by kind:key; toResolve = open keys no candidate asks for any more.
+ */
+export function planAlerts(candidates: AlertCandidate[], openRows: OpenAlertRow[]): { fresh: AlertCandidate[]; toMail: AlertCandidate[]; toResolve: string[] } {
+  const id = (c: { kind: string; key: string }) => `${c.kind}:${c.key}`;
+  const open = new Set(openRows.map(id));
+  const unmailed = new Set(openRows.filter((a) => !a.last_mailed_at).map(id));
+  const fresh = candidates.filter((c) => !open.has(id(c)));
+  const toMail = new Map<string, AlertCandidate>();
+  for (const c of [...fresh, ...candidates.filter((c) => unmailed.has(id(c)))]) if (!toMail.has(id(c))) toMail.set(id(c), c);
+  const still = new Set(candidates.map(id));
+  return { fresh, toMail: [...toMail.values()], toResolve: [...open].filter((k) => !still.has(k)) };
+}
+
 async function settings(): Promise<MarketingSettings> {
-  const { data } = await mdb.from("marketing_settings").select("key, value");
+  const data = rowsOrThrow<{ key: keyof MarketingSettings; value: unknown }>("marketing_settings", await mdb.from("marketing_settings").select("key, value"));
   const out: MarketingSettings = { ...DEFAULT_MARKETING_SETTINGS };
-  for (const r of (data ?? []) as { key: keyof MarketingSettings; value: unknown }[]) if (MARKETING_SETTING_KEYS.includes(r.key)) (out as unknown as Record<string, unknown>)[r.key] = r.value;
+  for (const r of data) if (MARKETING_SETTING_KEYS.includes(r.key)) (out as unknown as Record<string, unknown>)[r.key] = r.value;
   return out;
 }
 
-/** Evaluate both rules over the stored tables, dedupe, mail the new ones. */
-export async function runMarketingAlerts(opts: { dryRun: boolean }): Promise<{ newAlerts: number; resolved: number; mail: "sent" | "skipped" | "failed" }> {
+/** Evaluate both rules over the stored tables, dedupe, mail the new ones (and any open one whose mail never went out). A failed read throws. */
+export async function runMarketingAlerts(opts: { dryRun: boolean }): Promise<{ newAlerts: number; resolved: number; mailed: number; mail: "sent" | "skipped" | "failed" }> {
   const now = new Date();
   const s = await settings();
   const since = dayStr(new Date(now.getTime() - 14 * 864e5));
@@ -63,28 +87,32 @@ export async function runMarketingAlerts(opts: { dryRun: boolean }): Promise<{ n
     mdb.from("ad_spend_daily").select("campaign_id, platform, day, spend").gte("day", since),
     mdb.from("ad_entities").select("platform, id, name, brand").eq("kind", "campaign"),
     mdb.from("ig_media").select("id, posted_at, like_count, comments_count, saved, shares, media_product_type").order("posted_at", { ascending: false }).limit(120),
-    mdb.from("marketing_alerts").select("kind, key").is("resolved_at", null),
+    mdb.from("marketing_alerts").select("kind, key, last_mailed_at").is("resolved_at", null),
     getPurchasesByCampaign(windowSince, dayStr(now)),
   ]);
-  const ent = new Map<string, { name: string; brand: AdBrand }>((entRes.data ?? []).map((e: { platform: string; id: string; name: string; brand: AdBrand }) => [`${e.platform}:${e.id}`, e]));
-  const spend = (spendRes.data ?? []).map((r: { campaign_id: string; platform: string; day: string; spend: number }) => ({ campaign_id: r.campaign_id, day: r.day, spend: Number(r.spend), brand: ent.get(`${r.platform}:${r.campaign_id}`)?.brand ?? ("other" as AdBrand), name: ent.get(`${r.platform}:${r.campaign_id}`)?.name ?? r.campaign_id }));
-  const candidates = [...budgetBleedAlerts({ spend, purchasesByCampaign, settings: s, now }), ...viralPostAlerts({ media: mediaRes.data ?? [], settings: s, now })];
-  const open = new Set<string>((openRes.data ?? []).map((a: { kind: string; key: string }) => `${a.kind}:${a.key}`));
-  const fresh = candidates.filter((c) => !open.has(`${c.kind}:${c.key}`));
-  const still = new Set(candidates.map((c) => `${c.kind}:${c.key}`));
-  const toResolve = [...open].filter((k) => !still.has(k));
+  // Check every read BEFORE computing anything: a failed read must never look like "no candidates".
+  const spendRows = rowsOrThrow<{ campaign_id: string; platform: string; day: string; spend: number }>("ad_spend_daily", spendRes);
+  const entRows = rowsOrThrow<{ platform: string; id: string; name: string; brand: AdBrand }>("ad_entities", entRes);
+  const mediaRows = rowsOrThrow<{ id: string; posted_at: string | null; like_count: number; comments_count: number; saved: number; shares: number; media_product_type: string | null }>("ig_media", mediaRes);
+  const openRows = rowsOrThrow<OpenAlertRow>("marketing_alerts", openRes);
+  const ent = new Map<string, { name: string; brand: AdBrand }>(entRows.map((e) => [`${e.platform}:${e.id}`, e]));
+  const spend = spendRows.map((r) => ({ campaign_id: r.campaign_id, day: r.day, spend: Number(r.spend), brand: ent.get(`${r.platform}:${r.campaign_id}`)?.brand ?? ("other" as AdBrand), name: ent.get(`${r.platform}:${r.campaign_id}`)?.name ?? r.campaign_id }));
+  const candidates = [...budgetBleedAlerts({ spend, purchasesByCampaign, settings: s, now }), ...viralPostAlerts({ media: mediaRows, settings: s, now })];
+  const { fresh, toMail, toResolve } = planAlerts(candidates, openRows);
   if (!opts.dryRun) {
     if (fresh.length) await mdb.from("marketing_alerts").upsert(fresh.map((c) => ({ kind: c.kind, key: c.key, payload: c.payload, first_seen_at: now.toISOString(), resolved_at: null, last_mailed_at: null })), { onConflict: "kind,key" });
     for (const k of toResolve) { const i = k.indexOf(":"); await mdb.from("marketing_alerts").update({ resolved_at: now.toISOString() }).eq("kind", k.slice(0, i)).eq("key", k.slice(i + 1)); }
   }
   let mail: "sent" | "skipped" | "failed" = "skipped";
   const to = s.alert_emails.length ? s.alert_emails.join(",") : process.env.NEXT_SECRET_ADMIN_EMAIL;
-  if (fresh.length && to && !opts.dryRun) {
+  let mailed = 0;
+  if (toMail.length && to && !opts.dryRun) {
     try {
-      await sendMail({ to, subject: `MYT Admin · ${fresh.length} התראות שיווק`, html: [`<div dir="rtl">`, ...fresh.map((c) => `<p><b>${c.kind === "budget_bleed" ? "שריפת תקציב" : "ויראליות"}</b> - ${c.title}</p>`), `<p><a href="${appOrigin()}/marketing?tab=alerts">לכל ההתראות</a></p></div>`].join("") });
-      for (const c of fresh) await mdb.from("marketing_alerts").update({ last_mailed_at: now.toISOString() }).eq("kind", c.kind).eq("key", c.key);
+      await sendMail({ to, subject: `MYT Admin · ${toMail.length} התראות שיווק`, html: [`<div dir="rtl">`, ...toMail.map((c) => `<p><b>${c.kind === "budget_bleed" ? "שריפת תקציב" : "ויראליות"}</b> - ${c.title}</p>`), `<p><a href="${appOrigin()}/marketing?tab=alerts">לכל ההתראות</a></p></div>`].join("") });
+      for (const c of toMail) await mdb.from("marketing_alerts").update({ last_mailed_at: now.toISOString() }).eq("kind", c.kind).eq("key", c.key);
       mail = "sent";
+      mailed = toMail.length;
     } catch (e) { console.error("[marketing-alerts] mail failed", e); mail = "failed"; }
   }
-  return { newAlerts: fresh.length, resolved: toResolve.length, mail };
+  return { newAlerts: fresh.length, resolved: toResolve.length, mailed, mail };
 }

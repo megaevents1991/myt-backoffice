@@ -1,6 +1,6 @@
 // Run: npx tsx scripts/marketing-alerts-selftest.ts
 import assert from "node:assert/strict";
-import { budgetBleedAlerts, viralPostAlerts } from "../lib/services/marketing-alerts";
+import { budgetBleedAlerts, planAlerts, rowsOrThrow, viralPostAlerts, type AlertCandidate } from "../lib/services/marketing-alerts";
 
 const now = new Date("2026-10-08T12:00:00Z");
 const spend = (campaign_id: string, day: string, spend: number) => ({ campaign_id, day, spend, brand: "mega_events" as const, name: `camp ${campaign_id}` });
@@ -22,5 +22,27 @@ const viral = viralPostAlerts({ media: [...history, post("new", "2026-10-07T10:0
 assert.deepEqual(viral.map((a) => a.key), ["new"], "250 > 200% of 100; 'fresh' is under 24h; 'meh' is 150%");
 assert.equal(viral[0].payload.engagement, 250);
 assert.equal(viralPostAlerts({ media: [post("only", "2026-10-07T10:00:00Z", 999)], settings: { viral_pct: 200 }, now }).length, 0, "no history = no baseline");
+
+// A failed read throws (never "no rows"): it would read as "no candidates" and resolve every open alert.
+assert.throws(() => rowsOrThrow("ad_spend_daily", { data: null, error: { message: "relation does not exist" } }), /alerts read ad_spend_daily: relation does not exist/);
+assert.deepEqual(rowsOrThrow("ig_media", { data: null, error: null }), [], "a null body with no error is an empty list");
+assert.deepEqual(rowsOrThrow("ig_media", { data: [{ id: "x" }], error: null }), [{ id: "x" }]);
+
+// planAlerts: fresh are mailed, an open alert whose mail failed (last_mailed_at null) is mailed again, a mailed one is not, a gone one is resolved.
+const cand = (kind: AlertCandidate["kind"], key: string): AlertCandidate => ({ kind, key, title: `${kind} ${key}`, payload: {} });
+const plan = planAlerts(
+  [cand("budget_bleed", "new"), cand("budget_bleed", "unmailed"), cand("budget_bleed", "mailed"), cand("viral_post", "unmailed")],
+  [
+    { kind: "budget_bleed", key: "unmailed", last_mailed_at: null },
+    { kind: "budget_bleed", key: "mailed", last_mailed_at: "2026-10-07T05:00:00Z" },
+    { kind: "viral_post", key: "gone", last_mailed_at: null },
+    { kind: "viral_post", key: "gone-mailed", last_mailed_at: "2026-10-06T05:00:00Z" },
+  ],
+);
+assert.deepEqual(plan.fresh.map((c) => `${c.kind}:${c.key}`), ["budget_bleed:new", "viral_post:unmailed"], "only what is not open yet is fresh (newAlerts)");
+assert.deepEqual(plan.toMail.map((c) => `${c.kind}:${c.key}`), ["budget_bleed:new", "viral_post:unmailed", "budget_bleed:unmailed"], "fresh + the open alert whose mail never went out; the mailed one stays out");
+assert.deepEqual(plan.toResolve.sort(), ["viral_post:gone", "viral_post:gone-mailed"], "open alerts no candidate asks for any more are resolved - an unmailed one that vanished is never mailed");
+assert.deepEqual(planAlerts([cand("viral_post", "a"), cand("viral_post", "a")], []).toMail.length, 1, "deduped by kind:key");
+assert.equal(planAlerts([], [{ kind: "viral_post", key: "a", last_mailed_at: null }]).toMail.length, 0, "nothing live = nothing to mail");
 
 console.log("marketing-alerts selftest OK");

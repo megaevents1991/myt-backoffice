@@ -163,7 +163,7 @@ export async function runMarketingSync(opts: { dryRun: boolean; only?: SyncStep;
 
   if (want("alerts") && !over()) steps.push(await step("alerts", async () => {
     const r = await runMarketingAlerts({ dryRun: opts.dryRun });
-    return { rows: r.newAlerts, note: `${r.newAlerts} new, ${r.resolved} resolved, mail ${r.mail}` };
+    return { rows: r.newAlerts, note: `${r.newAlerts} new, ${r.mailed} mailed, ${r.resolved} resolved, mail ${r.mail}` };
   }));
 
   if (want("retention") && !over()) steps.push(await step("retention", async () => {
