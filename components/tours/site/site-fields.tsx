@@ -542,7 +542,10 @@ export function FooterTilesField({
           </select>
         </Field>
         {value.mode !== "hide" && (
-          <Field label="On phones" hint="Whether a phone shows the tiles of this page. Header & Footer says it for every page; this page can say otherwise.">
+          <Field
+            label="On a phone"
+            hint='Where the tiles of this page show: a computer screen, a phone, or both. "On a computer only" keeps them on the computer and drops them on the phone. Header & Footer > Footer sets the rule for every page; this page can say otherwise.'
+          >
             <select value={value.mobile} onChange={(e) => onChange({ ...value, mobile: e.target.value as FooterTileMobileMode })} className={cn(selectClass, "w-full")}>
               {FOOTER_TILE_MOBILE_MODES.map((mode) => (
                 <option key={mode} value={mode}>

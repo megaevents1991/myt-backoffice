@@ -260,7 +260,10 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
               <Switch id="tiles-on-mobile" checked={footer.discoverMobile} onCheckedChange={(discoverMobile) => setFooter({ discoverMobile })} />
               <label htmlFor="tiles-on-mobile" className="text-sm">
                 Show the tiles on phones
-                <span className="block text-xs text-muted-foreground">Off = a phone shows no tiles above the footer, on any page (a single page can still ask for them in its own &quot;On phones&quot;).</span>
+                <span className="block text-xs text-muted-foreground">
+                  Off = a phone shows no tiles above the footer on any page; a computer still shows them. One page at a time is decided on the page itself:
+                  open it (Content Pages, Categories &amp; Tags, Homepage) and choose under &quot;Tiles above the footer&quot; &gt; &quot;On a phone&quot;, e.g. &quot;On a computer only - not on a phone&quot;.
+                </span>
               </label>
             </div>
           </Section>

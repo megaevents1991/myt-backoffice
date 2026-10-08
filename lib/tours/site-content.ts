@@ -135,13 +135,17 @@ export const FOOTER_TILE_MODE_LABELS: Record<FooterTileMode, string> = {
   hide: "No tiles on this page",
   custom: "This page's own tiles",
 };
-/** Whether one page shows its tiles above the footer on a phone: the rule of Header & Footer, or its own answer. */
+/**
+ * Whether one page shows its tiles above the footer on a phone: the rule of Header & Footer, or
+ * its own answer. The labels name both devices on purpose - Alon (08.10) looked for "on a computer
+ * but not on a phone" and did not read "Hide on phones" as that.
+ */
 export const FOOTER_TILE_MOBILE_MODES = ["default", "show", "hide"] as const;
 export type FooterTileMobileMode = (typeof FOOTER_TILE_MOBILE_MODES)[number];
 export const FOOTER_TILE_MOBILE_LABELS: Record<FooterTileMobileMode, string> = {
-  default: "As set in Header & Footer",
-  show: "Show on phones too",
-  hide: "Hide on phones",
+  default: "As Header & Footer says for every page",
+  show: "On a computer and on a phone (even where Header & Footer hides them on phones)",
+  hide: "On a computer only - not on a phone",
 };
 export const footerTilesSchema = z.object({
   mode: z.enum(FOOTER_TILE_MODES),

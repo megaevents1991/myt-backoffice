@@ -8,6 +8,7 @@
 import {
   defaultTermLayout,
   FOOTER_TILE_MODE_LABELS,
+  FOOTER_TILE_MOBILE_LABELS,
   NO_TERM_EXTRAS,
   SITE_DOC_SCHEMAS,
   homeSchema,
@@ -275,6 +276,11 @@ check("a page's tiles choice saved before the phone answer follows the rule", re
 check("a page may hide its tiles on phones", readFooterTiles({ mode: "default", title: "", items: [], mobile: "hide" }).mobile, "hide");
 check("a page draws its picture tiles unless it said so", [readPictureTileMode(undefined), readPictureTileMode("hide"), readPictureTileMode("x")], ["default", "hide", "default"]);
 check("the two tile modes that read alike read differently now", FOOTER_TILE_MODE_LABELS.default !== FOOTER_TILE_MODE_LABELS.show && !FOOTER_TILE_MODE_LABELS.show.startsWith("Always show"), true);
+check(
+  "the phone choice names both devices, so 'on a computer but not on a phone' can be found by its words",
+  Object.values(FOOTER_TILE_MOBILE_LABELS).map((label) => /computer/i.test(label) && /phone/i.test(label)),
+  [false, true, true],
+);
 
 if (failed) {
   console.error(`\n${failed} FAILED`);
