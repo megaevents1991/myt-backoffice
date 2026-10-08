@@ -52,10 +52,10 @@ export function DashboardStats() {
     <div className="space-y-8">
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-        {/* Not revenue: getDashboardStats' `totalRevenue` is $175 (the site
-            markup) per traveller on every Paid booking - an estimated margin. */}
+        {/* getDashboardStats' `totalRevenue` sums revenueUsd() of every Paid booking
+            from lib/services/reservation-pnl.ts - the customer price, coupon and agent-card discount off. */}
         <StatCard
-          label="Est. Margin"
+          label="Revenue"
           value={`$${
             loading
               ? "..."
@@ -64,7 +64,7 @@ export function DashboardStats() {
                   maximumFractionDigits: 2,
                 })
           }`}
-          hint="$175 × travellers, Paid bookings"
+          hint="What Paid bookings paid, USD - the customer price, coupon and agent-card discount off"
         />
         <StatCard
           label="Reservations Last Month"

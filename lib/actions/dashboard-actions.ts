@@ -2,6 +2,7 @@
 
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils";
 import { revenueUsd } from "@/lib/services/reservation-pnl";
 import { isCustomerRefundPartner } from "@/types/partner.types";
@@ -111,20 +112,25 @@ export async function getDashboardStats() {
     const firstOfLast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const firstOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    // Six independent queries - run in parallel (was sequential).
+    // Paid query: fetchPaged reads all-time Paid reservations (money column now), pages 1,000 at a time.
+    const paidRes = await fetchPaged(
+      () => supabase
+        .from("reservations")
+        .select("id, status, user_shown_price, exchange_rate_usd_ils_100, agent_card_discount_ils, partner_settlement_method")
+        .is("is_deleted", null)
+        .eq("status", "Paid")
+        .order("id"),
+      20000,
+    );
+
+    // Five other independent queries - run in parallel.
     const [
-      paidRes,
       partnersRes,
       recentRes,
       lastMonthRes,
       last7Res,
       currentMonthRes,
     ] = await Promise.all([
-      supabase
-        .from("reservations")
-        .select("status, user_shown_price, exchange_rate_usd_ils_100, agent_card_discount_ils, partner_settlement_method")
-        .is("is_deleted", null)
-        .eq("status", "Paid"),
       supabase
         .from("partners")
         .select("commission")
@@ -171,7 +177,7 @@ export async function getDashboardStats() {
     if (last7Res.error) throw last7Res.error;
     if (currentMonthRes.error) throw currentMonthRes.error;
 
-    const paidReservations = (paidRes.data ||
+    const paidReservations = (paidRes.rows ||
       []) as unknown as ReservationRow[];
     const totalRevenue = paidReservations.reduce<number>(
       (sum, r) => sum + (revenueUsd({ ...EMPTY_PNL, ...r } as never) ?? 0),
