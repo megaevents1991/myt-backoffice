@@ -20,6 +20,12 @@ export function landingDomainOf(url: string | null | undefined): string | null {
   }
 }
 
+/** The landing domain a campaign is branded by: ours when any of its ads points at us (a mixed campaign is still ours), else the first domain seen. */
+export function pickLandingDomain(domains: (string | null | undefined)[]): string | null {
+  const seen = domains.filter((d): d is string => Boolean(d));
+  return seen.find((d) => d === MEGA_EVENTS_DOMAIN) ?? seen[0] ?? null;
+}
+
 export function brandOf(input: { name: string | null | undefined; landingDomain: string | null | undefined }): AdBrand {
   const domain = (input.landingDomain ?? "").replace(/^www\./, "").toLowerCase();
   if (domain === MEGA_EVENTS_DOMAIN) return "mega_events";

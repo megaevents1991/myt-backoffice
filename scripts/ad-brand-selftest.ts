@@ -1,6 +1,6 @@
 // Run: npx tsx scripts/ad-brand-selftest.ts
 import assert from "node:assert/strict";
-import { brandOf, landingDomainOf } from "../lib/services/ads/brand";
+import { brandOf, landingDomainOf, pickLandingDomain } from "../lib/services/ads/brand";
 
 assert.equal(brandOf({ name: "MYT - Feed V2 - Aug 2026", landingDomain: null }), "mega_events");
 assert.equal(brandOf({ name: "לידים מייטי - Submit Application", landingDomain: null }), "mega_events");
@@ -15,5 +15,10 @@ assert.equal(brandOf({ name: "", landingDomain: null }), "other");
 assert.equal(landingDomainOf("https://www.mega-events.co.il/c/football?utm_source=x"), "mega-events.co.il");
 assert.equal(landingDomainOf("not a url"), null);
 assert.equal(landingDomainOf(null), null);
+
+// A mixed campaign is still ours; otherwise the first domain seen; nothing seen = null.
+assert.equal(pickLandingDomain(["megatr.co.il", "www.mega-events.co.il".replace(/^www\./, "")]), "mega-events.co.il");
+assert.equal(pickLandingDomain(["megatr.co.il", null, "megafamily.co.il"]), "megatr.co.il");
+assert.equal(pickLandingDomain([null, undefined]), null);
 
 console.log("ad-brand selftest OK");

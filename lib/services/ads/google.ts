@@ -9,7 +9,7 @@
  */
 import { createSign } from "node:crypto";
 import type { AdClickRow, AdEntityRow, AdSpendRow } from "@/types/marketing.types";
-import { brandOf, landingDomainOf } from "./brand";
+import { brandOf, landingDomainOf, pickLandingDomain } from "./brand";
 
 const API = "https://googleads.googleapis.com/v25";
 const SCOPE = "https://www.googleapis.com/auth/adwords";
@@ -90,7 +90,7 @@ export async function fetchGoogleSpend(opts: { customerId: string; since: string
   return [...agRows.map((r) => toRow(r, r.adGroup.id, "adset")), ...pmaxRows.map((r) => toRow(r, "", "campaign"))];
 }
 
-/** Campaigns + ad groups; the landing domain = the first final URL of the campaign's ads (P.Max: its asset groups). */
+/** Campaigns + ad groups; the landing domain = `pickLandingDomain` over the first final URL of every ad of the campaign (P.Max: its asset groups) - ours wins when any ad points at us. */
 export async function fetchGoogleEntities(opts: { customerId: string }): Promise<AdEntityRow[]> {
   type Camp = { campaign: { id: string; name: string; status: string; advertisingChannelType: string } };
   type Ag = { adGroup: { id: string; name: string; status: string }; campaign: { id: string } };
@@ -102,13 +102,16 @@ export async function fetchGoogleEntities(opts: { customerId: string }): Promise
     gaqlSearch<Ad>(opts.customerId, "SELECT campaign.id, ad_group_ad.ad.final_urls FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED'"),
     gaqlSearch<Asset>(opts.customerId, "SELECT campaign.id, asset_group.final_urls FROM asset_group WHERE asset_group.status != 'REMOVED'"),
   ]);
-  const domain = new Map<string, string>();
+  const domains = new Map<string, string[]>();
   for (const r of [...ads.map((a) => ({ id: a.campaign.id, urls: a.adGroupAd.ad.finalUrls })), ...assets.map((a) => ({ id: a.campaign.id, urls: a.assetGroup.finalUrls }))]) {
     const d = landingDomainOf(r.urls?.[0]);
-    if (d && !domain.has(r.id)) domain.set(r.id, d);
+    if (!d) continue;
+    const list = domains.get(r.id);
+    if (list) list.push(d);
+    else domains.set(r.id, [d]);
   }
   const rows: AdEntityRow[] = camps.map((c) => {
-    const landing = domain.get(c.campaign.id) ?? null;
+    const landing = pickLandingDomain(domains.get(c.campaign.id) ?? []);
     return { platform: "google", id: c.campaign.id, kind: "campaign", name: c.campaign.name, parent_id: null, campaign_id: c.campaign.id, status: c.campaign.status, channel: c.campaign.advertisingChannelType, landing_domain: landing, url_tags: null, brand: brandOf({ name: c.campaign.name, landingDomain: landing }), brand_source: "rule" };
   });
   for (const a of ags) rows.push({ platform: "google", id: a.adGroup.id, kind: "ad_group", name: a.adGroup.name, parent_id: a.campaign.id, campaign_id: a.campaign.id, status: a.adGroup.status, channel: null, landing_domain: null, url_tags: null, brand: "other", brand_source: "rule" });

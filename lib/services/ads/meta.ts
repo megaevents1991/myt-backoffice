@@ -5,7 +5,7 @@
  * sync (lib/services/marketing-sync.ts) writes them. Spec section 4 step 1.
  */
 import type { AdEntityRow, AdSpendRow } from "@/types/marketing.types";
-import { brandOf, landingDomainOf } from "./brand";
+import { brandOf, landingDomainOf, pickLandingDomain } from "./brand";
 
 const GRAPH = "https://graph.facebook.com/v26.0";
 
@@ -102,14 +102,17 @@ export async function fetchMetaEntities(opts: { accountId: string }): Promise<Ad
     graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string }>(`/${opts.accountId}/adsets`, { fields: "id,name,effective_status,campaign_id", effective_status, limit: "500" }),
     graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string; adset_id: string; creative?: MetaCreative }>(`/${opts.accountId}/ads`, { fields: "id,name,effective_status,campaign_id,adset_id,creative{url_tags,link_url,object_story_spec,asset_feed_spec}", effective_status, limit: "50" }, 200),
   ]);
-  const domainByCampaign = new Map<string, string>();
+  const domainsByCampaign = new Map<string, string[]>();
   for (const ad of ads) {
     const d = creativeLandingDomain(ad.creative);
-    if (d && !domainByCampaign.has(ad.campaign_id)) domainByCampaign.set(ad.campaign_id, d);
+    if (!d) continue;
+    const list = domainsByCampaign.get(ad.campaign_id);
+    if (list) list.push(d);
+    else domainsByCampaign.set(ad.campaign_id, [d]);
   }
   const rows: AdEntityRow[] = [];
   for (const c of campaigns) {
-    const landing = domainByCampaign.get(c.id) ?? null;
+    const landing = pickLandingDomain(domainsByCampaign.get(c.id) ?? []);
     rows.push({ platform: "meta", id: c.id, kind: "campaign", name: c.name, parent_id: null, campaign_id: c.id, status: c.effective_status, channel: c.objective, landing_domain: landing, url_tags: null, brand: brandOf({ name: c.name, landingDomain: landing }), brand_source: "rule" });
   }
   for (const a of adsets) rows.push({ platform: "meta", id: a.id, kind: "adset", name: a.name, parent_id: a.campaign_id, campaign_id: a.campaign_id, status: a.effective_status, channel: null, landing_domain: null, url_tags: null, brand: "other", brand_source: "rule" });
