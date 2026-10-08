@@ -127,10 +127,13 @@ const TERM_SITE_FOLDER: Record<string, string> = {
 };
 
 /** A term as the tour editors pick it; an audience that is a world carries its key, its name and its color. */
-const termOption = (t: { id: string; kind: string; slug: string; name: string; is_active: boolean; data: Json }): TermOption => {
+type TermSource = { id: string; kind: string; slug: string; name: string; is_active: boolean; data: Json };
+
+const termOption = (t: TermSource, usedInWorlds?: Map<string, Set<string>>): TermOption => {
   const data = asObject(t.data);
   const key = dataText(data, "worldKey");
   const worldSlug = t.kind === "tags" ? dataText(data, "worldSlug") : "";
+  const used = t.kind === "tags" ? usedInWorlds?.get(t.id) : undefined;
   return {
     id: t.id,
     kind: t.kind,
@@ -139,8 +142,57 @@ const termOption = (t: { id: string; kind: string; slug: string; name: string; i
     ...(t.kind === "audiences" ? { slug: t.slug } : {}),
     ...(t.kind === "audiences" && key ? { world: { key, label: dataText(data, "brandName") || t.name, color: dataText(data, "color") } } : {}),
     ...(worldSlug ? { worldSlug } : {}),
+    ...(used?.size ? { usedInWorlds: [...used].sort() } : {}),
   };
 };
+
+/**
+ * Which worlds each tag is used in (Alon, 08.10.2026: a tour's Tags shows the
+ * tags of its world): the worlds of every live tour that carries the tag - the
+ * audiences ticked on it, and the audience whose world key is the tour's World.
+ * Derived from use every time; nothing is stored. The company's terms are the
+ * ones already loaded by the caller.
+ */
+async function tagWorldsOf(company: Company, terms: TermSource[]): Promise<Map<string, Set<string>>> {
+  const db = toursDb();
+  const audiences = terms.filter((t) => t.kind === "audiences");
+  const slugById = new Map(audiences.map((t) => [t.id, t.slug]));
+  const slugByKey = new Map(audiences.flatMap((t) => (dataText(asObject(t.data), "worldKey") ? [[dataText(asObject(t.data), "worldKey"), t.slug]] : [])));
+  const tagIds = new Set(terms.filter((t) => t.kind === "tags").map((t) => t.id));
+  const [packages, links] = await Promise.all([
+    fetchAll<{ id: string; brand: string | null }>((from, to) =>
+      db.from("packages").select("id, brand").eq("company_id", company.id).is("is_deleted", null).order("id").range(from, to),
+    ),
+    fetchAll<{ package_id: string; term_id: string }>((from, to) =>
+      db.from("package_terms").select("package_id, term_id, terms!inner(company_id)").eq("terms.company_id", company.id).order("package_id").order("term_id").range(from, to),
+    ),
+  ]);
+  const live = new Map(packages.map((p) => [p.id, p.brand]));
+  const worldsOfPackage = new Map<string, Set<string>>();
+  const tagsOfPackage = new Map<string, string[]>();
+  for (const l of links) {
+    if (!live.has(l.package_id)) continue;
+    const slug = slugById.get(l.term_id);
+    if (slug) {
+      if (!worldsOfPackage.has(l.package_id)) worldsOfPackage.set(l.package_id, new Set());
+      worldsOfPackage.get(l.package_id)!.add(slug);
+    } else if (tagIds.has(l.term_id)) {
+      tagsOfPackage.set(l.package_id, [...(tagsOfPackage.get(l.package_id) ?? []), l.term_id]);
+    }
+  }
+  const out = new Map<string, Set<string>>();
+  for (const [packageId, tags] of tagsOfPackage) {
+    const worlds = new Set(worldsOfPackage.get(packageId) ?? []);
+    const byBrand = slugByKey.get(live.get(packageId) ?? "");
+    if (byBrand) worlds.add(byBrand);
+    if (!worlds.size) continue;
+    for (const tag of tags) {
+      if (!out.has(tag)) out.set(tag, new Set());
+      for (const w of worlds) out.get(tag)!.add(w);
+    }
+  }
+  return out;
+}
 
 /** An id that is not a uuid cannot match a row - answer "not found" instead of a database error. */
 const isUuid = (value: string): boolean => UUID.test(value);
@@ -569,6 +621,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
   const termIds = (links.data ?? [])
     .filter((l) => (l.terms as unknown as { kind: string }).kind !== "packages")
     .map((l) => l.term_id);
+  const tagWorlds = await tagWorldsOf(company, terms);
 
   return {
     id: pkg.id,
@@ -578,7 +631,7 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
     departures: departures.length,
     seriesCodes: (series.data ?? []).map((s) => s.code),
     itineraries: variants,
-    terms: terms.map(termOption),
+    terms: terms.map((t) => termOption(t, tagWorlds)),
     hotelCatalog: hotels,
     leaderOptions: leaders,
     // the tour or one of its dates, whichever changed last
@@ -1091,11 +1144,12 @@ export async function getNewTourContext(): Promise<ActionResult<NewTourContext>>
       fetchAll((from, to) => db.from("packages").select("slug").eq("company_id", company.id).order("slug").range(from, to)),
       loadLeaderOptions(company),
     ]);
+    const tagWorlds = await tagWorldsOf(company, terms);
     return {
       success: true,
       data: {
         siteUrl: company.siteUrl,
-        terms: terms.map(termOption),
+        terms: terms.map((t) => termOption(t, tagWorlds)),
         hotels,
         leaders,
         seriesCodes: series.map((s) => s.code),

@@ -28,7 +28,7 @@ import { SaleStatusBadge } from "@/components/tours/departures/ui-bits";
 import { SheetGrid, type SheetGroup, type SheetSaveAnswer } from "@/components/tours/sheet/sheet-grid";
 import type { SheetColumn as CoreColumn, SheetRowChange, SheetValue } from "@/components/tours/sheet/sheet-core";
 import { getPricingSheet, savePricingSheet } from "@/lib/actions/tours-pricing-sheet-actions";
-import { fmtDateRange, fmtPrice, nightsBetween } from "@/lib/tours/format";
+import { fmtDate, fmtDateRange, fmtPrice, nightsBetween } from "@/lib/tours/format";
 import { departureHref, linkClass } from "@/lib/tours/links";
 import { SALE_STATUSES, SALE_STATUS_LABELS } from "@/types/tours.types";
 import {
@@ -45,7 +45,7 @@ import {
 
 const HINTS: Record<SheetView, string> = {
   departures:
-    "Every date with what the site shows on it: season, status, up to 3 labels, the bar / bat mitzvah mark, the double-room price, its discount and gift. A date with no flight yet can go on the site - the site says the flight details will follow; \"Link flight\" in its Flight cell lists the blocks that fly on its days.",
+    "Every date with what the site shows on it: season, status, up to 3 labels, the bar / bat mitzvah mark, its discount (\"10%\" of the order or \"80\" per traveler) and the last day of it, its gift, a named discount. A date with no flight yet can go on the site - the site says the flight details will follow; \"Link flight\" in its Flight cell lists the blocks that fly on its days.",
   prices:
     "Prices are per person and final - the flight column is its cost, for the margin.",
   details: "The details of each date. Flight times, baggage and stops are the flight's own (Offline Flights).",
@@ -142,6 +142,7 @@ export function PricingSheet({
     [onSaved],
   );
 
+  const today = data?.today ?? "";
   const readonlyText = useCallback((row: SheetRow, key: string): string => {
     switch (key) {
       case "dates":
@@ -207,10 +208,19 @@ export function PricingSheet({
             {row.morePromotions.join(" · ")}
           </span>
         ) : undefined;
+      case "discountUntil":
+      case "giftUntil":
+      case "specialUntil":
+        // a day that passed: the promotion still runs (the site decides) - say so
+        return typeof value === "string" && today && value < today ? (
+          <span className="text-destructive" title="This day has passed. The promotion still applies until it is cleared">
+            {fmtDate(value)}
+          </span>
+        ) : undefined;
       default:
         return undefined;
     }
-  }, [onOpenCard]);
+  }, [onOpenCard, today]);
 
   const optionsOf = useCallback((row: SheetRow, col: CoreColumn) => rowOptions(tourById.get(row.packageId), col.key), [tourById]);
 
@@ -256,8 +266,9 @@ export function PricingSheet({
       hint={
         <>
           Click a cell and type, or paste a block from Excel / Google Sheets. Enter or double-click edits, Delete clears, arrows
-          and Tab move; tick rows and &ldquo;Set for selected&rdquo; to change many at once. {HINTS[view]} Nothing is saved until
-          you press Save.
+          and Tab move (an arrow also closes a cell you typed into). Shift + arrows or a drag picks a range: Delete clears it,
+          Ctrl+D fills it down, and the small square at its corner drags the values onto the rows below. Tick rows and &ldquo;Set
+          for selected&rdquo; to set several columns at once. {HINTS[view]} Nothing is saved until you press Save.
         </>
       }
       empty={

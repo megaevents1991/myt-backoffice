@@ -38,6 +38,8 @@ export type SheetKind =
   | "localtime"
   /** A day: "2026-07-03". */
   | "date"
+  /** A discount as typed: "10%" of the order, or "80" per traveler (Alon, 08.10.2026). Kept as that text. */
+  | "discount"
   | "text";
 
 export interface SheetColumn<View extends string = string> {
@@ -74,6 +76,8 @@ export interface SheetColumn<View extends string = string> {
 
 export const isEditable = (c: SheetColumn) => c.kind !== "readonly";
 export const NUMERIC_KINDS = new Set<SheetKind>(["price", "money", "int"]);
+/** Kinds shown right-aligned, like numbers. */
+export const RIGHT_ALIGNED_KINDS = new Set<SheetKind>(["price", "money", "int", "discount"]);
 
 // ---------------------------------------------------------------- reading what was typed
 export type Parsed = { value: SheetValue } | { error: string };
@@ -176,6 +180,11 @@ export function parseCell(col: SheetColumn, raw: string, options?: readonly Shee
       const day = parseDay(text);
       return day ? { value: day } : { error: "A date, e.g. 2026-07-03 or 03/07/2026" };
     }
+    case "discount": {
+      const d = parseDiscount(text);
+      if (d === undefined) return { error: 'A percent ("10%") or an amount per traveler ("80")' };
+      return { value: d === null ? null : discountText(d) };
+    }
     case "text": {
       if (text === "") return col.required ? { error: "Can't be empty" } : { value: null };
       if (col.max && text.length > col.max) return { error: `Up to ${col.max} characters` };
@@ -184,6 +193,28 @@ export function parseCell(col: SheetColumn, raw: string, options?: readonly Shee
     }
   }
 }
+
+/** A discount cell as a value: a percent of the order or an amount per traveler. */
+export type Discount = { percent: number } | { amount: number };
+
+/**
+ * "10%" / "10 %" -> a percent, "80" / "1,200" -> an amount; "" -> null (no
+ * discount); undefined when the text is neither. Whole percents up to 100,
+ * amounts up to 100,000.
+ */
+export function parseDiscount(raw: string): Discount | null | undefined {
+  const text = String(raw ?? "").trim().replace(/\s+/g, "");
+  if (text === "" || text === "0" || text === "0%") return null;
+  if (text.endsWith("%")) {
+    const n = Number(text.slice(0, -1).replace(/,/g, ""));
+    return Number.isFinite(n) && n > 0 && n <= 100 ? { percent: Math.round(n * 100) / 100 } : undefined;
+  }
+  const n = parsePrice(text);
+  return n != null && n > 0 && n <= 100_000 ? { amount: n } : undefined;
+}
+
+/** The text a discount is kept as: "10%" or "80". */
+export const discountText = (d: Discount): string => ("percent" in d ? `${formatNumber(d.percent)}%` : String(d.amount));
 
 /** The text a cell opens with for editing. */
 export function editText(col: SheetColumn, value: SheetValue): string {
@@ -217,6 +248,10 @@ export function displayText(col: SheetColumn, value: SheetValue, options?: reado
       return typeof value === "string" ? fmtLocalTime(value) : "";
     case "date":
       return typeof value === "string" ? fmtDate(value) : "";
+    case "discount": {
+      const d = typeof value === "string" ? parseDiscount(value) : null;
+      return d ? ("percent" in d ? `${formatNumber(d.percent)}%` : formatNumber(d.amount)) : "";
+    }
     default:
       return String(value);
   }

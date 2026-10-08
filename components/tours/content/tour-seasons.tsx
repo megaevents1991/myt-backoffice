@@ -11,7 +11,7 @@
  * is assigned before it goes on the site. Promotions stay on the dates: "Add
  * Promotion" puts one on every upcoming date of the season at once.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Copy, CopyPlus, Loader2, Plus, Tag, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/tours/format";
 import { Field, LoadError, Notice, Section, selectClass } from "@/components/tours/ui";
-import { ImageListEditor, StringListEditor } from "@/components/tours/content/fields";
+import { ImageListEditor, SiteImage, StringListEditor } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { DatesChecklist } from "@/components/tours/content/dates-checklist";
 import { BulkOutcomeDialog, BulkPromotionDialog } from "@/components/tours/departures/board-dialogs";
@@ -296,13 +296,35 @@ function SeasonEditor({
   const copyable = COPY_FIELDS.filter((key) => isEmpty(draft[key]) && !isEmpty(tour[key]));
   const copyFromTour = (keys: readonly CopyField[]) =>
     setDraft((d) => keys.reduce((next, key) => (isEmpty(next[key]) && !isEmpty(tour[key]) ? withTourField(next, tour, key) : next), d));
-  const copyButton = (key: CopyField, what: string) =>
+  /**
+   * An empty season field shows what the tour page says, as the site will show
+   * it on the season's dates (Alon, 08.10.2026: "what we put on the main should
+   * appear, and we edit it"). "Edit for this season" copies it in; the editor of
+   * the field then takes its place.
+   */
+  const inherited = (key: CopyField, label: string, body: ReactNode) =>
     copyable.includes(key) ? (
-      <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => copyFromTour([key])}>
-        <Copy />
-        Copy the tour&apos;s {what}
-      </Button>
+      <div className="space-y-2 rounded-md border border-dashed bg-muted/30 p-3" data-inherited={key}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium">
+            {label} <span className="font-normal text-muted-foreground">- the tour&apos;s, shown on this season&apos;s dates</span>
+          </span>
+          <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => copyFromTour([key])}>
+            <Copy />
+            Edit for this season
+          </Button>
+        </div>
+        <div className="text-sm text-muted-foreground">{body}</div>
+      </div>
     ) : null;
+  const textOf = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  const listBody = (items: string[]) => (
+    <ul className="list-disc space-y-0.5 ps-5" dir="auto">
+      {items.map((item, i) => (
+        <li key={i}>{item}</li>
+      ))}
+    </ul>
+  );
 
   const formDirty = JSON.stringify(draft) !== JSON.stringify(base);
   const datesDirty = [...picked].sort().join(",") !== savedKey;
@@ -533,11 +555,12 @@ function SeasonEditor({
       >
         {copyable.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Start from what the tour page already says: &ldquo;Copy from the tour page&rdquo; fills every empty field here, or copy one
-            field under it. A copied field is then the season&apos;s own - a later change on the tour page does not reach it.
+            A field the season does not fill shows the tour page&apos;s own here, as the site shows it on the season&apos;s dates.
+            &ldquo;Edit for this season&rdquo; on one field, or &ldquo;Copy from the tour page&rdquo; for all of them, copies the text in
+            to change. A copied field is then the season&apos;s own - a later change on the tour page does not reach it.
           </p>
         )}
-        <div className="space-y-1">
+        {inherited("descriptionHtml", "Description", <p dir="auto" className="line-clamp-4 whitespace-pre-line">{textOf(tour.descriptionHtml)}</p>) ?? (
           <HtmlField
             label="Description (empty = the tour's description)"
             value={draft.descriptionHtml}
@@ -545,32 +568,37 @@ function SeasonEditor({
             siteUrl={siteUrl}
             rows={8}
           />
-          {copyButton("descriptionHtml", "description")}
-        </div>
-        <div className="space-y-1">
+        )}
+        {inherited("attractions", `Attractions (${tour.attractions.length})`, listBody(tour.attractions)) ?? (
           <StringListEditor
             label="Attractions (empty = the tour's)"
             value={draft.attractions}
             onChange={(value) => set("attractions", value)}
             addLabel="Add Attraction"
           />
-          {copyButton("attractions", `${tour.attractions.length} attractions`)}
-        </div>
+        )}
         <div className="grid gap-4 xl:grid-cols-2">
-          <div className="space-y-1">
+          {inherited("included", `Included (${tour.included.length})`, listBody(tour.included)) ?? (
             <StringListEditor label="Included (empty = the tour's)" value={draft.included} onChange={(value) => set("included", value)} />
-            {copyButton("included", `${tour.included.length} items`)}
-          </div>
-          <div className="space-y-1">
+          )}
+          {inherited("notIncluded", `Not included (${tour.notIncluded.length})`, listBody(tour.notIncluded)) ?? (
             <StringListEditor
               label="Not included (empty = the tour's)"
               value={draft.notIncluded}
               onChange={(value) => set("notIncluded", value)}
             />
-            {copyButton("notIncluded", `${tour.notIncluded.length} items`)}
-          </div>
+          )}
         </div>
-        <div className="space-y-1">
+        {inherited(
+          "gallery",
+          `Images (${tour.gallery.length})`,
+          <div className="flex flex-wrap gap-1.5">
+            {tour.gallery.slice(0, 8).map((src, i) => (
+              <SiteImage key={i} siteUrl={siteUrl} path={src} className="h-12 w-16" />
+            ))}
+            {tour.gallery.length > 8 && <span className="self-center text-xs">+{tour.gallery.length - 8}</span>}
+          </div>,
+        ) ?? (
           <ImageListEditor
             label="Images - the gallery of the season (empty = the tour's)"
             value={draft.gallery}
@@ -578,8 +606,7 @@ function SeasonEditor({
             siteUrl={siteUrl}
             folder="packages"
           />
-          {copyButton("gallery", `${tour.gallery.length} images`)}
-        </div>
+        )}
         <StringListEditor
           label="Tags"
           value={draft.tags}

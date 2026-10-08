@@ -392,6 +392,8 @@ export interface TermOption {
   slug?: string;
   /** A tag that belongs to a world: that audience's slug. */
   worldSlug?: string;
+  /** The worlds whose tours carry this tag (derived from use, not stored) - what narrows the tag list of a tour. */
+  usedInWorlds?: string[];
 }
 
 /**

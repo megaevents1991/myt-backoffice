@@ -199,8 +199,22 @@ export function FlightsSheet() {
             ))}
           </span>
         ) : (
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-400" title="No sub-tour takes seats from this flight yet. Click &quot;Create sub-tours&quot; on the series row above, or link it to an existing date on the flight's page (Allocations).">
-            No sub-tour
+          <span className="flex items-center gap-1.5 text-xs">
+            <span className="font-medium text-amber-700 dark:text-amber-400" title="No sub-tour takes seats from this flight yet">
+              No sub-tour
+            </span>
+            {/* this flight alone: a date of the tour with this code - a date that exists on its day takes the flight (Alon, 08.10.2026) */}
+            {!["cancelled", "declined"].includes(stageOf(row.status)) && (
+              <button
+                type="button"
+                className={linkClass}
+                disabled={dirty}
+                title={dirty ? "Save or discard your changes first" : "Open a date of a tour for this flight, or link it to the date that already exists on its day - type the tour code"}
+                onClick={() => setSubTours({ series: row.series ?? "", flightIds: [row.flightId] })}
+              >
+                Link / create
+              </button>
+            )}
           </span>
         );
       }
@@ -231,7 +245,7 @@ export function FlightsSheet() {
       }
       return undefined;
     },
-    [today],
+    [today, dirty],
   );
 
   const optionsOf = useCallback((row: FlightSheetRow, col: CoreColumn) => (col.key === "status" ? statusOptions(row.status) : undefined), []);

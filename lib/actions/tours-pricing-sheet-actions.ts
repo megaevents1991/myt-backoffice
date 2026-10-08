@@ -25,7 +25,7 @@ import { todayIso } from "@/lib/tours/format";
 import { departureRouteLabel } from "@/lib/tours/routes";
 import { promotionSummary, siteSaleStatus } from "@/components/tours/departures/departure-utils";
 import type { DepartureGeneralInput } from "@/components/tours/departures/types";
-import { BLOCK_STATUS_LABELS, LIVE_BLOCK_STATUSES, PRICE_MATRIX_ROWS, type BlockStatus } from "@/types/tours.types";
+import { BLOCK_STATUS_LABELS, LIVE_BLOCK_STATUSES, PRICE_MATRIX_ROWS, type BlockStatus, type PromotionKind } from "@/types/tours.types";
 import {
   saveDeparturePrices,
   savePromotion,
@@ -36,9 +36,11 @@ import {
 import {
   cellValue,
   dateLabelsOf,
+  discountText,
   EDITABLE_KEYS,
   isBarMitzvahLabel,
   MAX_DATE_LABELS,
+  parseDiscount,
   priceIndexOf,
   sameValue,
   type PricingSheetData,
@@ -237,10 +239,12 @@ async function loadSheetRows(
       : null;
 
     const own = ownPromos.get(d.id) ?? [];
-    const discount = own.find((p) => p.kind === "fixed_per_pax");
+    // the Discount cell is the date's percent, else its amount per traveler (the two are either/or)
+    const discount = own.find((p) => p.kind === "percent_order") ?? own.find((p) => p.kind === "fixed_per_pax");
     const gift = own.find((p) => p.kind === "gift");
+    const special = own.find((p) => p.kind === "named_per_pax");
     const more = [
-      ...own.filter((p) => p !== discount && p !== gift).map((p) => promotionSummary({ ...p, is_active: true }, d.currency)),
+      ...own.filter((p) => p !== discount && p !== gift && p !== special).map((p) => promotionSummary({ ...p, is_active: true }, d.currency)),
       ...(seriesPromos.get(d.series_id) ?? []).map((p) => `${promotionSummary({ ...p, is_active: true }, d.currency)} (series)`),
     ];
     const allLabels = d.date_labels ?? [];
@@ -271,8 +275,16 @@ async function loadSheetRows(
       labels: allLabels.filter((l) => !isBarMitzvahLabel(l)),
       barMitzvah: allLabels.some(isBarMitzvahLabel),
       cardBadge: d.card_badge,
-      discount: discount?.value == null ? null : Number(discount.value),
+      discount:
+        discount?.value == null
+          ? null
+          : discountText(discount.kind === "percent_order" ? { percent: Number(discount.value) } : { amount: Number(discount.value) }),
+      discountUntil: discount?.value == null ? null : (discount.valid_until ?? null),
       gift: gift?.label ?? null,
+      giftUntil: gift ? (gift.valid_until ?? null) : null,
+      special: special?.label ?? null,
+      specialAmount: special?.value == null ? null : Number(special.value),
+      specialUntil: special ? (special.valid_until ?? null) : null,
       morePromotions: more,
       docket: d.docket_no,
       meetingAt: d.meeting_at,
@@ -355,6 +367,8 @@ export async function getPricingSheet(
 
 const asNumber = (v: SheetValue): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const asText = (v: SheetValue): string | null => (typeof v === "string" ? v : null);
+/** The cells that are promotions of the date, not fields of it. */
+const PROMOTION_KEYS = ["discount", "discountUntil", "gift", "giftUntil", "special", "specialAmount", "specialUntil"];
 
 /** The departure fields one row's changed cells set (prices, promotions and publishing go their own way). */
 function fieldsOf(row: SheetRow, cells: SheetRowChange["cells"]): DepartureGeneralInput {
@@ -412,35 +426,104 @@ function fieldsOf(row: SheetRow, cells: SheetRowChange["cells"]): DepartureGener
   return out;
 }
 
-/** The date's own discount per traveler or its gift: set, changed or switched off. */
-async function applyOwnPromotion(company: Company, row: SheetRow, kind: "fixed_per_pax" | "gift", after: SheetValue): Promise<string | null> {
-  const own =
+/** The date's own active promotions of these kinds, one per kind (the first when the card holds several). */
+async function ownPromotionsOf(company: Company, departureId: string, kinds: string[]): Promise<Map<string, PromoRow>> {
+  const rows =
     must(
       await toursDb()
         .from("promotions")
         .select(PROMO_SELECT)
         .eq("company_id", company.id)
-        .eq("departure_id", row.id)
+        .eq("departure_id", departureId)
         .eq("is_active", true)
-        .eq("kind", kind)
-        .limit(1),
+        .in("kind", kinds)
+        .order("id"),
     ) ?? [];
-  const existing = own[0] as PromoRow | undefined;
-  const value = kind === "gift" ? asText(after) : asNumber(after);
-  if (value === null || value === "" || value === 0) {
-    if (!existing) return null;
-    const off = await setPromotionActive(existing.id, false);
+  const out = new Map<string, PromoRow>();
+  for (const p of rows as PromoRow[]) if (!out.has(p.kind)) out.set(p.kind, p);
+  return out;
+}
+
+/** What one promotion cell group asks for after the edit: the cell's new value, else what the row holds. */
+const wanted = <T extends SheetValue>(cells: SheetRowChange["cells"], key: string, current: T): SheetValue => (key in cells ? cells[key].after : current);
+
+/** A yyyy-mm-dd cell, or null. */
+const asDay = (v: SheetValue): string | null => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+
+/**
+ * The date's own discount (a percent of the order or an amount per traveler), its
+ * gift and its named discount, from the sheet's cells (Alon, 08.10.2026): each
+ * is set, changed or switched off; a discount that changes kind switches the
+ * other kind off first (the two are either/or). Answers why it stopped, or null.
+ */
+async function applyPromotions(company: Company, row: SheetRow, cells: SheetRowChange["cells"]): Promise<string | null> {
+  const touched = (keys: string[]) => keys.some((k) => k in cells);
+  const own = await ownPromotionsOf(company, row.id, ["percent_order", "fixed_per_pax", "gift", "named_per_pax"]);
+  const switchOff = async (p: PromoRow | undefined): Promise<string | null> => {
+    if (!p) return null;
+    const off = await setPromotionActive(p.id, false);
     return off.success ? null : off.error;
+  };
+  const upsert = async (
+    existing: PromoRow | undefined,
+    input: { kind: PromotionKind; value: number | null; label: string | null; valid_until: string | null },
+  ): Promise<string | null> => {
+    const res = await savePromotion(row.id, existing?.id ?? null, { ...input, show_on_card: existing?.show_on_card ?? true, is_active: true });
+    return res.success ? null : res.error;
+  };
+
+  if (touched(["discount", "discountUntil"])) {
+    const text = asText(wanted(cells, "discount", row.discount));
+    const until = asDay(wanted(cells, "discountUntil", row.discountUntil));
+    const parsed = text ? parseDiscount(text) : null;
+    if (parsed === undefined) return 'Discount: a percent ("10%") or an amount per traveler ("80")';
+    const percent = own.get("percent_order");
+    const fixed = own.get("fixed_per_pax");
+    if (!parsed) {
+      const p1 = await switchOff(percent);
+      if (p1) return `Discount: ${p1}`;
+      const p2 = await switchOff(fixed);
+      if (p2) return `Discount: ${p2}`;
+    } else {
+      const kind: PromotionKind = "percent" in parsed ? "percent_order" : "fixed_per_pax";
+      const rival = kind === "percent_order" ? fixed : percent;
+      const off = await switchOff(rival);
+      if (off) return `Discount: ${off}`;
+      const existing = kind === "percent_order" ? percent : fixed;
+      const problem = await upsert(existing, {
+        kind,
+        value: "percent" in parsed ? parsed.percent : parsed.amount,
+        label: existing?.label ?? null,
+        valid_until: until,
+      });
+      if (problem) return `Discount: ${problem}`;
+    }
   }
-  const res = await savePromotion(row.id, existing?.id ?? null, {
-    kind,
-    value: kind === "gift" ? (existing?.value ?? null) : (value as number),
-    label: kind === "gift" ? (value as string) : (existing?.label ?? null),
-    valid_until: existing?.valid_until ?? null,
-    show_on_card: existing?.show_on_card ?? true,
-    is_active: true,
-  });
-  return res.success ? null : res.error;
+
+  if (touched(["gift", "giftUntil"])) {
+    const label = (asText(wanted(cells, "gift", row.gift)) ?? "").trim();
+    const until = asDay(wanted(cells, "giftUntil", row.giftUntil));
+    const existing = own.get("gift");
+    const problem = label ? await upsert(existing, { kind: "gift", value: null, label, valid_until: until }) : await switchOff(existing);
+    if (problem) return `Gift: ${problem}`;
+  }
+
+  if (touched(["special", "specialAmount", "specialUntil"])) {
+    const label = (asText(wanted(cells, "special", row.special)) ?? "").trim();
+    const amount = asNumber(wanted(cells, "specialAmount", row.specialAmount));
+    const until = asDay(wanted(cells, "specialUntil", row.specialUntil));
+    const existing = own.get("named_per_pax");
+    if (label && amount && amount > 0) {
+      const problem = await upsert(existing, { kind: "named_per_pax", value: amount, label, valid_until: until });
+      if (problem) return `Special discount: ${problem}`;
+    } else if (label || amount) {
+      return label ? "Special discount: give it an amount per traveler (Special amount)" : "Special discount: give it a name (Special discount) - or clear the amount";
+    } else {
+      const problem = await switchOff(existing);
+      if (problem) return `Special discount: ${problem}`;
+    }
+  }
+  return null;
 }
 
 /** Writes one row; returns why it stopped (null when all of it was saved) and what is worth a look. */
@@ -481,15 +564,10 @@ async function applyRow(company: Company, row: SheetRow, cells: SheetRowChange["
     done.push("prices");
   }
 
-  if ("discount" in cells) {
-    const problem = await applyOwnPromotion(company, row, "fixed_per_pax", cells.discount.after);
-    if (problem) return stop(`Discount: ${problem}`);
-    done.push("discount");
-  }
-  if ("gift" in cells) {
-    const problem = await applyOwnPromotion(company, row, "gift", cells.gift.after);
-    if (problem) return stop(`Gift: ${problem}`);
-    done.push("gift");
+  if (PROMOTION_KEYS.some((k) => k in cells)) {
+    const problem = await applyPromotions(company, row, cells);
+    if (problem) return stop(problem);
+    done.push("promotions");
   }
 
   // on the site last, once it has everything the site needs

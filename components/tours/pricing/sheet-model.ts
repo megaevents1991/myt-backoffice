@@ -9,8 +9,10 @@
  * tour as a header row and its sub-tours under it (mega-family
  * docs/plans/TOUR-SETUP-FLOW-PLAN.md, steps 4-6). Three column sets over the same
  * rows (Alon, 04.10.2026 - Departures and Pricing are one table):
- *   departures - what the old board showed: on site, season, status, labels,
- *                bar/bat mitzvah, price, discount, gift, flight, seats, docket;
+ *   departures - what the site shows on a date: on site, season, status, labels,
+ *                bar/bat mitzvah, discount (% or amount) and its end, gift and
+ *                its end, a named discount, flight, seats, docket. The double
+ *                room price moved to Prices (Alon, 08.10.2026);
  *   prices     - the six room prices next to the flight cost;
  *   details    - currency, capacity, itinerary, meeting, ages, notes.
  */
@@ -27,12 +29,15 @@ import {
 
 export {
   adjustNumber,
+  discountText,
   displayText,
   editText,
   isEditable,
   parseCell,
+  parseDiscount,
   pasteBlock,
   sameValue,
+  type Discount,
   type Parsed,
   type SheetKind,
   type SheetOption,
@@ -96,11 +101,18 @@ export interface SheetRow {
   barMitzvah: boolean;
   /** The red badge on the date card ("חדש באתר"). */
   cardBadge: string | null;
-  /** The date's own active discount per traveler. */
-  discount: number | null;
+  /** The date's own active discount: "10%" of the order or "80" per traveler (Alon, 08.10.2026); null = none. */
+  discount: string | null;
+  /** The day the discount runs to (yyyy-mm-dd); null = no end. The site shows it, the price keeps it. */
+  discountUntil: string | null;
   /** The date's own active gift. */
   gift: string | null;
-  /** Its other active promotions (the series', a percent, a named one), one line each - edited in the card. */
+  giftUntil: string | null;
+  /** The date's own named discount per traveler ("הנחה מיוחדת"): its name, amount and end. */
+  special: string | null;
+  specialAmount: number | null;
+  specialUntil: string | null;
+  /** Its other active promotions (the series', per order, a second named one), one line each - edited in the card. */
   morePromotions: string[];
   docket: string | null;
   meetingAt: string | null;
@@ -163,9 +175,13 @@ const VIEW_ORDER: Record<SheetView, string[]> = {
     "saleStatus",
     "labels",
     "barMitzvah",
-    "price1",
     "discount",
+    "discountUntil",
     "gift",
+    "giftUntil",
+    "special",
+    "specialAmount",
+    "specialUntil",
     "morePromotions",
     "flight",
     "seats",
@@ -241,17 +257,20 @@ const DEFS: ColumnDef[] = [
   {
     key: "discount",
     label: "Discount",
-    title: "Discount per traveler on this date - the price on the site drops by it",
-    kind: "money",
+    title: 'The discount of this date: a percent of the order ("10%") or an amount per traveler ("80") - the price on the site drops by it',
+    kind: "discount",
     width: 86,
-    min: 1,
-    top: 100_000,
   },
+  { key: "discountUntil", label: "Until", title: "The last day of the discount. Empty = no end. The site shows the day; after it the discount is still applied until it is cleared", kind: "date", width: 100 },
   { key: "gift", label: "Gift", title: "A gift of this date, as the site words it", kind: "text", width: 150, max: 200 },
+  { key: "giftUntil", label: "Gift until", title: "The last day of the gift. Empty = no end", kind: "date", width: 100 },
+  { key: "special", label: "Special discount", title: "A named discount per traveler, as the site words it (e.g. הנחת מועדון) - needs an amount beside it", kind: "text", width: 140, max: 120 },
+  { key: "specialAmount", label: "Special amount", title: "The named discount per traveler", kind: "money", width: 96, min: 1, top: 100_000 },
+  { key: "specialUntil", label: "Special until", title: "The last day of the named discount. Empty = no end", kind: "date", width: 100 },
   {
     key: "morePromotions",
     label: "More promotions",
-    title: "Other active promotions of the date (the series', a percent, a named discount) - edited in the date's card",
+    title: "Other active promotions of the date (the series', per order, a second named discount) - edited in the date's card",
     kind: "readonly",
     width: 160,
   },
@@ -310,8 +329,18 @@ export function cellValue(row: SheetRow, key: string): SheetValue {
       return row.cardBadge;
     case "discount":
       return row.discount;
+    case "discountUntil":
+      return row.discountUntil;
     case "gift":
       return row.gift;
+    case "giftUntil":
+      return row.giftUntil;
+    case "special":
+      return row.special;
+    case "specialAmount":
+      return row.specialAmount;
+    case "specialUntil":
+      return row.specialUntil;
     case "docket":
       return row.docket;
     case "meetingAt":

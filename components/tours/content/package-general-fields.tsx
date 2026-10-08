@@ -290,9 +290,11 @@ export function PackageTermsPicker({
         const options = terms.filter((term) => term.kind === kind);
         if (options.length === 0 && !(onTermCreated && MAIN_TERM_KINDS.includes(kind))) return null;
         const chosen = options.filter((term) => selected.has(term.id)).length;
-        // tags follow the tour's worlds; a ticked tag stays in sight whatever its world
+        // tags follow the tour's worlds - the tags of the world, and the tags its other tours use; a ticked tag stays in sight whatever its world
         const byWorld = kind === "tags" && worlds.length > 0;
-        const ofWorld = byWorld ? options.filter((term) => !!term.worldSlug && worldSlugs.has(term.worldSlug)) : [];
+        const ofWorld = byWorld
+          ? options.filter((term) => (!!term.worldSlug && worldSlugs.has(term.worldSlug)) || (term.usedInWorlds ?? []).some((w) => worldSlugs.has(w)))
+          : [];
         const narrowed = byWorld && ofWorld.length > 0;
         const shown = narrowed ? options.filter((term) => ofWorld.includes(term) || selected.has(term.id)) : options;
         const others = narrowed ? options.filter((term) => !shown.includes(term)) : [];
@@ -306,8 +308,8 @@ export function PackageTermsPicker({
               !byWorld
                 ? undefined
                 : narrowed
-                  ? `The tags of the tour's world - ${worldNames}. A new tag is added to that world.`
-                  : `No tag belongs to the tour's world (${worldNames}) yet, so every tag is shown. A new tag is added to that world.`
+                  ? `The tags of the tour's world - ${worldNames}: the tags given to that world, and the tags its other tours carry. A new tag is added to that world.`
+                  : `No tag belongs to the tour's world (${worldNames}) yet and no tour of it carries a tag, so every tag is shown. A new tag is added to that world.`
             }
             actions={
               onTermCreated && (

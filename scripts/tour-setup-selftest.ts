@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { flightMoveDecision, subTourFromFlight, type FlightDates } from "@/lib/tours/sub-tours";
+import { discountText, displayText, parseDiscount } from "@/components/tours/sheet/sheet-core";
 import {
   cleanPointsHtml,
   filledDays,
@@ -144,7 +145,7 @@ const sheetRow = (over: Partial<SheetRow> = {}): SheetRow => ({
   id: "r1", code: "BBC703", packageId: "p1", seriesCode: "BBC", startDate: "2026-07-03", endDate: "2026-07-10",
   seasonId: null, season: null, itineraryId: null, route: "BUD", isPublished: false, saleStatus: "open", siteStatus: "open",
   currency: "USD", capacity: 40, seats: { allocated: 40, sold: 0, remaining: 40 }, flight: null, flightCost: null,
-  prices: [null, 4290, null, 3990, null, null], labels: [], barMitzvah: false, cardBadge: null, discount: null, gift: null,
+  prices: [null, 4290, null, 3990, null, null], labels: [], barMitzvah: false, cardBadge: null, discount: null, discountUntil: null, gift: null, giftUntil: null, special: null, specialAmount: null, specialUntil: null,
   morePromotions: [], docket: null, meetingAt: null, transfers: false, childMaxAge: null, seniorMinAge: null,
   seniorDiscount: null, notes: null, originFlightId: 7, ...over,
 });
@@ -164,7 +165,7 @@ assert.equal(adjustNumber(null, "add", 50), null, "an empty price stays empty");
 // --- Departures and Pricing are one sheet (Alon, 04.10.2026): the departures columns
 assert.deepEqual(
   columnsFor("departures").map((c) => c.key),
-  ["isPublished", "dates", "route", "seasonId", "saleStatus", "labels", "barMitzvah", "price1", "discount", "gift", "morePromotions", "flight", "seats", "docket"],
+  ["isPublished", "dates", "route", "seasonId", "saleStatus", "labels", "barMitzvah", "discount", "discountUntil", "gift", "giftUntil", "special", "specialAmount", "specialUntil", "morePromotions", "flight", "seats", "docket"],
 );
 assert.ok(!columnByKey.has("baggage") && !columnByKey.has("meal") && !columnByKey.has("connectionOut"), "flight details are the flight's own");
 assert.ok("error" in parseCell(col("labels"), "a, b, c, d"), "a date shows up to three labels");
@@ -182,9 +183,23 @@ assert.ok(isBarMitzvahLabel(BAR_MITZVAH_LABEL) && isBarMitzvahLabel("בר/בת �
 assert.deepEqual(dateLabelsOf(["חנוכה", BAR_MITZVAH_LABEL, "מומלץ"], true), ["חנוכה", "מומלץ", BAR_MITZVAH_LABEL]);
 assert.deepEqual(dateLabelsOf(["חנוכה", BAR_MITZVAH_LABEL], false), ["חנוכה"]);
 assert.deepEqual(dateLabelsOf(["a", "b", "c", "d"], false), ["a", "b", "c"]);
-assert.ok("error" in parseCell(col("discount"), "0"), "a discount is a positive amount; empty removes it");
-assert.deepEqual(parseCell(col("discount"), ""), { value: null });
-assert.deepEqual(parseCell(col("discount"), "80"), { value: 80 });
+// the discount of a date is a percent of the order or an amount per traveler (Alon, 08.10.2026)
+assert.deepEqual(parseCell(col("discount"), ""), { value: null }, "empty removes it");
+assert.deepEqual(parseCell(col("discount"), "0"), { value: null });
+assert.deepEqual(parseCell(col("discount"), "80"), { value: "80" });
+assert.deepEqual(parseCell(col("discount"), "1,200"), { value: "1200" });
+assert.deepEqual(parseCell(col("discount"), "10%"), { value: "10%" });
+assert.deepEqual(parseCell(col("discount"), "12.5 %"), { value: "12.5%" });
+assert.ok("error" in parseCell(col("discount"), "120%"), "a percent is up to 100");
+assert.ok("error" in parseCell(col("discount"), "abc"));
+assert.deepEqual(parseDiscount("10%"), { percent: 10 });
+assert.deepEqual(parseDiscount("80"), { amount: 80 });
+assert.equal(discountText({ percent: 10 }), "10%");
+assert.equal(discountText({ amount: 1200 }), "1200");
+assert.equal(displayText(col("discount"), "1200"), "1,200");
+assert.equal(displayText(col("discount"), "10%"), "10%");
+assert.deepEqual(parseCell(col("discountUntil"), "15/03/2027"), { value: "2027-03-15" });
+assert.ok(!columnsFor("departures").includes(col("price1")) && columnsFor("prices").includes(col("price1")), "the double-room price lives in Prices");
 assert.deepEqual(rowChanges(loaded, { r1: { seasonId: "s1", barMitzvah: true, gift: "מזוודה" } }), [
   { id: "r1", cells: { seasonId: { before: null, after: "s1" }, barMitzvah: { before: false, after: true }, gift: { before: null, after: "מזוודה" } } },
 ]);
