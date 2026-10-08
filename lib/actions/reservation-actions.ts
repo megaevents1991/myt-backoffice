@@ -15,6 +15,7 @@ import type {
 import type { UtmTouch } from "@/types/utm.types";
 import { revalidatePath } from "next/cache";
 import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { invalidateMarketing } from "@/lib/services/marketing-cache";
 
 // Exactly the columns the reservations LIST page renders (reservations-table.tsx).
 // The fat JSONB blobs (event/flight/hotel order info, pax list) are detail-only -
@@ -391,6 +392,8 @@ export async function updateReservation(
   }
 
   if (error) throw error;
+  // The actual cost beats the computed COGS on /marketing - drop its cached P&L so the new number shows at once.
+  if ("actual_cost_usd" in written || "actual_cost_note" in written) invalidateMarketing("pnl");
   await logAudit({
     action: "update",
     entityType: "reservation",
