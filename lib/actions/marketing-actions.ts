@@ -67,15 +67,18 @@ export async function getMarketingPnl(range: MarketingRange, brand: AdBrand | "a
   return cachedPnl(safeRange, safeBrand);
 }
 
-export async function getInstagramFeed(): Promise<{ media: IgMediaRow[]; followers: { day: string; followers: number }[] }> {
+/** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "ויראלי" badge
+ *  uses the alert's own threshold without a second action on mount. */
+export async function getInstagramFeed(): Promise<{ media: IgMediaRow[]; followers: { day: string; followers: number }[]; viralPct: number }> {
   await requireAdmin();
-  const [m, f] = await Promise.all([
+  const [m, f, settings] = await Promise.all([
     mdb.from("ig_media").select("*").order("posted_at", { ascending: false }).limit(200),
     mdb.from("ig_account_daily").select("day, followers").order("day", { ascending: false }).limit(90),
+    readSettings(),
   ]);
   if (m.error) throw new Error(`ig_media read: ${m.error.message}`);
   if (f.error) throw new Error(`ig_account_daily read: ${f.error.message}`);
-  return { media: m.data ?? [], followers: [...(f.data ?? [])].reverse() };
+  return { media: m.data ?? [], followers: [...(f.data ?? [])].reverse(), viralPct: settings.viral_pct };
 }
 
 export async function getMarketingAlerts(): Promise<MarketingAlertRow[]> {

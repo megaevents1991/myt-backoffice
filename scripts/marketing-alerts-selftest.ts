@@ -1,5 +1,6 @@
 // Run: npx tsx scripts/marketing-alerts-selftest.ts
 import assert from "node:assert/strict";
+import { viralPostIds } from "../lib/marketing/engagement";
 import { alertMailHtml, budgetBleedAlerts, planAlerts, readAll, rowsOrThrow, viralPostAlerts, windowStart, type AlertCandidate } from "../lib/services/marketing-alerts";
 
 const now = new Date("2026-10-08T12:00:00Z");
@@ -22,6 +23,17 @@ const viral = viralPostAlerts({ media: [...history, post("new", "2026-10-07T10:0
 assert.deepEqual(viral.map((a) => a.key), ["new"], "250 > 200% of 100; 'fresh' is under 24h; 'meh' is 150%");
 assert.equal(viral[0].payload.engagement, 250);
 assert.equal(viralPostAlerts({ media: [post("only", "2026-10-07T10:00:00Z", 999)], settings: { viral_pct: 200 }, now }).length, 0, "no history = no baseline");
+
+// viralPostIds IS the rule the alert is built from (and the grid's badge reads): same ids, the editable threshold, the guards.
+const grid = [...history, post("new", "2026-10-07T10:00:00Z", 250), post("fresh", "2026-10-08T11:30:00Z", 900), post("meh", "2026-10-07T09:00:00Z", 150)];
+assert.deepEqual([...viralPostIds(grid, 200, now)], ["new"], "same answer as the alert at 200%: 'fresh' is under 24h, 'meh' is 150%");
+assert.deepEqual([...viralPostIds(grid, 200, now)].sort(), viralPostAlerts({ media: grid, settings: { viral_pct: 200 }, now }).map((a) => a.key).sort(), "the badge and the alert never disagree");
+assert.deepEqual([...viralPostIds(grid, 120, now)].sort(), ["meh", "new"], "viral_pct is the threshold: 150% beats 120%; 'fresh' is still under 24h");
+assert.equal(viralPostIds(grid, 120, new Date("2026-10-09T12:00:00Z")).has("fresh"), true, "a day later 'fresh' counts");
+const zeros = Array.from({ length: 30 }, (_, i) => post(`z${i}`, `2026-09-${String(1 + (i % 28)).padStart(2, "0")}T10:00:00Z`, 0));
+assert.equal(viralPostIds([...zeros, post("spike", "2026-10-07T10:00:00Z", 50)], 200, now).size, 0, "a zero baseline returns an empty set (nothing to be a multiple of)");
+assert.equal(viralPostIds([...history, { ...post("story", "2026-10-07T10:00:00Z", 900), media_product_type: "STORY" as const }], 200, now).size, 0, "stories are never viral");
+assert.equal(viralPostIds([...history, { ...post("nodate", "2026-10-07T10:00:00Z", 900), posted_at: null }], 200, now).size, 0, "no posted_at, no verdict");
 
 // A failed read throws (never "no rows"): it would read as "no candidates" and resolve every open alert.
 assert.throws(() => rowsOrThrow("ad_spend_daily", { data: null, error: { message: "relation does not exist" } }), /alerts read ad_spend_daily: relation does not exist/);

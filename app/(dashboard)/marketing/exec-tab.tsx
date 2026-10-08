@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ComponentProps, type ReactNode } from "react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
@@ -22,6 +22,18 @@ const chartConfig = {
 } satisfies ChartConfig;
 
 const GOOD = "text-emerald-600 dark:text-emerald-400";
+
+/** A tooltip row in dollars like the cards. `ChartTooltipContent`'s `formatter` REPLACES the whole row (dot, name,
+ *  value), so this draws all three - a bare `usd(value)` would drop the series name and its colour. */
+const tooltipRow: ComponentProps<typeof ChartTooltipContent>["formatter"] = (value, name, item) => (
+  <div className="flex w-full items-center justify-between gap-3">
+    <span className="flex items-center gap-1.5 text-muted-foreground">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
+      {chartConfig[String(name) as keyof typeof chartConfig]?.label ?? name}
+    </span>
+    <span className="font-mono font-medium tabular-nums text-foreground">{usd(Number(value))}</span>
+  </div>
+);
 
 /** One executive number: Hebrew title, the value (always left-to-right), a small note under it. */
 function Metric({
@@ -148,7 +160,7 @@ export function ExecBody({
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="day" minTickGap={24} />
               <YAxis tickFormatter={(v: number) => usd(v)} width={64} />
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip content={<ChartTooltipContent formatter={tooltipRow} />} />
               <ChartLegend content={<ChartLegendContent />} />
               <Line type="monotone" dataKey="spend" stroke="var(--color-spend)" dot={false} />
               <Line type="monotone" dataKey="revenue" stroke="var(--color-revenue)" dot={false} />

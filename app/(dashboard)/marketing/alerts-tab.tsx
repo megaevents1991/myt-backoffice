@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 import { getMarketingAlerts } from "@/lib/actions/marketing-actions";
+import { writeUrlParam } from "@/hooks/use-view-state";
 import type { MarketingAlertRow } from "@/types/marketing.types";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { errorText } from "./marketing-shared";
@@ -54,9 +55,16 @@ function AlertRow({ alert }: { alert: MarketingAlertRow }) {
           נשלח במייל
         </Badge>
       )}
-      <Link href={`/marketing?tab=${KIND_TAB[alert.kind]}`} className="ms-auto text-xs underline underline-offset-2">
+      {/* The tab strip's own mechanism (a history.replaceState on ?tab=): no page load, range / brand stay in the URL. */}
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="ms-auto h-auto p-0 text-xs"
+        onClick={() => writeUrlParam("tab", KIND_TAB[alert.kind], "exec")}
+      >
         {alert.kind === "budget_bleed" ? "לקמפיינים" : "לפוסטים"}
-      </Link>
+      </Button>
     </li>
   );
 }

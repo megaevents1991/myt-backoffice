@@ -57,8 +57,17 @@ export function poasTone(poas: number | null): string {
 
 export type PnlResult = Awaited<ReturnType<typeof getMarketingPnl>>;
 
+/** Next replaces what a server action threw with its own text in a production build ("An error occurred in the
+ *  Server Components render. The specific message is omitted ..."), with a digest the server log carries. */
+const MASKED_PROD_ERROR = /An error occurred in the Server Components render/i;
+
 export function errorText(e: unknown): string {
-  return e instanceof Error && e.message ? e.message : "שגיאה בטעינה";
+  if (!(e instanceof Error) || !e.message) return "שגיאה בטעינה";
+  const hasDigest = "digest" in e || /digest/i.test(e.message);
+  if (MASKED_PROD_ERROR.test(e.message) || (/Server Action/i.test(e.message) && hasDigest)) {
+    return "הטעינה נכשלה - פרטים ביומני השרת";
+  }
+  return e.message;
 }
 
 export function useMarketingFilters() {

@@ -5,7 +5,7 @@ import { Bookmark, Eye, Heart, ImageOff, MessageCircle, Share2, type LucideIcon 
 
 import { useSessionState } from "@/hooks/use-view-state";
 import { getInstagramFeed } from "@/lib/actions/marketing-actions";
-import { baselineBefore, engagementOf } from "@/lib/marketing/engagement";
+import { engagementOf, viralPostIds } from "@/lib/marketing/engagement";
 import type { IgMediaRow } from "@/types/marketing.types";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -24,24 +24,7 @@ type Sort = (typeof SORTS)[number];
 const SORT_LABEL: Record<Sort, string> = { engagement: "מעורבות", reach: "reach", date: "תאריך" };
 const isSort = (v: unknown): v is Sort => typeof v === "string" && (SORTS as readonly string[]).includes(v);
 
-/** A post is "viral" when it beats twice the mean of the posts before it (the alert's rule at its
- *  default viral_pct of 200; stories are left out of the baseline AND never flagged). */
-const VIRAL_MULTIPLE = 2;
-
 type Feed = Awaited<ReturnType<typeof getInstagramFeed>>;
-
-/** Ids of the viral posts of a feed - the same walk the alert does: oldest first, 30-post baseline. */
-function viralIds(media: IgMediaRow[]): Set<string> {
-  const posts = media
-    .filter((m) => m.posted_at && m.media_product_type !== "STORY")
-    .sort((a, b) => ((a.posted_at as string) < (b.posted_at as string) ? -1 : 1));
-  const out = new Set<string>();
-  posts.forEach((m, i) => {
-    const mean = baselineBefore(posts, i);
-    if (mean !== null && engagementOf(m) > VIRAL_MULTIPLE * mean) out.add(m.id);
-  });
-  return out;
-}
 
 /** The CDN links Instagram hands out expire - a dead one shows a neutral block, not a broken image. */
 function Thumb({ media }: { media: IgMediaRow }) {
@@ -116,7 +99,8 @@ function PostCard({ media, viral }: { media: IgMediaRow; viral: boolean }) {
 export function InstagramView({ feed }: { feed: Feed }) {
   const [sort, setSort] = useSessionState<Sort>("ig-sort", "date", isSort);
 
-  const viral = useMemo(() => viralIds(feed.media), [feed]);
+  // The alert's own rule and threshold (lib/marketing/engagement.ts), so the badge and the alert never disagree.
+  const viral = useMemo(() => viralPostIds(feed.media, feed.viralPct, new Date()), [feed]);
   const sorted = useMemo(() => {
     const byDate = (m: IgMediaRow) => (m.posted_at ? Date.parse(m.posted_at) : 0);
     const key: Record<Sort, (m: IgMediaRow) => number> = {

@@ -6,7 +6,7 @@
 import { mdb } from "@/lib/services/marketing-db";
 import { appOrigin, sendMail } from "@/lib/email";
 import { getPurchasesByCampaign } from "@/lib/services/marketing-purchases";
-import { baselineBefore, engagementOf } from "@/lib/marketing/engagement";
+import { viralPosts, type ViralMedia } from "@/lib/marketing/engagement";
 import { DEFAULT_MARKETING_SETTINGS, MARKETING_SETTING_KEYS, type AdBrand, type MarketingSettings } from "@/types/marketing.types";
 
 export interface AlertCandidate { kind: "budget_bleed" | "viral_post"; key: string; title: string; payload: Record<string, unknown> }
@@ -34,19 +34,14 @@ export function budgetBleedAlerts(input: { spend: { campaign_id: string; day: st
   return out;
 }
 
-export function viralPostAlerts(input: { media: { id: string; posted_at: string | null; like_count: number; comments_count: number; saved: number; shares: number; media_product_type: string | null }[]; settings: Pick<MarketingSettings, "viral_pct">; now: Date }): AlertCandidate[] {
-  const posts = input.media.filter((m) => m.posted_at && m.media_product_type !== "STORY").sort((a, b) => (a.posted_at! < b.posted_at! ? -1 : 1));
-  const out: AlertCandidate[] = [];
-  posts.forEach((m, i) => {
-    if (input.now.getTime() - new Date(m.posted_at!).getTime() < 24 * 3600e3) return;
-    const mean = baselineBefore(posts, i);
-    if (mean === null || mean <= 0) return;
-    const eng = engagementOf(m);
-    if (eng > (mean * input.settings.viral_pct) / 100) {
-      out.push({ kind: "viral_post", key: m.id, title: `פוסט ויראלי: ${eng} מעורבות מול ממוצע ${Math.round(mean)}`, payload: { media_id: m.id, engagement: eng, mean: Math.round(mean) } });
-    }
-  });
-  return out;
+/** The candidates of the viral rule - the rule itself (`viralPosts`) lives in lib/marketing/engagement.ts, shared with the grid's badge. */
+export function viralPostAlerts(input: { media: ViralMedia[]; settings: Pick<MarketingSettings, "viral_pct">; now: Date }): AlertCandidate[] {
+  return viralPosts(input.media, input.settings.viral_pct, input.now).map(({ media: m, engagement, mean }) => ({
+    kind: "viral_post" as const,
+    key: m.id,
+    title: `פוסט ויראלי: ${engagement} מעורבות מול ממוצע ${Math.round(mean)}`,
+    payload: { media_id: m.id, engagement, mean: Math.round(mean) },
+  }));
 }
 
 /** A failed read must never look like "no rows": an empty spend list reads as "no candidates" and would resolve every open alert. */
