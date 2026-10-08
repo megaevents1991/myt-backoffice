@@ -99,7 +99,7 @@
     },
     {
       "path": "/api/cron/marketingSync",
-      "schedule": "20 */6 * * *"
+      "schedule": "20 1,7,13,19 * * *"
     }
   ],
   "functions": {
@@ -197,7 +197,7 @@
       "maxDuration": 300
     },
     "app/(dashboard)/marketing/page.tsx": {
-      "maxDuration": 60
+      "maxDuration": 300
     }
   },
   "routes": [

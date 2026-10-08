@@ -4,10 +4,10 @@ import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarketingClient } from "./marketing-client";
 
-// "סנכרן עכשיו" (runMarketingSyncNow) runs the marketing sync with a 50s budget inside a
-// server action of THIS route, so the platform default window would cut it off mid-sync and
-// the UI would read it as "broken". Mirrored in vercel.json.
-export const maxDuration = 60;
+// "סנכרן עכשיו" (runMarketingSyncNow) runs the whole marketing sync - about 180 s measured -
+// inside a server action of THIS route with a 240 s budget, so anything shorter would cut it
+// off mid-sync and the UI would read it as "broken". Same as /price-light; mirrored in vercel.json.
+export const maxDuration = 300;
 
 // Admin-only (lib/nav.ts roles: ADMIN_ROLES) - refused here too, server-side.
 export default async function MarketingPage() {

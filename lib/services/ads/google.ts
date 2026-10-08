@@ -19,7 +19,12 @@ interface ServiceAccount { client_email: string; private_key: string; private_ke
 function serviceAccount(): ServiceAccount {
   const b64 = process.env.NEXT_SECRET_GOOGLE_SA_JSON_B64?.trim();
   if (!b64) throw new Error("NEXT_SECRET_GOOGLE_SA_JSON_B64 is not set");
-  return JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as ServiceAccount;
+  try {
+    return JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as ServiceAccount;
+  } catch {
+    // V8's own message quotes a fragment of the input - a piece of the private key would land in a log and a mail.
+    throw new Error("NEXT_SECRET_GOOGLE_SA_JSON_B64 is not valid JSON");
+  }
 }
 
 let cached: { token: string; exp: number } | null = null;
@@ -90,15 +95,21 @@ export async function fetchGoogleSpend(opts: { customerId: string; since: string
   return [...agRows.map((r) => toRow(r, r.adGroup.id, "adset")), ...pmaxRows.map((r) => toRow(r, "", "campaign"))];
 }
 
-/** Campaigns + ad groups; the landing domain = `pickLandingDomain` over the first final URL of every ad of the campaign (P.Max: its asset groups) - ours wins when any ad points at us. */
+/**
+ * Campaigns + ad groups -> ad_entities (ads and asset groups are read only for the landing domain, never written).
+ * Campaigns and ad groups are read in EVERY status, REMOVED included: a removed campaign keeps its spend rows and
+ * its bookings inside the 90-day backfill, and without an entity it would have no name and no brand. The landing
+ * domain = `pickLandingDomain` over the first final URL of every live ad of the campaign (P.Max: its asset groups) -
+ * ours wins when any ad points at us.
+ */
 export async function fetchGoogleEntities(opts: { customerId: string }): Promise<AdEntityRow[]> {
   type Camp = { campaign: { id: string; name: string; status: string; advertisingChannelType: string } };
   type Ag = { adGroup: { id: string; name: string; status: string }; campaign: { id: string } };
   type Ad = { campaign: { id: string }; adGroupAd: { ad: { finalUrls?: string[] } } };
   type Asset = { campaign: { id: string }; assetGroup: { finalUrls?: string[] } };
   const [camps, ags, ads, assets] = await Promise.all([
-    gaqlSearch<Camp>(opts.customerId, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type FROM campaign WHERE campaign.status != 'REMOVED'"),
-    gaqlSearch<Ag>(opts.customerId, "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id FROM ad_group WHERE ad_group.status != 'REMOVED'"),
+    gaqlSearch<Camp>(opts.customerId, "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type FROM campaign"),
+    gaqlSearch<Ag>(opts.customerId, "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id FROM ad_group"),
     gaqlSearch<Ad>(opts.customerId, "SELECT campaign.id, ad_group_ad.ad.final_urls FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED'"),
     gaqlSearch<Asset>(opts.customerId, "SELECT campaign.id, asset_group.final_urls FROM asset_group WHERE asset_group.status != 'REMOVED'"),
   ]);

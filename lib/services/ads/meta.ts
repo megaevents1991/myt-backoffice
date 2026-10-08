@@ -94,13 +94,22 @@ export function creativeLandingDomain(c: MetaCreative | undefined): string | nul
 
 /** Campaigns, adsets and ads of the account -> ad_entities rows (brand by rule on campaigns; the sync copies it down and keeps manual brands). */
 export async function fetchMetaEntities(opts: { accountId: string }): Promise<AdEntityRow[]> {
-  // The edges omit ARCHIVED rows unless asked (measured: 258 listed, 9 more archived) - and an archived campaign still has spend rows that need an entity + brand, so every status is requested.
-  const effective_status = JSON.stringify(["ACTIVE", "PAUSED", "ARCHIVED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES"]);
+  // The edges list only the statuses asked for, and the default leaves out ARCHIVED (measured: 258 listed, 9 more
+  // archived) - yet an archived campaign still has spend history and bookings that need an entity + brand.
+  // Asked for: the seven run / pause / archive states on every edge, plus - on /ads - the review / billing states
+  // (an ad stuck in review or refused still names its landing page and still carries bookings' ad ids).
+  // NOT DELETED: the account edges refuse it outright - measured 2026-10-08 on v26.0, campaigns / adsets / ads with
+  // DELETED in effective_status answer 400 code 100 subcode 1815001 ("requests for deleted objects are not supported
+  // on this endpoint"), which would fail the whole entity walk. A deleted object is readable only by its own id; the
+  // same day no deleted or archived campaign had spend in the last 90 days (insights filtered on effective_status).
+  const base = ["ACTIVE", "PAUSED", "ARCHIVED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES"];
+  const effective_status = JSON.stringify(base);
+  const adStatuses = JSON.stringify([...base, "PENDING_REVIEW", "DISAPPROVED", "PREAPPROVED", "PENDING_BILLING_INFO"]);
   // /ads expands the creative, so a big page answers "Please reduce the amount of data" (code 1) - 500 and, once archived ads are in, 100 both did; 50 a page, up to 200 pages.
   const [campaigns, adsets, ads] = await Promise.all([
     graphGetAll<{ id: string; name: string; effective_status: string; objective: string }>(`/${opts.accountId}/campaigns`, { fields: "id,name,effective_status,objective", effective_status, limit: "500" }),
     graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string }>(`/${opts.accountId}/adsets`, { fields: "id,name,effective_status,campaign_id", effective_status, limit: "500" }),
-    graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string; adset_id: string; creative?: MetaCreative }>(`/${opts.accountId}/ads`, { fields: "id,name,effective_status,campaign_id,adset_id,creative{url_tags,link_url,object_story_spec,asset_feed_spec}", effective_status, limit: "50" }, 200),
+    graphGetAll<{ id: string; name: string; effective_status: string; campaign_id: string; adset_id: string; creative?: MetaCreative }>(`/${opts.accountId}/ads`, { fields: "id,name,effective_status,campaign_id,adset_id,creative{url_tags,link_url,object_story_spec,asset_feed_spec}", effective_status: adStatuses, limit: "50" }, 200),
   ]);
   const domainsByCampaign = new Map<string, string[]>();
   for (const ad of ads) {

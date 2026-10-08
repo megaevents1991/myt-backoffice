@@ -37,6 +37,11 @@ class MultiCurrencyExchangeRateService {
     },
   };
 
+  // The UNROUNDED rate of the last good fetch, next to the ceil'd one above (getRawRate). The
+  // ticket sync keeps reading the rounded `rate`; the marketing sync's spend_usd reads this one.
+  // Until a fetch lands it equals the fallback rate.
+  private rawRates: Record<SupportedCurrency, number> = { EUR: 1.15, ILS: 0.34, GBP: 1.33 };
+
   private readonly JSDELIVR_BASE =
     "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies";
   private readonly CLOUDFLARE_BASE =
@@ -82,7 +87,7 @@ class MultiCurrencyExchangeRateService {
 
   private async fetchCurrencyRate(
     currency: SupportedCurrency,
-  ): Promise<number | null> {
+  ): Promise<{ rounded: number; raw: number } | null> {
     const base = currency.toLowerCase();
     const urls = [
       `${this.JSDELIVR_BASE}/${base}.json`,
@@ -109,7 +114,7 @@ class MultiCurrencyExchangeRateService {
           );
         }
         console.log(`✅ ${currency}/USD rate fetched: ${rounded}`);
-        return rounded;
+        return { rounded, raw: rawRate };
       } catch (error) {
         console.warn(
           `⚠️ Currency API (${url}) ${currency}/USD failed: ${
@@ -140,16 +145,17 @@ class MultiCurrencyExchangeRateService {
   ): Promise<void> {
     return this.scheduleCurrencyUpdate(currency, async () => {
       try {
-        const rate = await this.fetchCurrencyRate(currency);
+        const fetched = await this.fetchCurrencyRate(currency);
 
-        if (rate !== null) {
+        if (fetched !== null) {
           this.exchangeRates[currency] = {
-            rate,
+            rate: fetched.rounded,
             lastUpdated: new Date(),
             source: "api",
           };
+          this.rawRates[currency] = fetched.raw;
           console.log(
-            `💱 ${currency}/USD rate updated: ${rate} (from currency API)`,
+            `💱 ${currency}/USD rate updated: ${fetched.rounded} (from currency API)`,
           );
         } else {
           const current = this.exchangeRates[currency];
@@ -205,6 +211,11 @@ class MultiCurrencyExchangeRateService {
 
   public getAllExchangeRates(): ExchangeRates {
     return { ...this.exchangeRates };
+  }
+
+  /** USD per 1 unit, UNROUNDED (the fetched number before the 2-decimal ceil `rate` holds). */
+  public getRawRate(currency: SupportedCurrency): number {
+    return this.rawRates[currency];
   }
 
   public convertToUSD(amount: number, fromCurrency: SupportedCurrency): number {

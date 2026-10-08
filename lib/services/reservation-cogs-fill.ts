@@ -89,8 +89,12 @@ async function fetchXs2NetRateEurCents(ticketId: string): Promise<number | null>
 type EventRow = { type: string | null; tickets_and_rates: { id?: string | number; eid?: string | number }[] | null };
 type LiveRow = { currency: number | null; ticket_categories: { id: number | string; cost: number }[] | null };
 
-/** Fill up to `limit` Paid reservations (last 120 days) that have no ticket cost. */
-export async function fillTicketCosts(opts: { dryRun: boolean; limit?: number }): Promise<{ filled: number; skipped: number; errors: string[] }> {
+/**
+ * Fill up to `limit` Paid reservations (last 120 days) that have no ticket cost. `deadlineMs` (an epoch ms) stops
+ * the loop before the caller's own budget runs out - each XS2 lookup can take 10 s - and `remaining` says how many
+ * of this run's rows were left for the next run.
+ */
+export async function fillTicketCosts(opts: { dryRun: boolean; limit?: number; deadlineMs?: number }): Promise<{ filled: number; skipped: number; remaining: number; errors: string[] }> {
   const since = new Date(Date.now() - 120 * 864e5).toISOString();
   const { data, error } = await mdb
     .from("reservations")
@@ -103,7 +107,7 @@ export async function fillTicketCosts(opts: { dryRun: boolean; limit?: number })
     .limit(opts.limit ?? 200);
   if (error) throw new Error(`cogs fill read: ${error.message}`);
   const rows = (data ?? []) as { id: number; event_id: number; event_order_info: unknown }[];
-  if (rows.length === 0) return { filled: 0, skipped: 0, errors: [] };
+  if (rows.length === 0) return { filled: 0, skipped: 0, remaining: 0, errors: [] };
 
   // Dynamic import: ticket-price-sync builds its service singletons at load and throws when
   // the supplier env is missing - a static import would also break the pure selftest.
@@ -181,8 +185,13 @@ export async function fillTicketCosts(opts: { dryRun: boolean; limit?: number })
 
   let filled = 0;
   let skipped = 0;
+  let remaining = 0;
   const errors: string[] = [];
-  for (const r of rows) {
+  for (const [i, r] of rows.entries()) {
+    if (opts.deadlineMs !== undefined && Date.now() > opts.deadlineMs) {
+      remaining = rows.length - i;
+      break;
+    }
     try {
       const items = normalizeReservationEventOrderInfo(r.event_order_info as ReservationEventOrderInfo | null);
       if (items.length === 0) { skipped += 1; continue; }
@@ -207,5 +216,5 @@ export async function fillTicketCosts(opts: { dryRun: boolean; limit?: number })
       errors.push(`#${r.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  return { filled, skipped, errors };
+  return { filled, skipped, remaining, errors };
 }
