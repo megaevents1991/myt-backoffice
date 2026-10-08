@@ -200,7 +200,7 @@ function SideCard({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** The campaign table + the two "not matched" cards. Data in, so it can be rendered without a load. */
+/** The campaign table + the three cards of revenue no campaign row of this view holds. Data in, so it can be rendered without a load. */
 export function MediaBody({ data, loading }: { data: PnlResult; loading: boolean }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   return (
@@ -224,7 +224,7 @@ export function MediaBody({ data, loading }: { data: PnlResult; loading: boolean
         />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <SideCard title="לא זוהה">
           {data.unresolved.length === 0 ? (
             <p className="text-muted-foreground">אין הזמנות לא מזוהות.</p>
@@ -241,6 +241,12 @@ export function MediaBody({ data, loading }: { data: PnlResult; loading: boolean
           <p>
             {data.unattributed.purchases} הזמנות · {usd(data.unattributed.revenueUsd)}
           </p>
+        </SideCard>
+        <SideCard title="קמפיין של מותג אחר">
+          <p>
+            {data.otherBrand.purchases} הזמנות · {usd(data.otherBrand.revenueUsd)}
+          </p>
+          <p className="text-xs text-muted-foreground">נזקפו לקמפיין שאינו במותג שנבחר (קמפיין שהמערכת לא מכירה נחשב &quot;אחר&quot;).</p>
         </SideCard>
       </div>
     </>

@@ -42,10 +42,43 @@ assert.deepEqual(pnl.daily.map((d) => [d.day, d.spendUsd, d.revenueUsd]), [["202
 const all = buildPnl({ spend, entities, reservations: res, feePct: 0, brand: "all" });
 assert.equal(all.totals.spendUsd, 250);
 assert.equal(all.campaigns.length, 2);
+assert.equal(all.otherBrand.purchases, 0, "under 'all' no campaign is another brand's");
 
+// Revenue never drops out of a brand view: a sale credited to another brand's campaign, or to a campaign with no
+// entity row (brand unknown = "other", as its spend), lands in otherBrand - beside the totals, never inside them.
+const elsewhere: AttributedReservation[] = [
+  ...res,
+  { id: 4, day: "2026-10-02", revenue: 600, cogs: 400, estimated: false, touch: { platform: "google", campaignId: "g1", adsetId: null, adId: null, resolved: true } },
+  { id: 5, day: "2026-10-03", revenue: 300, cogs: 100, estimated: true, touch: { platform: "meta", campaignId: "gone", adsetId: null, adId: null, resolved: true } },
+];
+const mega = buildPnl({ spend, entities, reservations: elsewhere, feePct: 0, brand: "mega_events" });
+assert.equal(mega.otherBrand.purchases, 2, "google:g1 (brand other) and meta:gone (no entity row)");
+assert.equal(mega.otherBrand.revenueUsd, 900);
+assert.equal(mega.otherBrand.cogsUsd, 500);
+assert.equal(mega.otherBrand.estimatedCount, 1);
+assert.equal(mega.otherBrand.netUsd, 400, "no spend of its own: revenue - cogs");
+assert.equal(mega.totals.revenueUsd, 1500, "otherBrand stays out of the totals");
+assert.equal(mega.campaigns.find((c) => c.key === "meta:gone"), undefined, "an unknown campaign is not listed under Mega Events");
+assert.deepEqual(mega.daily.map((d) => d.day), ["2026-10-01", "2026-10-02"], "the daily series follows the totals: no otherBrand day");
+const g1Only = buildPnl({ spend, entities, reservations: [elsewhere[3]], feePct: 0, brand: "mega_events" });
+assert.equal(g1Only.otherBrand.revenueUsd, 600, "(1) a sale on google:g1 under mega_events lands in otherBrand with its revenue");
+const goneOnly = buildPnl({ spend, entities, reservations: [elsewhere[4]], feePct: 0, brand: "mega_events" });
+assert.equal(goneOnly.otherBrand.revenueUsd, 300, "(2) a sale on a campaign with no entity row lands in otherBrand");
+
+// Under "other", the unresolved line (a click on OUR ad link) is listed but never joins the totals.
+const other = buildPnl({ spend, entities, reservations: elsewhere, feePct: 0, brand: "other" });
+assert.equal(other.unresolved.find((u) => u.platform === "meta")!.revenueUsd, 500, "still listed");
+assert.equal(other.totals.revenueUsd, 600 + 300, "(3) totals = g1 + the unknown campaign; the unresolved 500 is excluded");
+assert.equal(other.otherBrand.revenueUsd, 1000, "c1 is Mega Events: another brand from here");
+assert.equal(other.unattributed.revenueUsd, 800);
+assert.ok(!other.daily.some((d) => d.day === "2026-10-01" && d.revenueUsd > 0), "no unresolved or other-brand revenue in the chart");
+
+// The windows are N calendar days INCLUSIVE of today (since = today - (N-1)), like the alerts' windowStart.
 const w = rangeWindow("30d", new Date("2026-10-08T10:00:00Z"));
-assert.equal(w.since, "2026-09-08");
+assert.equal(w.since, "2026-09-09");
 assert.equal(w.until, "2026-10-08");
+assert.equal(rangeWindow("7d", new Date("2026-10-08T10:00:00Z")).since, "2026-10-02");
+assert.equal(rangeWindow("90d", new Date("2026-10-08T10:00:00Z")).since, "2026-07-11");
 assert.equal(rangeWindow("month", new Date("2026-10-08T10:00:00Z")).since, "2026-10-01");
 
 console.log("marketing-pnl selftest OK");

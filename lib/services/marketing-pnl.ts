@@ -1,9 +1,16 @@
 /**
  * The campaign P&L join (spec section 5): spend rows x entities x attributed Paid
  * reservations -> one row per campaign (with its adsets), the unresolved rows per
- * platform ("מטא · לא זוהה"), the unattributed line, brand totals and a daily series.
- * net = revenue - cogs - fee - spend; POAS = net / spend; ROAS = revenue / spend;
- * CAC = spend / purchases. Pure; scripts/marketing-pnl-selftest.ts.
+ * platform ("מטא · לא זוהה"), the unattributed line, the other-brand line, brand totals
+ * and a daily series. net = revenue - cogs - fee - spend; POAS = net / spend;
+ * ROAS = revenue / spend; CAC = spend / purchases. Pure; scripts/marketing-pnl-selftest.ts.
+ *
+ * Revenue never drops out: a Paid reservation lands on a campaign of the chosen brand, on
+ * "unresolved" (a paid touch we cannot resolve), on "unattributed" (no paid touch) or on
+ * "otherBrand" (its resolved campaign is not in the chosen brand - a campaign with no entity
+ * row has no known brand and counts as "other", exactly as its spend does). `totals` = the
+ * brand's campaigns + `unresolved` when the brand is mega_events or all (an unresolved touch
+ * came through OUR ad links, so it is never another brand's).
  */
 import type { AdBrand, AdPlatform } from "@/types/marketing.types";
 import type { PaidTouch } from "@/lib/services/marketing-attribution";
@@ -11,11 +18,13 @@ import type { PaidTouch } from "@/lib/services/marketing-attribution";
 export const MARKETING_RANGES = ["7d", "30d", "90d", "month"] as const;
 export type MarketingRange = (typeof MARKETING_RANGES)[number];
 
+/** "7d" = the last 7 calendar days INCLUSIVE of today (since = today - 6), same for 30d / 90d - the
+ *  alerts' `windowStart` semantics; "month" = the 1st of this month to today. */
 export function rangeWindow(range: MarketingRange, now = new Date()): { since: string; until: string } {
   const until = now.toISOString().slice(0, 10);
   if (range === "month") return { since: `${until.slice(0, 7)}-01`, until };
   const days = { "7d": 7, "30d": 30, "90d": 90 }[range];
-  return { since: new Date(now.getTime() - days * 864e5).toISOString().slice(0, 10), until };
+  return { since: new Date(now.getTime() - (days - 1) * 864e5).toISOString().slice(0, 10), until };
 }
 
 export interface SpendLike { platform: AdPlatform; campaign_id: string; adset_key: string; day: string; spend_usd: number; clicks: number; impressions: number; platform_conversions: number; platform_value: number }
@@ -26,7 +35,7 @@ export interface PnlTotals { spendUsd: number; revenueUsd: number; cogsUsd: numb
 export interface AdsetPnl extends PnlTotals { key: string; name: string }
 export interface CampaignPnl extends PnlTotals { key: string; platform: AdPlatform; campaignId: string; name: string; brand: AdBrand; status: string | null; channel: string | null; adsets: AdsetPnl[] }
 export interface DailyPoint { day: string; spendUsd: number; revenueUsd: number }
-export interface Pnl { campaigns: CampaignPnl[]; unresolved: (PnlTotals & { platform: AdPlatform })[]; unattributed: PnlTotals; totals: PnlTotals; daily: DailyPoint[] }
+export interface Pnl { campaigns: CampaignPnl[]; unresolved: (PnlTotals & { platform: AdPlatform })[]; unattributed: PnlTotals; otherBrand: PnlTotals; totals: PnlTotals; daily: DailyPoint[] }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const empty = (): PnlTotals => ({ spendUsd: 0, revenueUsd: 0, cogsUsd: 0, feeUsd: 0, netUsd: 0, purchases: 0, clicks: 0, impressions: 0, platformPurchases: 0, platformValue: 0, estimatedCount: 0, poas: null, roas: null, cacUsd: null });
@@ -74,17 +83,23 @@ export function buildPnl(input: { spend: SpendLike[]; entities: EntityLike[]; re
     addSpend(c, s); addSpend(adset(c, s.adset_key), s);
     dayOf(s.day).spendUsd += s.spend_usd;
   }
+  // An unresolved touch is a click on one of OUR ad links - it belongs to Mega Events, never to the "other" view.
+  const unresolvedInTotals = input.brand === "mega_events" || input.brand === "all";
   const unresolved = new Map<AdPlatform, PnlTotals & { platform: AdPlatform }>();
   const unattributed = empty();
+  const otherBrand = empty();
   for (const r of input.reservations) {
     const t = r.touch;
     if (!t) { addSale(unattributed, r, input.feePct); continue; }
     if (!t.resolved || !t.campaignId) {
       let u = unresolved.get(t.platform);
       if (!u) { u = { ...empty(), platform: t.platform }; unresolved.set(t.platform, u); }
-      addSale(u, r, input.feePct); dayOf(r.day).revenueUsd += r.revenue; continue;
+      addSale(u, r, input.feePct);
+      if (unresolvedInTotals) dayOf(r.day).revenueUsd += r.revenue;
+      continue;
     }
-    if (!inBrand(t.platform, t.campaignId)) continue;
+    // Same predicate as the spend side, so a campaign's spend and its sales are always on the same side of the filter.
+    if (!inBrand(t.platform, t.campaignId)) { addSale(otherBrand, r, input.feePct); continue; }
     const c = campaign(t.platform, t.campaignId);
     addSale(c, r, input.feePct); addSale(adset(c, t.adsetId ?? ""), r, input.feePct);
     dayOf(r.day).revenueUsd += r.revenue;
@@ -98,11 +113,12 @@ export function buildPnl(input: { spend: SpendLike[]; entities: EntityLike[]; re
   const totals = empty();
   for (const c of list) addTotals(totals, c);
   const unresolvedList = [...unresolved.values()].map((u) => finish(u));
-  for (const u of unresolvedList) addTotals(totals, u);
+  if (unresolvedInTotals) for (const u of unresolvedList) addTotals(totals, u);
   return {
     campaigns: list,
     unresolved: unresolvedList,
     unattributed: finish(unattributed),
+    otherBrand: finish(otherBrand),
     totals: finish(totals),
     daily: [...daily.values()].map((d) => ({ ...d, spendUsd: r2(d.spendUsd), revenueUsd: r2(d.revenueUsd) })).sort((a, b) => a.day.localeCompare(b.day)),
   };

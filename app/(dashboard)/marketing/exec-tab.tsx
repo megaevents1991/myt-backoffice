@@ -95,14 +95,19 @@ export function ExecBody({
   range: string;
   dim: boolean;
 }) {
-  const { totals, unattributed, since, until, settings } = data;
+  const { totals, unattributed, otherBrand, since, until, settings } = data;
   // The chart's keys are the ChartConfig's (spend / revenue) - the legend and the tooltip find their labels by them.
   const daily = useMemo(
     () => data.daily.map((d) => ({ day: d.day, spend: d.spendUsd, revenue: d.revenueUsd })),
     [data.daily],
   );
   const target = settings.monthly_profit_target_usd;
-  const onTarget = totals.netUsd >= target;
+  // The card shows the MEDIA-credited net; the monthly target is a business number, so it is held against the
+  // all-in net = media net + the unattributed bookings + the bookings credited to another brand's campaign (every
+  // one of them is our booking; only the chosen brand's ad spend is inside the media net). The colour sits on the
+  // line that prints that all-in number, never on the media net above it.
+  const allInNet = totals.netUsd + unattributed.netUsd + otherBrand.netUsd;
+  const onTarget = allInNet >= target;
   // The monthly target only means something against the month so far.
   const netTone = range === "month" && target > 0 ? (onTarget ? GOOD : "text-destructive") : undefined;
 
@@ -118,8 +123,12 @@ export function ExecBody({
         </Metric>
 
         <Metric title="הכנסה" value={usd(totals.revenueUsd)} dim={dim}>
+          <Note>{totals.purchases} הזמנות</Note>
           <Note>
-            {totals.purchases} הזמנות · לא מיוחס {usd(unattributed.revenueUsd)}
+            לא מיוחס: {unattributed.purchases} הזמנות · {usd(unattributed.revenueUsd)}
+          </Note>
+          <Note>
+            קמפיין של מותג אחר: {otherBrand.purchases} הזמנות · {usd(otherBrand.revenueUsd)}
           </Note>
         </Metric>
 
@@ -130,10 +139,13 @@ export function ExecBody({
           </Note>
         </Metric>
 
-        <Metric title="רווח נקי" value={usd(totals.netUsd)} tone={netTone} dim={dim}>
+        <Metric title="רווח נקי ממדיה" value={usd(totals.netUsd)} dim={dim}>
+          <Note>
+            לא מיוחס: {usd(unattributed.netUsd)} · מותג אחר: {usd(otherBrand.netUsd)}
+          </Note>
           {range === "month" && (
             <Note className={netTone}>
-              {target > 0 ? `יעד ${usd(target)}` : "יעד לא הוגדר"}
+              {target > 0 ? `יעד ${usd(target)} מול רווח כולל ${usd(allInNet)}` : "יעד לא הוגדר"}
             </Note>
           )}
         </Metric>
