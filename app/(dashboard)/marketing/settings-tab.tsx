@@ -7,12 +7,13 @@ import { Check, Loader2, RefreshCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
-  getMarketingSettings,
+  getMarketingSettingsPage,
   listCampaignBrands,
   runMarketingSyncNow,
   saveMarketingSettings,
   setCampaignBrand,
 } from "@/lib/actions/marketing-actions";
+import { SETTING_BOUNDS } from "@/lib/marketing/settings";
 import type { MarketingSyncSummary } from "@/lib/services/marketing-sync";
 import type { AdBrand, AdPlatform, MarketingSettings } from "@/types/marketing.types";
 import { DataTable } from "@/components/data-table";
@@ -98,8 +99,9 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
               id={`mk-${f.key}`}
               type="number"
               inputMode="decimal"
-              min={0}
-              step="any"
+              min={SETTING_BOUNDS[f.key].min}
+              max={SETTING_BOUNDS[f.key].max}
+              step={SETTING_BOUNDS[f.key].integer ? 1 : "any"}
               dir="ltr"
               value={form[f.key]}
               onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
@@ -127,27 +129,7 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
   );
 }
 
-function SettingsForm() {
-  const [initial, setInitial] = useState<MarketingSettings | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        const s = await getMarketingSettings();
-        if (!cancelled) setInitial(s);
-      } catch (e) {
-        console.error("Error loading the marketing settings:", e);
-        if (!cancelled) setError(errorText(e));
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+function SettingsForm({ initial, error }: { initial: MarketingSettings | null; error: string | null }) {
   return (
     <Card>
       <CardHeader>
@@ -169,7 +151,7 @@ function SettingsForm() {
   );
 }
 
-function SyncNow() {
+function SyncNow({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<MarketingSyncSummary | null>(null);
@@ -187,6 +169,8 @@ function SyncNow() {
           ? { title: "הסנכרון הסתיים" }
           : { variant: "destructive", title: "הסנכרון הסתיים עם שגיאות", description: `${failed} שלבים נכשלו` },
       );
+      // The sync may have brought new campaigns (or re-derived a rule brand) - refresh the brand table below in place.
+      onDone();
     } catch (e) {
       console.error("runMarketingSyncNow failed", e);
       setError(errorText(e));
@@ -203,7 +187,7 @@ function SyncNow() {
           סנכרון
         </CardTitle>
         <CardDescription dir="rtl">
-          הסנכרון רץ לבד כל שש שעות. כאן אפשר להריץ אותו עכשיו (עד כדקה).
+          הסנכרון רץ לבד כל שש שעות. כאן אפשר להריץ אותו עכשיו (עד כמה דקות).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -251,6 +235,13 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
   const { toast } = useToast();
   const [rows, setRows] = useState<CampaignBrandRow[]>(initial);
   const [saving, setSaving] = useState<string | null>(null);
+  // A fresh list from the parent (the reload after "סנכרן עכשיו") replaces the rows in place - the table keeps its
+  // search / page. Adjusted during render, not in an effect (react.dev "adjusting state when a prop changes").
+  const [shown, setShown] = useState(initial);
+  if (shown !== initial) {
+    setShown(initial);
+    setRows(initial);
+  }
 
   const choose = useCallback(
     async (row: CampaignBrandRow, choice: BrandChoice) => {
@@ -361,27 +352,7 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
   );
 }
 
-function CampaignBrands() {
-  const [rows, setRows] = useState<CampaignBrandRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        const list = await listCampaignBrands();
-        if (!cancelled) setRows(list);
-      } catch (e) {
-        console.error("Error loading the campaign brands:", e);
-        if (!cancelled) setError(errorText(e));
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+function CampaignBrands({ rows, error }: { rows: CampaignBrandRow[] | null; error: string | null }) {
   return (
     <Card>
       <CardHeader>
@@ -405,12 +376,47 @@ function CampaignBrands() {
   );
 }
 
+type SettingsPage = Awaited<ReturnType<typeof getMarketingSettingsPage>>;
+
 export function SettingsTab() {
+  const { toast } = useToast();
+  const [page, setPage] = useState<SettingsPage | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // ONE action on mount (settings + campaign brands, read side by side on the server): Next runs a tab's server
+  // actions one at a time, so two loads would wait on each other.
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      try {
+        const loaded = await getMarketingSettingsPage();
+        if (!cancelled) setPage(loaded);
+      } catch (e) {
+        console.error("Error loading the marketing settings:", e);
+        if (!cancelled) setError(errorText(e));
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const reloadBrands = useCallback(async () => {
+    try {
+      const brands = await listCampaignBrands();
+      setPage((cur) => (cur ? { ...cur, brands } : cur));
+    } catch (e) {
+      console.error("Error reloading the campaign brands:", e);
+      toast({ variant: "destructive", title: "רשימת הקמפיינים לא רועננה", description: errorText(e) });
+    }
+  }, [toast]);
+
   return (
     <div className="space-y-4">
-      <SettingsForm />
-      <SyncNow />
-      <CampaignBrands />
+      <SettingsForm initial={page?.settings ?? null} error={error} />
+      <SyncNow onDone={() => void reloadBrands()} />
+      <CampaignBrands rows={page?.brands ?? null} error={error} />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 // Run: npx tsx scripts/marketing-alerts-selftest.ts
 import assert from "node:assert/strict";
 import { viralPostIds } from "../lib/marketing/engagement";
-import { alertMailHtml, budgetBleedAlerts, planAlerts, readAll, rowsOrThrow, viralPostAlerts, windowStart, type AlertCandidate } from "../lib/services/marketing-alerts";
+import { readAll } from "../lib/services/marketing-db";
+import { alertMailHtml, budgetBleedAlerts, planAlerts, rowsOrThrow, VIRAL_MAX_AGE_DAYS, viralPostAlerts, windowStart, type AlertCandidate } from "../lib/services/marketing-alerts";
 
 const now = new Date("2026-10-08T12:00:00Z");
 const spend = (campaign_id: string, day: string, spend: number) => ({ campaign_id, day, spend, brand: "mega_events" as const, name: `camp ${campaign_id}` });
@@ -35,6 +36,12 @@ assert.equal(viralPostIds([...zeros, post("spike", "2026-10-07T10:00:00Z", 50)],
 assert.equal(viralPostIds([...history, { ...post("story", "2026-10-07T10:00:00Z", 900), media_product_type: "STORY" as const }], 200, now).size, 0, "stories are never viral");
 assert.equal(viralPostIds([...history, { ...post("nodate", "2026-10-07T10:00:00Z", 900), posted_at: null }], 200, now).size, 0, "no posted_at, no verdict");
 
+// The age cap: a post 30 days old that beats the bar wears the badge (a display) but raises no alert (older than VIRAL_MAX_AGE_DAYS).
+assert.equal(VIRAL_MAX_AGE_DAYS, 7);
+const aged = [...history, post("old", "2026-09-08T12:00:00Z", 900)];
+assert.equal(viralPostIds(aged, 200, now).has("old"), true, "the badge is not capped");
+assert.deepEqual(viralPostAlerts({ media: aged, settings: { viral_pct: 200 }, now }).map((a) => a.key), [], "a 30-day-old viral post does not fire");
+
 // A failed read throws (never "no rows"): it would read as "no candidates" and resolve every open alert.
 assert.throws(() => rowsOrThrow("ad_spend_daily", { data: null, error: { message: "relation does not exist" } }), /alerts read ad_spend_daily: relation does not exist/);
 assert.deepEqual(rowsOrThrow("ig_media", { data: null, error: null }), [], "a null body with no error is an empty list");
@@ -64,28 +71,48 @@ assert.ok(!html.includes('<a href="x">'), "an injected tag must not survive");
 assert.ok(html.includes("&lt;a href=&quot;x&quot;&gt;evil&lt;/a&gt; &amp; &#39;co&#39;"), "the name comes out escaped");
 assert.ok(html.includes('<a href="https://app.example/marketing?tab=alerts">'), "the real link is intact");
 assert.ok(alertMailHtml([], 'https://x.example/"><script>').includes("&quot;&gt;&lt;script&gt;"), "the origin is escaped too");
-assert.ok(alertMailHtml(evil, "https://app.example").includes("<b>שריפת תקציב</b>") && alertMailHtml(viral, "https://app.example").includes("<b>ויראליות</b>"), "the kind labels are intact");
+assert.ok(alertMailHtml(evil, "https://app.example").includes("<b>דימום תקציב</b>") && alertMailHtml(viral, "https://app.example").includes("<b>פוסט ויראלי</b>"), "the kind labels are the tab's words, intact");
 
 // windowStart is the rule's `since` and the runner's spend read: 3 days ending 2026-10-08 starts on the 6th.
 assert.equal(windowStart(now, 3), "2026-10-06");
 assert.equal(windowStart(now, 1), "2026-10-08");
 
 async function pagingTests() {
-  // readAll pages by 1,000 until a short page, throws on an error and past `max`.
-  const fake = (total: number, calls: [number, number][], failAt = -1) => () => ({
-    range: async (from: number, to: number) => {
-      calls.push([from, to]);
-      if (from === failAt) return { data: null, error: { message: "boom" } };
-      return { data: Array.from({ length: Math.max(0, Math.min(to + 1, total) - from) }, (_, i) => from + i), error: null };
-    },
+  // The shared readAll (lib/services/marketing-db.ts) pages by 1,000 until a short page, throws on an error and past
+  // `max`, and dedupes by the order columns. The fake is a client: from(table).select(cols) -> .order() -> .range().
+  // `shift` serves every page from one row earlier (a row inserted ahead between two reads) - the overlap must dedupe.
+  const fake = (total: number, calls: [number, number][], failAt = -1, shift = 0) => ({
+    from: () => ({
+      select: () => {
+        const q = {
+          order: () => q,
+          range: async (from: number, to: number) => {
+            calls.push([from, to]);
+            if (from === failAt) return { data: null, error: { message: "boom" } };
+            const start = Math.max(0, from - (from > 0 ? shift : 0));
+            return { data: Array.from({ length: Math.max(0, Math.min(to + 1, total) - from) }, (_, i) => ({ id: start + i })), error: null };
+          },
+        };
+        return q;
+      },
+    }),
   });
+  const read = (total: number, calls: [number, number][], opts: { failAt?: number; max?: number; table?: string; shift?: number } = {}) =>
+    readAll<{ id: number }>(opts.table ?? "t", "id", ["id"], opts.max ?? 50_000, "alerts", (q) => q, fake(total, calls, opts.failAt, opts.shift));
   const calls: [number, number][] = [];
-  const all = await readAll<number>("t", fake(2500, calls));
+  const all = await read(2500, calls);
   assert.equal(all.length, 2500);
   assert.deepEqual(calls, [[0, 999], [1000, 1999], [2000, 2999]], "three pages, the short one stops the loop");
-  assert.equal((await readAll<number>("t", fake(1000, []))).length, 1000, "an exactly full last page is followed by an empty one");
-  await assert.rejects(() => readAll("ad_spend_daily", fake(5000, [], 1000)), /alerts read ad_spend_daily: boom/);
-  await assert.rejects(() => readAll("t", fake(5000, []), 2000), /alerts read t: more than 2000 rows/);
+  assert.equal((await read(1000, [])).length, 1000, "an exactly full last page is followed by an empty one");
+  await assert.rejects(() => read(5000, [], { failAt: 1000, table: "ad_spend_daily" }), /alerts read ad_spend_daily: boom/);
+  await assert.rejects(() => read(5000, [], { max: 2000 }), /alerts read t: more than 2000 rows/);
+  const shifted = await read(2500, [], { shift: 1 });
+  assert.equal(new Set(shifted.map((r) => r.id)).size, shifted.length, "a row served twice across pages is kept once (composite-key dedupe)");
+  await assert.rejects(
+    () => readAll("t", "id", ["id", "day"], 50_000, "alerts", (q) => q, fake(10, [])),
+    /order column "day" is not selected/,
+    "an order column missing from the select would dedupe distinct rows together - refused",
+  );
 }
 
 pagingTests().then(() => console.log("marketing-alerts selftest OK"), (e) => { console.error(e); process.exit(1); });

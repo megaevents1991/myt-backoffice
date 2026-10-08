@@ -3,11 +3,13 @@
 import { unstable_cache } from "next/cache";
 import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
-import { mdb } from "@/lib/services/marketing-db";
+import { mdb, readAll } from "@/lib/services/marketing-db";
 import { attributedReservations } from "@/lib/services/marketing-purchases";
 import { buildPnl, rangeWindow, MARKETING_RANGES, type MarketingRange, type Pnl } from "@/lib/services/marketing-pnl";
 import { MARKETING_TAG, MARKETING_TTL_S, invalidateMarketing } from "@/lib/services/marketing-cache";
 import { runMarketingSync, type MarketingSyncSummary } from "@/lib/services/marketing-sync";
+import { IG_MEDIA_READ } from "@/lib/marketing/engagement";
+import { validateSettingsPatch } from "@/lib/marketing/settings";
 import { DEFAULT_MARKETING_SETTINGS, MARKETING_SETTING_KEYS, type AdBrand, type AdPlatform, type IgMediaRow, type MarketingAlertRow, type MarketingSettings } from "@/types/marketing.types";
 
 /**
@@ -26,34 +28,20 @@ async function readSettings(): Promise<MarketingSettings> {
   return out;
 }
 
-/** PostgREST answers at most 1000 rows (max_rows) and says nothing - a plain `.limit(20000)` is
- *  the first 1000. Page by a stable order (the table's key) until a short page; throw past `max`. */
-const PAGE = 1000;
-async function readAll<T>(
-  label: string,
-  makeQuery: () => { range: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
-  max = 50_000,
-): Promise<T[]> {
-  const out: T[] = [];
-  for (let offset = 0; offset < max; offset += PAGE) {
-    const { data, error } = await makeQuery().range(offset, offset + PAGE - 1);
-    if (error) throw new Error(`${label} read: ${error.message}`);
-    const page = (data ?? []) as T[];
-    out.push(...page);
-    if (page.length < PAGE) return out;
-  }
-  throw new Error(`${label} read: more than ${max} rows - narrow the range`);
-}
+/** Paged reads (lib/services/marketing-db.ts `readAll`) stop here: past it the read throws - narrow the range. */
+const READ_MAX = 50_000;
 
 async function buildPnlFor(range: MarketingRange, brand: AdBrand | "all"): Promise<Pnl & { since: string; until: string; settings: MarketingSettings }> {
   const { since, until } = rangeWindow(range);
   const [settings, reservations, spend, entities] = await Promise.all([
     readSettings(),
     attributedReservations(since, until),
-    readAll<Parameters<typeof buildPnl>[0]["spend"][number]>("ad_spend_daily", () =>
-      mdb.from("ad_spend_daily").select("platform, campaign_id, adset_key, day, spend_usd, clicks, impressions, platform_conversions, platform_value").gte("day", since).lte("day", until).order("day").order("platform").order("campaign_id").order("adset_key")),
-    readAll<Parameters<typeof buildPnl>[0]["entities"][number]>("ad_entities", () =>
-      mdb.from("ad_entities").select("platform, id, kind, name, brand, status, campaign_id, channel").in("kind", ["campaign", "adset", "ad_group"]).order("platform").order("id")),
+    readAll<Parameters<typeof buildPnl>[0]["spend"][number]>(
+      "ad_spend_daily", "platform, campaign_id, adset_key, day, spend_usd, clicks, impressions, platform_conversions, platform_value",
+      ["day", "platform", "campaign_id", "adset_key"], READ_MAX, "marketing", (q) => q.gte("day", since).lte("day", until)),
+    readAll<Parameters<typeof buildPnl>[0]["entities"][number]>(
+      "ad_entities", "platform, id, kind, name, brand, status, campaign_id, channel",
+      ["platform", "id"], READ_MAX, "marketing", (q) => q.in("kind", ["campaign", "adset", "ad_group"])),
   ]);
   return { ...buildPnl({ spend, entities, reservations, feePct: settings.processing_fee_pct, brand }), since, until, settings };
 }
@@ -72,7 +60,7 @@ export async function getMarketingPnl(range: MarketingRange, brand: AdBrand | "a
 export async function getInstagramFeed(): Promise<{ media: IgMediaRow[]; followers: { day: string; followers: number }[]; viralPct: number }> {
   await requireAdmin();
   const [m, f, settings] = await Promise.all([
-    mdb.from("ig_media").select("*").order("posted_at", { ascending: false }).limit(200),
+    mdb.from("ig_media").select("*").order("posted_at", { ascending: false }).limit(IG_MEDIA_READ),
     mdb.from("ig_account_daily").select("day, followers").order("day", { ascending: false }).limit(90),
     readSettings(),
   ]);
@@ -90,19 +78,33 @@ export async function getMarketingAlerts(): Promise<MarketingAlertRow[]> {
 
 export async function getMarketingSettings(): Promise<MarketingSettings> { await requireAdmin(); return readSettings(); }
 
+type CampaignBrandRow = { platform: AdPlatform; id: string; name: string; brand: AdBrand; brand_source: string; status: string | null };
+
+function readCampaignBrands(): Promise<CampaignBrandRow[]> {
+  return readAll<CampaignBrandRow>("ad_entities", "platform, id, name, brand, brand_source, status", ["name", "platform", "id"], READ_MAX, "marketing", (q) => q.eq("kind", "campaign"));
+}
+
+/** Everything the Settings tab shows, in ONE action (one guard, both reads side by side) - Next runs a tab's server actions one at a time. */
+export async function getMarketingSettingsPage(): Promise<{ settings: MarketingSettings; brands: CampaignBrandRow[] }> {
+  await requireAdmin();
+  const [settings, brands] = await Promise.all([readSettings(), readCampaignBrands()]);
+  return { settings, brands };
+}
+
 export async function saveMarketingSettings(patch: Partial<MarketingSettings>): Promise<{ ok: boolean; error?: string }> {
   const session = await requireAdmin();
-  const before = await readSettings();
-  const rows: { key: string; value: unknown; updated_by: string; updated_at: string }[] = [];
-  for (const key of MARKETING_SETTING_KEYS) {
-    if (!(key in patch)) continue;
-    const v = patch[key];
-    if (key === "alert_emails") {
-      if (!Array.isArray(v) || !v.every((e) => typeof e === "string" && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))) return { ok: false, error: "alert_emails must be valid addresses" };
-    } else if (typeof v !== "number" || !Number.isFinite(v) || v < 0) return { ok: false, error: `${key} must be a number ≥ 0` };
-    rows.push({ key, value: v, updated_by: session.sub, updated_at: new Date().toISOString() });
+  // Validate first (lib/marketing/settings.ts, selftested): a bad value never costs a read, and nothing is written.
+  const checked = validateSettingsPatch(patch);
+  if (!checked.ok) return { ok: false, error: checked.error };
+  if (checked.rows.length === 0) return { ok: true };
+  let before: MarketingSettings;
+  try {
+    before = await readSettings();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  if (rows.length === 0) return { ok: true };
+  const now = new Date().toISOString();
+  const rows = checked.rows.map((r) => ({ key: r.key, value: r.value, updated_by: session.sub, updated_at: now }));
   const { error } = await mdb.from("marketing_settings").upsert(rows, { onConflict: "key" });
   if (error) return { ok: false, error: error.message };
   await logAudit({ action: "marketing.settings", entityType: "marketing_settings", changes: { before, after: Object.fromEntries(rows.map((r) => [r.key, r.value])) }, actor: { id: session.sub, email: session.email, role: session.role } });
@@ -110,17 +112,19 @@ export async function saveMarketingSettings(patch: Partial<MarketingSettings>): 
   return { ok: true };
 }
 
-export async function listCampaignBrands(): Promise<{ platform: AdPlatform; id: string; name: string; brand: AdBrand; brand_source: string; status: string | null }[]> {
+export async function listCampaignBrands(): Promise<CampaignBrandRow[]> {
   await requireAdmin();
-  return readAll("ad_entities", () => mdb.from("ad_entities").select("platform, id, name, brand, brand_source, status").eq("kind", "campaign").order("name").order("platform").order("id"));
+  return readCampaignBrands();
 }
 
 export async function setCampaignBrand(platform: AdPlatform, id: string, brand: AdBrand | "rule"): Promise<{ ok: boolean; error?: string }> {
   const session = await requireAdmin();
   if ((platform !== "meta" && platform !== "google") || typeof id !== "string" || id === "" || !(brand === "rule" || brand === "mega_events" || brand === "other")) return { ok: false, error: "invalid campaign or brand" };
   const patch = brand === "rule" ? { brand_source: "rule" } : { brand, brand_source: "manual" };
-  const { error } = await mdb.from("ad_entities").update(patch).eq("platform", platform).eq("id", id).eq("kind", "campaign");
+  const { data: updated, error } = await mdb.from("ad_entities").update(patch).eq("platform", platform).eq("id", id).eq("kind", "campaign").select("id");
   if (error) return { ok: false, error: error.message };
+  // An UPDATE that matched nothing is not an error to PostgREST - without this the audit would record a change that never happened.
+  if (!Array.isArray(updated) || updated.length === 0) return { ok: false, error: "campaign not found" };
   // Children follow the campaign at the next sync; do it now so the screen agrees at once.
   if (brand !== "rule") {
     const { error: childError } = await mdb.from("ad_entities").update({ brand }).eq("platform", platform).eq("campaign_id", id).neq("kind", "campaign");
@@ -134,5 +138,7 @@ export async function setCampaignBrand(platform: AdPlatform, id: string, brand: 
 export async function runMarketingSyncNow(): Promise<MarketingSyncSummary> {
   const session = await requireAdmin();
   await logAudit({ action: "marketing.sync_triggered", actor: { id: session.sub, email: session.email, role: session.role } });
-  return runMarketingSync({ dryRun: false, budgetMs: 50_000 });
+  // The page's maxDuration is 300 (app/(dashboard)/marketing/page.tsx + vercel.json): 240 s leaves room for the
+  // step in flight when the budget runs out, and a skipped step is reported ok:false ("skipped: budget").
+  return runMarketingSync({ dryRun: false, budgetMs: 240_000 });
 }

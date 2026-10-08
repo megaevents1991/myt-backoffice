@@ -3,10 +3,11 @@
  * `marketing_alerts` and mails once per new alert. Thresholds come from marketing_settings.
  * scripts/marketing-alerts-selftest.ts covers the rules.
  */
-import { mdb } from "@/lib/services/marketing-db";
+import { mdb, readAll } from "@/lib/services/marketing-db";
 import { appOrigin, sendMail } from "@/lib/email";
+import { escapeHtml } from "@/lib/html-escape";
 import { getPurchasesByCampaign } from "@/lib/services/marketing-purchases";
-import { viralPosts, type ViralMedia } from "@/lib/marketing/engagement";
+import { IG_MEDIA_READ, viralPosts, type ViralMedia } from "@/lib/marketing/engagement";
 import { DEFAULT_MARKETING_SETTINGS, MARKETING_SETTING_KEYS, type AdBrand, type MarketingSettings } from "@/types/marketing.types";
 
 export interface AlertCandidate { kind: "budget_bleed" | "viral_post"; key: string; title: string; payload: Record<string, unknown> }
@@ -34,14 +35,22 @@ export function budgetBleedAlerts(input: { spend: { campaign_id: string; day: st
   return out;
 }
 
+/** Only a post published within this many days may raise a viral alert - an old post that crosses the bar late (or a
+ *  first sync over a year of posts) is no news. The grid's badge is NOT capped: it is a display. */
+export const VIRAL_MAX_AGE_DAYS = 7;
+
 /** The candidates of the viral rule - the rule itself (`viralPosts`) lives in lib/marketing/engagement.ts, shared with the grid's badge. */
 export function viralPostAlerts(input: { media: ViralMedia[]; settings: Pick<MarketingSettings, "viral_pct">; now: Date }): AlertCandidate[] {
-  return viralPosts(input.media, input.settings.viral_pct, input.now).map(({ media: m, engagement, mean }) => ({
-    kind: "viral_post" as const,
-    key: m.id,
-    title: `פוסט ויראלי: ${engagement} מעורבות מול ממוצע ${Math.round(mean)}`,
-    payload: { media_id: m.id, engagement, mean: Math.round(mean) },
-  }));
+  const oldest = input.now.getTime() - VIRAL_MAX_AGE_DAYS * 864e5;
+  return viralPosts(input.media, input.settings.viral_pct, input.now)
+    .filter(({ media: m }) => new Date(m.posted_at as string).getTime() >= oldest)
+    .map(({ media: m, engagement, mean }) => ({
+      kind: "viral_post" as const,
+      key: m.id,
+      // The mail prints the kind ("פוסט ויראלי") in front of the title, so the title is the numbers alone.
+      title: `${engagement} מעורבות מול ממוצע ${Math.round(mean)}`,
+      payload: { media_id: m.id, engagement, mean: Math.round(mean) },
+    }));
 }
 
 /** A failed read must never look like "no rows": an empty spend list reads as "no candidates" and would resolve every open alert. */
@@ -75,30 +84,12 @@ async function settings(): Promise<MarketingSettings> {
   return out;
 }
 
-const PAGE = 1000;
-
-/** A plain select answers 1,000 rows at most and says nothing: page by a stable order until a short page; throw past `max` or on any error. */
-export async function readAll<T>(
-  label: string,
-  makeQuery: () => { range: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }> },
-  max = 50_000,
-): Promise<T[]> {
-  const out: T[] = [];
-  for (let offset = 0; offset < max; offset += PAGE) {
-    const { data, error } = await makeQuery().range(offset, offset + PAGE - 1);
-    if (error) throw new Error(`alerts read ${label}: ${error.message}`);
-    const page = (data ?? []) as T[];
-    out.push(...page);
-    if (page.length < PAGE) return out;
-  }
-  throw new Error(`alerts read ${label}: more than ${max} rows`);
-}
-
-const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+/** The kind's name - the same words as the "התראות" tab's badges (alerts-tab.tsx) and the guide. */
+export const ALERT_KIND_LABEL: Record<AlertCandidate["kind"], string> = { budget_bleed: "דימום תקציב", viral_post: "פוסט ויראלי" };
 
 /** Pure: the mail body. Every interpolated value is escaped - a campaign title starts with `ad_entities.name`, whatever someone typed in Ads Manager. */
 export function alertMailHtml(items: AlertCandidate[], origin: string): string {
-  return [`<div dir="rtl">`, ...items.map((c) => `<p><b>${c.kind === "budget_bleed" ? "שריפת תקציב" : "ויראליות"}</b> - ${esc(c.title)}</p>`), `<p><a href="${esc(origin)}/marketing?tab=alerts">לכל ההתראות</a></p></div>`].join("");
+  return [`<div dir="rtl">`, ...items.map((c) => `<p><b>${ALERT_KIND_LABEL[c.kind]}</b> - ${escapeHtml(c.title)}</p>`), `<p><a href="${escapeHtml(origin)}/marketing?tab=alerts">לכל ההתראות</a></p></div>`].join("");
 }
 
 const WRITE_CHUNK = 200; // a `.in()` filter travels in the URL
@@ -125,11 +116,13 @@ export async function runMarketingAlerts(opts: { dryRun: boolean }): Promise<{ n
   const s = await settings();
   const windowSince = windowStart(now, s.budget_bleed_days);
   const [spendRows, entRows, mediaRes, openRes, purchasesByCampaign] = await Promise.all([
-    readAll<{ campaign_id: string; platform: string; day: string; spend: number }>("ad_spend_daily", () =>
-      mdb.from("ad_spend_daily").select("campaign_id, platform, day, spend").gte("day", windowSince).order("day").order("platform").order("campaign_id").order("adset_key")),
-    readAll<{ platform: string; id: string; name: string; brand: AdBrand }>("ad_entities", () =>
-      mdb.from("ad_entities").select("platform, id, name, brand").eq("kind", "campaign").order("platform").order("id")),
-    mdb.from("ig_media").select("id, posted_at, like_count, comments_count, saved, shares, media_product_type").order("posted_at", { ascending: false }).limit(120),
+    // adset_key is selected only because it is part of the order (= the dedupe key): without it two adsets of one campaign-day would collapse.
+    readAll<{ campaign_id: string; platform: string; day: string; adset_key: string; spend: number }>("ad_spend_daily", "campaign_id, platform, day, adset_key, spend", ["day", "platform", "campaign_id", "adset_key"], 50_000, "alerts",
+      (q) => q.gte("day", windowSince)),
+    readAll<{ platform: string; id: string; name: string; brand: AdBrand }>("ad_entities", "platform, id, name, brand", ["platform", "id"], 50_000, "alerts",
+      (q) => q.eq("kind", "campaign")),
+    // The same window the grid reads (IG_MEDIA_READ), so the baseline behind the alert is the badge's.
+    mdb.from("ig_media").select("id, posted_at, like_count, comments_count, saved, shares, media_product_type").order("posted_at", { ascending: false }).limit(IG_MEDIA_READ),
     mdb.from("marketing_alerts").select("kind, key, last_mailed_at").is("resolved_at", null),
     getPurchasesByCampaign(windowSince, dayStr(now)),
   ]);

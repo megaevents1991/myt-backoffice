@@ -1,3 +1,7 @@
+/** How many of the newest `ig_media` rows the grid (getInstagramFeed) and the viral alert both read - one window, so
+ *  the badge and the alert judge a post against the same baseline. */
+export const IG_MEDIA_READ = 200;
+
 /** Engagement of one Instagram media = likes + comments + saves + shares. Pure; used by the viral rule and the grid's badge. */
 export const engagementOf = (m: { like_count: number; comments_count: number; saved: number; shares: number }): number =>
   m.like_count + m.comments_count + m.saved + m.shares;
