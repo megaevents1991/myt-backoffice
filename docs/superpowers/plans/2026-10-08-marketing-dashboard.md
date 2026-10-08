@@ -2363,3 +2363,36 @@ for s in reservation-pnl ad-brand reservation-cogs marketing-attribution marketi
 - **Spec coverage:** 2.1 → T2; 2.2 → T1 + T12; 2.3 → T6 + T13; 2.4 → T13; 3 → T1 (brand rule T3, retention T7); 4 → T3-T7; 5 → T8-T9; 6 → T10; 7 → T11; 8 → nothing to build; 9 → T15-T16, docs T14. The spec's "partner commission line" on the exec tab is NOT in this plan (it needs the partner terms the commission engine takes; the cards state revenue / COGS / net without it) - noted here so the spec is amended, not silently missed.
 - **Placeholders:** none. The "confirm the real column name" notes (T6 xs2 columns, T9 session fields, T13 helper names) name the exact file to open and what to change.
 - **Type consistency:** `AdSpendRow.adset_key` / `level` (T1) used by T3 / T4 / T7 / T9; `PaidTouch` (T8) consumed by T9 / T10; `MarketingSettings` keys (T1) used by T9 / T10 / T11; `runMarketingAlerts` stub (T7) replaced in T10 with the same signature; `fetchGoogleClicks` returns `AdClickRow` (T1) upserted on `gclid` (T7); `attributedReservations` lives in `marketing-purchases.ts` (T9) and is imported by the actions (T9) and the alerts (T10); `engagementOf` / `baselineBefore` (T10) used by the Instagram tab (T11).
+
+
+---
+
+## Follow-ups left after the build (2026-10-08, deferred minors from the task reviews - none blocks merge)
+
+- T1: `AdClickRow` / `IgMediaRow` lack `synced_at?` (types/marketing.types.ts:43-67)
+- T1: `DEFAULT_MARKETING_SETTINGS` is a mutable shared object - freeze it or clone `alert_emails` in the merge helper
+- T1: `ad_entities` PK (platform,id) carries no kind - a Google id collision across kinds would overwrite; sync could guard on kind mismatch
+- T2: `truncated` of the Paid fetchPaged is dropped silently (dashboard-actions.ts:116-124) - add the one-line console.error the other call sites have
+- T2: the Paid query runs before the other five instead of inside their Promise.all (dashboard-actions.ts:116/133)
+- T2: `as never` casts in dashboard-actions.ts:177 and reservation-pnl.ts (plan-mandated); selftest gaps ({events:[]} shape, cabin bag, single segment, agent-card without rate); `Cogs.estimated` comment names "inverted markup" which lives in Task 6, not here
+- T3: the `effective_status` list (meta.ts:98-103) lacks the four non-deleted AD statuses PENDING_REVIEW / DISAPPROVED / PREAPPROVED / PENDING_BILLING_INFO - add them and fix the "every status" comment (final fix wave)
+- T3: entities (1,804 ads) re-fetched every 6h run ≈ 1.5 min - could run every 4th tick
+- T4: ad-brand selftest's first pickLandingDomain assert builds a literal via `.replace` (cosmetic); no assert for mega-events listed first among nulls
+- T6: XS2 breaker trips on any single throw (a 500 on one ticket blocks the rest that night); a 404 / malformed 200 falls silently to the inverted markup with no error row; `filled` counts an UPDATE the null-guard blocked; fallback FX rates used silently; no time budget on the 200-row loop; `readEvent` selects the whole tickets_and_rates; `""` supplier_event_id skips the eid fa
+- T7: budget-skipped steps leave no StepResult; `synced_at` never re-stamped on update; `fetchIgAccount` throw after media rows are written = partial write + ok:false; failure mail interpolates raw HTML; FX ILS rate is ceil'd (spend_usd up to ~3% high); cogs step unmeasured after the migration (time `only=cogs&dry_run=1` in Task 16); `dedupeByKey` has no selftest.
+- T8: `position` not defended at runtime (null → NaN sort, protection silently off) - the caller in marketing-purchases must pass numeric positions; a reservation can be credited to a partner AND a paid campaign (by design - commission side is separate); organic FB clicks carry fbclid and read as unresolved paid Meta (spec'd)
+- T9: "back to rule" leaves the old manual brand on screen until the next sync; `.lte(... T23:59:59Z)` misses the last fractional second; settings have no upper bounds; `getInstagramFeed` uses select("*"); `getPurchasesByCampaign` keys on campaignId without platform.
+- T11: production masks thrown server-action errors (memory "Server Action error masking") - the inline messages will read generic on prod; return `{ ok:false, error }` from the read actions if it matters after the migration.
+- T12: `cleanActualCost` / `cleanCostNote` are private in a "use server" file (no selftest); an orphan note without a cost is hidden on the detail page; the first fetchBefore logs an error on every pre-migration save; the read-back uses `supabase as any`. Browser save on the LOCAL dev DB hit the missing-column fallback and toasted the notice; the columns-exist path is untested 
+- T12: `updateReservation` still passes the whole input to `.update()` (pre-existing mass-assignment, the CLAUDE.md security TODO); this task mapped only its two keys.
+- T14, main: flights/search `add_to_cart` still sends a hardcoded value 1500 - tell Dor.
+- T13: client `LiveTicketsOffer` type claims `costUsd` it never receives (add a Public* Omit type; route should allow-list fields); TixStock event id taken from the browser (prefer the event row's `eid`); extra `events` read outside `getEvents`' cache; unbounded page fan-out (pre-existing).
+- T13, main: the "both missing" ladder test asserts only the last attempt's keys; `unitPrice` doc/test say "cents" (it is dollars to the cent); `withDeadline` doc says "or null" though a rejection propagates (safe - snapshotTicketCost never rejects); the 42703-only settlement retry can never fire through PostgREST (pre-existing; the columns exist in prod); per-unit price also c
+- T9: day boundaries are UTC - an Israeli late-night booking lands on the next day in the daily series (Israel calendar would match the rest of the backoffice).
+- T10: a partial stamp across kinds/chunks leaves earlier alerts stamped-but-unsent (needs a DB failure between two updates) - wrap the stamp in try/unstamp; the stamp is not a compare-and-swap (an overlapping manual sync could double-mail); the bleed title hardcodes ₪ (true only for ILS accounts)
+- T10: an open alert's payload is never refreshed while live (tab shows first-fire spend); a re-fire resets first_seen_at; planAlerts dedupes toMail not fresh.
+- T4: date / customerId strings interpolated unvalidated; cold-start token stampede (4 concurrent JWT exchanges); no retry on 429/5xx, 401 does not clear the cache; `requestId` not surfaced; 300-char one-liners
+- T5: `toRow` casts a free string into the product-type union (Graph also has "AD"); `graphGet` duplicates meta.ts's token/fetch logic; a missing token sends an empty Bearer
+- T3: `parseMetaInsight` / `creativeLandingDomain` have no selftest; `creativeLandingDomain` uses `??` so an empty-string link_url stops the chain; name regex `myt` unanchored; subdomains of mega-events.co.il read as other; no retry on Meta rate-limit codes; `fxRate` unvalidated
+
+- Fix-wave residuals: the all-in net under the "other" brand view leaves unresolved bookings out; a click upsert that failed part-way counts a day as present; FX-failed meta/google steps report rows 0 (entities were written); `clickDaysPresent` pages every click row of a 90-day window (a distinct-days read would be cheaper); the Instagram media loop's budget break is a silent partial; alerts-tab keeps its own copy of the kind labels.
