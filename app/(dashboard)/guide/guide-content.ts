@@ -242,7 +242,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Scroll to \"Statistics\". Every number there counts only Paid bookings, and deleted ones are left out.", "גוללים ל-\"Statistics\". כל מספר שם סופר רק הזמנות Paid, והזמנות מחוקות לא נספרות."),
           t("\"Reservations Last 7 Days\" / \"Last 30 Days\" / \"This Month\" / \"Last Month\" count bookings. The \"PAX:\" line under each one counts travellers.", "\"Reservations Last 7 Days\" / \"Last 30 Days\" / \"This Month\" / \"Last Month\" סופרים הזמנות. שורת \"PAX:\" מתחת לכל אחד סופרת נוסעים."),
-          t("\"Est. Margin\" is $175 (the site markup) per traveller on every Paid booking - an estimate of our margin, not the sum of booking prices.", "\"Est. Margin\" הוא 175$ (תוספת האתר) לכל נוסע בכל הזמנת Paid - הערכה של הרווח שלנו, לא סכום מחירי ההזמנות."),
+          t("\"Revenue\" is what all Paid bookings paid, in dollars - the customer price with the coupon and any agent-card discount already taken off. It is revenue, not profit: supplier costs and ad spend are in the [Marketing Dashboard](/marketing) (admins).", "\"Revenue\" הוא מה שכל הזמנות ה-Paid שילמו, בדולרים - מחיר הלקוח אחרי שהקופון והנחת כרטיס הסוכן כבר ירדו. זו הכנסה ולא רווח: עלות ספקים והוצאה על מודעות נמצאות ב[דשבורד שיווק](/marketing) (מנהלים)."),
           t("\"Top Events\" and \"Top Sources\" (30d, This Month, Last Month) show what sells and which partner codes bring buyers. \"Organic\" = no partner code.", "\"Top Events\" ו-\"Top Sources\" (30d, This Month, Last Month) מראים מה נמכר ואילו קודי שותף מביאים קונים. \"Organic\" = בלי קוד שותף."),
           t("In \"Reservations Over Time\", click \"Last 7 days\", \"Last 30 days\", \"Last 90 days\", \"YTD\" or \"Last year\" to change the range. This chart also counts only Paid bookings.", "ב-\"Reservations Over Time\" לוחצים \"Last 7 days\", \"Last 30 days\", \"Last 90 days\", \"YTD\" או \"Last year\" כדי לשנות את הטווח. גם הגרף הזה סופר רק הזמנות Paid."),
         ],
@@ -1184,6 +1184,72 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     links: [
       { label: t("The Factory", "המפעל"), href: "/factory", adminOnly: true },
       { label: t("TixStock (best batch source)", "TixStock (מקור הבאץ' הטוב ביותר)"), href: "/tixstock-events" },
+    ],
+  },
+  {
+    id: "marketing",
+    nav: "/marketing",
+    productType: "events",
+    adminOnly: true,
+    title: t("Marketing dashboard", "דשבורד שיווק"),
+    intro: t(
+      "What the ads cost against what the paid orders brought in. It reads Meta and Google Ads spend, the Instagram posts and our Paid reservations, in dollars, and shows the profit after supplier costs. The screen only reads - it never changes a campaign, a budget or an ad account.",
+      "מה עלו המודעות מול מה שהזמנות ששולמו הכניסו. המסך קורא הוצאה ממטא ומגוגל, פוסטים מאינסטגרם והזמנות Paid שלנו, בדולרים, ומציג רווח אחרי עלות הספקים. המסך רק קורא - הוא לא משנה קמפיין, תקציב או חשבון פרסום.",
+    ),
+    howTo: [
+      {
+        title: t("Read the executive tab", "לקרוא את מסך ההנהלה"),
+        steps: [
+          t("Open the [Marketing Dashboard](/marketing) - it opens on \"הנהלה\". Pick the period (\"7 ימים\", \"30 ימים\", \"90 ימים\" or \"החודש\") and the brand (\"Mega Events\" by default; \"אחר\" = the other brands; \"הכל\" = every campaign). Both stay in the address, so a copied link shows the same view.", "פותחים את [דשבורד שיווק](/marketing) - הוא נפתח על \"הנהלה\". בוחרים תקופה (\"7 ימים\", \"30 ימים\", \"90 ימים\" או \"החודש\") ומותג (\"Mega Events\" כברירת מחדל; \"אחר\" = שאר המותגים; \"הכל\" = כל הקמפיינים). שניהם נשארים בכתובת, אז קישור שהועתק מציג את אותו מסך."),
+          t("\"הוצאה\" is the ad spend of the period. \"הכנסה\" is what the Paid bookings credited to those ads paid (coupon and agent-card discount already off); under it, \"לא מיוחס\" is the revenue of bookings no paid ad is credited with - it is shown beside the cards, not inside them. \"עלות ספקים\" is what flights, hotels and tickets cost us (\"משוער ב-N הזמנות\" = part of it is an estimate). \"רווח נקי\" = revenue - supplier cost - processing fee - spend.", "\"הוצאה\" היא ההוצאה על מודעות בתקופה. \"הכנסה\" היא מה שהזמנות ה-Paid שנזקפות למודעות האלה שילמו (הקופון והנחת כרטיס הסוכן כבר ירדו); מתחתיה \"לא מיוחס\" הוא ההכנסה מהזמנות שאף מודעה משולמת לא נזקפת להן - היא מוצגת ליד הכרטיסים ולא בתוכם. \"עלות ספקים\" היא מה שטיסות, מלונות וכרטיסים עולים לנו (\"משוער ב-N הזמנות\" = חלק ממנה הערכה). \"רווח נקי\" = הכנסה - עלות ספקים - עמלת סליקה - הוצאה."),
+          t("Below them: \"CAC\" (ad spend per booking), \"ROAS\" (revenue per dollar of spend) and \"POAS\" (profit per dollar of spend). POAS is coloured: red below 0 (the ads lose money), amber up to 1, green above 1. In \"החודש\" the net-profit card is held against the monthly target - green on target, red below it.", "מתחתיהם: \"CAC\" (הוצאה על מודעות להזמנה), \"ROAS\" (הכנסה לכל דולר הוצאה) ו-\"POAS\" (רווח לכל דולר הוצאה). POAS צבוע: אדום מתחת ל-0 (המודעות מפסידות), כתום עד 1, ירוק מעל 1. ב\"החודש\" כרטיס הרווח הנקי נמדד מול היעד החודשי - ירוק ביעד, אדום מתחתיו."),
+          t("The chart draws spend against revenue day by day. To see the campaign behind a number open \"מדיה\": one row per campaign, biggest spend first - click a row for its ad sets. The \"לא זוהה\" card lists, per platform, bookings that came from an ad but could not be matched to a campaign.", "הגרף מצייר הוצאה מול הכנסה יום אחרי יום. כדי לראות את הקמפיין שמאחורי מספר פותחים את \"מדיה\": שורה לכל קמפיין, ההוצאה הגדולה ראשונה - לחיצה על שורה פותחת את סטי המודעות שלה. הכרטיס \"לא זוהה\" מציג, לפי פלטפורמה, הזמנות שהגיעו ממודעה אבל לא הצלחנו לשייך לקמפיין."),
+        ],
+      },
+      {
+        title: t("Tag a campaign's brand / change a threshold", "לתייג קמפיין למותג / לשנות סף"),
+        steps: [
+          t("Open the \"הגדרות\" tab ([Marketing → Settings](/marketing?tab=settings)). Under \"שיוך קמפיינים למותג\" search the campaign by name.", "פותחים את לשונית \"הגדרות\" ([שיווק ← הגדרות](/marketing?tab=settings)). תחת \"שיוך קמפיינים למותג\" מחפשים את הקמפיין לפי שם."),
+          t("In its row, under \"שיוך\", pick \"Mega Events\" or \"אחר\". A pick by hand beats the system's rule (a name that says MYT / Mega Events, or ads that land on mega-events.co.il) until you choose \"לפי חוק\" again; its ad sets follow it at once.", "בשורה שלו, תחת \"שיוך\", בוחרים \"Mega Events\" או \"אחר\". בחירה ידנית גוברת על חוק המערכת (שם שמכיל MYT / Mega Events, או מודעות שנוחתות ב-mega-events.co.il) עד שבוחרים שוב \"לפי חוק\"; סטי המודעות שלו עוברים איתו מיד."),
+          t("To change a limit, edit its box on the same tab - \"עמלת סליקה (%)\", \"יעד רווח חודשי ($)\", \"דימום תקציב - סכום (₪)\", \"דימום תקציב - ימים\", \"ויראלי - % מהממוצע\" or \"מיילים להתראות\" (comma-separated; empty = the system's default address) - and click \"שמירה\". Fee and target show on the executive tab at once; the alert limits count from the next sync.", "כדי לשנות סף עורכים את התיבה שלו באותה לשונית - \"עמלת סליקה (%)\", \"יעד רווח חודשי ($)\", \"דימום תקציב - סכום (₪)\", \"דימום תקציב - ימים\", \"ויראלי - % מהממוצע\" או \"מיילים להתראות\" (מופרדים בפסיק; ריק = כתובת ברירת המחדל של המערכת) - ולוחצים \"שמירה\". עמלה ויעד מופיעים במסך ההנהלה מיד; ספי ההתראות נספרים מהסנכרון הבא."),
+        ],
+      },
+    ],
+    points: [
+      t(
+        "ROAS = revenue ÷ ad spend (2.00× = every dollar of ads brought two dollars of bookings). POAS = profit ÷ ad spend, where profit is revenue minus supplier cost and processing fee - the number that says whether a campaign earns money, because a campaign can show a fine ROAS and still lose. CAC = ad spend ÷ the bookings credited to it. A dash means there is nothing to divide by (no spend, or no booking).",
+        "ROAS = הכנסה ÷ הוצאה על מודעות (2.00× = כל דולר מודעות הביא שני דולרים של הזמנות). POAS = רווח ÷ הוצאה, כשהרווח הוא הכנסה פחות עלות ספקים ועמלת סליקה - המספר שאומר אם קמפיין מרוויח, כי קמפיין יכול להציג ROAS יפה ועדיין להפסיד. CAC = הוצאה ÷ ההזמנות שנזקפות לו. מקף אומר שאין במה לחלק (אין הוצאה או אין הזמנה).",
+      ),
+      t(
+        "A Paid booking is credited to the last paid ad click before it - the newest Meta or Google visit that carried an ad id or a click id (campaign names are never used to match). \"לא זוהה\" = the booking did come from a Meta or Google ad, but that ad or click is not in the synced data (a very new ad, an old click, a deleted ad); its revenue is still counted, per platform. \"לא מיוחס\" = no paid ad touch at all: organic, direct or a partner link. Revenue never drops out - it lands on a campaign, on \"לא זוהה\" or on \"לא מיוחס\".",
+        "הזמנת Paid נזקפת לקליק המשולם האחרון על מודעה שקדם לה - הביקור החדש ביותר ממטא או מגוגל שנשא מזהה מודעה או מזהה קליק (שמות קמפיינים לא משמשים להתאמה). \"לא זוהה\" = ההזמנה אכן הגיעה ממודעה במטא או בגוגל, אבל המודעה או הקליק לא נמצאים בנתונים שסונכרנו (מודעה חדשה מאוד, קליק ישן, מודעה שנמחקה); ההכנסה שלה נספרת, לפי פלטפורמה. \"לא מיוחס\" = אין בכלל מגע משולם: אורגני, ישיר או קישור שותף. הכנסה אף פעם לא נעלמת - היא נוחתת על קמפיין, על \"לא זוהה\" או על \"לא מיוחס\".",
+      ),
+      t(
+        "\"משוער\" marks a supplier cost that is a stand-in, not a real number. Flights and hotels are exact (the Amadeus total, the hotel price, or the cost of our own inventory). A ticket's real cost is recorded by the site when the order is placed (LiveTickets, TixStock); for other suppliers the sync fills an estimate within hours, and until then the ticket's sale price stands in. To make an order exact open [Reservations](/reservations) → the booking → \"Edit Reservation\" → \"Actual supplier cost (USD)\" (and \"Cost note\") - the total you type replaces the computed cost of the whole order and the \"משוער\" mark goes away.",
+        "\"משוער\" מסמן עלות ספק שהיא הערכה ולא מספר אמיתי. טיסות ומלונות מדויקים (סכום Amadeus, מחיר המלון או עלות המלאי שלנו). את העלות האמיתית של הכרטיס האתר רושם ברגע ההזמנה (LiveTickets, TixStock); אצל שאר הספקים הסנכרון ממלא הערכה בתוך שעות, ועד אז מחיר המכירה של הכרטיס מחליף אותה. כדי שהזמנה תהיה מדויקת פותחים [הזמנות](/reservations) ← ההזמנה ← \"Edit Reservation\" ← \"Actual supplier cost (USD)\" (ו-\"Cost note\") - הסכום שמקלידים מחליף את העלות המחושבת של כל ההזמנה וסימן \"משוער\" נעלם.",
+      ),
+      t(
+        "The data syncs by itself every six hours (Meta and Google spend of the last 7 days, Instagram posts, estimated ticket costs, alerts), so a number can be hours old. \"סנכרן עכשיו\" on the \"הגדרות\" tab runs it immediately (about a minute) and lists every step with ✓ or ✗. A scheduled run that fails also mails the admin address. Spend is kept in shekels as the platform reports it and shown in dollars at the rate of the sync.",
+        "הנתונים מתעדכנים לבד כל שש שעות (הוצאה של 7 הימים האחרונים ממטא וגוגל, פוסטים מאינסטגרם, הערכת עלויות כרטיסים, התראות), ולכן מספר יכול להיות בן כמה שעות. \"סנכרן עכשיו\" בלשונית \"הגדרות\" מריץ אותו מיד (עד כדקה) ומציג כל שלב עם ✓ או ✗. ריצה מתוזמנת שנכשלה שולחת גם מייל לכתובת המנהל. ההוצאה נשמרת בשקלים כפי שהפלטפורמה מדווחת, ומוצגת בדולרים לפי השער של הסנכרון.",
+      ),
+      t(
+        "Two alerts are mailed - once each, and again only if the condition cleared and came back - and listed in \"התראות\": \"שריפת תקציב\", a Mega Events campaign that spent more than the limit (default ₪1,500) over the last few days (default 3) with no booking credited to it; and \"ויראליות\", an Instagram post whose likes, comments, saves and shares beat the limit (default 200%) of the average of the 30 posts before it. The same posts wear a \"ויראלי\" badge in \"אינסטגרם\".",
+        "שתי התראות נשלחות במייל - פעם אחת כל אחת, ושוב רק אם התנאי חלף וחזר - ומופיעות ב\"התראות\": \"שריפת תקציב\", קמפיין של Mega Events שהוציא יותר מהסף (ברירת מחדל ₪1,500) בימים האחרונים (ברירת מחדל 3) בלי הזמנה שנזקפת לו; ו\"ויראליות\", פוסט באינסטגרם שהלייקים, התגובות, השמירות והשיתופים שלו עוברים את הסף (ברירת מחדל 200%) מהממוצע של 30 הפוסטים שלפניו. אותם פוסטים נושאים תג \"ויראלי\" ב\"אינסטגרם\".",
+      ),
+    ],
+    rules: [
+      t(
+        "Numbers come from paid orders, never from pixels - revenue is what our Paid reservations paid and cost is what the suppliers charge. Meta's and Google's own purchase counts appear only for comparison (the \"רכישות (פלטפורמה)\" column) and can be far off; never decide on a platform's number alone.",
+        "המספרים מהזמנות ששולמו, לא מפיקסלים - הכנסה היא מה שהזמנות ה-Paid שלנו שילמו ועלות היא מה שהספקים גובים. מספרי הרכישות של מטא וגוגל מופיעים רק להשוואה (העמודה \"רכישות (פלטפורמה)\") ויכולים לסטות בהרבה; לא מחליטים לפי המספר של פלטפורמה לבד.",
+      ),
+      t(
+        "The dashboard never writes to an ad account - it cannot pause a campaign, change a budget or edit an ad. To act on a number, do it in Meta Ads Manager or Google Ads.",
+        "הדשבורד לא כותב לחשבונות הפרסום - הוא לא יכול להשהות קמפיין, לשנות תקציב או לערוך מודעה. כדי לפעול לפי מספר עושים זאת ב-Meta Ads Manager או ב-Google Ads.",
+      ),
+    ],
+    links: [
+      { label: t("Marketing dashboard", "דשבורד שיווק"), href: "/marketing" },
+      { label: t("Reservations", "הזמנות"), href: "/reservations" },
     ],
   },
   {
