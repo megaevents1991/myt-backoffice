@@ -107,6 +107,12 @@ export type Reservation = {
   // The day staff will get back to the customer ("YYYY-MM-DD"), read only while
   // status is "Follow-up" - lib/reservations/follow-up.ts. Main never writes it.
   follow_up_date?: string | null;
+  // Ops-entered REAL supplier cost of the whole order, USD (migration 20261008120000). When set
+  // it wins whole over the computed cost on /marketing (lib/services/reservation-pnl.ts). The
+  // edit form holds the number as typed text until `updateReservation` cleans it. Null/absent =
+  // the computed cost applies. Main never writes either column.
+  actual_cost_usd?: number | string | null;
+  actual_cost_note?: string | null;
 };
 
 /**

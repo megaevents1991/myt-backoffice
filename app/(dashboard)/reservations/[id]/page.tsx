@@ -340,6 +340,26 @@ export default function ReservationDetailsPage({
                 <p className="text-lg">{reservation.accounting_number}</p>
               </div>
 
+              {/* Ops-entered real supplier cost of the whole order - wins over the computed
+                  cost on /marketing. Shown only once someone has set it. */}
+              {reservation.actual_cost_usd != null &&
+                reservation.actual_cost_usd !== "" &&
+                Number.isFinite(Number(reservation.actual_cost_usd)) && (
+                  <div>
+                    <p className="text-sm font-medium">
+                      Actual supplier cost (USD)
+                    </p>
+                    <p className="text-lg">
+                      ${Number(reservation.actual_cost_usd).toFixed(2)}
+                    </p>
+                    {reservation.actual_cost_note && (
+                      <p className="text-sm text-muted-foreground">
+                        {reservation.actual_cost_note}
+                      </p>
+                    )}
+                  </div>
+                )}
+
               <div>
                 <p className="text-sm font-medium">Payment info</p>
                 <p className="text-lg">

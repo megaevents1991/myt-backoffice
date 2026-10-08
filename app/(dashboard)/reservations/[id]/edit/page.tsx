@@ -188,17 +188,27 @@ export default function EditReservationPage({
     setSaving(true);
     setShowConfirmDialog(false);
     try {
+      let notice: string | undefined;
       if (reservationToSave.status === "Cancelled") {
         const { status, ...otherChanges } = reservationToSave;
-        await updateReservation(reservationToSave.id, otherChanges);
+        ({ notice } = await updateReservation(reservationToSave.id, otherChanges));
         await cancelReservation(reservationToSave.id);
       } else {
-        await updateReservation(reservationToSave.id, reservationToSave);
+        ({ notice } = await updateReservation(reservationToSave.id, reservationToSave));
       }
       toast({
         title: "Success",
         description: "Reservation has been updated successfully.",
       });
+      // The actual cost needs a migration that may not be applied yet: the save went
+      // through without it, and staff are told so instead of assuming it was kept.
+      if (notice) {
+        toast({
+          variant: "destructive",
+          title: "Actual cost needs the pending migration",
+          description: notice,
+        });
+      }
       router.push("/reservations");
     } catch (error) {
       console.error("Error updating reservation:", error);
@@ -598,6 +608,35 @@ export default function EditReservationPage({
                 onChange={handleChange}
                 placeholder="Enter document number"
                 type="number"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="actual_cost_usd">Actual supplier cost (USD)</Label>
+              <Input
+                id="actual_cost_usd"
+                name="actual_cost_usd"
+                type="number"
+                step="0.01"
+                min="0"
+                value={reservation.actual_cost_usd ?? ""}
+                onChange={handleChange}
+                placeholder="What the suppliers really charged for the whole order"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. When set, /marketing uses this instead of the computed
+                cost. Leave empty to keep the computed one.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="actual_cost_note">Cost note</Label>
+              <Input
+                id="actual_cost_note"
+                name="actual_cost_note"
+                value={reservation.actual_cost_note ?? ""}
+                onChange={handleChange}
+                placeholder="Where the number comes from (invoice, supplier, ...)"
               />
             </div>
 

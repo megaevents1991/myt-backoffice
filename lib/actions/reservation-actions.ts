@@ -299,13 +299,63 @@ async function followUpDatesForBulk(
   return byDate;
 }
 
+/**
+ * The real supplier cost ops typed for a whole order: a finite number >= 0, to the cent.
+ * Blank, NaN, negative or anything that is not a number = null ("no actual cost - the computed
+ * one applies"). The edit form holds the box as text, so a string is parsed here.
+ */
+function cleanActualCost(value: unknown): number | null {
+  if (typeof value === "string" && value.trim() === "") return null;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** The cost note: trimmed text, or null when empty. */
+function cleanCostNote(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text === "" ? null : text;
+}
+
+/** True only for a "column does not exist" failure that NAMES one of the two cost columns
+ *  (migration 20261008120000 may not be applied yet) - any other failure still throws. */
+function isMissingCostColumn(error: unknown): boolean {
+  if (!isMissingColumn(error)) return false;
+  const { message, details, hint } = error as {
+    message?: unknown;
+    details?: unknown;
+    hint?: unknown;
+  };
+  return /actual_cost/.test(`${message ?? ""} ${details ?? ""} ${hint ?? ""}`);
+}
+
+const COST_PENDING_NOTICE =
+  "Actual cost was not saved - it needs the pending database update. Everything else was saved.";
+
 export async function updateReservation(
   id: number,
   input: Partial<Reservation>,
-) {
+): Promise<Reservation & { notice?: string }> {
   await requireStaff();
-  const reservation = await withFollowUpDate(id, input);
-  const auditBefore = await fetchBefore("reservations", "id", id, reservation);
+  // The two cost columns are mapped by hand: cleaned here, never trusted as the form sent them.
+  // A key the caller did not send is left out entirely, so a save that never touched the cost
+  // (the list's inline edits, or a page loaded before the migration) cannot write it.
+  const { actual_cost_usd, actual_cost_note, ...rest } = input;
+  const cost: { actual_cost_usd?: number | null; actual_cost_note?: string | null } = {};
+  if (actual_cost_usd !== undefined) cost.actual_cost_usd = cleanActualCost(actual_cost_usd);
+  if (actual_cost_note !== undefined) cost.actual_cost_note = cleanCostNote(actual_cost_note);
+  const hasCost = Object.keys(cost).length > 0;
+
+  const reservation = await withFollowUpDate(id, rest);
+  // The before-snapshot asks for every column being written; when the cost columns are not
+  // migrated that read fails whole, so ask again without them - the diff of the other fields
+  // must survive the window between the deploy and its migration.
+  let auditBefore = await fetchBefore("reservations", "id", id, { ...reservation, ...cost });
+  if (!auditBefore && hasCost) {
+    auditBefore = await fetchBefore("reservations", "id", id, reservation);
+  }
   // Detect transition into a released status so we can return inventory
   let toRelease: Reservation | null = null;
   if (reservation.status && RELEASED_STATUSES.has(reservation.status)) {
@@ -318,22 +368,38 @@ export async function updateReservation(
     if (prev && !RELEASED_STATUSES.has(prev.status)) toRelease = prev;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("reservations")
-    .update(reservation)
-    .eq("id", id)
-    .select();
+  const write = (patch: Record<string, unknown>) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from("reservations").update(patch).eq("id", id).select();
+
+  let written: Record<string, unknown> = { ...reservation, ...cost };
+  let { data, error } = await write(written);
+
+  // Not migrated yet: save everything else and say so - the cost must never fail the save.
+  let notice: string | undefined;
+  if (error && hasCost && isMissingCostColumn(error)) {
+    console.warn("updateReservation: actual cost columns missing, saved without them");
+    notice = COST_PENDING_NOTICE;
+    written = reservation;
+    if (Object.keys(written).length > 0) {
+      ({ data, error } = await write(written));
+    } else {
+      // Nothing but the cost was sent: there is no update left to make, just read the row back.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ({ data, error } = await (supabase as any).from("reservations").select("*").eq("id", id));
+    }
+  }
 
   if (error) throw error;
   await logAudit({
     action: "update",
     entityType: "reservation",
     entityId: id,
-    changes: diffChanges(auditBefore, reservation),
+    changes: diffChanges(auditBefore, written),
+    ...(notice ? { metadata: { actual_cost_skipped: "columns not migrated yet" } } : {}),
   });
   if (toRelease) await releaseOfflineInventory(toRelease);
-  return data[0] as Reservation;
+  return { ...(data[0] as Reservation), ...(notice ? { notice } : {}) };
 }
 
 /**
