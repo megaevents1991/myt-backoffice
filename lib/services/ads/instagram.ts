@@ -51,11 +51,19 @@ export const IG_INSIGHT_METRICS: Record<string, string[]> = {
   STORY: ["reach", "shares", "views"],
 };
 
-/** reach / saved / shares / views of one media; a metric the type lacks reads 0, a failed call returns null (the row keeps its old counters). */
+/**
+ * reach / saved / shares / views of one media; a metric the type lacks reads 0. A failed call, or a
+ * 200 that carries no `data` (missing or empty), returns null - the row keeps its old counters and
+ * its `insights_at` (four zeros would be written over real numbers and stamped as fresh).
+ */
 export async function fetchIgMediaInsights(media: Pick<IgMediaRow, "id" | "media_product_type">): Promise<Pick<IgMediaRow, "reach" | "saved" | "shares" | "views"> | null> {
   const metrics = IG_INSIGHT_METRICS[media.media_product_type ?? "FEED"] ?? IG_INSIGHT_METRICS.FEED;
   try {
     const body = await graphGet<{ data?: { name: string; values?: { value: number }[] }[] }>(`/${media.id}/insights`, { metric: metrics.join(",") });
+    if (!Array.isArray(body.data) || body.data.length === 0) {
+      console.warn(`[instagram] insights ${media.id}: no data in response`);
+      return null;
+    }
     const read = (name: string) => body.data?.find((d) => d.name === name)?.values?.[0]?.value ?? 0;
     return { reach: read("reach"), saved: read("saved"), shares: read("shares"), views: read("views") };
   } catch (error) {
@@ -66,5 +74,7 @@ export async function fetchIgMediaInsights(media: Pick<IgMediaRow, "id" | "media
 
 export async function fetchIgAccount(opts: { igUserId: string }): Promise<{ followers: number; mediaCount: number }> {
   const body = await graphGet<{ followers_count?: number; media_count?: number }>(`/${opts.igUserId}`, { fields: "followers_count,media_count" });
-  return { followers: body.followers_count ?? 0, mediaCount: body.media_count ?? 0 };
+  // A missing counter must not become a 0 in the followers series.
+  if (typeof body.followers_count !== "number") throw new Error("Instagram account: followers_count missing");
+  return { followers: body.followers_count, mediaCount: body.media_count ?? 0 };
 }
