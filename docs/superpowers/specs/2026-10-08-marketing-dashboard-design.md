@@ -76,9 +76,10 @@ export function netUsd(r, feePct): number | null    // revenue - cogs - revenue 
   ticket = `ticket_cost_usd` (`estimated` when `ticket_cost_source` is `estimated`, and the
   SALE ticket price when null - flagged, never silent). `estimated` bubbles up so the screen can
   say "משוער".
-- Partner commission is NOT in COGS here - it belongs to the partner P&L that already exists and
-  would double-count against "last paid touch" attribution. The executive tab shows it as its own
-  line, read from `commissionForReservation`.
+- Partner commission is NOT in COGS here - it belongs to the partner P&L that already exists
+  (`/partners`, `commissionForReservation` with each partner's own terms) and would double-count
+  against "last paid touch" attribution. Not shown on the executive tab this round (a correct
+  figure needs every partner's terms + funded coupons loaded; `/partners` already has it).
 - `getDashboardStats` replaces `pax * 175` with `revenueUsd` (same Paid filter).
 
 ### 2.2 Migration `reservations` (+ settings, alerts)
@@ -229,7 +230,7 @@ action per tab (`lib/actions/marketing-actions.ts`, each `requireAdmin()` then c
 - **הנהלה (`exec`, default):** range picker (7 / 30 / 90 days / this month, `?range=`, kept in
   the URL) and brand select (default Mega Events; "הכל" = every campaign). Cards: Spend, Revenue
   (Paid, USD), COGS (with "משוער N" when any), Net profit vs the monthly target
-  (`monthly_profit_target_usd`, green/red), partner commission line, Blended CAC, ROAS, POAS.
+  (`monthly_profit_target_usd`, green/red), Blended CAC, ROAS, POAS.
   Daily chart spend vs revenue (recharts through `components/ui/chart.tsx`, like
   `components/dashboard/trend-chart.tsx`).
 - **מדיה (`media`):** `DataTable` of campaigns: platform, name, brand, status, spend (USD, ILS in
