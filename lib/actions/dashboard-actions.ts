@@ -3,8 +3,12 @@
 import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { getReservationEventOrderInfoPrimaryName } from "@/lib/utils";
+import { revenueUsd } from "@/lib/services/reservation-pnl";
 import { isCustomerRefundPartner } from "@/types/partner.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
+
+/** revenueUsd reads only the five money columns; the rest of PnlReservation is irrelevant here. */
+const EMPTY_PNL = { flight_order_info: null, hotel_order_info: null, hotel_segments: null, offline_flight_cost: null, offline_hotel_cost: null, ticket_cost_usd: null, ticket_cost_source: null, actual_cost_usd: null, event_order_info: null };
 
 async function countReservationsByStatus(status: string): Promise<number> {
   try {
@@ -88,8 +92,12 @@ export async function getDashboardStats() {
   try {
     type ReservationRow = {
       created_at?: string;
-      more_pax_info: { first_name?: string; last_name?: string }[] | null;
+      more_pax_info?: { first_name?: string; last_name?: string }[] | null;
       status?: string;
+      user_shown_price?: number | null;
+      exchange_rate_usd_ils_100?: number | null;
+      agent_card_discount_ils?: number | string | null;
+      partner_settlement_method?: string | null;
       event_order_info?: ReservationEventOrderInfo | null;
       aff_partner_tracking_code?: string | null;
     };
@@ -114,7 +122,7 @@ export async function getDashboardStats() {
     ] = await Promise.all([
       supabase
         .from("reservations")
-        .select("more_pax_info")
+        .select("status, user_shown_price, exchange_rate_usd_ils_100, agent_card_discount_ils, partner_settlement_method")
         .is("is_deleted", null)
         .eq("status", "Paid"),
       supabase
@@ -165,11 +173,10 @@ export async function getDashboardStats() {
 
     const paidReservations = (paidRes.data ||
       []) as unknown as ReservationRow[];
-    const totalRevenue = paidReservations.reduce<number>((sum, r) => {
-      const pax =
-        1 + (Array.isArray(r.more_pax_info) ? r.more_pax_info.length : 0);
-      return sum + pax * 175;
-    }, 0);
+    const totalRevenue = paidReservations.reduce<number>(
+      (sum, r) => sum + (revenueUsd({ ...EMPTY_PNL, ...r } as never) ?? 0),
+      0,
+    );
 
     type PartnerRow = { commission: number | null | undefined };
     const partners = (partnersRes.data || []) as unknown as PartnerRow[];
