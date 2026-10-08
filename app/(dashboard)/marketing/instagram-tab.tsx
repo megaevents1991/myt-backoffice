@@ -1,0 +1,194 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Bookmark, Eye, Heart, ImageOff, MessageCircle, Share2, type LucideIcon } from "lucide-react";
+
+import { useSessionState } from "@/hooks/use-view-state";
+import { getInstagramFeed } from "@/lib/actions/marketing-actions";
+import { baselineBefore, engagementOf } from "@/lib/marketing/engagement";
+import type { IgMediaRow } from "@/types/marketing.types";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { errorText } from "./marketing-shared";
+
+const SORTS = ["engagement", "reach", "date"] as const;
+type Sort = (typeof SORTS)[number];
+const SORT_LABEL: Record<Sort, string> = { engagement: "מעורבות", reach: "reach", date: "תאריך" };
+const isSort = (v: unknown): v is Sort => typeof v === "string" && (SORTS as readonly string[]).includes(v);
+
+/** A post is "viral" when it beats twice the mean of the posts before it (the alert's rule at its
+ *  default viral_pct of 200; stories are left out of the baseline AND never flagged). */
+const VIRAL_MULTIPLE = 2;
+
+type Feed = Awaited<ReturnType<typeof getInstagramFeed>>;
+
+/** Ids of the viral posts of a feed - the same walk the alert does: oldest first, 30-post baseline. */
+function viralIds(media: IgMediaRow[]): Set<string> {
+  const posts = media
+    .filter((m) => m.posted_at && m.media_product_type !== "STORY")
+    .sort((a, b) => ((a.posted_at as string) < (b.posted_at as string) ? -1 : 1));
+  const out = new Set<string>();
+  posts.forEach((m, i) => {
+    const mean = baselineBefore(posts, i);
+    if (mean !== null && engagementOf(m) > VIRAL_MULTIPLE * mean) out.add(m.id);
+  });
+  return out;
+}
+
+/** The CDN links Instagram hands out expire - a dead one shows a neutral block, not a broken image. */
+function Thumb({ media }: { media: IgMediaRow }) {
+  const src = media.thumbnail_url ?? media.media_url ?? "";
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="relative aspect-square w-full bg-muted">
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          className="aspect-square w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+          <ImageOff className="h-6 w-6" aria-label="התמונה לא זמינה" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ icon: Icon, title, value }: { icon: LucideIcon; title: string; value: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums" title={title}>
+      <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+      <span className="sr-only">{title}</span>
+      {value.toLocaleString("en-US")}
+    </span>
+  );
+}
+
+function PostCard({ media, viral }: { media: IgMediaRow; viral: boolean }) {
+  const body = (
+    <>
+      <Thumb media={media} />
+      <div className="space-y-2 p-3 text-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="secondary">{media.media_product_type ?? media.media_type ?? "—"}</Badge>
+          {viral && <Badge>ויראלי</Badge>}
+          <span className="ms-auto whitespace-nowrap text-muted-foreground">
+            {media.posted_at ? new Date(media.posted_at).toLocaleDateString("he-IL") : "—"}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Stat icon={Eye} title="reach" value={media.reach} />
+          <Stat icon={Heart} title="לייקים" value={media.like_count} />
+          <Stat icon={MessageCircle} title="תגובות" value={media.comments_count} />
+          <Stat icon={Bookmark} title="שמירות" value={media.saved} />
+          <Stat icon={Share2} title="שיתופים" value={media.shares} />
+        </div>
+      </div>
+    </>
+  );
+  return (
+    <Card className="overflow-hidden">
+      {media.permalink ? (
+        <a href={media.permalink} target="_blank" rel="noreferrer" className="block hover:bg-muted/40">
+          {body}
+        </a>
+      ) : (
+        body
+      )}
+    </Card>
+  );
+}
+
+/** Sort control, follower count and the grid. Data in, so it can be rendered without a load. */
+export function InstagramView({ feed }: { feed: Feed }) {
+  const [sort, setSort] = useSessionState<Sort>("ig-sort", "date", isSort);
+
+  const viral = useMemo(() => viralIds(feed.media), [feed]);
+  const sorted = useMemo(() => {
+    const byDate = (m: IgMediaRow) => (m.posted_at ? Date.parse(m.posted_at) : 0);
+    const key: Record<Sort, (m: IgMediaRow) => number> = {
+      engagement: engagementOf,
+      reach: (m) => m.reach,
+      date: byDate,
+    };
+    return [...feed.media].sort((a, b) => key[sort](b) - key[sort](a));
+  }, [feed, sort]);
+
+  const followers = feed.followers[feed.followers.length - 1]?.followers ?? null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
+          <SelectTrigger className="h-9 w-[150px]" aria-label="מיון">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORTS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {SORT_LABEL[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span dir="rtl" className="text-sm font-medium">
+          עוקבים: <span dir="ltr">{followers === null ? "—" : followers.toLocaleString("en-US")}</span>
+        </span>
+        <span dir="rtl" className="text-xs text-muted-foreground">
+          {sorted.length} פוסטים
+        </span>
+      </div>
+
+      {sorted.length === 0 ? (
+        <p dir="rtl" className="text-sm text-muted-foreground">
+          אין עדיין פוסטים. הם יופיעו אחרי הסנכרון הראשון.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
+          {sorted.map((m) => (
+            <PostCard key={m.id} media={m} viral={viral.has(m.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function InstagramTab() {
+  const [feed, setFeed] = useState<Feed | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      try {
+        const result = await getInstagramFeed();
+        if (!cancelled) setFeed(result);
+      } catch (e) {
+        console.error("Error loading the Instagram feed:", e);
+        if (!cancelled) setError(errorText(e));
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) return <p className="text-sm text-destructive">{error}</p>;
+  if (!feed) return <Skeleton className="h-64 w-full" />;
+  return <InstagramView feed={feed} />;
+}

@@ -195,6 +195,9 @@
     "app/(dashboard)/price-light/page.tsx": {
       "memory": 1024,
       "maxDuration": 300
+    },
+    "app/(dashboard)/marketing/page.tsx": {
+      "maxDuration": 60
     }
   },
   "routes": [

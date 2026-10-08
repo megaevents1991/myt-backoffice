@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  BarChart3,
   Bot,
   CalendarDays,
   CheckSquare,
@@ -261,6 +262,14 @@ const NAV: NavGroup[] = [
   {
     label: "Marketing",
     items: [
+      {
+        name: "Marketing Dashboard",
+        href: "/marketing",
+        icon: BarChart3,
+        keywords: "spend revenue poas campaigns instagram שיווק קמפיינים",
+        roles: ADMIN_ROLES,
+        productType: "events",
+      },
       {
         name: "Creative Generator",
         href: "/creative-generator",
@@ -580,6 +589,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   events: "Events",
   reservations: "Reservations",
   tasks: "Tasks",
+  marketing: "Marketing Dashboard",
   coupons: "Coupons",
   partners: "Partners",
   forms: "Forms",
