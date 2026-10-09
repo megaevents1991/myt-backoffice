@@ -36,11 +36,11 @@ type NumKey = Exclude<keyof MarketingSettings, "alert_emails">;
 type FormState = Record<NumKey | "alert_emails", string>;
 
 const NUM_FIELDS: { key: NumKey; label: string; hint: string }[] = [
-  { key: "processing_fee_pct", label: "עמלת סליקה (%)", hint: "מההכנסה, יורדת מהרווח" },
-  { key: "monthly_profit_target_usd", label: "יעד רווח חודשי ($)", hint: "0 = לא הוגדר" },
-  { key: "budget_bleed_ils", label: "דימום תקציב - סכום (₪)", hint: "הוצאה בלי רכישה אחת" },
-  { key: "budget_bleed_days", label: "דימום תקציב - ימים", hint: "החלון שבו סופרים את ההוצאה" },
-  { key: "viral_pct", label: "ויראלי - % מהממוצע", hint: "200 = פי שניים מהמעורבות הרגילה" },
+  { key: "processing_fee_pct", label: "Processing fee (%)", hint: "Of revenue, deducted from profit" },
+  { key: "monthly_profit_target_usd", label: "Monthly profit target ($)", hint: "0 = not set" },
+  { key: "budget_bleed_ils", label: "Budget bleed - amount (₪)", hint: "Spend with no purchase at all" },
+  { key: "budget_bleed_days", label: "Budget bleed - days", hint: "The window the spend is counted over" },
+  { key: "viral_pct", label: "Viral - % of average", hint: "200 = twice the usual engagement" },
 ];
 
 const toForm = (s: MarketingSettings): FormState => ({
@@ -59,7 +59,7 @@ function parseNum(raw: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** The six inputs and "שמירה". Settings in, so it can be rendered without a load. */
+/** The six inputs and "Save". Settings in, so it can be rendered without a load. */
 export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
   const { toast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(initial));
@@ -70,7 +70,7 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
     for (const f of NUM_FIELDS) {
       const n = parseNum(form[f.key]);
       if (n === null) {
-        toast({ variant: "destructive", title: "ערך לא תקין", description: `${f.label}: מספר 0 ומעלה` });
+        toast({ variant: "destructive", title: "Invalid value", description: `${f.label}: a number, 0 or more` });
         return;
       }
       nums[f.key] = n;
@@ -79,11 +79,11 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
     setSaving(true);
     try {
       const res = await saveMarketingSettings({ ...nums, alert_emails });
-      if (res.ok) toast({ title: "ההגדרות נשמרו" });
-      else toast({ variant: "destructive", title: "השמירה נכשלה", description: res.error ?? "שגיאה" });
+      if (res.ok) toast({ title: "Settings saved" });
+      else toast({ variant: "destructive", title: "Save failed", description: res.error ?? "Error" });
     } catch (e) {
       console.error("saveMarketingSettings failed", e);
-      toast({ variant: "destructive", title: "השמירה נכשלה", description: errorText(e) });
+      toast({ variant: "destructive", title: "Save failed", description: errorText(e) });
     } finally {
       setSaving(false);
     }
@@ -93,7 +93,7 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
         {NUM_FIELDS.map((f) => (
-          <div key={f.key} dir="rtl" className="space-y-1.5">
+          <div key={f.key} className="space-y-1.5">
             <Label htmlFor={`mk-${f.key}`}>{f.label}</Label>
             <Input
               id={`mk-${f.key}`}
@@ -109,8 +109,8 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
             <p className="text-xs text-muted-foreground">{f.hint}</p>
           </div>
         ))}
-        <div dir="rtl" className="space-y-1.5 md:col-span-3">
-          <Label htmlFor="mk-alert_emails">מיילים להתראות</Label>
+        <div className="space-y-1.5 md:col-span-3">
+          <Label htmlFor="mk-alert_emails">Alert emails</Label>
           <Input
             id="mk-alert_emails"
             dir="ltr"
@@ -118,12 +118,12 @@ export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
             value={form.alert_emails}
             onChange={(e) => setForm({ ...form, alert_emails: e.target.value })}
           />
-          <p className="text-xs text-muted-foreground">מופרדים בפסיק. ריק = ברירת המחדל של המערכת.</p>
+          <p className="text-xs text-muted-foreground">Comma-separated. Empty = the system default.</p>
         </div>
       </div>
       <Button onClick={save} disabled={saving}>
         {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        שמירה
+        Save
       </Button>
     </div>
   );
@@ -133,10 +133,10 @@ function SettingsForm({ initial, error }: { initial: MarketingSettings | null; e
   return (
     <Card>
       <CardHeader>
-        <CardTitle dir="rtl" className="text-base">
-          הגדרות
+        <CardTitle className="text-base">
+          Settings
         </CardTitle>
-        <CardDescription dir="rtl">הספים של ההתראות, עמלת הסליקה ויעד הרווח.</CardDescription>
+        <CardDescription>Alert thresholds, the processing fee and the profit target.</CardDescription>
       </CardHeader>
       <CardContent>
         {error ? (
@@ -166,15 +166,15 @@ function SyncNow({ onDone }: { onDone: () => void }) {
       const failed = result.steps.filter((s) => !s.ok).length;
       toast(
         failed === 0
-          ? { title: "הסנכרון הסתיים" }
-          : { variant: "destructive", title: "הסנכרון הסתיים עם שגיאות", description: `${failed} שלבים נכשלו` },
+          ? { title: "Sync finished" }
+          : { variant: "destructive", title: "Sync finished with errors", description: `${failed} step${failed === 1 ? "" : "s"} failed` },
       );
       // The sync may have brought new campaigns (or re-derived a rule brand) - refresh the brand table below in place.
       onDone();
     } catch (e) {
       console.error("runMarketingSyncNow failed", e);
       setError(errorText(e));
-      toast({ variant: "destructive", title: "הסנכרון נכשל", description: errorText(e) });
+      toast({ variant: "destructive", title: "Sync failed", description: errorText(e) });
     } finally {
       setRunning(false);
     }
@@ -183,17 +183,17 @@ function SyncNow({ onDone }: { onDone: () => void }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle dir="rtl" className="text-base">
-          סנכרון
+        <CardTitle className="text-base">
+          Sync
         </CardTitle>
-        <CardDescription dir="rtl">
-          הסנכרון רץ לבד כל שש שעות. כאן אפשר להריץ אותו עכשיו (עד כמה דקות).
+        <CardDescription>
+          The sync runs by itself every six hours. Run it now here (takes up to a few minutes).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <Button variant="outline" onClick={run} disabled={running}>
           {running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-          סנכרן עכשיו
+          Sync now
         </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}
         {summary && (
@@ -202,11 +202,11 @@ function SyncNow({ onDone }: { onDone: () => void }) {
               <li key={s.step} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
                 <span className="w-24 font-mono text-xs">{s.step}</span>
                 {s.ok ? (
-                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-label="הצליח" />
+                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-label="Succeeded" />
                 ) : (
-                  <X className="h-4 w-4 text-destructive" aria-label="נכשל" />
+                  <X className="h-4 w-4 text-destructive" aria-label="Failed" />
                 )}
-                <span className="tabular-nums text-muted-foreground">{s.rows} שורות</span>
+                <span className="tabular-nums text-muted-foreground">{s.rows} rows</span>
                 <span dir="auto" className={cn("min-w-0 flex-1", !s.ok && "text-destructive")}>
                   {s.note}
                 </span>
@@ -224,8 +224,8 @@ type CampaignBrandRow = Awaited<ReturnType<typeof listCampaignBrands>>[number];
 type BrandChoice = AdBrand | "rule";
 const CHOICE_LABEL: Record<BrandChoice, string> = {
   mega_events: "Mega Events",
-  other: "אחר",
-  rule: "לפי חוק",
+  other: "Other brand",
+  rule: "By rule",
 };
 const isChoice = (v: string): v is BrandChoice => v === "mega_events" || v === "other" || v === "rule";
 const rowKey = (r: { platform: AdPlatform; id: string }) => `${r.platform}:${r.id}`;
@@ -235,7 +235,7 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
   const { toast } = useToast();
   const [rows, setRows] = useState<CampaignBrandRow[]>(initial);
   const [saving, setSaving] = useState<string | null>(null);
-  // A fresh list from the parent (the reload after "סנכרן עכשיו") replaces the rows in place - the table keeps its
+  // A fresh list from the parent (the reload after "Sync now") replaces the rows in place - the table keeps its
   // search / page. Adjusted during render, not in an effect (react.dev "adjusting state when a prop changes").
   const [shown, setShown] = useState(initial);
   if (shown !== initial) {
@@ -250,7 +250,7 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
       try {
         const res = await setCampaignBrand(row.platform, row.id, choice);
         if (!res.ok) {
-          toast({ variant: "destructive", title: "השמירה נכשלה", description: res.error ?? "שגיאה" });
+          toast({ variant: "destructive", title: "Save failed", description: res.error ?? "Error" });
           return;
         }
         // "By rule" keeps today's brand until the next sync re-derives it; a pick sets it at once.
@@ -263,10 +263,10 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
                 : { ...r, brand: choice, brand_source: "manual" },
           ),
         );
-        toast({ title: "המותג עודכן", description: `${row.name}: ${CHOICE_LABEL[choice]}` });
+        toast({ title: "Brand updated", description: <><bdi>{row.name}</bdi>: {CHOICE_LABEL[choice]}</> });
       } catch (e) {
         console.error("setCampaignBrand failed", e);
-        toast({ variant: "destructive", title: "השמירה נכשלה", description: errorText(e) });
+        toast({ variant: "destructive", title: "Save failed", description: errorText(e) });
       } finally {
         setSaving(null);
       }
@@ -279,7 +279,7 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
       {
         id: "platform",
         accessorFn: (r) => r.platform,
-        header: "פלטפורמה",
+        header: "Platform",
         cell: ({ row }) => (
           <Badge variant={row.original.platform === "meta" ? "secondary" : "outline"}>
             {PLATFORM_LABEL[row.original.platform]}
@@ -289,7 +289,7 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
       {
         id: "name",
         accessorKey: "name",
-        header: "קמפיין",
+        header: "Campaign",
         cell: ({ row }) => (
           <span dir="auto" className="block max-w-[28rem] truncate font-medium" title={row.original.name}>
             {row.original.name}
@@ -299,12 +299,12 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
       {
         id: "brand",
         accessorFn: (r) => r.brand,
-        header: "מותג עכשיו",
+        header: "Current brand",
         cell: ({ row }) => BRAND_LABEL[row.original.brand],
       },
       {
         id: "actions",
-        header: "שיוך",
+        header: "Assign to",
         enableSorting: false,
         cell: ({ row }) => {
           const r = row.original;
@@ -317,7 +317,7 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
                 if (isChoice(v) && v !== value) void choose(r, v);
               }}
             >
-              <SelectTrigger className="h-8 w-[150px]" aria-label={`מותג של ${r.name}`}>
+              <SelectTrigger className="h-8 w-[150px]" aria-label={`Brand of ${r.name}`}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -340,12 +340,12 @@ export function CampaignBrandsView({ initial }: { initial: CampaignBrandRow[] })
       columns={columns}
       data={rows}
       searchColumns={["name"]}
-      searchPlaceholder="חיפוש קמפיין..."
+      searchPlaceholder="Search campaigns..."
       getRowId={rowKey}
       defaultPageSize={25}
       emptyState={{
-        title: "אין קמפיינים עדיין",
-        description: "הם יופיעו אחרי הסנכרון הראשון.",
+        title: "No campaigns yet",
+        description: "They appear after the first sync.",
       }}
       dense
     />
@@ -356,11 +356,11 @@ function CampaignBrands({ rows, error }: { rows: CampaignBrandRow[] | null; erro
   return (
     <Card>
       <CardHeader>
-        <CardTitle dir="rtl" className="text-base">
-          שיוך קמפיינים למותג
+        <CardTitle className="text-base">
+          Campaign brands
         </CardTitle>
-        <CardDescription dir="rtl">
-          &quot;לפי חוק&quot; = המערכת מחליטה לפי כתובת הנחיתה והתגיות. בחירה ידנית גוברת עד שתחזרו ל&quot;לפי חוק&quot;.
+        <CardDescription>
+          &quot;By rule&quot; = the system decides from the landing URL and the tags. A manual pick wins until you go back to &quot;By rule&quot;.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -408,7 +408,7 @@ export function SettingsTab() {
       setPage((cur) => (cur ? { ...cur, brands } : cur));
     } catch (e) {
       console.error("Error reloading the campaign brands:", e);
-      toast({ variant: "destructive", title: "רשימת הקמפיינים לא רועננה", description: errorText(e) });
+      toast({ variant: "destructive", title: "The campaign list was not refreshed", description: errorText(e) });
     }
   }, [toast]);
 

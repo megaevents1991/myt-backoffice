@@ -29,7 +29,7 @@ export function budgetBleedAlerts(input: { spend: { campaign_id: string; day: st
   const out: AlertCandidate[] = [];
   for (const [id, c] of byCampaign) {
     if (c.spend > input.settings.budget_bleed_ils && (input.purchasesByCampaign.get(id) ?? 0) === 0) {
-      out.push({ kind: "budget_bleed", key: id, title: `${c.name}: ₪${Math.round(c.spend)} ב-${input.settings.budget_bleed_days} ימים בלי רכישה`, payload: { campaign_id: id, name: c.name, spend_ils: Math.round(c.spend * 100) / 100, days: input.settings.budget_bleed_days } });
+      out.push({ kind: "budget_bleed", key: id, title: `${c.name}: ₪${Math.round(c.spend)} in ${input.settings.budget_bleed_days} day${input.settings.budget_bleed_days === 1 ? "" : "s"} with no purchase`, payload: { campaign_id: id, name: c.name, spend_ils: Math.round(c.spend * 100) / 100, days: input.settings.budget_bleed_days } });
     }
   }
   return out;
@@ -47,8 +47,8 @@ export function viralPostAlerts(input: { media: ViralMedia[]; settings: Pick<Mar
     .map(({ media: m, engagement, mean }) => ({
       kind: "viral_post" as const,
       key: m.id,
-      // The mail prints the kind ("פוסט ויראלי") in front of the title, so the title is the numbers alone.
-      title: `${engagement} מעורבות מול ממוצע ${Math.round(mean)}`,
+      // The mail prints the kind ("Viral post") in front of the title, so the title is the numbers alone.
+      title: `${engagement} engagement vs an average of ${Math.round(mean)}`,
       payload: { media_id: m.id, engagement, mean: Math.round(mean) },
     }));
 }
@@ -84,12 +84,12 @@ async function settings(): Promise<MarketingSettings> {
   return out;
 }
 
-/** The kind's name - the same words as the "התראות" tab's badges (alerts-tab.tsx) and the guide. */
-export const ALERT_KIND_LABEL: Record<AlertCandidate["kind"], string> = { budget_bleed: "דימום תקציב", viral_post: "פוסט ויראלי" };
+/** The kind's name - the same words as the "Alerts" tab's badges (alerts-tab.tsx) and the guide. */
+export const ALERT_KIND_LABEL: Record<AlertCandidate["kind"], string> = { budget_bleed: "Budget bleed", viral_post: "Viral post" };
 
 /** Pure: the mail body. Every interpolated value is escaped - a campaign title starts with `ad_entities.name`, whatever someone typed in Ads Manager. */
 export function alertMailHtml(items: AlertCandidate[], origin: string): string {
-  return [`<div dir="rtl">`, ...items.map((c) => `<p><b>${ALERT_KIND_LABEL[c.kind]}</b> - ${escapeHtml(c.title)}</p>`), `<p><a href="${escapeHtml(origin)}/marketing?tab=alerts">לכל ההתראות</a></p></div>`].join("");
+  return [`<div dir="ltr">`, ...items.map((c) => `<p><b>${ALERT_KIND_LABEL[c.kind]}</b> - ${escapeHtml(c.title)}</p>`), `<p><a href="${escapeHtml(origin)}/marketing?tab=alerts">All alerts</a></p></div>`].join("");
 }
 
 const WRITE_CHUNK = 200; // a `.in()` filter travels in the URL
@@ -146,7 +146,7 @@ export async function runMarketingAlerts(opts: { dryRun: boolean }): Promise<{ n
   if (toMail.length && to && !opts.dryRun) {
     await patchAlerts(toMail, { last_mailed_at: now.toISOString() }, "stamp"); // throws on failure: nothing is mailed unmarked
     try {
-      await sendMail({ to, subject: `MYT Admin · ${toMail.length} התראות שיווק`, html: alertMailHtml(toMail, appOrigin()) });
+      await sendMail({ to, subject: `MYT Admin · ${toMail.length} marketing alert${toMail.length === 1 ? "" : "s"}`, html: alertMailHtml(toMail, appOrigin()) });
       mail = "sent";
       mailed = toMail.length;
     } catch (e) {

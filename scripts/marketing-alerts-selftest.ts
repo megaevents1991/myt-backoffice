@@ -71,7 +71,7 @@ assert.ok(!html.includes('<a href="x">'), "an injected tag must not survive");
 assert.ok(html.includes("&lt;a href=&quot;x&quot;&gt;evil&lt;/a&gt; &amp; &#39;co&#39;"), "the name comes out escaped");
 assert.ok(html.includes('<a href="https://app.example/marketing?tab=alerts">'), "the real link is intact");
 assert.ok(alertMailHtml([], 'https://x.example/"><script>').includes("&quot;&gt;&lt;script&gt;"), "the origin is escaped too");
-assert.ok(alertMailHtml(evil, "https://app.example").includes("<b>דימום תקציב</b>") && alertMailHtml(viral, "https://app.example").includes("<b>פוסט ויראלי</b>"), "the kind labels are the tab's words, intact");
+assert.ok(alertMailHtml(evil, "https://app.example").includes("<b>Budget bleed</b>") && alertMailHtml(viral, "https://app.example").includes("<b>Viral post</b>"), "the kind labels are the tab's words, intact");
 
 // windowStart is the rule's `since` and the runner's spend read: 3 days ending 2026-10-08 starts on the 6th.
 assert.equal(windowStart(now, 3), "2026-10-06");

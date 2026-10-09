@@ -55,7 +55,7 @@ export async function getMarketingPnl(range: MarketingRange, brand: AdBrand | "a
   return cachedPnl(safeRange, safeBrand);
 }
 
-/** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "ויראלי" badge
+/** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "Viral" badge
  *  uses the alert's own threshold without a second action on mount. */
 export async function getInstagramFeed(): Promise<{ media: IgMediaRow[]; followers: { day: string; followers: number }[]; viralPct: number }> {
   await requireAdmin();

@@ -14,11 +14,11 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { MarketingFilters, poasTone, usd, useMarketingPnl, type PnlResult } from "./marketing-shared";
+import { MarketingFilters, ordersText, poasTone, usd, useMarketingPnl, type PnlResult } from "./marketing-shared";
 
 const chartConfig = {
-  spend: { label: "הוצאה", color: "hsl(var(--chart-2))" },
-  revenue: { label: "הכנסה", color: "hsl(var(--chart-1))" },
+  spend: { label: "Spend", color: "hsl(var(--chart-2))" },
+  revenue: { label: "Revenue", color: "hsl(var(--chart-1))" },
 } satisfies ChartConfig;
 
 const GOOD = "text-emerald-600 dark:text-emerald-400";
@@ -35,7 +35,7 @@ const tooltipRow: ComponentProps<typeof ChartTooltipContent>["formatter"] = (val
   </div>
 );
 
-/** One executive number: Hebrew title, the value (always left-to-right), a small note under it. */
+/** One executive number: the title, the value, a small note under it. */
 function Metric({
   title,
   value,
@@ -50,12 +50,12 @@ function Metric({
   children?: ReactNode;
 }) {
   return (
-    <Card dir="rtl" className={cn(dim && "opacity-60 transition-opacity")}>
+    <Card className={cn(dim && "opacity-60 transition-opacity")}>
       <CardHeader className="pb-1">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
-        <div dir="ltr" className={cn("text-right text-2xl font-semibold tabular-nums", tone)}>
+        <div dir="ltr" className={cn("text-2xl font-semibold tabular-nums", tone)}>
           {value}
         </div>
         {children}
@@ -114,7 +114,7 @@ export function ExecBody({
   return (
     <>
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric title="הוצאה" value={usd(totals.spendUsd)} dim={dim}>
+        <Metric title="Spend" value={usd(totals.spendUsd)} dim={dim}>
           <Note>
             <span dir="ltr">
               <span className="whitespace-nowrap">{since}</span> → <span className="whitespace-nowrap">{until}</span>
@@ -122,30 +122,30 @@ export function ExecBody({
           </Note>
         </Metric>
 
-        <Metric title="הכנסה" value={usd(totals.revenueUsd)} dim={dim}>
-          <Note>{totals.purchases} הזמנות</Note>
+        <Metric title="Revenue" value={usd(totals.revenueUsd)} dim={dim}>
+          <Note>{ordersText(totals.purchases)}</Note>
           <Note>
-            לא מיוחס: {unattributed.purchases} הזמנות · {usd(unattributed.revenueUsd)}
+            Unattributed: {ordersText(unattributed.purchases)} · {usd(unattributed.revenueUsd)}
           </Note>
           <Note>
-            קמפיין של מותג אחר: {otherBrand.purchases} הזמנות · {usd(otherBrand.revenueUsd)}
-          </Note>
-        </Metric>
-
-        <Metric title="עלות ספקים" value={usd(totals.cogsUsd)} dim={dim}>
-          <Note>
-            {totals.estimatedCount > 0 && <>משוער ב-{totals.estimatedCount} הזמנות · </>}
-            עמלת סליקה {usd(totals.feeUsd)}
+            Other brand campaign: {ordersText(otherBrand.purchases)} · {usd(otherBrand.revenueUsd)}
           </Note>
         </Metric>
 
-        <Metric title="רווח נקי ממדיה" value={usd(totals.netUsd)} dim={dim}>
+        <Metric title="COGS" value={usd(totals.cogsUsd)} dim={dim}>
           <Note>
-            לא מיוחס: {usd(unattributed.netUsd)} · מותג אחר: {usd(otherBrand.netUsd)}
+            {totals.estimatedCount > 0 && <>{totals.estimatedCount} estimated · </>}
+            Processing fee {usd(totals.feeUsd)}
+          </Note>
+        </Metric>
+
+        <Metric title="Net profit from media" value={usd(totals.netUsd)} dim={dim}>
+          <Note>
+            Unattributed: {usd(unattributed.netUsd)} · Other brand: {usd(otherBrand.netUsd)}
           </Note>
           {range === "month" && (
             <Note className={netTone}>
-              {target > 0 ? `יעד ${usd(target)} מול רווח כולל ${usd(allInNet)}` : "יעד לא הוגדר"}
+              {target > 0 ? `Target ${usd(target)} vs all-in net ${usd(allInNet)}` : "Target not set"}
             </Note>
           )}
         </Metric>
@@ -162,8 +162,8 @@ export function ExecBody({
 
       <Card className={cn(dim && "opacity-60 transition-opacity")}>
         <CardHeader>
-          <CardTitle dir="rtl" className="text-sm font-medium">
-            הוצאה מול הכנסה ביום
+          <CardTitle className="text-sm font-medium">
+            Spend vs revenue per day
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -179,8 +179,8 @@ export function ExecBody({
             </LineChart>
           </ChartContainer>
           {daily.length === 0 && (
-            <p dir="rtl" className="mt-2 text-xs text-muted-foreground">
-              אין עדיין נתוני הוצאה או הכנסה בטווח הזה.
+            <p className="mt-2 text-xs text-muted-foreground">
+              No spend or revenue data in this range yet.
             </p>
           )}
         </CardContent>

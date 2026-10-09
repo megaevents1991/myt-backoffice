@@ -20,6 +20,7 @@ import type { CampaignPnl } from "@/lib/services/marketing-pnl";
 import {
   BRAND_LABEL,
   MarketingFilters,
+  ordersText,
   PLATFORM_LABEL,
   poasTone,
   usd,
@@ -36,7 +37,7 @@ const COLUMNS: ColumnDef<CampaignPnl>[] = [
   {
     id: "platform",
     accessorFn: (r) => r.platform,
-    header: "פלטפורמה",
+    header: "Platform",
     cell: ({ row }) => (
       <Badge variant={row.original.platform === "meta" ? "secondary" : "outline"}>
         {PLATFORM_LABEL[row.original.platform]}
@@ -46,7 +47,7 @@ const COLUMNS: ColumnDef<CampaignPnl>[] = [
   {
     id: "name",
     accessorKey: "name",
-    header: ({ column }) => <SortableHeader label="קמפיין" column={column} />,
+    header: ({ column }) => <SortableHeader label="Campaign" column={column} />,
     cell: ({ row }) => (
       <span dir="auto" className="inline-block max-w-[26rem] truncate align-bottom font-medium" title={row.original.name}>
         {row.original.name}
@@ -56,25 +57,25 @@ const COLUMNS: ColumnDef<CampaignPnl>[] = [
   {
     id: "brand",
     accessorFn: (r) => r.brand,
-    header: "מותג",
+    header: "Brand",
     cell: ({ row }) => BRAND_LABEL[row.original.brand],
   },
   {
     id: "status",
     accessorFn: (r) => r.status ?? "",
-    header: "סטטוס",
+    header: "Status",
     cell: ({ row }) => row.original.status ?? <span className="text-muted-foreground">—</span>,
   },
   {
     id: "spendUsd",
     accessorKey: "spendUsd",
-    header: ({ column }) => <SortableHeader label="הוצאה" column={column} />,
+    header: ({ column }) => <SortableHeader label="Spend" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{usd(row.original.spendUsd)}</span>,
   },
   {
     id: "clicks",
     accessorKey: "clicks",
-    header: ({ column }) => <SortableHeader label="קליקים · CTR" column={column} />,
+    header: ({ column }) => <SortableHeader label="Clicks · CTR" column={column} />,
     cell: ({ row }) => {
       const ctr = ctrOf(row.original);
       return (
@@ -88,11 +89,11 @@ const COLUMNS: ColumnDef<CampaignPnl>[] = [
   {
     id: "platformPurchases",
     accessorKey: "platformPurchases",
-    header: ({ column }) => <SortableHeader label="רכישות (פלטפורמה)" column={column} />,
+    header: ({ column }) => <SortableHeader label="Purchases (platform)" column={column} />,
     cell: ({ row }) => (
       <span
         className="tabular-nums"
-        title={`הכנסה לפי הפלטפורמה: ${usd(row.original.platformValue)}`}
+        title={`Platform-reported revenue: ${usd(row.original.platformValue)}`}
       >
         {num(row.original.platformPurchases)}
       </span>
@@ -101,27 +102,27 @@ const COLUMNS: ColumnDef<CampaignPnl>[] = [
   {
     id: "purchases",
     accessorKey: "purchases",
-    header: ({ column }) => <SortableHeader label="שלנו" column={column} />,
+    header: ({ column }) => <SortableHeader label="Purchases (ours)" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{num(row.original.purchases)}</span>,
   },
   {
     id: "revenueUsd",
     accessorKey: "revenueUsd",
-    header: ({ column }) => <SortableHeader label="הכנסה" column={column} />,
+    header: ({ column }) => <SortableHeader label="Revenue" column={column} />,
     cell: ({ row }) => <span className="tabular-nums">{usd(row.original.revenueUsd)}</span>,
   },
   {
     id: "cogsUsd",
     accessorKey: "cogsUsd",
-    header: ({ column }) => <SortableHeader label="עלות ספקים" column={column} />,
+    header: ({ column }) => <SortableHeader label="COGS" column={column} />,
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-1.5 tabular-nums">
         {usd(row.original.cogsUsd)}
         {row.original.estimatedCount > 0 && (
           <span
             role="img"
-            aria-label="משוער"
-            title={`משוער ב-${row.original.estimatedCount} הזמנות`}
+            aria-label="Estimated"
+            title={`${row.original.estimatedCount} estimated`}
             className="inline-block h-2 w-2 rounded-full bg-amber-500"
           />
         )}
@@ -152,7 +153,7 @@ const COLUMNS: ColumnDef<CampaignPnl>[] = [
 
 function AdsetRows({ campaign }: { campaign: CampaignPnl }) {
   if (campaign.adsets.length === 0) {
-    return <p dir="rtl" className="text-sm text-muted-foreground">אין סטים בקמפיין הזה.</p>;
+    return <p className="text-sm text-muted-foreground">No ad sets in this campaign.</p>;
   }
   // The row spans every column of a table that may scroll sideways - keep the panel in view.
   return (
@@ -160,10 +161,10 @@ function AdsetRows({ campaign }: { campaign: CampaignPnl }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>סט מודעות</TableHead>
-            <TableHead>הוצאה</TableHead>
-            <TableHead>הזמנות</TableHead>
-            <TableHead>הכנסה</TableHead>
+            <TableHead>Ad set</TableHead>
+            <TableHead>Spend</TableHead>
+            <TableHead>Orders</TableHead>
+            <TableHead>Revenue</TableHead>
             <TableHead>POAS</TableHead>
           </TableRow>
         </TableHeader>
@@ -191,7 +192,7 @@ function AdsetRows({ campaign }: { campaign: CampaignPnl }) {
 
 function SideCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Card dir="rtl">
+    <Card>
       <CardHeader className="pb-1">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
@@ -210,43 +211,43 @@ export function MediaBody({ data, loading }: { data: PnlResult; loading: boolean
           columns={COLUMNS}
           data={data.campaigns}
           searchColumns={["name"]}
-          searchPlaceholder="חיפוש קמפיין..."
+          searchPlaceholder="Search campaigns..."
           defaultSorting={[{ id: "spendUsd", desc: true }]}
           getRowId={(r) => r.key}
           onRowClick={(r) => setExpanded((cur) => (cur === r.key ? null : r.key))}
           expandedRowId={expanded}
           renderExpandedRow={(r) => <AdsetRows campaign={r} />}
           emptyState={{
-            title: "אין קמפיינים בטווח הזה",
-            description: "אחרי הסנכרון הראשון יופיעו כאן הקמפיינים עם ההוצאה וההכנסה שלהם.",
+            title: "No campaigns in this range",
+            description: "After the first sync, the campaigns appear here with their spend and revenue.",
           }}
           dense
         />
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <SideCard title="לא זוהה">
+        <SideCard title="Unresolved">
           {data.unresolved.length === 0 ? (
-            <p className="text-muted-foreground">אין הזמנות לא מזוהות.</p>
+            <p className="text-muted-foreground">No unresolved orders.</p>
           ) : (
             data.unresolved.map((u) => (
               <p key={u.platform}>
-                <span className="font-medium">{PLATFORM_LABEL[u.platform]}</span> · {u.purchases} הזמנות ·{" "}
+                <span className="font-medium">{PLATFORM_LABEL[u.platform]}</span> · {ordersText(u.purchases)} ·{" "}
                 {usd(u.revenueUsd)}
               </p>
             ))
           )}
         </SideCard>
-        <SideCard title="לא מיוחס">
+        <SideCard title="Unattributed">
           <p>
-            {data.unattributed.purchases} הזמנות · {usd(data.unattributed.revenueUsd)}
+            {ordersText(data.unattributed.purchases)} · {usd(data.unattributed.revenueUsd)}
           </p>
         </SideCard>
-        <SideCard title="קמפיין של מותג אחר">
+        <SideCard title="Other brand campaign">
           <p>
-            {data.otherBrand.purchases} הזמנות · {usd(data.otherBrand.revenueUsd)}
+            {ordersText(data.otherBrand.purchases)} · {usd(data.otherBrand.revenueUsd)}
           </p>
-          <p className="text-xs text-muted-foreground">נזקפו לקמפיין שאינו במותג שנבחר (קמפיין שהמערכת לא מכירה נחשב &quot;אחר&quot;).</p>
+          <p className="text-xs text-muted-foreground">Credited to a campaign outside the chosen brand (a campaign the system does not know counts as &quot;Other brand&quot;).</p>
         </SideCard>
       </div>
     </>

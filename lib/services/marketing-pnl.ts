@@ -1,7 +1,7 @@
 /**
  * The campaign P&L join (spec section 5): spend rows x entities x attributed Paid
  * reservations -> one row per campaign (with its adsets), the unresolved rows per
- * platform ("מטא · לא זוהה"), the unattributed line, the other-brand line, brand totals
+ * platform ("Meta · unresolved"), the unattributed line, the other-brand line, brand totals
  * and a daily series. net = revenue - cogs - fee - spend; POAS = net / spend;
  * ROAS = revenue / spend; CAC = spend / purchases. Pure; scripts/marketing-pnl-selftest.ts.
  *

@@ -25,20 +25,23 @@ export const BRAND_FILTERS = ["mega_events", "other", "all"] as const;
 export type BrandFilter = (typeof BRAND_FILTERS)[number];
 
 export const RANGE_LABEL: Record<MarketingRange, string> = {
-  "7d": "7 ימים",
-  "30d": "30 ימים",
-  "90d": "90 ימים",
-  month: "החודש",
+  "7d": "Last 7 days",
+  "30d": "Last 30 days",
+  "90d": "Last 90 days",
+  month: "This month",
 };
 
 export const BRAND_FILTER_LABEL: Record<BrandFilter, string> = {
   mega_events: "Mega Events",
-  other: "אחר",
-  all: "הכל",
+  other: "Other brand",
+  all: "All brands",
 };
 
-export const BRAND_LABEL: Record<AdBrand, string> = { mega_events: "Mega Events", other: "אחר" };
-export const PLATFORM_LABEL: Record<AdPlatform, string> = { meta: "מטא", google: "גוגל" };
+export const BRAND_LABEL: Record<AdBrand, string> = { mega_events: "Mega Events", other: "Other brand" };
+export const PLATFORM_LABEL: Record<AdPlatform, string> = { meta: "Meta", google: "Google" };
+
+/** "1 order" / "3 orders" - the count line under the cards and in the side cards. */
+export const ordersText = (n: number): string => `${n} order${n === 1 ? "" : "s"}`;
 
 const usdFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -62,10 +65,10 @@ export type PnlResult = Awaited<ReturnType<typeof getMarketingPnl>>;
 const MASKED_PROD_ERROR = /An error occurred in the Server Components render/i;
 
 export function errorText(e: unknown): string {
-  if (!(e instanceof Error) || !e.message) return "שגיאה בטעינה";
+  if (!(e instanceof Error) || !e.message) return "Failed to load";
   const hasDigest = "digest" in e || /digest/i.test(e.message);
   if (MASKED_PROD_ERROR.test(e.message) || (/Server Action/i.test(e.message) && hasDigest)) {
-    return "הטעינה נכשלה - פרטים ביומני השרת";
+    return "Loading failed - details are in the server logs";
   }
   return e.message;
 }
@@ -121,7 +124,7 @@ export function MarketingFilters({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select value={range} onValueChange={(v) => setRange(v as MarketingRange)}>
-        <SelectTrigger className="h-9 w-[130px]" aria-label="טווח">
+        <SelectTrigger className="h-9 w-[150px]" aria-label="Date range">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -133,7 +136,7 @@ export function MarketingFilters({
         </SelectContent>
       </Select>
       <Select value={brand} onValueChange={(v) => setBrand(v as BrandFilter)}>
-        <SelectTrigger className="h-9 w-[150px]" aria-label="מותג">
+        <SelectTrigger className="h-9 w-[150px]" aria-label="Brand">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

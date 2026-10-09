@@ -21,7 +21,7 @@ import { errorText } from "./marketing-shared";
 
 const SORTS = ["engagement", "reach", "date"] as const;
 type Sort = (typeof SORTS)[number];
-const SORT_LABEL: Record<Sort, string> = { engagement: "מעורבות", reach: "reach", date: "תאריך" };
+const SORT_LABEL: Record<Sort, string> = { engagement: "Engagement", reach: "Reach", date: "Date" };
 const isSort = (v: unknown): v is Sort => typeof v === "string" && (SORTS as readonly string[]).includes(v);
 
 type Feed = Awaited<ReturnType<typeof getInstagramFeed>>;
@@ -43,7 +43,7 @@ function Thumb({ media }: { media: IgMediaRow }) {
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-          <ImageOff className="h-6 w-6" aria-label="התמונה לא זמינה" />
+          <ImageOff className="h-6 w-6" aria-label="Image not available" />
         </div>
       )}
     </div>
@@ -67,17 +67,17 @@ function PostCard({ media, viral }: { media: IgMediaRow; viral: boolean }) {
       <div className="space-y-2 p-3 text-xs">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{media.media_product_type ?? media.media_type ?? "—"}</Badge>
-          {viral && <Badge>ויראלי</Badge>}
+          {viral && <Badge>Viral</Badge>}
           <span className="ms-auto whitespace-nowrap text-muted-foreground">
-            {media.posted_at ? new Date(media.posted_at).toLocaleDateString("he-IL") : "—"}
+            {media.posted_at ? new Date(media.posted_at).toLocaleDateString("en-GB") : "—"}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <Stat icon={Eye} title="reach" value={media.reach} />
-          <Stat icon={Heart} title="לייקים" value={media.like_count} />
-          <Stat icon={MessageCircle} title="תגובות" value={media.comments_count} />
-          <Stat icon={Bookmark} title="שמירות" value={media.saved} />
-          <Stat icon={Share2} title="שיתופים" value={media.shares} />
+          <Stat icon={Eye} title="Reach" value={media.reach} />
+          <Stat icon={Heart} title="Likes" value={media.like_count} />
+          <Stat icon={MessageCircle} title="Comments" value={media.comments_count} />
+          <Stat icon={Bookmark} title="Saves" value={media.saved} />
+          <Stat icon={Share2} title="Shares" value={media.shares} />
         </div>
       </div>
     </>
@@ -117,7 +117,7 @@ export function InstagramView({ feed }: { feed: Feed }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
-          <SelectTrigger className="h-9 w-[150px]" aria-label="מיון">
+          <SelectTrigger className="h-9 w-[150px]" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -128,17 +128,17 @@ export function InstagramView({ feed }: { feed: Feed }) {
             ))}
           </SelectContent>
         </Select>
-        <span dir="rtl" className="text-sm font-medium">
-          עוקבים: <span dir="ltr">{followers === null ? "—" : followers.toLocaleString("en-US")}</span>
+        <span className="text-sm font-medium">
+          Followers: <span dir="ltr">{followers === null ? "—" : followers.toLocaleString("en-US")}</span>
         </span>
-        <span dir="rtl" className="text-xs text-muted-foreground">
-          {sorted.length} פוסטים
+        <span className="text-xs text-muted-foreground">
+          {sorted.length} post{sorted.length === 1 ? "" : "s"}
         </span>
       </div>
 
       {sorted.length === 0 ? (
-        <p dir="rtl" className="text-sm text-muted-foreground">
-          אין עדיין פוסטים. הם יופיעו אחרי הסנכרון הראשון.
+        <p className="text-sm text-muted-foreground">
+          No posts yet. They appear after the first sync.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">

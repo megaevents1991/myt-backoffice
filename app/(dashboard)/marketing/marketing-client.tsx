@@ -14,11 +14,11 @@ export function MarketingClient() {
   return (
     <UrlTabs defaultValue="exec" values={TAB_IDS}>
       <TabsList>
-        <TabsTrigger value="exec">הנהלה</TabsTrigger>
-        <TabsTrigger value="media">מדיה</TabsTrigger>
-        <TabsTrigger value="instagram">אינסטגרם</TabsTrigger>
-        <TabsTrigger value="alerts">התראות</TabsTrigger>
-        <TabsTrigger value="settings">הגדרות</TabsTrigger>
+        <TabsTrigger value="exec">Executive</TabsTrigger>
+        <TabsTrigger value="media">Media</TabsTrigger>
+        <TabsTrigger value="instagram">Instagram</TabsTrigger>
+        <TabsTrigger value="alerts">Alerts</TabsTrigger>
+        <TabsTrigger value="settings">Settings</TabsTrigger>
       </TabsList>
       <TabsContent value="exec" className="mt-4"><ExecTab /></TabsContent>
       <TabsContent value="media" className="mt-4"><MediaTab /></TabsContent>

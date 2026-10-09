@@ -24,7 +24,7 @@ export interface ViralMedia {
 }
 
 /**
- * THE viral rule - the alert and the grid's "ויראלי" badge both come from here, so they can never disagree.
+ * THE viral rule - the alert and the grid's "Viral" badge both come from here, so they can never disagree.
  * A post is viral when it is not a STORY, has a `posted_at`, is at least 24 h old (its numbers are still
  * moving before that), has a baseline (`baselineBefore`: the up-to-30 posts before it, oldest first, at least 5)
  * with a mean above zero, and its engagement beats `mean * viralPct / 100`. Oldest first, with the numbers the alert prints.

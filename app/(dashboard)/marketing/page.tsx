@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarketingClient } from "./marketing-client";
 
-// "סנכרן עכשיו" (runMarketingSyncNow) runs the whole marketing sync - about 180 s measured -
+// "Sync now" (runMarketingSyncNow) runs the whole marketing sync - about 180 s measured -
 // inside a server action of THIS route with a 240 s budget, so anything shorter would cut it
 // off mid-sync and the UI would read it as "broken". Same as /price-light; mirrored in vercel.json.
 export const maxDuration = 300;

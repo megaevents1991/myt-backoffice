@@ -12,8 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { errorText } from "./marketing-shared";
 
 const KIND_LABEL: Record<MarketingAlertRow["kind"], string> = {
-  budget_bleed: "דימום תקציב",
-  viral_post: "פוסט ויראלי",
+  budget_bleed: "Budget bleed",
+  viral_post: "Viral post",
 };
 const KIND_TAB: Record<MarketingAlertRow["kind"], string> = {
   budget_bleed: "media",
@@ -28,11 +28,11 @@ function detailOf(alert: MarketingAlertRow): string | null {
   if (alert.kind === "budget_bleed") {
     const spend = textOf(p.spend_ils);
     const days = textOf(p.days);
-    return spend && days ? `₪${Math.round(Number(spend)).toLocaleString("en-US")} ב-${days} ימים בלי רכישה` : null;
+    return spend && days ? `₪${Math.round(Number(spend)).toLocaleString("en-US")} in ${days} day${days === "1" ? "" : "s"} with no purchase` : null;
   }
   const engagement = textOf(p.engagement);
   const mean = textOf(p.mean);
-  return engagement && mean ? `${engagement} מעורבות מול ממוצע ${mean}` : null;
+  return engagement && mean ? `${engagement} engagement vs an average of ${mean}` : null;
 }
 
 function AlertRow({ alert }: { alert: MarketingAlertRow }) {
@@ -45,14 +45,14 @@ function AlertRow({ alert }: { alert: MarketingAlertRow }) {
         {name}
       </span>
       {detail && (
-        <span dir="rtl" className="text-muted-foreground">
+        <span className="text-muted-foreground">
           {detail}
         </span>
       )}
-      <span className="text-xs text-muted-foreground">{new Date(alert.first_seen_at).toLocaleString("he-IL")}</span>
+      <span className="text-xs text-muted-foreground">{new Date(alert.first_seen_at).toLocaleString("en-GB")}</span>
       {alert.last_mailed_at && (
-        <Badge variant="outline" dir="rtl">
-          נשלח במייל
+        <Badge variant="outline">
+          Emailed
         </Badge>
       )}
       {/* The tab strip's own mechanism (a history.replaceState on ?tab=): no page load, range / brand stay in the URL. */}
@@ -63,7 +63,7 @@ function AlertRow({ alert }: { alert: MarketingAlertRow }) {
         className="ms-auto h-auto p-0 text-xs"
         onClick={() => writeUrlParam("tab", KIND_TAB[alert.kind], "exec")}
       >
-        {alert.kind === "budget_bleed" ? "לקמפיינים" : "לפוסטים"}
+        {alert.kind === "budget_bleed" ? "View campaigns" : "View posts"}
       </Button>
     </li>
   );
@@ -73,13 +73,13 @@ function AlertList({ title, alerts, empty }: { title: string; alerts: MarketingA
   return (
     <Card>
       <CardHeader className="pb-1">
-        <CardTitle dir="rtl" className="text-sm font-medium">
+        <CardTitle className="text-sm font-medium">
           {title} ({alerts.length})
         </CardTitle>
       </CardHeader>
       <CardContent>
         {alerts.length === 0 ? (
-          <p dir="rtl" className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {empty}
           </p>
         ) : (
@@ -97,8 +97,8 @@ function AlertList({ title, alerts, empty }: { title: string; alerts: MarketingA
 export function AlertsView({ alerts }: { alerts: MarketingAlertRow[] }) {
   return (
     <div className="space-y-4">
-      <AlertList title="פתוחות" alerts={alerts.filter((a) => !a.resolved_at)} empty="אין התראות פתוחות." />
-      <AlertList title="נפתרו" alerts={alerts.filter((a) => a.resolved_at)} empty="עוד לא נפתרה אף התראה." />
+      <AlertList title="Open" alerts={alerts.filter((a) => !a.resolved_at)} empty="No open alerts." />
+      <AlertList title="Resolved" alerts={alerts.filter((a) => a.resolved_at)} empty="No alert has been resolved yet." />
     </div>
   );
 }

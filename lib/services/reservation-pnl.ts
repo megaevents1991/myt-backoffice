@@ -7,7 +7,7 @@
  * (never subtract coupon_discount_usd again). An Amadeus offer's `price.grandTotal` is what
  * WE pay; a hotel carries no markup, so its price is its cost; offline inventory already
  * stores its cost; a ticket's cost is the snapshot column (main / nightly fill) or, when
- * none, the SALE price flagged `estimated` so the screen says "משוער" instead of hiding it.
+ * none, the SALE price flagged `estimated` so the screen says "N estimated" instead of hiding it.
  */
 import { isPaid } from "@/lib/partner-commission";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
