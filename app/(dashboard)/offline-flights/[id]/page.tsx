@@ -19,6 +19,8 @@ import {
   formatFlightValue,
 } from "@/components/flight-field-groups";
 import { TourBlockPanel } from "@/components/tours/flights/tour-block-panel";
+import { latestAuditFor } from "@/lib/actions/audit-actions";
+import { auditHistoryHref, formatAuditTime } from "@/lib/audit-display";
 
 /** "Direct", or the airport the leg connects through and how long it sits there. */
 function describeLegStops(
@@ -115,6 +117,8 @@ export default async function OfflineFlightDetailsPage({
   const toursFields = tours
     ? flightFieldSet(true).fields.filter((f) => f.group === TOURS_FIELD_GROUP)
     : [];
+  // Who touched this flight last (admins see it; null for anyone else).
+  const lastChange = await latestAuditFor(["offline_flight", "flight"], flightIdAsNumber);
 
   return (
     <div className="container mx-auto py-10 max-w-4xl">
@@ -135,10 +139,21 @@ export default async function OfflineFlightDetailsPage({
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               ID: {flight.id}
             </p>
+            {lastChange && (
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Last change: {lastChange.action} by {lastChange.actor_email ?? "system"} on{" "}
+                {formatAuditTime(lastChange.created_at)}
+              </p>
+            )}
           </div>
-          <Button asChild>
-            <Link href={`/offline-flights/${flight.id}/edit`}>Edit Flight</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href={auditHistoryHref("offline_flight", flight.id)}>History</Link>
+            </Button>
+            <Button asChild>
+              <Link href={`/offline-flights/${flight.id}/edit`}>Edit Flight</Link>
+            </Button>
+          </div>
         </div>
 
         <div className="border-t border-border px-4 py-5 sm:p-0">

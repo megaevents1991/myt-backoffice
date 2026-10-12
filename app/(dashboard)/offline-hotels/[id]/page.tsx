@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { ReservationsForInventory } from "@/components/reservations-for-inventory";
 import { getOfflineHotelRooms } from "@/lib/actions/offline-hotel-room-actions";
 import { HotelRoomsTable } from "@/components/offline-hotels/hotel-rooms-table";
+import { latestAuditFor } from "@/lib/actions/audit-actions";
+import { auditHistoryHref, formatAuditTime } from "@/lib/audit-display";
 
 interface OfflineHotelDetailsPageProps {
   params: Promise<{
@@ -63,6 +65,8 @@ export default async function OfflineHotelDetailsPage({
 
   const reservations = await getReservationsForHotel(hotelIdAsNumber);
   const rooms = await getOfflineHotelRooms(hotelIdAsNumber);
+  // Who touched this hotel last (admins see it; null for anyone else).
+  const lastChange = await latestAuditFor(["offline_hotel"], hotelIdAsNumber);
   // Map each reservation id → the rooms it consumed, for the reservations table.
   const roomsByReservation = rooms.reduce<Record<number, typeof rooms>>((acc, room) => {
     if (room.reservation_id != null) {
@@ -90,10 +94,21 @@ export default async function OfflineHotelDetailsPage({
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               ID: {hotel.id}
             </p>
+            {lastChange && (
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                Last change: {lastChange.action} by {lastChange.actor_email ?? "system"} on{" "}
+                {formatAuditTime(lastChange.created_at)}
+              </p>
+            )}
           </div>
-          <Button asChild>
-            <Link href={`/offline-hotels/${hotel.id}/edit`}>Edit Hotel</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href={auditHistoryHref("offline_hotel", hotel.id)}>History</Link>
+            </Button>
+            <Button asChild>
+              <Link href={`/offline-hotels/${hotel.id}/edit`}>Edit Hotel</Link>
+            </Button>
+          </div>
         </div>
 
         <div className="border-t border-border px-4 py-5 sm:p-0">

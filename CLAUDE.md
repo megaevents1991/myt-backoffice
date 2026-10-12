@@ -846,6 +846,30 @@ Main's side mirrors the constant and no longer trusts such a landing (check-in =
 day). To find who saved one: `/audit-log`, entity `offline_flight` - the `changes` carry
 `outbound_arrival_time: {from, to}` and the actor.
 
+### Audit log - from the entity, readable (2026-10-12)
+
+"Who moved this flight's landing to July?" took opening `/audit-log` rows one by one: a row read
+"offline_flight #57" and its change was raw JSON with ISO dates. Nothing new is recorded; what the
+rows already hold is shown. **Every rule is pure in `lib/audit-display.ts`**
+(`scripts/audit-display-selftest.ts`). (a) **From the entity:** a "History" button on the flight,
+hotel and event pages opens `/audit-log?entity=<type>&id=<id>` (`auditHistoryHref`) - the screen
+reads those two from the URL (newest 500 rows of that entity, over the remembered filters) and has
+an "Entity ID" box of its own; "history" on any row narrows the screen to that row's entity. The
+flight and hotel pages also print "Last change: update by liz@… on 12/10/2026, 12:53"
+(`latestAuditFor` - admins only, null for anyone else, never throws). (b) **Readable:** a row opens
+to a field-by-field table (`auditDiffRows`: an update's `{from, to}` pairs, a create's values) with
+the forms' own labels (`FLIGHT_FIELD_BY_KEY`, `EVENT_FIELD_LABELS`, else the key as words),
+timestamps as DD/MM/YYYY HH:mm and dates as DD/MM/YYYY (`formatAuditValue`), and a time / date /
+money / quantity field that moved tinted amber (`isSensitiveKey`); the collapsed row names the
+changed fields ("What changed"), and row times print in Israel time on the server and in the
+browser alike (`formatAuditTime`). (c) **Named:** `getAuditLogs` reads the entity's own name from
+its table in chunks of 200 (`withEntityLabels`: event name, "LY123 TLV→CDG 20/05/2027", hotel
+name, partner name, coupon code, reservation contact) - a failed lookup leaves its rows unnamed,
+never the screen empty. (d) **Search:** a box over the rows on screen - every word, any order,
+over actor, entity, label and every value of the change, dates both raw and as printed
+(`auditSearchText` / `matchesAuditSearch`); no new read. Retention is unchanged (30 days,
+`purgeAuditLog`): a change older than that has no row to find.
+
 ### Cron Jobs (Vercel)
 
 Defined in `vercel.json`. All cron routes are secured via `guardCronRoute()`

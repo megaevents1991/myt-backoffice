@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RevalidateButton } from "@/components/templates/RevalidateButton";
 import { PushToFeedButton } from "@/components/push-to-feed-button";
+import Link from "next/link";
+import { auditHistoryHref } from "@/lib/audit-display";
 import { EventAvailabilityBanner } from "@/components/event-availability-banner";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble, ChevronDown } from "lucide-react";
 import {
@@ -1785,6 +1787,10 @@ export default function EventPage({
             walking back to the events list. */}
         {!isNewEvent && (
           <div className="ml-auto flex flex-wrap gap-2">
+            {/* Who changed what on this event - the audit log filtered to it. */}
+            <Button variant="outline" type="button" asChild>
+              <Link href={auditHistoryHref("event", event.id)}>History</Link>
+            </Button>
             <PushToFeedButton eventId={event.id} unsaved={isDirty} />
             <RevalidateButton />
           </div>

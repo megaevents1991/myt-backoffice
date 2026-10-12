@@ -2197,15 +2197,15 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     title: t("Audit log - who changed what", "לוג ביקורת - מי שינה מה"),
     adminOnly: true,
     intro: t(
-      "A read-only record of what people did in the backoffice: who, when, from which IP and what changed, plus sign-ins and failed sign-ins. It shows only the newest 200 rows that match your filters, so filter before you scroll. Automatic changes such as the nightly price sync are not recorded here - those are on Price Changes.",
-      "תיעוד לקריאה בלבד של מה שאנשים עשו בבק-אופיס: מי, מתי, מאיזו כתובת IP ומה השתנה, וגם כניסות וכניסות שנכשלו. מוצגות רק 200 השורות האחרונות שמתאימות לסינון, אז קודם מסננים ואחר כך גוללים. שינויים אוטומטיים כמו סנכרון המחירים הלילי לא נרשמים כאן - הם במסך שינויי המחיר.",
+      "A read-only record of what people did in the backoffice: who, when, from which IP and what changed, plus sign-ins and failed sign-ins. It shows only the newest 200 rows that match your filters (500 for one entity), so filter before you scroll. The fastest way in is the \"History\" button at the top of an event, flight or hotel page - the log opens on that one entity. Rows are kept 30 days. Automatic changes such as the nightly price sync are not recorded here - those are on Price Changes.",
+      "תיעוד לקריאה בלבד של מה שאנשים עשו בבק-אופיס: מי, מתי, מאיזו כתובת IP ומה השתנה, וגם כניסות וכניסות שנכשלו. מוצגות רק 200 השורות האחרונות שמתאימות לסינון (500 לישות אחת), אז קודם מסננים ואחר כך גוללים. הדרך המהירה פנימה היא כפתור \"History\" בראש דף של אירוע, טיסה או מלון - הלוג נפתח על הישות הזאת בלבד. שורות נשמרות 30 יום. שינויים אוטומטיים כמו סנכרון המחירים הלילי לא נרשמים כאן - הם במסך שינויי המחיר.",
     ),
     howTo: [
       {
         title: t("Find who changed an event", "לגלות מי שינה אירוע"),
         steps: [
-          t("Open the event and note its number in the breadcrumbs (e.g. \"#1234\").", "פותחים את האירוע ורושמים את המספר שלו מפירורי הלחם (למשל \"#1234\")."),
-          t("Open [Audit Log](/audit-log), set \"Entity type\" to \"event\" and leave \"All actions\" (price-light and price-change decisions have their own action names that the Action list doesn't include).", "פותחים את [לוג הביקורת](/audit-log), בוחרים \"Entity type\" = \"event\" ומשאירים \"All actions\" (להחלטות רמזור ושינויי מחיר יש שמות פעולה משלהן שלא ברשימת ה-Action)."),
+          t("Open the event and click \"History\" at the top - the log opens on that event alone, newest first, every row named by the event. Done.", "פותחים את האירוע ולוחצים \"History\" למעלה - הלוג נפתח על האירוע הזה בלבד, מהחדש לישן, וכל שורה נושאת את שם האירוע. זהו."),
+          t("From the log itself: set \"Entity type\" to \"event\", type the number into \"Entity ID\" and leave \"All actions\" (price-light and price-change decisions have their own action names that the Action list doesn't include).", "מהלוג עצמו: בוחרים \"Entity type\" = \"event\", מקלידים את המספר ב-\"Entity ID\" ומשאירים \"All actions\" (להחלטות רמזור ושינויי מחיר יש שמות פעולה משלהן שלא ברשימת ה-Action)."),
           t("Set \"From\" / \"To\" around the day of the change and click \"Apply\". Dates are UTC days - widen the range by a day for an evening change.", "קובעים \"From\" / \"To\" סביב היום של השינוי ולוחצים \"Apply\". התאריכים הם ימי UTC - לשינוי בערב מרחיבים ביום."),
           t("Look for \"event #1234\" in \"Entity\"; \"Actor\" shows who did it (\"-\" = no signed-in person). Click the row to see exactly what changed.", "מחפשים \"event #1234\" בעמודת \"Entity\"; \"Actor\" מראה מי עשה את זה (\"-\" = לא היה אדם מחובר). לוחצים על השורה כדי לראות מה בדיוק השתנה."),
         ],
@@ -2220,6 +2220,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Find who changed a flight or a hotel", "לגלות מי שינה טיסה או מלון"),
+        steps: [
+          t("Open the flight in [Offline Flights](/offline-flights) (the eye icon) or the hotel in [Offline Hotels](/offline-hotels). Under the ID, \"Last change: update by … on …\" says who touched it last.", "פותחים את הטיסה ב[טיסות האופליין](/offline-flights) (אייקון העין) או את המלון ב[מלונות האופליין](/offline-hotels). מתחת למזהה, \"Last change: update by … on …\" אומר מי נגע בה אחרון."),
+          t("\"History\" at the top opens every change of it - the \"create\" row with the values typed in, then each edit with before and after.", "\"History\" למעלה פותח את כל השינויים שלה - שורת ה-\"create\" עם הערכים שהוקלדו, ואחריה כל עריכה עם לפני ואחרי."),
+          t("A wrong date (a landing in July on a May flight) stands out: the row names the field in amber, and the details show the old and the new value side by side.", "תאריך שגוי (נחיתה ביולי על טיסה של מאי) בולט: השורה מונה את השדה בכתום, והפרטים מראים את הערך הישן והחדש זה לצד זה."),
+        ],
+      },
+      {
         title: t("See what one person did, or why they can't sign in", "לראות מה אדם מסוים עשה, או למה הוא לא מצליח להיכנס"),
         steps: [
           t("Type part of their email into \"Actor email\", add dates if you like, and click \"Apply\". Sign-ins show as \"login\".", "מקלידים חלק מהמייל שלו ב-\"Actor email\", מוסיפים תאריכים אם רוצים, ולוחצים \"Apply\". כניסות מופיעות כ-\"login\"."),
@@ -2230,7 +2238,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Read the changes", "לקרוא את השינויים"),
         steps: [
-          t("Click a row to open its details (click again to close). An edit lists only the fields that changed, each with \"from\" and \"to\".", "לחיצה על שורה פותחת את הפרטים (לחיצה נוספת סוגרת). עריכה מציגה רק את השדות שהשתנו, כל אחד עם \"from\" ו-\"to\"."),
+          t("\"What changed\" on the row itself names the fields that moved - a time, date or price in amber - so most questions are answered without opening it. Click the row for the details (click again to close): an edit lists only the fields that changed, by the form's own names, each with \"Before\" and \"After\"; dates read 20/05/2027 14:00.", "\"What changed\" על השורה עצמה מונה את השדות שזזו - שעה, תאריך או מחיר בכתום - אז רוב השאלות נענות בלי לפתוח אותה. לחיצה על השורה פותחת את הפרטים (לחיצה נוספת סוגרת): עריכה מציגה רק את השדות שהשתנו, בשמות של הטופס, כל אחד עם \"Before\" ו-\"After\"; תאריכים נקראים 20/05/2027 14:00."),
+          t("Looking for a value, not a person? Type it into \"Search the rows on screen\" - \"20/07\", a flight number, a name - and the rows on screen narrow to the ones that carry it. Every row names its entity (\"LY123 TLV→CDG 20/05/2027\", the event's name) and links to its page; \"history\" under the name narrows the log to that entity.", "מחפשים ערך ולא אדם? מקלידים אותו ב-\"Search the rows on screen\" - \"20/07\", מספר טיסה, שם - והשורות על המסך מצטמצמות לאלה שנושאות אותו. כל שורה נושאת את שם הישות שלה (\"LY123 TLV→CDG 20/05/2027\", שם האירוע) ומקשרת לדף שלה; \"history\" מתחת לשם מצמצם את הלוג לישות הזאת."),
           t("A deleted event shows is_deleted with the date it was hidden - events are never really deleted.", "אירוע שנמחק מציג is_deleted עם התאריך שבו הוסתר - אירועים אף פעם לא נמחקים באמת."),
           t("A bulk edit from the events table has no event number in \"Entity\" and shows only the new values - use the time and the person to work out what they edited.", "עריכה מרובה מטבלת האירועים מופיעה בלי מספר אירוע ב-\"Entity\" ומציגה רק את הערכים החדשים - לפי השעה ולפי מי שביצע מבינים מה הוא ערך."),
         ],
