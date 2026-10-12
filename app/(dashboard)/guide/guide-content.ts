@@ -919,6 +919,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("Type the \"Airline Code (IATA)\" (e.g. LY) and click \"Validate\" - it fills the airline name and logo. \"Create Flight\" stays disabled until the button reads \"Validated\".", "מקלידים \"Airline Code (IATA)\" (למשל LY) ולוחצים \"Validate\" - זה ממלא שם ולוגו של חברת התעופה. \"Create Flight\" נשאר מושבת עד שעל הכפתור כתוב \"Validated\"."),
           t("Fill \"Price (USD)\" (per seat) and \"Initial Quantity\" (seats we hold).", "ממלאים \"Price (USD)\" (למושב) ו-\"Initial Quantity\" (המושבים שאנחנו מחזיקים)."),
           t("Under \"Outbound Flight\" / \"Inbound Flight\", fill flight numbers, airports (IATA) and times - durations calculate themselves. For a connection set \"Outbound Stops\" / \"Inbound Stops\" with the stopover; tick the bags each leg includes.", "תחת \"Outbound Flight\" / \"Inbound Flight\" ממלאים מספרי טיסה, שדות (IATA) ושעות - המשכים מחושבים לבד. בקונקשן מגדירים \"Outbound Stops\" / \"Inbound Stops\" עם שדה העצירה; מסמנים אילו מזוודות כלולות בכל כיוון."),
+          t("A leg's landing must be within 48 hours of its takeoff - the form refuses a landing typed in the wrong month, because the site reads the hotel's check-in from the outbound landing.", "נחיתה של כיוון חייבת להיות עד 48 שעות אחרי ההמראה שלו - הטופס מסרב לנחיתה שהוקלדה בחודש הלא נכון, כי האתר לוקח את הצ'ק-אין של המלון מנחיתת ההלוך."),
           t("Optionally link events (next recipe), then \"Create Flight\".", "אפשר לקשר אירועים (המתכון הבא), ואז \"Create Flight\"."),
         ],
       },

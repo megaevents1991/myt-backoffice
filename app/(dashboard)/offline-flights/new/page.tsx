@@ -38,6 +38,7 @@ import {
   stopoverSuperRefine,
   toStopoverColumns,
 } from "@/lib/flight-stops";
+import { legTimesSuperRefine } from "@/lib/flight-leg-times";
 import {
   Popover,
   PopoverContent,
@@ -262,7 +263,11 @@ const offlineFlightFormSchema = z.object({
 
   // Relationships
   event_ids: z.array(z.number().int()).default([]),
-}).superRefine(stopoverSuperRefine);
+})
+  .superRefine(stopoverSuperRefine)
+  // A leg's landing within MAX_LEG_HOURS of its takeoff - a landing typed in
+  // the wrong month moved the site's hotel check-in by two months (2026-10-12).
+  .superRefine(legTimesSuperRefine);
 
 type OfflineFlightFormData = z.infer<typeof offlineFlightFormSchema>;
 

@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/form";
 
 import { createOfflineFlight } from "@/lib/actions/offline-flight-actions";
+import { legTimesSuperRefine } from "@/lib/flight-leg-times";
 import type { OfflineFlight } from "@/types/offline-flight.types";
 
 const isoDurationPattern = /^P(T(\d+H)?(\d+M)?(\d+S)?)?$/;
@@ -96,7 +97,10 @@ export const inlineFlightSchema = z.object({
   metadata_iata: z.string().regex(airlineCodePattern, "Invalid metadata IATA.").min(2).max(3),
   metadata_name: z.string().min(1, "Airline name is required."),
   metadata_logo: z.string().url({ message: "Invalid logo URL." }),
-});
+})
+  // A leg's landing within MAX_LEG_HOURS of its takeoff - a landing typed in
+  // the wrong month moved the site's hotel check-in by two months (2026-10-12).
+  .superRefine(legTimesSuperRefine);
 
 export type InlineFlightFormData = z.infer<typeof inlineFlightSchema>;
 

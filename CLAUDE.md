@@ -826,6 +826,26 @@ pile stand out. Mega Events only (`/dashboard`, `/reservations`) - not the tours
   (`isMissingColumn`) - the list and the pile load undated, the date box answers "available after
   the system update".
 
+### Offline flights - a leg's landing follows its takeoff (2026-10-12)
+
+The site reads the hotel's CHECK-IN from the outbound LANDING (main
+`lib/getDefaultDateRange.ts`), and the flight card there prints the landing's hour alone. An
+offline flight saved with its outbound landing in the wrong month (20/07 for 20/05 on a May
+departure) therefore opened the customer's hotel step on a check-in two months after the
+check-out - and nothing here had refused it: the three flight forms (new, edit, the inline form in
+the event editor) took the raw datetime, their only rule was "a landing before the takeoff is
+cleared", the auto-calculated duration read `PT1468H` and was accepted, `assertFlightValues`
+checked money and quantities alone. **One rule now, pure in `lib/flight-leg-times.ts`**
+(`scripts/flight-leg-times-selftest.ts`): a leg's landing is on or after its takeoff and within
+`MAX_LEG_HOURS` (48) of it - `legTimesSuperRefine` on the three form schemas (the message lands
+under the arrival field and names how far off it is), `assertLegTimes` inside `assertFlightValues`
+(create, series, bulk, the API routes), and in `updateOfflineFlight` merged with the stored row
+for the legs the patch touches (an in-place cell edit sends one time alone; a price change never
+fails over an old row - the edit form, which sends the whole row, is where an old row gets fixed).
+Main's side mirrors the constant and no longer trusts such a landing (check-in = the takeoff's
+day). To find who saved one: `/audit-log`, entity `offline_flight` - the `changes` carry
+`outbound_arrival_time: {from, to}` and the actor.
+
 ### Cron Jobs (Vercel)
 
 Defined in `vercel.json`. All cron routes are secured via `guardCronRoute()`

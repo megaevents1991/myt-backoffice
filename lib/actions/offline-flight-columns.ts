@@ -3,6 +3,7 @@ import {
   type OfflineFlight,
 } from "@/types/offline-flight.types";
 import { BLOCK_STATUSES } from "@/types/tours.types";
+import { assertLegTimes } from "@/lib/flight-leg-times";
 
 // Every column a client is allowed to write. `id`, `consumed_quantity`,
 // `is_deleted` and `series_id` are deliberately absent: they are set by the
@@ -130,4 +131,9 @@ export function assertFlightValues(
       throw new Error(`block_status "${String(row.block_status)}" is not allowed here`);
     }
   }
+  // A leg's landing must follow its takeoff within MAX_LEG_HOURS - the site
+  // reads the hotel check-in from the outbound landing (lib/flight-leg-times.ts).
+  // A row carrying one time of a leg alone is checked by updateOfflineFlight
+  // against the stored row.
+  assertLegTimes(row);
 }

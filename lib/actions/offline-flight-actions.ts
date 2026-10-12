@@ -20,6 +20,7 @@ import {
   withoutLifecycleStatus,
   assertFlightValues,
 } from "./offline-flight-columns";
+import { assertLegTimes } from "@/lib/flight-leg-times";
 import { pushFlightsToEvents } from "./offline-flight-event-sync";
 import { syncSubToursFromFlights } from "@/lib/tours/flight-sync";
 
@@ -179,6 +180,11 @@ export async function updateOfflineFlight(
   if (currentError) throw currentError;
   if (!current) throw new Error(FLIGHT_NOT_FOUND);
   const auditBefore = current as Record<string, unknown>;
+  // A leg this patch touches is checked against the stored row - an in-place
+  // cell edit sends one time alone, and its landing must still follow the
+  // stored takeoff within MAX_LEG_HOURS. Legs the patch leaves alone are not
+  // this write's business: a price change never fails over an old row.
+  assertLegTimes({ ...auditBefore, ...patch }, patch);
   const oldEventIds: number[] = current.event_ids ?? [];
   const oldPrice = Number(current.price ?? 0);
   const newEventIds: number[] = flight.event_ids ?? oldEventIds;
