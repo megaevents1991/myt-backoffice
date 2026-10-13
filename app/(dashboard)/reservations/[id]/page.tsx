@@ -1255,7 +1255,7 @@ function HotelTerms({ rate, compact = false }: { rate: unknown; compact?: boolea
         <p className="text-sm text-muted-foreground">Payment type: {pay}</p>
       )}
       {terms.freeUntil && (
-        <p className="text-xs text-muted-foreground">Deadline in the hotel's local time.</p>
+        <p className="text-xs text-muted-foreground">Deadline in the hotel&apos;s local time.</p>
       )}
     </div>
   );
