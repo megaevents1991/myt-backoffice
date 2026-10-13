@@ -55,6 +55,11 @@ import type { OfflineHotelRoom } from "@/types/offline-hotel.types";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { israelDate } from "@/lib/tasks/reminders";
 import { followUpLabel, isFollowUpStatus } from "@/lib/reservations/follow-up";
+import {
+  cancellationLabel,
+  hotelRateTerms,
+  paymentTypeLabel,
+} from "@/lib/reservations/hotel-rate-terms";
 
 // Visible marker for reservations whose flight/hotel came from our own
 // offline inventory (the `flights` / `offline_hotels` tables) rather than
@@ -971,6 +976,15 @@ export default function ReservationDetailsPage({
                       {reservation.hotel_order_info.address}
                     </p>
                   </div>
+                  <div>
+                    <p className="text-sm font-medium">Room</p>
+                    <p className="text-lg">
+                      {reservation.hotel_order_info.rate?.room_name ??
+                        reservation.hotel_order_info.hotelInformation?.roomName ??
+                        "-"}
+                    </p>
+                  </div>
+                  <HotelTerms rate={reservation.hotel_order_info.rate} />
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm font-medium">Check-in</p>
@@ -1210,6 +1224,43 @@ Charter JSON data for flight offer
 {"offer":{},"id":"1","numOfTravelers":2,"price":700,"duration":"PT8H55M","stops":0,"airline":"LY","outbound":{"stops":[{"iataCode":"BCN","duration":null}],"departureTime":"2025-10-28T06:30:00","departureAirport":"TLV","arrivalAirport":"BCN","arrivalTime":"2025-10-28T10:15:00","duration":"PT4H45M","checkBagsIncluded":true,"cabinBagsIncluded":true,"flightNumber":"LY393"},"inbound":{"stops":[{"iataCode":"TLV","duration":null}],"departureTime":"2025-11-01T22:50:00","departureAirport":"BCN","arrivalAirport":"TLV","arrivalTime":"2025-11-02T04:00:00","duration":"PT4H10M","checkBagsIncluded":true,"cabinBagsIncluded":true,"flightNumber":"LY392"},"metadata":{"iata":"LY","name":"EL AL","logo":"https://www.avcodes.co.uk/images/logos/ELY.png"},"penalties":"PE.PENALTIES \nCANCELLATIONS \n45 DAYS OR MORE BEFORE DEPARTURE CHARGE USD 100.00 FOR CANCELLATIONS PER TICKET.\n44-30 DAYS BEFORE DEPARTURE CHARGE USD 250.00 FOR CANCELLATIONS PER TICKET.\nLESS THAN 30 DAYS BEFORE DEPARTURE NON-REFUNDABLE. \nCHANGES \nBEFORE DEPARTURE CHARGE USD 120.00 FOR REISSUE/REVALIDATION. NOTE - WHEN THE FIRST FLIGHT COUPON IS BEING CHANGED NEW FARE WILL BE RECALCULATED USING FARES AND IATA RATE OF EXCHANGE IN EFFECT ON THE DATE OF REISSUE. \nAFTER DEPARTURE CHARGE USD 120.00 FOR REISSUE/REVALIDATION. CHARGE USD 200.00 FOR NO-SHOW. NOTE - BEFORE EXPIRY OF FLIGHT COUPON. UPGRADE TO ANY HIGHER FARE PERMITTED IN WHICH CASE CHANGE OF RESERVATION FEE OF USD 120.00 WILL ALSO APPLY. ------------------------------------------------ THE AP THE SECURITY AND INSURANCE SURCHARGE WHICH IS COLLECTED IN THE TFC AREA OF THE TICKET IS NOT REFUNDABLE. UNLESS THE TICKETS FARE IS FULLY REFUNDABLE ","bags":65}
 */
 
+/**
+ * The booked rate's own terms, in the extranet's column names ("Cancellation", "Payment type") so ops
+ * looks up the SAME product there. 2026-10-13: a one-night non-refundable Midland rate ($574) was looked
+ * up as a two-night refundable one ($1,230), taken for a site mistake, and another hotel was booked.
+ * `compact` = the split-stay table cell; otherwise a block of the single-hotel grid. Nothing is drawn
+ * for a rate that carries no terms (our offline inventory, rows written before the feature).
+ */
+function HotelTerms({ rate, compact = false }: { rate: unknown; compact?: boolean }) {
+  const terms = hotelRateTerms(rate);
+  if (!terms.known) return compact ? <span className="text-muted-foreground">-</span> : null;
+  const cancel = cancellationLabel(terms);
+  const pay = paymentTypeLabel(terms.paymentType);
+  const tone = terms.refundable
+    ? "text-emerald-700 dark:text-emerald-400"
+    : "text-red-600 dark:text-red-400";
+  if (compact) {
+    return (
+      <div className="text-xs">
+        <p className={`font-medium ${tone}`}>{cancel}</p>
+        {pay && <p className="text-muted-foreground">{pay}</p>}
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className="text-sm font-medium">Cancellation</p>
+      <p className={`text-lg ${tone}`}>{cancel}</p>
+      {pay && (
+        <p className="text-sm text-muted-foreground">Payment type: {pay}</p>
+      )}
+      {terms.freeUntil && (
+        <p className="text-xs text-muted-foreground">Deadline in the hotel's local time.</p>
+      )}
+    </div>
+  );
+}
+
 /** Split stay: one row per city segment - city, dates + nights, hotel + room, price, and the total. */
 function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
   const nightsOf = (s: OrderHotel) =>
@@ -1246,6 +1297,7 @@ function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
               <TableHead>Dates</TableHead>
               <TableHead>Hotel</TableHead>
               <TableHead>Meal</TableHead>
+              <TableHead>Cancellation</TableHead>
               <TableHead className="text-right">Price</TableHead>
             </TableRow>
           </TableHeader>
@@ -1284,6 +1336,9 @@ function SplitStayTable({ segments }: { segments: OrderHotel[] }) {
                       added +${Number(seg.breakfast_upgrade.delta_usd).toFixed(0)}
                     </p>
                   )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <HotelTerms rate={seg.rate} compact />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   ${Number(seg.price).toLocaleString()}

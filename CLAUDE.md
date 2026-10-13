@@ -826,6 +826,24 @@ pile stand out. Mega Events only (`/dashboard`, `/reservations`) - not the tours
   (`isMissingColumn`) - the list and the pile load undated, the date box answers "available after
   the system update".
 
+### Hotel terms on the reservation page (2026-10-13)
+
+Reservation 2169 (split stay): ops looked the Manchester segment up in RateHawk's extranet, found a
+refundable TWO-night rate at $1,230, took the site's $574 for a mistake and booked another hotel - the
+customer had bought ONE night, non-refundable, and a `prebook` on that rate still answered $575. The
+page named hotel, room, meal and price but not the terms. Now every hotel on the page (the single-hotel
+grid and each `SplitStayTable` row) prints **Room**, **Cancellation** and **Payment type** in the
+extranet's own column words - "Non-refundable" (red) / "Free until 22/06/2027 23:00" (green, the HOTEL's
+local time, printed literally - the supplier's timestamps carry no zone, so they are never converted),
+then "Pay later" (`deposit`) / "Pay now" / "Pay at the hotel". Pure in `lib/reservations/hotel-rate-terms.ts`
+(`hotelRateTerms` over the stored `rate.payment_options.payment_types[0]` - the same `[0]` every price
+reader uses; `cancellationLabel`, `paymentTypeLabel`, `formatHotelTime`; `scripts/hotel-rate-terms-selftest.ts`).
+A rate with no payment options (offline inventory, older rows) is `known: false` and draws nothing - never
+a guess. Nothing new is stored. Verified the same day (prebook, `price_changed: false`) that the search
+price IS RateHawk's bookable net price: `show_amount` = `amount`, commission 0, residency irrelevant, the
+total for ALL rooms of the request (two rooms = twice one), so dividing by the party is right. Next step
+Dor set: book through RateHawk's API (prebook + book) instead of the extranet by hand.
+
 ### Offline flights - a leg's landing follows its takeoff (2026-10-12)
 
 The site reads the hotel's CHECK-IN from the outbound LANDING (main
