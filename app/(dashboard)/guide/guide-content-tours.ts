@@ -269,6 +269,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     points: [
       t("The charge is in shekels: today's rate from the [Rates](/tours/rates) screen when it was typed in, otherwise the automatic rate plus the margin.", "החיוב בשקלים: השער של היום ממסך [השערים](/tours/rates) אם הוזן, אחרת השער האוטומטי ועוד המרווח."),
       t("Only dates with prices in the price table can be booked on the site. On a date without them the tour page shows \"השאירו פרטים\" and WhatsApp instead of a price, and what the customer leaves arrives as a lead.", "רק תאריכים עם מחירים בטבלת המחירים אפשר להזמין באתר. בתאריך בלי מחירים עמוד הטיול מציג \"השאירו פרטים\" ו-WhatsApp במקום מחיר, ומה שהלקוח משאיר מגיע כליד."),
+      t("On a tour page the customer fills in every traveler: first and last name in English as in the passport, a birth date and a gender; the first traveler adds an email and a phone. The booking is not sent while a name or a birth date is missing. Each traveler's birth date shows beside the name under Passengers.", "בעמוד טיול הלקוח ממלא כל נוסע: שם פרטי ושם משפחה באנגלית כמו בדרכון, תאריך לידה ומין; הנוסע הראשון מוסיף אימייל וטלפון. ההזמנה לא נשלחת כל עוד חסר שם או תאריך לידה. תאריך הלידה של כל נוסע מופיע ליד השם תחת Passengers."),
       t("Refunds are done by hand in CreditGuard; then set the booking \"Cancelled\" and remove its seats in Reservations.", "החזרים נעשים ידנית ב-CreditGuard; אחר כך מסמנים את ההזמנה \"Cancelled\" ומורידים את המושבים שלה בהזמנות."),
     ],
     links: [
@@ -637,6 +638,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     ],
     points: [
       t("A slider fills itself: a tour that gets the tag shows up after the next \"Revalidate Pages\", with no edit here.", "סליידר מתמלא לבד: טיול שמקבל את התגית מופיע אחרי ה-\"Revalidate Pages\" הבא, בלי לגעת כאן."),
+      t("The first Reasons section that is not ticked for any tile also feeds the tour pages: beside the order summary of a tour's booking step the site shows the icons and titles of its first four reasons.", "הסקשן Reasons הראשון שלא סומן לאף כפתור מזין גם את עמודי הטיול: ליד סיכום ההזמנה בשלב ההזמנה של טיול האתר מציג את האייקונים והכותרות של ארבע הסיבות הראשונות שלו."),
       t("A hidden section stays in the list with its content, so you can bring it back for the next season.", "סקשן מוסתר נשאר ברשימה עם התוכן שלו, כך שאפשר להחזיר אותו בעונה הבאה."),
       t("The reviews of the \"Reviews\" section also show on the world and tag pages.", "הביקורות של הסקשן \"Reviews\" מופיעות גם בעמודי העולמות והתגיות."),
       t("A tile without banners of its own still swaps the top banners: to the hero pictures of its world, or of its first 3 tours.", "כפתור בלי באנרים משלו עדיין מחליף את הבאנרים העליונים: לתמונות הראש של העולם שלו, או של 3 הטיולים הראשונים שלו."),

@@ -577,6 +577,10 @@ function ReasonsForm({ section, onChange, siteUrl }: FormProps<"reasons">) {
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
+      <p className="text-sm text-muted-foreground">
+        The first Reasons section of the home page that is not ticked for any tile also shows on tour pages: beside the order summary of the booking step, the
+        icons and titles of its first four reasons.
+      </p>
       <ItemList
         label="Reasons"
         items={section.items}
