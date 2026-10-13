@@ -87,6 +87,8 @@ import type {
 } from "@/components/tours/departures/types";
 import { actionFail, actionOk as ok, chunk, fetchAll, intOrNull, must, mustRow, UserError, UUID } from "@/lib/tours/action-kit";
 import { companyAudit } from "@/lib/tours/company-kit";
+import { departureKeptReason } from "@/lib/tours/bulk-delete";
+import type { SheetRemoveResult } from "@/components/tours/sheet/sheet-core";
 
 const fail = (e: unknown) => actionFail(e, "tours-departure-actions");
 
@@ -2195,6 +2197,84 @@ export async function restoreDeparture(id: string): Promise<ActionResult<undefin
       metadata: { ...companyAudit(company), code: core.code, restored: true },
     });
     return ok(undefined);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** How many dates one "Delete selected" takes. */
+const MAX_BULK_DELETE = 500;
+
+/**
+ * "Delete selected" of the departures sheet (Alon, 13.10.2026): the soft delete
+ * of softDeleteDeparture for many dates in one go - today's date stamped, off
+ * the site, restored from the classic board's "Deleted" filter. A date with
+ * seats sold is left alone and named with the reason (departureKeptReason):
+ * that one is deleted from its own card, where the operator sees what it holds.
+ */
+export async function softDeleteDepartures(ids: string[]): Promise<ActionResult<SheetRemoveResult>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const wanted = cleanIds(ids);
+    if (wanted.length === 0) throw new UserError("No departures selected");
+    if (wanted.length > MAX_BULK_DELETE) throw new UserError(`Up to ${MAX_BULK_DELETE} departures in one delete`);
+    const [cores, stats] = await Promise.all([loadCores(company.id, wanted), loadStats(company.id, wanted)]);
+    const coreById = new Map(cores.map((c) => [c.id, c]));
+
+    const outcome: SheetRemoveResult = { removed: [], skipped: [] };
+    const going: Core[] = [];
+    for (const id of wanted) {
+      const core = coreById.get(id);
+      if (!core) {
+        outcome.skipped.push({ id, code: "?", reason: "Not found in the active company" });
+        continue;
+      }
+      // deleted by someone else since the sheet was loaded: nothing to write, the row just leaves the sheet
+      if (core.is_deleted) {
+        outcome.removed.push(id);
+        continue;
+      }
+      const kept = departureKeptReason(stats.get(id)?.sold ?? 0);
+      if (kept) outcome.skipped.push({ id, code: core.code, reason: kept });
+      else going.push(core);
+    }
+
+    const patch = { is_deleted: todayIso(), is_published: false };
+    const written: string[] = [];
+    for (const part of chunk(going.map((c) => c.id), ID_CHUNK)) {
+      const rows =
+        must(
+          await toursDb()
+            .from("departures")
+            .update(patch)
+            .eq("company_id", company.id)
+            .is("is_deleted", null)
+            .in("id", part)
+            .select("id"),
+        ) ?? [];
+      written.push(...rows.map((r) => r.id));
+    }
+    outcome.removed.push(...going.map((c) => c.id));
+
+    if (written.length) {
+      const writtenSet = new Set(written);
+      const gone = going.filter((c) => writtenSet.has(c.id));
+      await logAudit({
+        action: "delete",
+        entityType: "tours_departure",
+        entityId: written.length === 1 ? written[0] : null,
+        changes: patch,
+        metadata: {
+          ...companyAudit(company),
+          ids: written,
+          codes: gone.map((c) => c.code),
+          were_published: gone.filter((c) => c.is_published).map((c) => c.code),
+          count: written.length,
+          bulk: written.length > 1,
+        },
+      });
+    }
+    return ok(outcome);
   } catch (e) {
     return fail(e);
   }

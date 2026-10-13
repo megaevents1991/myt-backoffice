@@ -25,9 +25,11 @@ import { cn } from "@/lib/utils";
 import { useActionData } from "@/hooks/use-action-data";
 import { LoadError, Ltr, selectClass, Toggle } from "@/components/tours/ui";
 import { SaleStatusBadge } from "@/components/tours/departures/ui-bits";
-import { SheetGrid, type SheetGroup, type SheetSaveAnswer } from "@/components/tours/sheet/sheet-grid";
+import { SheetGrid, type SheetGroup, type SheetRemove, type SheetSaveAnswer } from "@/components/tours/sheet/sheet-grid";
 import type { SheetColumn as CoreColumn, SheetRowChange, SheetValue } from "@/components/tours/sheet/sheet-core";
 import { getPricingSheet, savePricingSheet } from "@/lib/actions/tours-pricing-sheet-actions";
+import { softDeleteDepartures } from "@/lib/actions/tours-departure-actions";
+import { departureKeptReason } from "@/lib/tours/bulk-delete";
 import { fmtDate, fmtDateRange, fmtPrice, nightsBetween } from "@/lib/tours/format";
 import { departureHref, linkClass } from "@/lib/tours/links";
 import { SALE_STATUSES, SALE_STATUS_LABELS } from "@/types/tours.types";
@@ -138,6 +140,33 @@ export function PricingSheet({
       if (saved.length || rows.length) onSaved?.();
       return { ok: true, saved, skipped, notes };
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setData is stable for the life of the sheet
+    [onSaved],
+  );
+
+  // "Delete selected": a date with seats sold is kept (the server decides again, by the same rule)
+  const remove = useMemo(
+    (): SheetRemove<SheetRow> => ({
+      describe: (rows) => {
+        const kept = rows.filter((r) => departureKeptReason(r.seats.sold)).length;
+        const onSite = rows.filter((r) => r.isPublished && !departureKeptReason(r.seats.sold)).length;
+        return [
+          `The dates are marked as deleted as of today${onSite ? ` - ${onSite} of them ${onSite === 1 ? "is" : "are"} on the site and will come off it` : ""}. A flight block stays linked to a deleted date.`,
+          kept ? `${kept} of them ${kept === 1 ? "has" : "have"} seats sold and will be kept - delete ${kept === 1 ? "it" : "those"} from ${kept === 1 ? "its" : "their"} own card.` : "",
+          'To bring a date back: Departures > "Classic board" > the "Deleted" filter > "Restore".',
+        ]
+          .filter(Boolean)
+          .join(" ");
+      },
+      run: async (rows) => {
+        const res = await softDeleteDepartures(rows.map((r) => r.id));
+        if (!res.success) return { ok: false, error: res.error };
+        const gone = new Set(res.data.removed);
+        sheet.setData((prev) => (prev ? { ...prev, rows: prev.rows.filter((r) => !gone.has(r.id)) } : prev));
+        if (gone.size) onSaved?.();
+        return { ok: true, ...res.data };
+      },
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setData is stable for the life of the sheet
     [onSaved],
   );
@@ -263,12 +292,14 @@ export function PricingSheet({
       bulkDefaultKey={view === "prices" ? "price1" : view === "departures" ? "seasonId" : "capacity"}
       onDirtyChange={setDirty}
       save={save}
+      remove={remove}
       hint={
         <>
           Click a cell and type, or paste a block from Excel / Google Sheets. Enter or double-click edits, Delete clears, arrows
           and Tab move (an arrow also closes a cell you typed into). Shift + arrows or a drag picks a range: Delete clears it,
           Ctrl+D fills it down, and the small square at its corner drags the values onto the rows below. Tick rows and &ldquo;Set
-          for selected&rdquo; to set several columns at once. {HINTS[view]} Nothing is saved until you press Save.
+          for selected&rdquo; to set several columns at once, or &ldquo;Delete selected&rdquo; to delete the ticked dates (a
+          date with seats sold is kept). {HINTS[view]} Nothing is saved until you press Save - a delete happens at once.
         </>
       }
       empty={

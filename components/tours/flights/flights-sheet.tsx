@@ -29,9 +29,10 @@ import { LoadError, Ltr, selectClass, Toggle } from "@/components/tours/ui";
 import { BlockStatusBadge } from "@/components/tours/flights/block-ui";
 import { CreateSubToursDialog } from "@/components/tours/flights/create-sub-tours-dialog";
 import { stageOf } from "@/components/tours/flights/block-rules";
-import { SheetGrid, type SheetGroup, type SheetSaveAnswer } from "@/components/tours/sheet/sheet-grid";
+import { SheetGrid, type SheetGroup, type SheetRemove, type SheetSaveAnswer } from "@/components/tours/sheet/sheet-grid";
 import { fmtLocalTime, type SheetColumn as CoreColumn, type SheetRowChange, type SheetValue } from "@/components/tours/sheet/sheet-core";
-import { getFlightsSheet, saveFlightsSheet } from "@/lib/actions/tours-flights-sheet-actions";
+import { deleteFlightsFromSheet, getFlightsSheet, saveFlightsSheet } from "@/lib/actions/tours-flights-sheet-actions";
+import { flightKeptReason } from "@/lib/tours/bulk-delete";
 import { daysBetween } from "@/lib/tours/deadlines";
 import { fmtDate } from "@/lib/tours/format";
 import { blockHref, departureHref, linkClass } from "@/lib/tours/links";
@@ -156,6 +157,35 @@ export function FlightsSheet() {
       sheet.setData((prev) => (prev ? { ...prev, rows: prev.rows.map((r) => fresh.get(r.id) ?? r) } : prev));
       return { ok: true, saved: res.data.saved, skipped: res.data.skipped };
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setData is stable for the life of the sheet
+    [],
+  );
+
+  // "Delete selected": a flight a sub-tour flies on is kept (the server decides again, by the same rule)
+  const remove = useMemo(
+    (): SheetRemove<FlightSheetRow> => ({
+      describe: (rows) => {
+        const going = rows.filter((r) => !flightKeptReason(r.tours.map((t) => t.code)));
+        const kept = rows.length - going.length;
+        // a block the airline knows about (requested and on): the delete only hides it here
+        const known = going.filter((r) => !["draft", "approved", "cancelled", "declined"].includes(stageOf(r.status))).length;
+        return [
+          "The flights are marked as deleted and leave the sheet.",
+          kept ? `${kept} of them ${kept === 1 ? "carries a sub-tour" : "carry sub-tours"} and will be kept - delete the sub-tour first (Departures).` : "",
+          known ? `${known} of them ${known === 1 ? "is a block" : "are blocks"} already with the airline: deleting does not cancel ${known === 1 ? "it" : "them"} there.` : "",
+          'To bring a flight back: "Classic table" > "Show deleted" > Restore.',
+        ]
+          .filter(Boolean)
+          .join(" ");
+      },
+      run: async (rows) => {
+        const res = await deleteFlightsFromSheet(rows.map((r) => r.id));
+        if (!res.success) return { ok: false, error: res.error };
+        const gone = new Set(res.data.removed);
+        sheet.setData((prev) => (prev ? { ...prev, rows: prev.rows.filter((r) => !gone.has(r.id)) } : prev));
+        return { ok: true, ...res.data };
+      },
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setData is stable for the life of the sheet
     [],
   );
@@ -292,11 +322,13 @@ export function FlightsSheet() {
       bulkDefaultKey={view === "operations" ? "handledBy" : "seasonLabel"}
       onDirtyChange={setDirty}
       save={save}
+      remove={remove}
       hint={
         <>
           Click a cell and type, or paste a block from Excel / Google Sheets. Enter or double-click edits, Delete clears, arrows
-          and Tab move; tick rows and &ldquo;Set for selected&rdquo; to change many at once. {HINTS[view]} Nothing is saved until
-          you press Save.
+          and Tab move; tick rows and &ldquo;Set for selected&rdquo; to change many at once, or &ldquo;Delete selected&rdquo; to
+          delete them - a flight with a sub-tour is kept. {HINTS[view]} Nothing is saved until you press Save - a delete
+          happens at once.
         </>
       }
       empty={

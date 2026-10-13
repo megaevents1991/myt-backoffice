@@ -18,8 +18,11 @@
  */
 import { revalidatePath } from "next/cache";
 
+import { logAudit } from "@/lib/audit";
 import { requireCompany, type Company } from "@/lib/company";
 import { flightsOf } from "@/lib/flights-scope";
+import { flightKeptReason } from "@/lib/tours/bulk-delete";
+import { companyAudit } from "@/lib/tours/company-kit";
 import { toursDb } from "@/lib/tours/db";
 import { actionFail, actionOk, chunk, fetchAll, must, UserError, type ActionResult } from "@/lib/tours/action-kit";
 import { fmtDate, todayIso } from "@/lib/tours/format";
@@ -34,7 +37,13 @@ import {
   updateTourBlockSeats,
 } from "@/lib/actions/tours-flight-actions";
 import type { BlockStatus } from "@/types/tours.types";
-import { sameValue, type SheetRowChange, type SheetSaveResult, type SheetValue } from "@/components/tours/sheet/sheet-core";
+import {
+  sameValue,
+  type SheetRemoveResult,
+  type SheetRowChange,
+  type SheetSaveResult,
+  type SheetValue,
+} from "@/components/tours/sheet/sheet-core";
 import {
   FLIGHT_EDITABLE_KEYS,
   flightCellValue,
@@ -45,6 +54,7 @@ import {
 
 const fail = (e: unknown) => actionFail(e, "tours-flights-sheet-actions");
 const MAX_ROWS_PER_SAVE = 500;
+const MAX_ROWS_PER_DELETE = 500;
 const ID_CHUNK = 150;
 
 // One literal so the typed client can parse the column list.
@@ -410,6 +420,62 @@ export async function saveFlightsSheet(
     outcome.rows = await loadFlightRows(company, { ids: unique });
     revalidatePath("/offline-flights");
     revalidatePath("/tours/departures");
+    return actionOk(outcome);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// ---------------------------------------------------------------- delete
+/**
+ * "Delete selected" (Alon, 13.10.2026): the soft delete of the flight's own
+ * table (`is_deleted`, as softDeleteOfflineFlight) for many flights in one go.
+ * A flight a sub-tour still flies on is left alone and named with the reason
+ * (flightKeptReason). Deleting is not cancelling: nothing is said to the
+ * airline, and "Classic table" > "Show deleted" brings a flight back.
+ */
+export async function deleteFlightsFromSheet(ids: string[]): Promise<ActionResult<SheetRemoveResult>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const wanted = [
+      ...new Set((Array.isArray(ids) ? ids : []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)),
+    ];
+    if (wanted.length === 0) throw new UserError("No flights selected");
+    if (wanted.length > MAX_ROWS_PER_DELETE) throw new UserError(`Up to ${MAX_ROWS_PER_DELETE} flights in one delete`);
+    const live = new Map((await loadFlightRows(company, { ids: wanted })).map((r) => [r.flightId, r]));
+
+    const outcome: SheetRemoveResult = { removed: [], skipped: [] };
+    const going: number[] = [];
+    for (const id of wanted) {
+      const row = live.get(id);
+      // not among the company's live flights: deleted since the sheet was loaded - the row just leaves the sheet
+      if (!row) {
+        outcome.removed.push(String(id));
+        continue;
+      }
+      const kept = flightKeptReason(row.tours.map((t) => t.code));
+      if (kept) outcome.skipped.push({ id: row.id, code: `#${id}`, reason: kept });
+      else going.push(id);
+    }
+
+    const written: number[] = [];
+    for (const part of chunk(going, ID_CHUNK)) {
+      const { data, error } = await flightsOf(company).update({ is_deleted: true }).eq("is_deleted", false).in("id", part).select("id");
+      if (error) throw new Error(error.message);
+      written.push(...((data ?? []) as { id: number }[]).map((r) => r.id));
+    }
+    outcome.removed.push(...going.map(String));
+
+    if (written.length) {
+      await logAudit({
+        action: "delete",
+        entityType: "offline_flight",
+        entityId: written.length === 1 ? written[0] : null,
+        metadata: { ...companyAudit(company), ids: written, count: written.length, bulk: written.length > 1 },
+      });
+      revalidatePath("/offline-flights");
+      revalidatePath("/tours/departures");
+    }
     return actionOk(outcome);
   } catch (e) {
     return fail(e);

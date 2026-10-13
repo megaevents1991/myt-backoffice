@@ -16,6 +16,11 @@
  * range's corner (the fill handle) drags the values onto the rows below or
  * above. "Set for selected" sets several columns in one go.
  *
+ * Alon, 13.10.2026: "Delete selected" - the ticked rows in sight are deleted
+ * after one confirm. The grid only asks and tidies up after itself (edits,
+ * ticks); what a delete means, and which rows it must leave alone, is the
+ * host's (`remove`). A sheet that passes no `remove` has no such button.
+ *
  * The grid knows nothing about what a row is: the host gives the columns of the
  * view, the value of a cell, the text of a read-only cell and the first sticky
  * cell of a row. Model and parsing: ./sheet-core.ts. Hosts: the departures /
@@ -48,6 +53,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/confirm-provider";
 import { Ltr, Notice, selectClass } from "@/components/tours/ui";
 import {
   adjustNumber,
@@ -63,6 +69,7 @@ import {
   type SheetColumn,
   type SheetEdits,
   type SheetOption,
+  type SheetRemoveResult,
   type SheetRowChange,
   type SheetSaveResult,
   type SheetValue,
@@ -85,6 +92,16 @@ export interface SheetGroup<R> {
 }
 
 export type SheetSaveAnswer = ({ ok: true } & SheetSaveResult) | { ok: false; error: string };
+
+export type SheetRemoveAnswer = ({ ok: true } & SheetRemoveResult) | { ok: false; error: string };
+
+/** "Delete selected" of a sheet: the host says what a delete means here, and does it. */
+export interface SheetRemove<R> {
+  /** The body of the confirm, for the rows about to go (what happens, what is kept, how to undo). */
+  describe: (rows: R[]) => string;
+  /** Deletes. The host drops the removed rows from its own data; the rows it kept come back with the reason. */
+  run: (rows: R[]) => Promise<SheetRemoveAnswer>;
+}
 
 /** One column of "Set for selected": a value, or for numbers an amount or a percent to add. */
 export interface BulkEntry {
@@ -127,6 +144,8 @@ export interface SheetGridProps<R extends { id: string }> {
   actions?: ReactNode;
   hint?: ReactNode;
   save: (changes: SheetRowChange[]) => Promise<SheetSaveAnswer>;
+  /** "Delete selected" for the ticked rows in sight; absent = this sheet deletes nothing. */
+  remove?: SheetRemove<R>;
   /** The grid holds unsaved edits (the host locks what would lose them). */
   onDirtyChange?: (dirty: boolean) => void;
   /** Which column Set for Selected opens on. */
@@ -154,10 +173,12 @@ export function SheetGrid<R extends { id: string }>({
   actions,
   hint,
   save: saveChanges,
+  remove,
   onDirtyChange,
   bulkDefaultKey,
 }: SheetGridProps<R>) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [edits, setEdits] = useState<SheetEdits>({});
   /** Text typed into a cell that means nothing (shown red, blocks Save). */
   const [bad, setBad] = useState<Record<string, string>>({});
@@ -172,6 +193,9 @@ export function SheetGrid<R extends { id: string }>({
   const [editing, setEditing] = useState<(CellRef & { text: string; typed: boolean }) | null>(null);
   const [saving, setSaving] = useState(false);
   const [skipped, setSkipped] = useState<SheetSaveResult["skipped"]>([]);
+  /** What the rows listed in `skipped` were left out of: a save, or a delete. */
+  const [skippedFrom, setSkippedFrom] = useState<"save" | "delete">("save");
+  const [removing, setRemoving] = useState(false);
   const [notes, setNotes] = useState<NonNullable<SheetSaveResult["notes"]>>([]);
   const [bulkOpen, setBulkOpen] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -513,6 +537,8 @@ export function SheetGrid<R extends { id: string }>({
     () => [...selected].map((id) => rowsById.get(id)).filter((r): r is R => !!r),
     [selected, rowsById],
   );
+  /** A delete takes only the ticked rows in sight - never a row a filter hides. */
+  const tickedShown = useMemo(() => flat.filter((r) => selected.has(r.id)), [flat, selected]);
 
   // --- save / discard
   const discard = () => {
@@ -542,6 +568,7 @@ export function SheetGrid<R extends { id: string }>({
         return next;
       });
       setSkipped(res.skipped);
+      setSkippedFrom("save");
       setNotes(res.notes ?? []);
       toast({
         variant: res.skipped.length ? "destructive" : "default",
@@ -552,6 +579,51 @@ export function SheetGrid<R extends { id: string }>({
       toast({ variant: "destructive", title: "Not saved", description: e instanceof Error ? e.message : "Try again" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // --- delete the ticked rows
+  const removeTicked = async () => {
+    if (!remove || removing || saving || tickedShown.length === 0) return;
+    const rows = tickedShown;
+    const agreed = await confirm({
+      title: `Delete ${rows.length} ${noun}${rows.length === 1 ? "" : "s"}?`,
+      description: remove.describe(rows),
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      destructive: true,
+    });
+    if (!agreed) return;
+    setRemoving(true);
+    try {
+      const res = await remove.run(rows);
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Not deleted", description: res.error });
+        return;
+      }
+      // a row that is gone takes its unsaved edits, its red cells and its tick with it
+      const gone = new Set(res.removed);
+      const left = (cell: string) => !gone.has(cell.slice(0, cell.lastIndexOf("|")));
+      setEdits((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !gone.has(id))));
+      setBad((prev) => Object.fromEntries(Object.entries(prev).filter(([cell]) => left(cell))));
+      setSelected((prev) => new Set([...prev].filter((id) => !gone.has(id))));
+      setEditing((e) => (e && gone.has(e.id) ? null : e));
+      setActive((a) => (a && gone.has(a.id) ? null : a));
+      setAnchor((a) => (a && gone.has(a.id) ? null : a));
+      setSkipped(res.skipped);
+      setSkippedFrom("delete");
+      setNotes([]);
+      toast({
+        variant: res.skipped.length ? "destructive" : "default",
+        title: res.skipped.length
+          ? `${res.removed.length} deleted, ${res.skipped.length} kept`
+          : `${res.removed.length} ${noun}${res.removed.length === 1 ? "" : "s"} deleted`,
+        description: res.skipped.length ? "The rows kept are listed above the sheet, with the reason." : undefined,
+      });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Not deleted", description: e instanceof Error ? e.message : "Try again" });
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -570,6 +642,19 @@ export function SheetGrid<R extends { id: string }>({
             <ListChecks />
             Set for selected{selected.size ? ` (${selected.size})` : ""}
           </Button>
+          {remove && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              disabled={tickedShown.length === 0 || removing || saving}
+              title={tickedShown.length === 0 ? `Tick the ${noun}s to delete` : undefined}
+              onClick={() => void removeTicked()}
+            >
+              {removing ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              Delete selected{tickedShown.length ? ` (${tickedShown.length})` : ""}
+            </Button>
+          )}
           {actions}
         </div>
       </div>
@@ -578,7 +663,7 @@ export function SheetGrid<R extends { id: string }>({
 
       {skipped.length > 0 && (
         <Notice tone="warning">
-          <span className="font-medium">Not saved:</span>
+          <span className="font-medium">{skippedFrom === "delete" ? "Not deleted:" : "Not saved:"}</span>
           <ul className="mt-1 list-disc ps-5">
             {skipped.map((s) => (
               <li key={s.id}>

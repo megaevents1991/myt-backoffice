@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { flightMoveDecision, subTourFromFlight, type FlightDates } from "@/lib/tours/sub-tours";
+import { departureKeptReason, flightKeptReason } from "@/lib/tours/bulk-delete";
 import { discountText, displayText, parseDiscount } from "@/components/tours/sheet/sheet-core";
 import {
   cleanPointsHtml,
@@ -235,3 +236,13 @@ assert.equal(cleanPointsHtml("<ul><li></li></ul>"), "", "a list of empty points 
 assert.equal(cleanPointsHtml("<p>x</p>"), "<p>x</p>");
 
 console.log("tour-setup selftest: itinerary days and points OK");
+
+// --- "Delete selected" on the sheets: which ticked rows a bulk delete keeps
+assert.equal(departureKeptReason(0), null, "a date nobody bought goes");
+assert.match(departureKeptReason(1) ?? "", /^1 seat sold on it/, "one seat sold keeps the date");
+assert.match(departureKeptReason(12) ?? "", /^12 seats sold on it/);
+assert.equal(flightKeptReason([]), null, "a flight no sub-tour flies on goes");
+assert.match(flightKeptReason(["BBC712"]) ?? "", /^Sub-tour BBC712 flies on it/);
+assert.match(flightKeptReason(["BBC712", "BBC719"]) ?? "", /^Sub-tours BBC712, BBC719 fly on it/);
+
+console.log("tour-setup selftest: bulk delete OK");

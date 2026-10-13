@@ -298,6 +298,12 @@ export function adjustNumber(current: number | null, mode: "add" | "percent", am
 }
 
 /** What a save answers: the rows saved whole, the rows not saved (or saved in part) with the reason. */
+/** What "Delete selected" answered: the rows that are gone, and the ones kept with the reason. */
+export interface SheetRemoveResult {
+  removed: string[];
+  skipped: { id: string; code: string; reason: string }[];
+}
+
 export interface SheetSaveResult {
   saved: string[];
   skipped: { id: string; code: string; reason: string }[];
