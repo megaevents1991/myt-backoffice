@@ -102,7 +102,8 @@ check("a part of a term page is refused on the home page", homeSchema.safeParse(
 // ---- the footer document and a page's own tiles
 const footer = readSiteDoc("footer", { discoverTitle: "גלו", discover: [], newsletterTitle: "", newsletterNote: "", contactTitle: "", columns: [{ heading: "כללי", links: [] }] });
 check("an old footer document: tiles everywhere but the tour pages", footer.discoverOn, { home: true, pages: true, terms: true, tours: false });
-check("an old footer document: a phone shows the desktop columns", [footer.mobileColumns, footer.mobileAccordion, footer.columns.length], [[], false, 1]);
+check("an old footer document: a phone shows the desktop columns, folded under their headings", [footer.mobileColumns, footer.mobileAccordion, footer.columns.length], [[], true, 1]);
+check("a footer whose staff asked for open columns on a phone keeps them open", readSiteDoc("footer", { ...footer, mobileAccordion: false }).mobileAccordion, false);
 check("an unreadable choice of a page follows the rule", readFooterTiles({ mode: "banana" }).mode, "default");
 check("an old contact document has no Google profile", readSiteDoc("general", { name: "מגה" }).googlePlaceId, "");
 

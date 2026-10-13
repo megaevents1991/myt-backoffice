@@ -109,9 +109,13 @@ export const footerSchema = z.object({
   newsletterNote: text(240),
   contactTitle: text(160),
   columns: footerColumns,
-  /** The footer of a phone: its own columns (empty = the same columns as the desktop), opened by a tap or all open. */
+  /**
+   * The footer of a phone: its own columns (empty = the same columns as the desktop), each folded under its
+   * heading and opened by a tap unless staff turn that off (13.10: open lists made a phone's footer two screens
+   * long). The site reads a missing value as folded too (`lib/site.ts` of mega-family) - keep the two together.
+   */
   mobileColumns: footerColumns.default([]),
-  mobileAccordion: z.boolean().default(false),
+  mobileAccordion: z.boolean().default(true),
   /**
    * The row of picture tiles under the about, FAQ, blog and leaders pages: whether it shows,
    * its title, and its tiles (no tiles = the ones those pages came with).
@@ -733,7 +737,7 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
     contactTitle: "",
     columns: [],
     mobileColumns: [],
-    mobileAccordion: false,
+    mobileAccordion: true,
     hotVisible: true,
     hotTitle: "",
     hot: [],

@@ -322,7 +322,10 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
               <Switch id="footer-mobile-accordion" checked={footer.mobileAccordion} onCheckedChange={(mobileAccordion) => setFooter({ mobileAccordion })} />
               <label htmlFor="footer-mobile-accordion" className="text-sm">
                 Columns open by a tap
-                <span className="block text-xs text-muted-foreground">Each column shows its heading only, and its links open when the customer taps it.</span>
+                <span className="block text-xs text-muted-foreground">
+                  Each column shows its heading only, and its links open when the customer taps it (one column at a time). Off = every column shows all its links, which makes a long
+                  footer on a phone.
+                </span>
               </label>
             </div>
             <ColumnsEditor

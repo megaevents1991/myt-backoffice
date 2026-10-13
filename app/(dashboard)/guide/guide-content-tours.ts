@@ -701,7 +701,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("Give a phone its own footer", "לתת לנייד פוטר משלו"),
         steps: [
           t("Open [Header & Footer](/tours/site) → \"Mobile footer\". \"Copy from the Footer\" starts from the computer's columns.", "פותחים את [הדר ופוטר](/tours/site) ← \"Mobile footer\". \"Copy from the Footer\" מתחיל מהעמודות של המחשב."),
-          t("Remove or reorder columns and links. \"Columns open by a tap\" folds each column under its heading.", "מסירים או מסדרים עמודות וקישורים. \"Columns open by a tap\" מקפל כל עמודה מתחת לכותרת שלה."),
+          t("Remove or reorder columns and links. \"Columns open by a tap\" folds each column under its heading; it is on unless you turn it off, because open columns make a very long footer on a phone.", "מסירים או מסדרים עמודות וקישורים. \"Columns open by a tap\" מקפל כל עמודה מתחת לכותרת שלה; הוא דולק כל עוד לא כיביתם אותו, כי עמודות פתוחות יוצרות פוטר ארוך מאוד בטלפון."),
           t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
