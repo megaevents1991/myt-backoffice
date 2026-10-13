@@ -53,13 +53,44 @@ check("an old home document opens with every section", home.sections.map((s) => 
 const finder = home.sections[1] as Extract<HomeSection, { type: "tours" }>;
 check("its single featured row becomes a row of the tile", finder.tabs[0].rows, [{ id: "row_all", title: "הנמכרים", source: "manual", term: "", tours: ["a", "b"], limit: 12 }]);
 check("a tile without a featured row has no rows", finder.tabs[1].rows, []);
-check("a tile starts with the general banner and automatic pills", [finder.tabs[0].banner.slides.length, finder.tabs[0].pillTags, finder.tabs[0].term], [0, [], ""]);
+check("a tile starts with no banner of its own and automatic pills", [finder.tabs[0].banner.slides.length, finder.tabs[0].pillTags, finder.tabs[0].term], [0, [], ""]);
 const dest = home.sections[2] as Extract<HomeSection, { type: "destinations" }>;
 check("tiles stay picked by hand until staff choose automatic", [dest.mode, dest.items.length], ["manual", 1]);
 const reviews = home.sections[4] as Extract<HomeSection, { type: "reviews" }>;
 check("reviews stay typed until staff choose Google", [reviews.source, reviews.items.length], ["manual", 1]);
 check("the home page follows the footer rule until it chooses", home.footerTiles, { mode: "default", title: "", items: [], mobile: "default" });
 check("the document as the editor holds it saves as is", homeSchema.safeParse(home).success, true);
+
+// ---- the home page dresses in the world of the chosen tile (13.10): the new keys of a tile, a section and a banner
+check(
+  "an old tile opens with no words, no outside search and no link of its own",
+  [finder.tabs[0].searchLabel, finder.tabs[0].searchUrl, finder.tabs[0].gridTitle, finder.tabs[0].moreLabel, finder.tabs[0].moreHref],
+  ["", "", "", "", ""],
+);
+const oldBanners = home.sections.find((s) => s.type === "banners") as Extract<HomeSection, { type: "banners" }>;
+check("an old banners section keeps the look it had", oldBanners.layout, "overlay");
+check("an old section belongs to every tile", home.sections.map((s) => s.onlyTabs).filter(Boolean), []);
+const worldHome = {
+  ...home,
+  sections: [
+    ...home.sections.filter((s) => s.type !== "banners"),
+    {
+      ...oldBanners,
+      layout: "card",
+      onlyTabs: ["all"],
+      items: [{ tag: "ההבטחה שלנו", title: "מגיעות כזרות. חוזרות חברות.", subtitle: "", points: ["מגיעות לבד או עם חברה"], cta: "לחופשות", href: "/contact/", newTab: false, image: "", overlayColor: "", buttonColor: "" }],
+    },
+  ],
+};
+check("a coloured card that belongs to one tile saves", homeSchema.safeParse(worldHome).success, true);
+check(
+  "a section tied to a tile that was removed still saves (the site shows it to no one, the editor says so)",
+  homeSchema.safeParse({ ...worldHome, sections: worldHome.sections.map((s) => (s.type === "banners" ? { ...s, onlyTabs: ["gone"] } : s)) }).success,
+  true,
+);
+const withSearch = (searchUrl: string) => homeSchema.safeParse({ ...home, sections: home.sections.map((s) => (s.type === "tours" ? { ...s, tabs: [{ ...s.tabs[0], searchUrl }] } : s)) }).success;
+check("a tile may send its search to another site", withSearch("https://www.mega-events.co.il/search?q="), true);
+check("the other site's search is an https address, nothing else", [withSearch("javascript:alert(1)"), withSearch("/search?q=")], [false, false]);
 
 // ---- what a save is refused for
 check("a tile by tag needs its tag", sectionProblem({ ...finder, tabs: [{ ...finder.tabs[0], show: "tag", term: "" }] }), 'choose the tag of the tile "כל המבחר"');
@@ -152,6 +183,7 @@ const oldHeader = readSiteDoc("header", { menus: [], links: [{ label: "צור ק
 check("a header saved before the about menu existed opens, with no about links of its own", [oldHeader.links.length, oldHeader.aboutMenu], [1, []]);
 const oldFooter = readSiteDoc("footer", { discoverTitle: "בואו לגלות עוד", discover: [], newsletterTitle: "", newsletterNote: "", contactTitle: "", columns: [] });
 check("a footer saved before the picture tiles existed opens: the row shows, with no tiles of its own", [oldFooter.discoverTitle, oldFooter.hotVisible, oldFooter.hotTitle, oldFooter.hot], ["בואו לגלות עוד", true, "", []]);
+check("an old footer shows the worlds row under the site's own title", [oldFooter.worldsVisible, oldFooter.worldsTitle], [true, ""]);
 const navItem = (href: string, text: string) => `<li class="menu-item"><a class="elementor-item" href="${href}">${text}</a></li>`;
 const navHtml = (items: string) => `<div class="elementor-element elementor-widget elementor-widget-nav-menu" data-id="n"><nav class="elementor-nav-menu--main"><ul>${items}</ul></nav><nav class="elementor-nav-menu--dropdown"><ul>${items}</ul></nav></div>`;
 const aboutNav = navHtml(navItem("/about/since-1994/", "מאז 1994") + navItem("https://newsite.megatr.co.il/about/our-team/", "הצוות <b>שלנו</b>") + navItem("#", "ריק"));
@@ -224,7 +256,7 @@ check("the reasons keep their icon as a site path and get the title the site wro
   items: [{ icon: "/media/2026/08/calendar-date.png", title: "קצר ומדויק", text: "טיול קצר" }],
 });
 check("a slide becomes a banner; an empty slide is dropped and a '#' link is no link", tagExtras.afterLead[0].type === "banners" ? tagExtras.afterLead[0].items : null, [
-  { title: "פריז", subtitle: "5 ימים של קסם", cta: "לכל הטיולים", href: "/destinations/פריז/", newTab: false, image: "/media/2026/08/paris.jpg", overlayColor: "", buttonColor: "" },
+  { title: "פריז", tag: "", subtitle: "5 ימים של קסם", points: [], cta: "לכל הטיולים", href: "/destinations/פריז/", newTab: false, image: "/media/2026/08/paris.jpg", overlayColor: "", buttonColor: "" },
 ]);
 const destExtras = termExtrasSections("destinations", "ספרד", extrasRow);
 check("a destination's summary: the intro card and the columns without the imported wrappers", destExtras.afterLead[0], {

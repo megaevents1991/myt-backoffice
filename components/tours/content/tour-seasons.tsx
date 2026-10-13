@@ -23,7 +23,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/tours/format";
 import { Field, LoadError, Notice, Section, selectClass } from "@/components/tours/ui";
-import { ImageListEditor, SiteImage, StringListEditor } from "@/components/tours/content/fields";
+import { ImageListEditor, ImageUrlField, SiteImage, StringListEditor } from "@/components/tours/content/fields";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { DatesChecklist } from "@/components/tours/content/dates-checklist";
 import { BulkOutcomeDialog, BulkPromotionDialog } from "@/components/tours/departures/board-dialogs";
@@ -399,7 +399,7 @@ function SeasonEditor({
     <fieldset disabled={busy} className="min-w-0 space-y-4">
       <Section title={season ? `Season: ${season.name}` : "New Season"}>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Season name" hint="As the site shows it in the season list of the tour, e.g. קיץ, פסח">
+          <Field label="Season name" hint="As the site shows it on the season's dates and on the season buttons of the tour page, e.g. קיץ, פסח">
             <Input dir="auto" list="tour-season-names" value={draft.name} onChange={(e) => set("name", e.target.value)} />
             <datalist id="tour-season-names">
               {SEASON_NAME_SUGGESTIONS.filter((n) => !seasonNames.includes(n)).map((n) => (
@@ -589,6 +589,14 @@ function SeasonEditor({
             />
           )}
         </div>
+        <ImageUrlField
+          label="Top picture of this season (empty = the tour's)"
+          value={draft.heroImage}
+          onChange={(value) => set("heroImage", value)}
+          siteUrl={siteUrl}
+          folder="packages"
+          hint="The wide picture at the top of the tour page while a customer has one of this season's dates chosen."
+        />
         {inherited(
           "gallery",
           `Images (${tour.gallery.length})`,

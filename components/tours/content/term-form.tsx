@@ -110,10 +110,10 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
       {isWorld && (
         <Section
           title="World"
-          description="A world with a brand name gets a tile in the Worlds section of the home page, and its color paints its page, its sub-categories and the cards of its tours."
+          description="A world with a brand name gets a tile in the Worlds section of the home page, a link in the footer's worlds row and its name in the trail at the top of its tours' pages. While a customer has the world's tile chosen on the home page - and on the world's own page - the site's fresh look wears the world: the header, the buttons and the footer take its color, and the header says its brand name instead of the logo. The color also paints its sub-categories and the cards of its tours."
         >
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Brand name" hint='As the group names the world, e.g. "מגה פמילי". Empty = a plain audience, with no tile.'>
+            <Field label="Brand name" hint='As the group names the world, e.g. "מגה פמילי". Empty = a plain audience: no tile, no link in the footer, and the header keeps the logo.'>
               <Input dir="auto" value={form.brandName} onChange={(e) => set("brandName", e.target.value)} />
             </Field>
             <ColorInput label="World color" value={form.color} onChange={(color) => set("color", color)} />
@@ -129,6 +129,9 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
             folder="terms"
             hint="Shown faintly behind the name on the world's tile. Empty = the first hero image."
           />
+          <p className="text-xs text-muted-foreground">
+            Any color works as the world&apos;s color: where white text would not read on it, the site darkens it until it does.
+          </p>
         </Section>
       )}
 

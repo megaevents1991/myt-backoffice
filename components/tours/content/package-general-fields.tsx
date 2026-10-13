@@ -134,7 +134,7 @@ export function PackageGeneralFields({
           onChange={(value) => set("seasons", value)}
           placeholder="קיץ, חנוכה, פסח..."
           addLabel="Add Season"
-          hint="The first season also labels the dates and the badge at the top of the page. Each one opens as a season of the tour (Seasons tab), where its dates and content are set."
+          hint="The first season labels the tour's card and the badge at the top of its page. On the page itself every date shows its own season, and with dates in two seasons or more the customer chooses by season. Each one opens as a season of the tour (Seasons tab), where its dates and content are set."
         />
       )}
     </>

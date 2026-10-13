@@ -17,6 +17,9 @@ import { ImageListEditor, ImageUrlField } from "@/components/tours/content/field
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
+  BANNER_LAYOUTS,
+  BANNER_LAYOUT_LABELS,
+  BANNER_POINTS_MAX,
   REVIEWS_MAX,
   SUMMARY_COLUMNS_MAX,
   SUMMARY_IMAGES_MAX,
@@ -211,8 +214,9 @@ function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
   return (
     <div className="space-y-4">
       <Notice tone="info">
-        These are the general banners of the page. A category tile of the Tour finder can carry banners of its own (open the tile, &quot;Banner of this
-        tile&quot;): while a customer has that tile chosen, its banners show here instead.
+        These are the general banners of the page. A category tile of the Tour finder can carry banners and words of its own (open the tile, &quot;Banner of
+        this tile&quot;): while a customer has that tile chosen, they show here instead. A tile without banners of its own still swaps the pictures: to the hero
+        pictures of its world, or of its first 3 tours.
       </Notice>
       <BannerFields
         value={section}
@@ -230,6 +234,11 @@ function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
 function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) {
   return (
     <div className="space-y-4">
+      <Notice tone="info">
+        A tile that shows a world dresses the whole page while a customer has it chosen (the site&apos;s fresh look): the header, the buttons and the footer take
+        the world&apos;s color, and the header says the world&apos;s brand name instead of the logo. Set both on the world itself (Categories &amp; Tags &gt; the
+        world). The other sections of the page can belong to some tiles only: open a section and tick tiles under &quot;Show for tiles&quot;.
+      </Notice>
       <Field label="Title of the tour grid">
         <Input dir="auto" value={section.gridTitle} onChange={(e) => onChange({ ...section, gridTitle: e.target.value })} />
       </Field>
@@ -251,6 +260,11 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
           pillTags: [],
           banner: { titleBold: "", titleRest: "", text: "", slides: [] },
           rows: [],
+          searchLabel: "",
+          searchUrl: "",
+          gridTitle: "",
+          moreLabel: "",
+          moreHref: "",
         })}
         addLabel="Add Category Tile"
         empty="No category tiles: the grid shows every tour."
@@ -286,15 +300,35 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                   </select>
                 </Field>
                 <ColorInput label="Search button color" value={tab.color} onChange={(color) => patch({ color })} />
+                <Field label="Search button text" hint='Empty = "תמצאו לי חופשה". A world can ask in its own voice, e.g. "מצאו לנו טיול משפחתי".'>
+                  <Input dir="auto" value={tab.searchLabel} onChange={(e) => patch({ searchLabel: e.target.value })} />
+                </Field>
+                <Field
+                  label="Search on another site"
+                  hint="For a world whose packages are sold on another site (Mega Events): the search box takes free text and opens that site's search in a new tab, with the customer's words added to the end of this address. Empty = the search filters this page."
+                >
+                  <Input dir="ltr" placeholder="https://www.mega-events.co.il/search?q=" value={tab.searchUrl} onChange={(e) => patch({ searchUrl: e.target.value })} />
+                </Field>
               </Grid>
               {tab.show === "manual" && (
                 <ToursPicker label="Tours of this tile" value={tab.tours} onChange={(tours) => patch({ tours })} options={options} max={48} />
               )}
               <ImageUrlField label="Icon" value={tab.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="Square icon, shown at 86 x 86." />
 
-              <Fold title="Banner of this tile" summary={tab.banner.slides.length ? `${tab.banner.slides.length} banners of its own` : "The page's general banners"}>
+              <Fold
+                title="Banner of this tile"
+                summary={[
+                  tab.banner.slides.length ? `${tab.banner.slides.length} banners of its own` : "The pictures of its world or of its tours",
+                  tab.banner.titleBold || tab.banner.titleRest || tab.banner.text ? "its own words" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              >
                 <p className="text-sm text-muted-foreground">
-                  While a customer has this tile chosen, these banners replace the banners at the top of the page. No banners here = the general ones stay.
+                  While a customer has this tile chosen, these banners replace the banners at the top of the page, and the words below replace the title card -
+                  each on its own. No banners here = the site shows the hero pictures of the tile&apos;s world; a tile that is not a world shows the pictures of its
+                  first 3 tours. On the fresh look the second part of the title (&quot;the rest&quot;) is drawn in the world&apos;s color: write the world&apos;s own
+                  line there, e.g. &quot;החופשה שהמשפחה תזכור.&quot;
                 </p>
                 <BannerFields
                   value={tab.banner}
@@ -302,8 +336,31 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                   options={options}
                   siteUrl={siteUrl}
                   textHint="The three fields empty = the title card of the general banners stays."
-                  empty="No banners of its own: the general banners stay."
+                  empty="No banners of its own: the pictures of the tile's world, or of its first tours."
                 />
+              </Fold>
+
+              <Fold
+                title="Tour grid of this tile"
+                summary={[tab.gridTitle, tab.moreLabel || (tab.moreHref ? "own link" : "")].filter(Boolean).join(" · ") || "The page's title, an automatic link"}
+              >
+                <p className="text-sm text-muted-foreground">
+                  The title above the tile&apos;s tours, and the link beside it that takes the customer to everything the tile stands for.
+                </p>
+                <Grid>
+                  <Field label="Title of the grid" hint='Empty = the "Title of the tour grid" at the top of this section. E.g. "חם עכשיו באיבנטס".'>
+                    <Input dir="auto" value={tab.gridTitle} onChange={(e) => patch({ gridTitle: e.target.value })} />
+                  </Field>
+                  <Field label={'Text of the "more" link'} hint='Empty = "לכל הטיולים".'>
+                    <Input dir="auto" value={tab.moreLabel} onChange={(e) => patch({ moreLabel: e.target.value })} />
+                  </Field>
+                  <Field
+                    label={'"More" link'}
+                    hint="Empty = the page of the tile's world (or the other site the world lives on), tag, destination or category. A sale, all-tours or picked-tours tile has no link until you give it one."
+                  >
+                    <LinkInput value={tab.moreHref} onChange={(moreHref) => patch({ moreHref })} options={options} />
+                  </Field>
+                </Grid>
               </Fold>
 
               <Fold title="Trip-type pills" summary={tab.pillTags.length ? `${tab.pillTags.length} picked` : "Automatic"}>
@@ -434,9 +491,16 @@ function TermTilesForm({ section, onChange, options, siteUrl }: FormProps<"artis
 }
 
 function BannersForm({ section, onChange, options, siteUrl }: FormProps<"banners">) {
+  const card = section.layout === "card";
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
+      <Field
+        label="Look"
+        hint='"Picture with a text box" = the picture fills the banner and the title, the line and the button sit in a box over it. "Coloured card" = a card in one color with a chip, the title, the picture, a line, check marks and a white button; one banner alone lies wide on a computer.'
+      >
+        {selectOf(section.layout, BANNER_LAYOUTS, BANNER_LAYOUT_LABELS, (layout) => onChange({ ...section, layout }))}
+      </Field>
       <Field
         label="Which banners"
         hint='"I pick them" = banners you write here, each with its own picture, text and link. "Automatic" = one banner per tour of a rule (the tours of a world, a tag, a destination, a category, on sale, or tours you pick): the tour&apos;s picture and name, and a button to its page.'
@@ -455,12 +519,17 @@ function BannersForm({ section, onChange, options, siteUrl }: FormProps<"banners
           label="Banners"
           items={section.items}
           onChange={(items) => onChange({ ...section, items })}
-          create={() => ({ title: "", subtitle: "", cta: "", href: "", newTab: false, image: "", overlayColor: "", buttonColor: "" })}
+          create={() => ({ tag: "", title: "", subtitle: "", points: [], cta: "", href: "", newTab: false, image: "", overlayColor: "", buttonColor: "" })}
           addLabel="Add Banner"
           max={8}
           render={(banner, patch, index) => (
             <div className="space-y-2">
               <Grid>
+                {card && (
+                  <Field label="Chip above the title" hint="A short word or two. Empty = no chip.">
+                    <Input dir="auto" value={banner.tag} onChange={(e) => patch({ tag: e.target.value })} />
+                  </Field>
+                )}
                 <Field label="Title">
                   <Input dir="auto" value={banner.title} onChange={(e) => patch({ title: e.target.value })} />
                 </Field>
@@ -473,10 +542,28 @@ function BannersForm({ section, onChange, options, siteUrl }: FormProps<"banners
                 <Field label="Button link" hint="Without a text and a link there is no button.">
                   <LinkInput value={banner.href} onChange={(href) => patch({ href })} options={options} />
                 </Field>
-                <ColorInput label="Color of the text box" value={banner.overlayColor} onChange={(overlayColor) => patch({ overlayColor })} withOpacity />
-                <ColorInput label="Button color" value={banner.buttonColor} onChange={(buttonColor) => patch({ buttonColor })} withOpacity />
+                <ColorInput label={card ? "Card color" : "Color of the text box"} value={banner.overlayColor} onChange={(overlayColor) => patch({ overlayColor })} withOpacity={!card} />
+                {!card && <ColorInput label="Button color" value={banner.buttonColor} onChange={(buttonColor) => patch({ buttonColor })} withOpacity />}
                 <NewTabSwitch id={`${section.id}-banner-${index}-tab`} checked={banner.newTab} onChange={(newTab) => patch({ newTab })} />
               </Grid>
+              {card && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Empty card color = the site&apos;s brand color, which is the world&apos;s color while a world tile is chosen - so one card follows every world. A
+                    color white text would not read on is darkened by the site until it does. The button is white, its words in the card&apos;s color.
+                  </p>
+                  <ItemList
+                    label="Check marks"
+                    items={banner.points.map((text) => ({ text }))}
+                    onChange={(items) => patch({ points: items.map((item) => item.text) })}
+                    create={() => ({ text: "" })}
+                    addLabel="Add Line"
+                    empty="No check marks."
+                    max={BANNER_POINTS_MAX}
+                    render={(item, patchItem) => <Input dir="auto" aria-label="Line" value={item.text} onChange={(e) => patchItem({ text: e.target.value })} />}
+                  />
+                </>
+              )}
               <ImageUrlField label="Picture" value={banner.image} onChange={(image) => patch({ image })} siteUrl={siteUrl} />
             </div>
           )}
@@ -507,7 +594,7 @@ function ReasonsForm({ section, onChange, siteUrl }: FormProps<"reasons">) {
                 <Input dir="auto" value={reason.text} onChange={(e) => patch({ text: e.target.value })} />
               </Field>
             </Grid>
-            <ImageUrlField label="Icon" value={reason.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="Square icon, shown at 96 x 96." />
+            <ImageUrlField label="Icon" value={reason.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="Square line icon in black ink. The site draws it small on a round badge (the classic look draws it at 96 x 96)." />
           </div>
         )}
       />

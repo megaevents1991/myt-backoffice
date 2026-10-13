@@ -180,7 +180,7 @@ function MatrixEditor({ data, onSaved }: { data: DepartureCardData; onSaved: () 
         )}
         {card.offer != null && (
           <p className="text-xs text-muted-foreground">
-            On the date card: from <Ltr className="font-semibold text-foreground">{fmtPrice(card.offer, currency)}</Ltr> per person in a double room
+            On the tour&apos;s card in the lists: from <Ltr className="font-semibold text-foreground">{fmtPrice(card.offer, currency)}</Ltr> per person in a double room
             {card.regular != null && (
               <>
                 {" "}

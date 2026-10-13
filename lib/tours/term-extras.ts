@@ -49,7 +49,9 @@ function bannersSection(id: string, value: unknown): HomeSection | null {
       const href = str(o.href);
       return {
         title: str(o.title),
+        tag: "",
         subtitle: str(o.text),
+        points: [],
         cta: str(o.button),
         href: href === "#" ? "" : href,
         newTab: false,
@@ -61,7 +63,7 @@ function bannersSection(id: string, value: unknown): HomeSection | null {
     .filter((item) => item.title !== "" || item.image !== "")
     .slice(0, BANNERS_MAX);
   if (!items.length) return null;
-  return { id, visible: true, type: "banners", title: str(slider.title), mode: "manual", source: "sale", term: "", tours: [], limit: 4, autoCta: "", items };
+  return { id, visible: true, type: "banners", title: str(slider.title), layout: "overlay", mode: "manual", source: "sale", term: "", tours: [], limit: 4, autoCta: "", items };
 }
 
 /** The "<destination> on a fingertip" block of a destination page, as a Destination summary section. */

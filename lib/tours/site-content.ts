@@ -119,6 +119,12 @@ export const footerSchema = z.object({
   hotVisible: z.boolean().default(true),
   hotTitle: text(160).default(""),
   hot: z.array(pictureTile).max(PICTURE_TILES_MAX, `Up to ${PICTURE_TILES_MAX} picture tiles`).default([]),
+  /**
+   * The row of links to the group's worlds at the top of the dark footer: every world with a brand
+   * name, by that name (the site draws it once two worlds carry one). Its title; empty = the site's own.
+   */
+  worldsVisible: z.boolean().default(true),
+  worldsTitle: text(160).default(""),
 });
 export type SiteFooter = z.infer<typeof footerSchema>;
 
@@ -205,7 +211,15 @@ export const generalSchema = z.object({
 export type SiteGeneral = z.infer<typeof generalSchema>;
 
 // ---------------------------------------------------------------- home page
-const base = { id: z.string().trim().min(1).max(60), visible: z.boolean() };
+/**
+ * The category tiles (by key) a section of the home page belongs to: the site shows it only while a
+ * customer has one of them chosen in the Tour finder, so each world brings its own banners and its own
+ * reasons. Missing or empty = the section always shows. A key of a tile that was removed is kept: the
+ * site then shows the section to no one (never to everyone), and the editor says so.
+ */
+export const SECTION_TILES_MAX = 8;
+const onlyTabs = z.array(z.string().trim().min(1).max(40)).max(SECTION_TILES_MAX, `Up to ${SECTION_TILES_MAX} tiles`).optional();
+const base = { id: z.string().trim().min(1).max(60), visible: z.boolean(), onlyTabs };
 
 export const TOUR_SOURCES = ["world", "tag", "destination", "category", "sale", "all", "manual"] as const;
 export type TourSource = (typeof TOUR_SOURCES)[number];
@@ -276,9 +290,29 @@ const toursTab = z
     search: z.enum(["filters", "text"]),
     /** The trip-type pills of the tile, as tag slugs in order; empty = built from the tags of its tours. */
     pillTags: z.array(slug).max(24).default([]),
-    /** The top banner while this tile is chosen; no banners = the page's general hero. */
+    /**
+     * The top banner while this tile is chosen: its pictures and the words of the title card, each on its own.
+     * No pictures = the site shows the hero pictures of the tile's world, else of its first 3 tours.
+     */
     banner: z.object({ titleBold: text(120), titleRest: text(200), text: text(400), slides: heroSlides }).default(EMPTY_TAB_BANNER),
     rows: z.array(tabRow).max(6, "Up to 6 rows on a category tile").default([]),
+    /** The words on the search button while this tile is chosen; empty = the site's own ("תמצאו לי חופשה"). */
+    searchLabel: text(60).default(""),
+    /**
+     * A tile whose packages are sold on another site (Mega Events): the search takes free text and opens
+     * that site's search, with the customer's words added to the end of this address. Empty = the search filters the page.
+     */
+    searchUrl: z
+      .string()
+      .trim()
+      .max(600)
+      .refine((v) => v === "" || /^https:\/\//i.test(v), "The address of the other site's search starts with https://")
+      .default(""),
+    /** The title of the tour grid while this tile is chosen; empty = the section's. */
+    gridTitle: text(120).default(""),
+    /** The link beside that title; no address = the page of the tile's world, tag, destination or category. */
+    moreLabel: text(60).default(""),
+    moreHref: href.default(""),
     // The single "featured row" of the first version of this document; read into `rows` below.
     featuredTitle: text(120).default(""),
     featured: z.array(slug).max(12).default([]),
@@ -324,10 +358,21 @@ const tileFill = {
 const artistsSection = z.object({ ...base, type: z.literal("artists"), title: text(160), items: termItems, ...tileFill });
 const destinationsSection = z.object({ ...base, type: z.literal("destinations"), title: text(160), items: termItems, ...tileFill });
 
+/** How a banners section is drawn: a picture with a text box over it, or a coloured card. */
+export const BANNER_LAYOUTS = ["overlay", "card"] as const;
+export type BannerLayout = (typeof BANNER_LAYOUTS)[number];
+export const BANNER_LAYOUT_LABELS: Record<BannerLayout, string> = {
+  overlay: "Picture with a text box over it",
+  card: "Coloured card: chip, title, picture, line, check marks, button",
+};
+/** How many check-mark lines a coloured card holds. */
+export const BANNER_POINTS_MAX = 5;
+
 const bannersSection = z.object({
   ...base,
   type: z.literal("banners"),
   title: text(160),
+  layout: z.enum(BANNER_LAYOUTS).default("overlay"),
   /** Automatic: one banner per tour of the rule (the tour's picture and name, a button to its page). */
   mode: z.enum(FILL_MODES).default("manual"),
   source: z.enum(TOUR_SOURCES).default("sale"),
@@ -338,8 +383,11 @@ const bannersSection = z.object({
   items: z
     .array(
       z.object({
+        /** The coloured card: a short word on a chip above the title, and lines with a check mark. */
+        tag: text(40).default(""),
         title: text(120),
         subtitle: text(200),
+        points: z.array(text(120)).max(BANNER_POINTS_MAX, `Up to ${BANNER_POINTS_MAX} check marks`).default([]),
         cta: text(80),
         href,
         newTab: z.boolean(),
@@ -689,6 +737,8 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
     hotVisible: true,
     hotTitle: "",
     hot: [],
+    worldsVisible: true,
+    worldsTitle: "",
   },
   home: { sections: [], footerTiles: DEFAULT_FOOTER_TILES },
 };
@@ -712,15 +762,21 @@ export const SECTION_KINDS: SectionKind[] = [
   { type: "term_tours", label: "Tour list", description: "Every tour of this page, with its search. The page fills it by itself; you can put tours first, or show only the ones you pick.", builtIn: true },
   { type: "term_description", label: "Description", description: "The description written further down this screen.", builtIn: true },
   { type: "summary", label: "Destination summary", description: "\"<destination> on a fingertip\": a heading, a row of pictures, a gray intro card and text columns.", termOnly: true },
-  { type: "hero", label: "Hero banners", description: "The big rotating banners at the top, with the title card. A category tile can swap them for banners of its own.", single: true },
-  { type: "tours", label: "Tour finder", description: "The category tiles, each with its banner, its tours and its rows, then the trip-type pills, the search and the tour grid.", single: true },
+  { type: "hero", label: "Hero banners", description: "The big rotating banners at the top, with the title card. A category tile swaps them for its own banners and its own words.", single: true },
+  {
+    type: "tours",
+    label: "Tour finder",
+    description:
+      "The category tiles, each with its banner, its tours and its rows, then the trip-type pills, the search and the tour grid. A tile of a world dresses the whole page in that world: its color and its brand name.",
+    single: true,
+  },
   { type: "slider", label: "Automatic tour slider", description: "A row of tours that fills itself: by world, tag, destination, category, sale, or tours you pick." },
   { type: "worlds", label: "Worlds", description: "One tile per world of the group, in its own color.", single: true },
-  { type: "banners", label: "Banners", description: "Picture cards with a title, a line and a button." },
+  { type: "banners", label: "Banners", description: "Picture cards with a title, a line and a button - or coloured cards with a chip, check marks and a button." },
   { type: "image", label: "Wide image", description: "One picture across the page, with an optional link." },
   { type: "destinations", label: "Destination tiles", description: "Picture tiles of destinations, with the number of tours in each." },
   { type: "artists", label: "Artist tiles", description: "A slider of artists." },
-  { type: "reasons", label: "Reasons", description: "Icons with a title and a line: why travel with us." },
+  { type: "reasons", label: "Reasons", description: "A card per reason - an icon on a round badge, a title and a line: why travel with us." },
   { type: "reviews", label: "Reviews", description: "What customers say. The category pages show the same reviews.", single: true },
   { type: "text", label: "Text", description: "A title and formatted text." },
   { type: "lead_form", label: "Lead form", description: "The \"did not find what you were looking for\" form.", single: true },
@@ -745,7 +801,7 @@ export function newSection(type: HomeSectionType): HomeSection {
     case "destinations":
       return { ...common, type, title: "", items: [], mode: "manual", source: "all", term: "", limit: 6 };
     case "banners":
-      return { ...common, type, title: "", items: [], mode: "manual", source: "sale", term: "", tours: [], limit: 4, autoCta: "" };
+      return { ...common, type, title: "", layout: "overlay", items: [], mode: "manual", source: "sale", term: "", tours: [], limit: 4, autoCta: "" };
     case "reasons":
       return { ...common, type, title: "", items: [] };
     case "reviews":

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { Chip } from "@/components/tours/ui";
+import { Chip, Notice } from "@/components/tours/ui";
 import { moved } from "@/components/tours/content/fields";
 import type { SiteEditorOptions } from "@/lib/tours/site-options";
 import {
@@ -30,6 +30,61 @@ import {
   type HomeSectionType,
 } from "@/lib/tours/site-content";
 import { SectionForm } from "@/components/tours/site/section-forms";
+
+/** A category tile of the page's Tour finder, as a section can be tied to it. */
+export interface SectionTile {
+  key: string;
+  label: string;
+}
+
+/** The sections every tile shares by nature: the banners at the top (they follow the tile anyway) and the Tour finder itself. */
+const SHOWN_FOR_EVERY_TILE: HomeSectionType[] = ["hero", "tours"];
+
+/**
+ * Which category tiles a section belongs to. None ticked = it always shows; with tiles ticked the site
+ * shows it only while a customer has one of them chosen - so each world brings its own banners and reasons.
+ */
+function TileScope({ id, value, tiles, onChange }: { id: string; value: string[]; tiles: SectionTile[]; onChange: (keys: string[] | undefined) => void }) {
+  const known = value.filter((key) => tiles.some((tile) => tile.key === key));
+  // every tile it was tied to has since left the Tour finder: the site shows it to no one
+  const orphaned = value.length > 0 && known.length === 0;
+  const toggle = (key: string, on: boolean) => {
+    const next = tiles.map((tile) => tile.key).filter((k) => (k === key ? on : known.includes(k)));
+    onChange(next.length ? next : undefined);
+  };
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+      <p className="text-sm font-medium">Show for tiles</p>
+      <p className="text-xs text-muted-foreground">
+        None ticked = the section always shows. Tick tiles and the site shows it only while a customer has one of them chosen in the Tour finder, so each
+        world can bring its own banners and its own reasons.
+      </p>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        {tiles.map((tile) => (
+          <label key={tile.key} htmlFor={`${id}-tile-${tile.key}`} className="flex items-center gap-2 text-sm">
+            <input
+              id={`${id}-tile-${tile.key}`}
+              type="checkbox"
+              className="h-4 w-4 accent-primary"
+              checked={known.includes(tile.key)}
+              onChange={(event) => toggle(tile.key, event.target.checked)}
+            />
+            <span dir="auto">{tile.label}</span>
+          </label>
+        ))}
+      </div>
+      {orphaned && (
+        <Notice tone="warning">
+          This section was set for a tile that is no longer in the Tour finder, so the site shows it to no one. Tick a tile above, or{" "}
+          <button type="button" className="underline" onClick={() => onChange(undefined)}>
+            show it always
+          </button>
+          .
+        </Notice>
+      )}
+    </div>
+  );
+}
 
 /** What a save of these sections would be refused for, in the words of the section it is in; null = fine. */
 export function sectionsProblem(sections: HomeSection[]): string | null {
@@ -50,6 +105,7 @@ export function SectionsBoard({
   options,
   siteUrl,
   kinds,
+  tiles,
 }: {
   sections: HomeSection[];
   onChange: (sections: HomeSection[]) => void;
@@ -57,6 +113,8 @@ export function SectionsBoard({
   siteUrl: string | null;
   /** The section types this page offers (default: every type of the home page). */
   kinds?: HomeSectionType[];
+  /** The category tiles of this page's Tour finder: with them, a section can be shown for some tiles only (the home page). */
+  tiles?: SectionTile[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
   // a built-in part of a term page is always in the list: it is never added, and never removed;
@@ -93,6 +151,17 @@ export function SectionsBoard({
                     {sectionSummary(section)}
                   </span>
                 </button>
+                {tiles && (section.onlyTabs?.length ?? 0) > 0 && (
+                  <Chip tone="muted">
+                    <span dir="auto">
+                      Only:{" "}
+                      {(section.onlyTabs ?? [])
+                        .map((key) => tiles.find((tile) => tile.key === key)?.label)
+                        .filter(Boolean)
+                        .join(", ") || "a removed tile"}
+                    </span>
+                  </Chip>
+                )}
                 {!section.visible && <Chip tone="muted">Hidden</Chip>}
                 <label className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground" title="Show this section on the site">
                   {section.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -148,6 +217,9 @@ export function SectionsBoard({
               {isOpen && (
                 <div className="space-y-3 border-t p-4">
                   {kind && <p className="text-sm text-muted-foreground">{kind.description}</p>}
+                  {tiles && tiles.length > 1 && !SHOWN_FOR_EVERY_TILE.includes(section.type) && (
+                    <TileScope id={section.id} value={section.onlyTabs ?? []} tiles={tiles} onChange={(onlyTabs) => patch(section.id, { ...section, onlyTabs })} />
+                  )}
                   <SectionForm section={section} onChange={(next) => patch(section.id, next)} options={options} siteUrl={siteUrl} />
                 </div>
               )}

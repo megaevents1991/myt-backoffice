@@ -45,11 +45,13 @@ export interface ItineraryDay {
   subtitle: string;
   html: string;
   image?: string;
+  /** What this day holds for the children: the site draws it as its own line on the day's card, under "לילדים". */
+  kids?: string;
 }
 
 /** A day nobody wrote anything in. The editor opens one per day of the tour's length; it is never saved. */
 export const isBlankDay = (day: ItineraryDay): boolean =>
-  !day.title.trim() && !day.subtitle.trim() && !day.image && !day.html.replace(/<[^>]*>|&nbsp;/g, "").trim();
+  !day.title.trim() && !day.subtitle.trim() && !day.image && !(day.kids ?? "").trim() && !day.html.replace(/<[^>]*>|&nbsp;/g, "").trim();
 
 /** The days as they are saved: without the blank ones. */
 export const filledDays = (days: ItineraryDay[]): ItineraryDay[] => days.filter((day) => !isBlankDay(day));

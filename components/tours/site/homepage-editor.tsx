@@ -34,6 +34,11 @@ export function HomepageEditor({ initial, options }: { initial: HomeData; option
   }, []);
   const { saved, form, set, isDirty, isSaving, submit, discard } = useContentForm<HomeDoc, HomeData>(initial, save);
   const sections = form.sections;
+  // the category tiles of the Tour finder: a section can be shown for some of them only
+  const tiles = useMemo(
+    () => sections.flatMap((section) => (section.type === "tours" ? section.tabs.map((tab) => ({ key: tab.key, label: tab.label || "(no name)" })) : [])),
+    [sections],
+  );
 
   // what the server would refuse, said before the click
   const problem = useMemo(() => {
@@ -60,7 +65,7 @@ export function HomepageEditor({ initial, options }: { initial: HomeData; option
         <Notice tone="warning">The home page has no sections. Add the first one below; until then the site shows its built-in home page.</Notice>
       )}
 
-      <SectionsBoard sections={sections} onChange={(next) => set("sections", next)} options={options} siteUrl={saved.siteUrl} />
+      <SectionsBoard sections={sections} onChange={(next) => set("sections", next)} options={options} siteUrl={saved.siteUrl} tiles={tiles} />
 
       <Section title="Tiles above the footer" description="What the home page shows above the footer.">
         <FooterTilesField value={form.footerTiles} onChange={(footerTiles) => set("footerTiles", footerTiles)} options={options} siteUrl={saved.siteUrl} />

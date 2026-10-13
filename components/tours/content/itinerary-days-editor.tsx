@@ -173,6 +173,12 @@ export function ItineraryDaysEditor({
                   siteUrl={siteUrl}
                   rows={10}
                 />
+                <Field
+                  label="For the children"
+                  hint={'One or two lines on what this day holds for children. The site draws them on the card of the day as a line of its own, under "לילדים". Empty = no such line.'}
+                >
+                  <Input dir="auto" value={day.kids ?? ""} onChange={(event) => patchDay(index, { kids: event.target.value })} />
+                </Field>
               </div>
             )}
           </div>

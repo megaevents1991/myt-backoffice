@@ -287,6 +287,19 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
               <TextInput label="Line under the form" value={footer.newsletterNote} onChange={(newsletterNote) => setFooter({ newsletterNote })} />
             </div>
           </Section>
+          <Section
+            title="Worlds of the group"
+            description="A row of links at the top of the dark footer: every world with a brand name (Categories & Tags > the world > Brand name), by that name. A world that lives on another site opens there. The site draws the row once two worlds carry a brand name."
+          >
+            <div className="flex items-center gap-3 rounded-md border p-3 md:max-w-md">
+              <Switch id="footer-worlds-visible" checked={footer.worldsVisible} onCheckedChange={(worldsVisible) => setFooter({ worldsVisible })} />
+              <label htmlFor="footer-worlds-visible" className="text-sm">
+                Show the worlds row
+                <span className="block text-xs text-muted-foreground">Off = the footer starts with its link columns.</span>
+              </label>
+            </div>
+            <TextInput label="Title" hint='Empty = "העולמות של הקבוצה".' value={footer.worldsTitle} onChange={(worldsTitle) => setFooter({ worldsTitle })} />
+          </Section>
           <Section title="Link columns" description="The columns of the dark footer, right to left.">
             <TextInput label="Title above the social icons" value={footer.contactTitle} onChange={(contactTitle) => setFooter({ contactTitle })} />
             <ColumnsEditor columns={footer.columns} onChange={(columns) => setFooter({ columns })} options={options} />

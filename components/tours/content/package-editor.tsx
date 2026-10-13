@@ -411,7 +411,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
               value={form.gallery}
               onChange={(value) => set("gallery", value)}
               siteUrl={siteUrl}
-              hint="The order here is the order on the site."
+              hint={'The order here is the order on the site. The tour page shows the first 6 under the title "מטיולים קודמים"; the rest open with them in the viewer.'}
               folder="packages"
             />
           </Section>
