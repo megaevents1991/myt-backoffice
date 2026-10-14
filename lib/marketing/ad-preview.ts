@@ -22,7 +22,18 @@ export function previewSrcFrom(body: string): string | null {
 /** A Meta / Google object id: digits only - the only thing allowed into a Graph path or a GAQL string. */
 export const isAdId = (s: unknown): s is string => typeof s === "string" && /^\d{1,25}$/.test(s);
 
-export const META_PREVIEW_FORMATS = ["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD", "INSTAGRAM_STORY"] as const;
+/** What an ad-set / ad-group row of the Media tab opens under "Ads"; null = a campaign-level row (P.Max), no button. */
+export type AdsTarget =
+  | { platform: "meta"; adsetId: string; title: string }
+  | { platform: "google"; adGroupId: string; title: string }
+  | { platform: "google"; campaignId: string; title: string };
+
+export function adsTargetFor(platform: "meta" | "google", key: string, title: string): AdsTarget | null {
+  if (!isAdId(key)) return null;
+  return platform === "meta" ? { platform, adsetId: key, title } : { platform, adGroupId: key, title };
+}
+
+export const META_PREVIEW_FORMATS =["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD", "INSTAGRAM_STORY"] as const;
 export type MetaPreviewFormat = (typeof META_PREVIEW_FORMATS)[number];
 export const META_PREVIEW_LABEL: Record<MetaPreviewFormat, string> = {
   MOBILE_FEED_STANDARD: "Facebook feed",

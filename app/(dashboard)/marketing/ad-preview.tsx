@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Eye } from "lucide-react";
 
 import { getGoogleAds, getMetaAdPreview, listAdsetAds, type AdRow, type GoogleAdCard } from "@/lib/actions/marketing-ads-actions";
-import { META_PREVIEW_FORMATS, META_PREVIEW_LABEL, type MetaPreviewFormat } from "@/lib/marketing/ad-preview";
+import { META_PREVIEW_FORMATS, META_PREVIEW_LABEL, type AdsTarget, type MetaPreviewFormat } from "@/lib/marketing/ad-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,10 +18,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
  * formats). Google: the ad's / asset group's own texts and pictures, with its landing page.
  */
 
-type Target =
-  | { platform: "meta"; adsetId: string; title: string }
-  | { platform: "google"; adGroupId: string; title: string }
-  | { platform: "google"; campaignId: string; title: string };
+type Target = AdsTarget;
 
 /** The button a Media row carries; opens a side sheet with the ads. */
 export function AdsButton({ target, label = "Ads" }: { target: Target; label?: string }) {

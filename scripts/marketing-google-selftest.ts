@@ -1,7 +1,7 @@
 // Run: npx tsx scripts/marketing-google-selftest.ts
 import assert from "node:assert/strict";
 import { mergeGooglePurchases } from "../lib/services/ads/google";
-import { isAdId, previewSrcFrom } from "../lib/marketing/ad-preview";
+import { adsTargetFor, isAdId, previewSrcFrom } from "../lib/marketing/ad-preview";
 import type { AdSpendRow } from "../types/marketing.types";
 
 const row = (p: Partial<AdSpendRow>): AdSpendRow => ({ platform: "google", account_id: "1", campaign_id: "c1", adset_key: "ag1", level: "adset", day: "2026-10-01", spend: 100, currency: "ILS", spend_usd: 27, fx_rate: 0.27, impressions: 10, clicks: 1, platform_conversions: 0, platform_value: 0, ...p });
@@ -50,5 +50,11 @@ assert.equal(previewSrcFrom(""), null);
 assert.equal(isAdId("120249159793840141"), true);
 assert.equal(isAdId("12' OR 1=1"), false, "nothing but digits reaches a GAQL string or a Graph path");
 assert.equal(isAdId(""), false);
+
+// Which ad-set row offers "Ads" (final review 14.10: the UI's own regex lost its backslash and no row ever did).
+assert.deepEqual(adsTargetFor("meta", "120249159793840141", "Set A"), { platform: "meta", adsetId: "120249159793840141", title: "Set A" });
+assert.deepEqual(adsTargetFor("google", "138746264051", "AG"), { platform: "google", adGroupId: "138746264051", title: "AG" });
+assert.equal(adsTargetFor("google", "", "—"), null, "a campaign-level row (P.Max) has no ad group");
+assert.equal(adsTargetFor("meta", "ddd", "x"), null);
 
 console.log("marketing-google selftest: ok");

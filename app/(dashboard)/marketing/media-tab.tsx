@@ -31,8 +31,7 @@ import {
 } from "./marketing-shared";
 import { AdsButton } from "./ad-preview";
 
-/** An ad set / ad group key that names a real object (campaign-level rows carry "" ). */
-const isObjectId = (k: string) => /^d+$/.test(k);
+import { adsTargetFor } from "@/lib/marketing/ad-preview";
 
 type PnlResult = Awaited<ReturnType<typeof getMarketingPnl>>;
 
@@ -243,11 +242,10 @@ function AdsetRows({ campaign, cur }: { campaign: CampaignPnl; cur: MarketingCur
               <TableCell className="tabular-nums">{money(a.revenue, cur)}</TableCell>
               <TableCell className={cn("font-medium tabular-nums", poasTone(a.poas))}>{a.poas === null ? "—" : a.poas.toFixed(2)}</TableCell>
               <TableCell>
-                {isObjectId(a.key) && (
-                  <AdsButton
-                    target={campaign.platform === "meta" ? { platform: "meta", adsetId: a.key, title: a.name } : { platform: "google", adGroupId: a.key, title: a.name }}
-                  />
-                )}
+                {(() => {
+                  const target = adsTargetFor(campaign.platform, a.key, a.name);
+                  return target && <AdsButton target={target} />;
+                })()}
               </TableCell>
             </TableRow>
           ))}
