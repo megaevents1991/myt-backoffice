@@ -12,7 +12,10 @@
  *
  * The cron (/api/cron/toursEventsFeed, lib/services/tours-events-feed-sync.ts) stores the
  * result in tours.site_content under key 'events_feed', and the company site reads it through
- * <schema>.site_content at build time. Pure: no DB, no network.
+ * <schema>.site_content at build time. It reads in two steps: the few columns that order the
+ * list for every listed event, then the tickets and prices only of the events the list can
+ * reach (buildEventsFeedInPages) - every event's tickets in one read (~7 MB) timed the cron out
+ * on 14.10.2026. Pure: no DB, no network (the paged builder is handed its reader).
  */
 import { defaultPinnable, defaultShowable, mergeRow, refId, refKind, toRef } from "@/lib/homepage/merge";
 import type { RowPin, RowRef, ShowFlags } from "@/lib/homepage/merge";
@@ -25,6 +28,11 @@ import { eventSiteUrl, PUBLIC_SITE_URL } from "@/lib/site";
 export const EVENTS_FEED_KEY = "events_feed";
 /** How many packages a company site gets. */
 export const EVENTS_FEED_MAX = 12;
+/**
+ * How many events the cron reads in full (tickets and prices) at a time: four lists' worth, so
+ * the sold-out and unpriced events the list skips rarely cost a second read.
+ */
+export const EVENTS_FEED_PAGE = 4 * EVENTS_FEED_MAX;
 /** The Mega Events homepage row the list follows. */
 export const HOT_ROW_KEY = "most_wanted";
 /**
@@ -101,6 +109,22 @@ export type FeedEventRow = SiteCardPriceEvent & {
   is_deleted?: string | null;
 };
 
+/**
+ * The columns that decide whether an event lists and where it stands in the list - all the
+ * cron reads of EVERY listed event. No tickets: they are the heavy part of the row.
+ */
+export const FEED_ORDER_COLUMNS = [
+  "id",
+  "type",
+  "date",
+  "tags",
+  "is_prioritized",
+  "is_test",
+  "deactivated_reason",
+  "is_deleted",
+] as const;
+export type FeedOrderRow = Pick<FeedEventRow, (typeof FEED_ORDER_COLUMNS)[number]>;
+
 /** The site's own row, as /api/homepage-pools sends it. */
 export type SiteHotRow = {
   /** The row's automatic pool, in the site's order. */
@@ -130,7 +154,7 @@ export function feedCutoffDate(now: Date): string {
  * May the event appear on a Mega Events listing: not deleted, at least the window ahead, not a QA
  * event, not taken off the site (myt-main lib/eventsData.ts getEvents + isListedEvent).
  */
-export function isListedFeedEvent(e: FeedEventRow, cutoff: string): boolean {
+export function isListedFeedEvent(e: FeedOrderRow, cutoff: string): boolean {
   if (e.is_deleted != null || e.is_test === true || e.deactivated_reason) return false;
   const at = Date.parse(e.date);
   return Number.isFinite(at) && at >= Date.parse(`${cutoff}T00:00:00Z`);
@@ -144,7 +168,7 @@ export function isFeedEventSoldOut(e: FeedEventRow): boolean {
 const time = (iso: string) => Date.parse(iso) || 0;
 
 // myt-main lib/homepage/rows.ts byTagThenDate: events with a tag first, then by date.
-const byTagThenDate = (a: FeedEventRow, b: FeedEventRow) => {
+const byTagThenDate = (a: FeedOrderRow, b: FeedOrderRow) => {
   if (a.tags && !b.tags) return -1;
   if (!a.tags && b.tags) return 1;
   return time(a.date) - time(b.date);
@@ -155,9 +179,11 @@ const byTagThenDate = (a: FeedEventRow, b: FeedEventRow) => {
  * Prioritized events, then the fill - not Prioritized, not VIP, not a fixed sports_event - each
  * part tags first, then soonest (myt-main lib/homepage/rows.ts buildPools). The site also keeps
  * one card per artist / team page in the fill; that needs the people tables and is left out here.
+ * `soldOut` is a parameter because the order is first worked out before the tickets are read:
+ * isFeedEventSoldOut on a row without tickets says "sold out" and would empty the pool.
  */
-export function fallbackPool(listed: FeedEventRow[]): RowRef[] {
-  const live = listed.filter((e) => !isFeedEventSoldOut(e));
+export function fallbackPool<T extends FeedOrderRow>(listed: T[], soldOut: (e: T) => boolean): RowRef[] {
+  const live = listed.filter((e) => !soldOut(e));
   const prioritized = live.filter((e) => e.is_prioritized === true).sort(byTagThenDate);
   const fill = live
     .filter((e) => e.is_prioritized === false && e.tags !== "VIPevent" && e.type !== "sports_event")
@@ -270,16 +296,24 @@ export function hotRowHidden(config: unknown): RowRef[] {
   return out;
 }
 
+/** What orders the row: everything of EventsFeedInput but the rows and the length. */
+type FeedRowInput = Omit<EventsFeedInput, "events" | "max">;
+
+const NOTHING_UNREAD: ReadonlySet<number> = new Set();
+
 /**
- * The list: the row as the site merges it (pins in their places, then the pool), with no length
- * of its own, then every card that is not a listed event with a name, a picture and a price is
- * dropped, and the first `max` stay.
+ * The row as the site merges it (pins in their places, then the pool), with no length of its
+ * own, plus the listed events by id and the sold-out test it was ordered with. `rows` are full
+ * rows except the ids in `unread`, whose tickets are not read yet: such an event counts as on
+ * sale unless it is tagged "Sold" (the one part of the test its light row answers), so it keeps
+ * its place in the order instead of dropping out the way an event with no tickets does.
  */
-export function buildEventsFeed(input: EventsFeedInput): EventsFeedItem[] {
+function feedRow(rows: FeedOrderRow[], unread: ReadonlySet<number>, input: FeedRowInput) {
   const cutoff = feedCutoffDate(input.now);
-  const max = input.max ?? EVENTS_FEED_MAX;
-  const listed = input.events.filter((e) => isListedFeedEvent(e, cutoff));
+  const listed = rows.filter((e) => isListedFeedEvent(e, cutoff));
   const byId = new Map(listed.map((e) => [e.id, e]));
+  // every row not in `unread` is a full row (planEventsFeed / buildEventsFeed build them so)
+  const soldOut = (e: FeedOrderRow) => (unread.has(e.id) ? e.tags === "Sold" : isFeedEventSoldOut(e as FeedEventRow));
 
   let pool: RowRef[];
   let flags: ReadonlyMap<RowRef, ShowFlags>;
@@ -287,8 +321,8 @@ export function buildEventsFeed(input: EventsFeedInput): EventsFeedItem[] {
     pool = input.site.pool;
     flags = input.site.flags;
   } else {
-    pool = fallbackPool(listed);
-    flags = new Map(listed.map((e) => [toRef("event", e.id), { soldOut: isFeedEventSoldOut(e) }]));
+    pool = fallbackPool(listed, soldOut);
+    flags = new Map(listed.map((e) => [toRef("event", e.id), { soldOut: soldOut(e) }]));
   }
 
   const row = mergeRow(pool, input.pins, {
@@ -297,20 +331,134 @@ export function buildEventsFeed(input: EventsFeedInput): EventsFeedItem[] {
     showable: (ref) => defaultShowable(flags.get(ref), HOT_ROW_KEY, ref),
     pinnable: (ref) => defaultPinnable(flags.get(ref), HOT_ROW_KEY, ref),
   });
+  return { cards: row.cards, byId, soldOut };
+}
+
+export type EventsFeedPlan = {
+  items: EventsFeedItem[];
+  /**
+   * False = the list may still change once more rows are read in full: its walk reached an
+   * event not read yet before it was full, or a pinned event is not read yet.
+   */
+  complete: boolean;
+};
+
+/**
+ * The walk over the row: every card that is not a listed, unsold event with a name, a picture
+ * and a price is dropped, and the first `max` stay. It stops at the first event not read yet -
+ * up to there the row is exactly the one the full rows give (an unread event can only turn out
+ * sold out and leave the pool, which moves the cards after it, never the ones before), past it
+ * nothing is certain.
+ */
+function walkFeed(rows: FeedOrderRow[], unread: ReadonlySet<number>, input: FeedRowInput & { max?: number }): EventsFeedPlan {
+  const max = input.max ?? EVENTS_FEED_MAX;
+  const { cards, byId, soldOut } = feedRow(rows, unread, input);
+  // a listed event that may be on sale, whose tickets are not read yet (a feedCandidateIds id)
+  const waiting = (ref: RowRef) => {
+    if (refKind(ref) !== "event") return false;
+    const event = byId.get(Number(refId(ref)));
+    return !!event && unread.has(event.id) && !soldOut(event);
+  };
+  // a pin's own state moves the pins after it (mergeRow closes up behind a dead pin), so nothing
+  // is final while a pinned event is unread - the cron reads the pinned ones first for that
+  const pinsRead = !cards.some((card) => card.pinned && waiting(card.ref));
 
   const items: EventsFeedItem[] = [];
   const seen = new Set<number>();
-  for (const card of row.cards) {
+  for (const card of cards) {
     if (items.length >= max) break;
     if (refKind(card.ref) !== "event") continue;
     const event = byId.get(Number(refId(card.ref)));
-    if (!event || seen.has(event.id) || isFeedEventSoldOut(event)) continue;
-    const item = feedItemOf(event, { pinned: card.pinned });
+    if (!event || seen.has(event.id) || soldOut(event)) continue;
+    if (unread.has(event.id)) return { items, complete: false };
+    const item = feedItemOf(event as FeedEventRow, { pinned: card.pinned });
     if (!item) continue;
     seen.add(event.id);
     items.push(item);
   }
-  return items;
+  return { items, complete: pinsRead };
+}
+
+/**
+ * The list from full rows: the row as the site merges it, then every card that is not a listed
+ * event with a name, a picture and a price is dropped, and the first `max` stay.
+ */
+export function buildEventsFeed(input: EventsFeedInput): EventsFeedItem[] {
+  return walkFeed(input.events, NOTHING_UNREAD, input).items;
+}
+
+/**
+ * The events the list can reach, in the order its walk meets them, worked out from the light
+ * rows alone (every event counted as on sale): the pinned ones first, since a pin decides where
+ * the pins after it stand, then the rest of the row. The cron reads the full rows in this order.
+ */
+export function feedCandidateIds(input: FeedRowInput & { events: FeedOrderRow[] }): number[] {
+  const unread = new Set(input.events.map((e) => e.id));
+  const { cards, byId, soldOut } = feedRow(input.events, unread, input);
+  const ids: number[] = [];
+  const taken = new Set<number>();
+  for (const pinned of [true, false]) {
+    for (const card of cards) {
+      if (card.pinned !== pinned || refKind(card.ref) !== "event") continue;
+      const event = byId.get(Number(refId(card.ref)));
+      if (!event || soldOut(event) || taken.has(event.id)) continue;
+      taken.add(event.id);
+      ids.push(event.id);
+    }
+  }
+  return ids;
+}
+
+export type PagedFeedInput = FeedRowInput & {
+  /** Every listed event, light columns, in the order the database gave them (by date). */
+  order: FeedOrderRow[];
+  max?: number;
+};
+
+/**
+ * The list from rows read in part: `read` holds the full rows read so far by id (null = asked
+ * for but no longer there). An event of `order` not in `read` holds its place as if on sale, and
+ * the walk stops before it (`complete: false`). With every event read it is buildEventsFeed.
+ */
+export function planEventsFeed(input: PagedFeedInput & { read: ReadonlyMap<number, FeedEventRow | null> }): EventsFeedPlan {
+  const rows: FeedOrderRow[] = [];
+  const unread = new Set<number>();
+  for (const e of input.order) {
+    if (!input.read.has(e.id)) {
+      rows.push(e);
+      unread.add(e.id);
+      continue;
+    }
+    const full = input.read.get(e.id);
+    if (full) rows.push(full);
+  }
+  return walkFeed(rows, unread, input);
+}
+
+/**
+ * The list, reading tickets and prices only where it needs them: the candidates
+ * (feedCandidateIds) are read in full a page at a time, in order, until the list is final - so
+ * it comes out exactly as buildEventsFeed would from every row, usually after one page.
+ * `readFull` returns the full rows of the ids it is given (missing = gone).
+ */
+export async function buildEventsFeedInPages(
+  input: PagedFeedInput,
+  readFull: (ids: number[]) => Promise<FeedEventRow[]>,
+  pageSize = EVENTS_FEED_PAGE,
+): Promise<EventsFeedPlan & { pages: number; read: number }> {
+  const candidates = feedCandidateIds({ ...input, events: input.order });
+  const read = new Map<number, FeedEventRow | null>();
+  let next = 0;
+  let pages = 0;
+  for (;;) {
+    const plan = planEventsFeed({ ...input, read });
+    if (plan.complete || next >= candidates.length) return { ...plan, pages, read: read.size };
+    const ids = candidates.slice(next, next + Math.max(1, Math.floor(pageSize)));
+    next += ids.length;
+    pages += 1;
+    for (const id of ids) read.set(id, null);
+    for (const row of await readFull(ids)) if (read.has(row.id)) read.set(row.id, row);
+  }
 }
 
 /** JSON with every object's keys sorted - jsonb hands keys back in its own order. */

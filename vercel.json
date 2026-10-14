@@ -192,6 +192,10 @@
       "memory": 1024,
       "maxDuration": 300
     },
+    "app/api/cron/toursEventsFeed/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
     "app/api/price-light/crawl/route.ts": {
       "memory": 1024,
       "maxDuration": 300

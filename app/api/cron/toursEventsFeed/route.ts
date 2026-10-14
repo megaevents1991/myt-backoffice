@@ -8,8 +8,11 @@ import { syncToursEventsFeed } from "@/lib/services/tours-events-feed-sync";
  * tours.site_content ('events_feed') and rebuilds a company's site only when its list changed.
  * Schedule in vercel.json (every 6 hours). Manual trigger: `?key=<NEXT_SECRET_CRON_SECRET_KEY>`.
  */
-// the site's homepage pools (25 s at most) + one events read + a deploy hook per changed company
-export const maxDuration = 60;
+// Every step has its own deadline - the site's homepage pools 25 s, each database call 20 s, a
+// deploy hook 20 s - and logs its duration. 300 s like the other crons (also in vercel.json): on
+// 14.10.2026 the run died at the old 60 s, when one read still took every event's tickets, and
+// nothing said where it stalled.
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   const denied = await guardCronRoute(request);

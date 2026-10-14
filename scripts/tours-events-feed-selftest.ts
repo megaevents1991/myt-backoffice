@@ -6,24 +6,35 @@
 // places, then the Prioritized events, then the rest by date (or the site's own pool when it was
 // read) - holds 12 at most, never lists an event the site does not (QA, taken off, deleted, inside
 // the 3-day window, sold out) or one with no picture / name, prints the card's price, and links
-// to the event's order page.
+// to the event's order page. And the cron's two-step read (14.10.2026 - reading every event's
+// tickets at once timed it out): the order from the light columns, the tickets a page at a time
+// for the events the list can reach, and the result exactly what every full row would give.
 import assert from "node:assert/strict";
 import {
   EVENTS_FEED_MAX,
+  EVENTS_FEED_PAGE,
+  FEED_ORDER_COLUMNS,
   PRICE_LABEL,
   buildEventsFeed,
+  buildEventsFeedInPages,
   fallbackPool,
+  feedCandidateIds,
   feedCategory,
   feedCutoffDate,
   feedDateLabel,
   feedItemOf,
   hotRowHidden,
   hotRowPins,
+  isFeedEventSoldOut,
   isListedFeedEvent,
+  planEventsFeed,
   sameFeedItems,
   storedFeedItems,
   type FeedEventRow,
+  type FeedOrderRow,
+  type SiteHotRow,
 } from "../lib/tours/events-feed";
+import type { RowPin, RowRef, ShowFlags } from "../lib/homepage/merge";
 import { siteCardPrice } from "../lib/package-price";
 import { PUBLIC_SITE_URL } from "../lib/site";
 import type { EventTicket } from "../types/app.types";
@@ -63,6 +74,9 @@ const ev = (over: Partial<FeedEventRow> = {}): FeedEventRow => ({
   ...over,
 });
 const ids = (items: { id: number }[]) => items.map((i) => i.id);
+/** What the cron's first read returns of an event: the order columns, no tickets. */
+const light = (e: FeedEventRow): FeedOrderRow =>
+  Object.fromEntries(FEED_ORDER_COLUMNS.map((k) => [k, e[k]])) as FeedOrderRow;
 
 /* the 3-day window: an event lists from today + 3 (myt-main AVAILABILITY_WINDOW_DAYS) */
 assert.equal(feedCutoffDate(NOW), "2026-10-17");
@@ -84,7 +98,7 @@ const vip = ev({ tags: "VIPevent" }); // 7 - VIP fills nothing (myt-main rows.ts
 const fixedSports = ev({ type: "sports_event" }); // 8 - a fixed sports_event is not in the fill
 const nullPrio = ev({ is_prioritized: null }); // 9 - the fill takes is_prioritized === false only
 const events = [late, early, prioLate, prioEarly, prioTagged, pinnedFar, vip, fixedSports, nullPrio];
-assert.deepEqual(fallbackPool(events), ["event:5", "event:4", "event:3", "event:2", "event:1", "event:6"]);
+assert.deepEqual(fallbackPool(events, isFeedEventSoldOut), ["event:5", "event:4", "event:3", "event:2", "event:1", "event:6"]);
 
 const pins = hotRowPins([
   { section: "most_wanted", kind: "event", ref_id: "6", position: 1 },
@@ -120,6 +134,37 @@ const deadPin = hotRowPins([
   { section: "most_wanted", kind: "event", ref_id: "6", position: 2 },
 ]);
 assert.deepEqual(ids(buildEventsFeed({ events, pins: deadPin, site, now: NOW })), [1, 6, 9, 3]);
+
+/* the light pass: candidates from the order columns alone, the pinned ones first */
+const lightEvents = events.map(light);
+assert.ok(lightEvents.every((e) => !("tickets_and_rates" in e)), "the first read carries no tickets");
+assert.deepEqual(feedCandidateIds({ events: lightEvents, pins, now: NOW }), [6, 5, 4, 3, 2, 1]);
+assert.deepEqual(feedCandidateIds({ events: lightEvents, pins, site, now: NOW }), [6, 1, 9, 3], "the site's row, its sold-out cards out");
+{
+  // no tickets read must not mean "sold out" (isFeedEventSoldOut would empty the pool) - only the Sold tag is known
+  nextId = 300;
+  const byTickets = ev({ is_prioritized: true, tickets_and_rates: [ticket(100, false)] }); // 300
+  const byTag = ev({ is_prioritized: true, tags: "Sold" }); // 301
+  const onSale = ev({ is_prioritized: true, date: "2026-12-01T19:00:00+00:00" }); // 302
+  const row = [byTickets, byTag, onSale];
+  assert.deepEqual(feedCandidateIds({ events: row.map(light), pins: [], now: NOW }), [300, 302]);
+  // nothing read yet: the walk waits at the first candidate
+  const order = row.map(light);
+  assert.deepEqual(planEventsFeed({ order, read: new Map(), pins: [], now: NOW }), { items: [], complete: false });
+  // the first read in full turns out sold out and drops; the next one waits
+  const first = planEventsFeed({ order, read: new Map([[300, byTickets]]), pins: [], now: NOW });
+  assert.deepEqual(first, { items: [], complete: false });
+  const all = planEventsFeed({ order, read: new Map([[300, byTickets], [302, onSale]]), pins: [], now: NOW });
+  assert.equal(all.complete, true);
+  assert.deepEqual(ids(all.items), [302]);
+  // asked for but gone (deleted between the two reads) = not listed
+  const gone = planEventsFeed({ order, read: new Map([[300, byTickets], [302, null]]), pins: [], now: NOW });
+  assert.deepEqual(gone, { items: [], complete: true });
+  // a pinned event not read yet keeps the list open, even when the walk is full before it
+  const farPin = hotRowPins([{ section: "most_wanted", kind: "event", ref_id: "302", position: 5 }]);
+  const pinUnread = planEventsFeed({ order, read: new Map([[300, byTickets]]), pins: farPin, now: NOW, max: 0 });
+  assert.equal(pinUnread.complete, false);
+}
 
 /* sold out, skipped and capped */
 nextId = 200;
@@ -195,4 +240,133 @@ assert.deepEqual(storedFeedItems({ updatedAt: "x", items: [1] }), [1]);
 assert.equal(storedFeedItems(null), null);
 assert.equal(storedFeedItems({ items: "no" }), null);
 
-console.log("tours-events-feed selftest: all passed");
+/* the cron's paged read: tickets only where the list needs them, the same list as from every row */
+
+/** A reader over `full` that records what it was asked for, the way the cron's page read is called. */
+function fakeReader(full: FeedEventRow[], drop: ReadonlySet<number> = new Set()) {
+  const byId = new Map(full.map((e) => [e.id, e]));
+  const calls: number[][] = [];
+  const read = async (ids: number[]) => {
+    calls.push(ids);
+    return ids.flatMap((id) => (byId.has(id) && !drop.has(id) ? [byId.get(id)!] : []));
+  };
+  return { read, calls };
+}
+
+/** Deterministic random numbers (mulberry32), so a failing case can be replayed. */
+function random(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+async function testPagedRead(): Promise<void> {
+  // a catalog where nothing drops: one page of EVENTS_FEED_PAGE, not the whole catalog
+  nextId = 10_000;
+  const catalog = Array.from({ length: 2000 }, (_, i) =>
+    ev({ date: new Date(Date.parse("2026-10-20T19:00:00Z") + i * 3_600_000).toISOString() }),
+  );
+  const easy = fakeReader(catalog);
+  const easyPlan = await buildEventsFeedInPages({ order: catalog.map(light), pins: [], now: NOW }, easy.read);
+  assert.deepEqual(easyPlan.items, buildEventsFeed({ events: catalog, pins: [], now: NOW }));
+  assert.equal(easyPlan.complete, true);
+  assert.equal(easy.calls.length, 1, "one page");
+  assert.equal(easy.calls[0].length, EVENTS_FEED_PAGE);
+
+  // the first 60 sold out (the light read cannot see it): a second page, the same list
+  const soldFirst = catalog.map((e, i) => (i < 60 ? { ...e, tickets_and_rates: [ticket(100, false)] } : e));
+  const hard = fakeReader(soldFirst);
+  const hardPlan = await buildEventsFeedInPages({ order: soldFirst.map(light), pins: [], now: NOW }, hard.read);
+  assert.deepEqual(hardPlan.items, buildEventsFeed({ events: soldFirst, pins: [], now: NOW }));
+  assert.deepEqual(ids(hardPlan.items), ids(catalog.slice(60, 60 + EVENTS_FEED_MAX)));
+  assert.equal(hard.calls.length, 2);
+
+  // a pin far down the row is read in the first page, before the pool
+  const farPin = hotRowPins([{ section: "most_wanted", kind: "event", ref_id: String(catalog[1500].id), position: 3 }]);
+  const pinned = fakeReader(catalog);
+  const pinnedPlan = await buildEventsFeedInPages({ order: catalog.map(light), pins: farPin, now: NOW }, pinned.read);
+  assert.equal(pinned.calls[0][0], catalog[1500].id);
+  assert.equal(pinnedPlan.items[3].id, catalog[1500].id);
+  assert.equal(pinnedPlan.items[3].pinned, true);
+
+  // nothing to list: no read at all
+  const none = fakeReader([]);
+  const nonePlan = await buildEventsFeedInPages({ order: [], pins: [], now: NOW }, none.read);
+  assert.deepEqual(nonePlan, { items: [], complete: true, pages: 0, read: 0 });
+  assert.equal(none.calls.length, 0);
+
+  // random catalogs, with and without the site's row, every page size: always the full-row list
+  const rand = random(20261014);
+  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)];
+  for (let trial = 0; trial < 300; trial++) {
+    nextId = 1;
+    const rows = Array.from({ length: 10 + Math.floor(rand() * 70) }, () => {
+      const r = rand();
+      return ev({
+        // few distinct days, so ties of the date order are common
+        date: `2026-${pick(["10-16", "10-20", "11-02", "11-20", "12-24"])}T19:00:00+00:00`,
+        type: pick(["music_event", "sports_event", "sports_event_dynamic", "tx_event"]),
+        is_prioritized: r < 0.3 ? true : r < 0.9 ? false : null,
+        tags: pick([null, null, null, null, "HOT", "Sold", "VIPevent"]),
+        is_test: rand() < 0.05,
+        deactivated_reason: rand() < 0.05 ? "tx_sold_out" : null,
+        is_deleted: rand() < 0.03 ? "10-01-2026" : null,
+        card_image_url: rand() < 0.1 ? null : "https://cdn.example/card.jpg",
+        tickets_and_rates: pick([[ticket(100, false)], [], [ticket(120), ticket(90)], [ticket(300)], [ticket(80)]]),
+      });
+    });
+    const refOf = () => (rand() < 0.1 ? "event:99999" : `event:${pick(rows).id}`);
+    const pins: RowPin[] = hotRowPins(
+      Array.from({ length: Math.floor(rand() * 6) }, () => ({
+        section: "most_wanted",
+        kind: "event",
+        ref_id: refOf().slice("event:".length),
+        position: Math.floor(rand() * 8), // small slots: several pins on one place happen
+      })),
+    );
+    const hidden: RowRef[] = Array.from({ length: Math.floor(rand() * 4) }, refOf);
+    let site: SiteHotRow | null = null;
+    if (rand() < 0.5) {
+      const pool = rows.filter(() => rand() < 0.7).map((e) => `event:${e.id}`).sort(() => rand() - 0.5);
+      const flags = new Map<RowRef, ShowFlags>();
+      for (const ref of [...pool, ...pins.map((p) => p.ref)]) if (rand() < 0.95) flags.set(ref, { soldOut: rand() < 0.2 });
+      site = { pool: [...pool, "event:99998"], flags };
+    }
+    const max = pick([EVENTS_FEED_MAX, 3, 1]);
+    const expected = buildEventsFeed({ events: rows, pins, hidden, site, now: NOW, max });
+    for (const pageSize of [1, 2, 5, EVENTS_FEED_PAGE]) {
+      const reader = fakeReader(rows);
+      const plan = await buildEventsFeedInPages(
+        { order: rows.map(light), pins, hidden, site, now: NOW, max },
+        reader.read,
+        pageSize,
+      );
+      const context = `trial ${trial}, page ${pageSize}`;
+      assert.deepEqual(plan.items, expected, context);
+      assert.equal(plan.complete, true, context);
+      assert.ok(reader.calls.every((c) => c.length <= pageSize), context);
+      const asked = reader.calls.flat();
+      assert.equal(new Set(asked).size, asked.length, `${context}: an event read twice`);
+    }
+    // an event deleted between the two reads drops out, as if it was never listed
+    const goneId = pick(rows).id;
+    const goneReader = fakeReader(rows, new Set([goneId]));
+    const gonePlan = await buildEventsFeedInPages(
+      { order: rows.map(light), pins, hidden, site, now: NOW, max },
+      goneReader.read,
+    );
+    const without = buildEventsFeed({ events: rows.filter((e) => e.id !== goneId), pins, hidden, site, now: NOW, max });
+    assert.deepEqual(gonePlan.items, without, `trial ${trial}, gone ${goneId}`);
+  }
+}
+
+testPagedRead()
+  .then(() => console.log("tours-events-feed selftest: all passed"))
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });

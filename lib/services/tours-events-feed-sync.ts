@@ -3,6 +3,9 @@
  * builds the list, stores it in tours.site_content (key 'events_feed') of every tours company,
  * and - only when the list changed - rebuilds that company's site through its deploy hook, the
  * same POST as "Publish to site". Run by /api/cron/toursEventsFeed. Server-only (service role).
+ *
+ * Every database call has a deadline and every step logs its duration ("[toursEventsFeed] <step>
+ * <ms>ms"): on 14.10.2026 the run hung until Vercel killed it at 60 s, and nothing said where.
  */
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { toursDb } from "@/lib/tours/db";
@@ -16,8 +19,9 @@ import {
 import type { RowRef, ShowFlags } from "@/lib/homepage/merge";
 import {
   EVENTS_FEED_KEY,
+  FEED_ORDER_COLUMNS,
   HOT_ROW_KEY,
-  buildEventsFeed,
+  buildEventsFeedInPages,
   feedCutoffDate,
   hotRowHidden,
   hotRowPins,
@@ -25,6 +29,7 @@ import {
   storedFeedItems,
   type EventsFeedDoc,
   type FeedEventRow,
+  type FeedOrderRow,
   type SiteHotRow,
 } from "@/lib/tours/events-feed";
 import type { Json } from "@/types/database.types";
@@ -36,7 +41,34 @@ const db = supabase as any;
 /** Who the stored row and the publish record name. */
 const UPDATED_BY = "cron: Mega Events packages";
 
-/** What the builder reads: the card fields + everything siteCardPrice reads (lib/package-price.ts). */
+/**
+ * The longest one database call may take. supabase-js has no timeout of its own, so a call that
+ * never answers would otherwise hold the run until Vercel kills it, with nothing logged.
+ */
+const DB_TIMEOUT_MS = 20_000;
+const deadline = () => AbortSignal.timeout(DB_TIMEOUT_MS);
+
+/** Runs one step of the sync and logs how long it took, so a run that fails says where. */
+async function step<T>(name: string, run: () => Promise<T>, detail?: (result: T) => string): Promise<T> {
+  const started = Date.now();
+  try {
+    const result = await run();
+    console.log(`[toursEventsFeed] ${name} ${Date.now() - started}ms${detail ? ` ${detail(result)}` : ""}`);
+    return result;
+  } catch (error) {
+    console.log(`[toursEventsFeed] ${name} ${Date.now() - started}ms failed`);
+    throw error;
+  }
+}
+
+/** What orders the list - read for every listed event. */
+const ORDER_COLUMNS = FEED_ORDER_COLUMNS.join(",");
+
+/**
+ * What the list prints and prices: the card fields + everything siteCardPrice reads
+ * (lib/package-price.ts). Heavy (tickets_and_rates), so it is read only for the events the list
+ * can reach, a page at a time (buildEventsFeedInPages).
+ */
 const EVENT_COLUMNS = [
   "id,name,type,date,location,event_location,card_image_url,art_image_url,tags,is_prioritized,is_test",
   "deactivated_reason,is_deleted,tickets_and_rates,base_flight_price,base_hotel_price,event_additional_markup",
@@ -69,7 +101,8 @@ async function feedCompanies(): Promise<FeedCompany[]> {
     .from("companies")
     .select("id, slug, features, product_types")
     .eq("is_active", true)
-    .contains("product_types", ["tours"]);
+    .contains("product_types", ["tours"])
+    .abortSignal(deadline());
   if (error) throw new Error(`companies read: ${error.message}`);
   return (data ?? [])
     .filter((c) => c.id !== MEGA_EVENTS_COMPANY_ID && asObject(c.features).events_feed !== false)
@@ -80,8 +113,12 @@ async function feedCompanies(): Promise<FeedCompany[]> {
 async function readHotRowLayout(): Promise<{ pins: ReturnType<typeof hotRowPins>; hidden: RowRef[] }> {
   try {
     const [section, items] = await Promise.all([
-      db.from("homepage_sections").select("config").eq("key", HOT_ROW_KEY).maybeSingle(),
-      db.from("homepage_items").select("section,kind,ref_id,position").eq("section", HOT_ROW_KEY),
+      db.from("homepage_sections").select("config").eq("key", HOT_ROW_KEY).abortSignal(deadline()).maybeSingle(),
+      db
+        .from("homepage_items")
+        .select("section,kind,ref_id,position")
+        .eq("section", HOT_ROW_KEY)
+        .abortSignal(deadline()),
     ]);
     if (section.error) throw section.error;
     if (items.error) throw items.error;
@@ -122,16 +159,28 @@ async function readSiteHotRow(): Promise<{ row: SiteHotRow } | { error: string }
   }
 }
 
-/** Every event a Mega Events listing may show (myt-main lib/eventsData.ts getEvents). */
-async function readListedEvents(now: Date): Promise<FeedEventRow[]> {
+/**
+ * Every event a Mega Events listing may show (myt-main lib/eventsData.ts getEvents), light
+ * columns only. Until 14.10.2026 this read took the tickets of all of them too (~7 MB) and the
+ * run timed out.
+ */
+async function readEventOrder(now: Date): Promise<FeedOrderRow[]> {
   const { data, error } = await db
     .from("events")
-    .select(EVENT_COLUMNS)
+    .select(ORDER_COLUMNS)
     .is("is_deleted", null)
     .gte("date", feedCutoffDate(now))
     .order("date", { ascending: true })
-    .limit(2000);
+    .limit(2000)
+    .abortSignal(deadline());
   if (error) throw new Error(`events read: ${error.message}`);
+  return (data ?? []) as FeedOrderRow[];
+}
+
+/** The full rows (tickets and prices) of one page of the list's candidates. */
+async function readFullEvents(ids: number[]): Promise<FeedEventRow[]> {
+  const { data, error } = await db.from("events").select(EVENT_COLUMNS).in("id", ids).abortSignal(deadline());
+  if (error) throw new Error(`events full read: ${error.message}`);
   return (data ?? []) as FeedEventRow[];
 }
 
@@ -141,6 +190,7 @@ async function storedDoc(companyId: string): Promise<unknown[] | null> {
     .select("data")
     .eq("company_id", companyId)
     .eq("key", EVENTS_FEED_KEY)
+    .abortSignal(deadline())
     .maybeSingle();
   if (error) throw new Error(`site_content read: ${error.message}`);
   return data ? storedFeedItems(data.data) : null;
@@ -149,12 +199,18 @@ async function storedDoc(companyId: string): Promise<unknown[] | null> {
 /** POSTs the company's deploy hook and records the attempt as its last publish (what the Publish button shows). */
 async function rebuildSite(companyId: string): Promise<CompanyFeedResult["deploy"]> {
   const read = async () => {
-    const { data, error } = await supabaseTyped.from("companies").select("features").eq("id", companyId).single();
+    const { data, error } = await supabaseTyped
+      .from("companies")
+      .select("features")
+      .eq("id", companyId)
+      .abortSignal(deadline())
+      .single();
     if (error) throw new Error(`companies read: ${error.message}`);
     return asObject(data.features);
   };
   const hook = siteDeployHookOf(await read());
   if (!hook) return null;
+  // its own 20 s deadline (company-kit.ts)
   const { status, problem } = await postSiteDeployHook(hook);
   const record = {
     at: new Date().toISOString(),
@@ -168,20 +224,21 @@ async function rebuildSite(companyId: string): Promise<CompanyFeedResult["deploy
   const { error } = await supabaseTyped
     .from("companies")
     .update({ features: { ...features, [LAST_SITE_PUBLISH_KEY]: record } })
-    .eq("id", companyId);
+    .eq("id", companyId)
+    .abortSignal(deadline());
   if (error) console.error("[toursEventsFeed] publish record not stored:", error.message);
   return { ok: !problem, status, ...(problem ? { error: problem } : {}) };
 }
 
 export async function syncToursEventsFeed(now = new Date()): Promise<ToursEventsFeedResult> {
-  const companies = await feedCompanies();
+  const companies = await step("companies", feedCompanies, (list) => `${list.length} to feed`);
   if (companies.length === 0) return { source: "kept", items: 0, companies: [] };
 
-  const [layout, site, events, stored] = await Promise.all([
-    readHotRowLayout(),
-    readSiteHotRow(),
-    readListedEvents(now),
-    Promise.all(companies.map((c) => storedDoc(c.id))),
+  const [layout, site, order, stored] = await Promise.all([
+    step("homepage layout", readHotRowLayout, (l) => `${l.pins.length} pins, ${l.hidden.length} hidden`),
+    step("site row", readSiteHotRow, (s) => ("row" in s ? `${s.row.pool.length} in the pool` : `unusable: ${s.error}`)),
+    step("events order", () => readEventOrder(now), (rows) => `${rows.length} listed`),
+    step("stored lists", () => Promise.all(companies.map((c) => storedDoc(c.id)))),
   ]);
   const siteRow = "row" in site ? site.row : null;
   const siteError = "error" in site ? site.error : undefined;
@@ -194,7 +251,15 @@ export async function syncToursEventsFeed(now = new Date()): Promise<ToursEvents
     return { source: "kept", items: 0, siteError, companies: kept };
   }
 
-  const items = buildEventsFeed({ events, pins: layout.pins, hidden: layout.hidden, site: siteRow, now });
+  let page = 0;
+  const readPage = (ids: number[]) =>
+    step(`events page ${++page}`, () => readFullEvents(ids), (rows) => `${rows.length}/${ids.length} rows`);
+  const plan = await step(
+    "build",
+    () => buildEventsFeedInPages({ order, pins: layout.pins, hidden: layout.hidden, site: siteRow, now }, readPage),
+    (p) => `${p.items.length} items, ${p.read} events read in full${p.complete ? "" : " (not final)"}`,
+  );
+  const items = plan.items;
   const doc: EventsFeedDoc = { updatedAt: now.toISOString(), source: siteRow ? "site" : "database", items };
 
   const results: CompanyFeedResult[] = [];
@@ -218,9 +283,19 @@ export async function syncToursEventsFeed(now = new Date()): Promise<ToursEvents
         updated_at: doc.updatedAt,
         updated_by: UPDATED_BY,
       };
-      const { error } = await toursDb().from("site_content").upsert(row, { onConflict: "company_id,key" });
-      if (error) throw new Error(`site_content write: ${error.message}`);
-      results.push({ slug: company.slug, changed: true, deploy: await rebuildSite(company.id) });
+      await step(`${company.slug} write`, async () => {
+        const { error } = await toursDb()
+          .from("site_content")
+          .upsert(row, { onConflict: "company_id,key" })
+          .abortSignal(deadline());
+        if (error) throw new Error(`site_content write: ${error.message}`);
+      });
+      const deploy = await step(
+        `${company.slug} deploy`,
+        () => rebuildSite(company.id),
+        (d) => (d ? `${d.ok ? "ok" : "failed"} ${d.status ?? ""}`.trim() : "no deploy hook"),
+      );
+      results.push({ slug: company.slug, changed: true, deploy });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[toursEventsFeed]", company.slug, message);
