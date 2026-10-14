@@ -301,7 +301,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > (`lib/actions/marketing-ads-actions.ts`, `ad-preview.tsx`): a Meta ad set lists its ads (`ad_entities` kind `ad`),
 > "Preview" = Graph `/{ad_id}/previews` (Facebook feed / Instagram feed / story) rendered as an iframe ONLY when the
 > src is https on business.facebook.com / www.facebook.com (`previewSrcFrom`); Google ad groups show RSA / ETA / RDA
-> texts + final URL, a P.Max campaign its asset groups (`asset_group_asset`). Read on click, never stored; ids must be
+> texts + final URL, a P.Max campaign its asset groups (`asset_group_asset`). A CATALOG ad (`productSetOf`: the
+> creative's or ad set's `product_set_id`) previews only with `product_item_ids` from its catalog, which the read token
+> cannot read (no `catalog_management` - 14.10; guide for Tom = doc "הרשאת קטלוג לדשבורד השיווק"): until a token
+> with it replaces `NEXT_SECRET_META_READ_TOKEN`, the dialog shows a stand-in - the ad's texts (Meta's `{{...}}`
+> placeholders dropped) + our feed pictures of the events its name names (`pickCatalogExamples`); with the access it
+> switches to Meta's own preview by itself. Read on click, never stored; ids must be
 > digits (`isAdId`). (f) **Traffic tab** = GA4 Data API v1beta (`lib/services/ga4.ts`, property 483131557, service
 > account `ga4-reader@mega-tourism-ads` with Viewer; env below): one `batchRunReports` of four reports (sessions:
 > date x source x medium; steps: source x medium x landing page x event; users: source x medium, and the period's
