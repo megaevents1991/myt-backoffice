@@ -68,7 +68,7 @@ export function ToursDashboard({ isManager }: { isManager: boolean }) {
           value={v((d) => d.newLeads)}
           hint="Waiting for a reply"
           icon={Inbox}
-          href="/tours/leads"
+          href="/tours/reservations?view=leads"
         />
       </div>
 

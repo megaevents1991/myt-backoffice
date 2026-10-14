@@ -16,8 +16,6 @@ import {
   Hotel,
   Image as ImageIcon,
   Images,
-  CreditCard,
-  Inbox,
   LayoutTemplate,
   Map as MapIcon,
   MapPin,
@@ -115,21 +113,8 @@ const NAV: NavGroup[] = [
         name: "Reservations",
         href: "/tours/reservations",
         icon: ClipboardList,
-        keywords: "orders bookings sales docket הזמנות מכירות נוסעים",
-        productType: "tours",
-      },
-      {
-        name: "Online Bookings",
-        href: "/tours/bookings",
-        icon: CreditCard,
-        keywords: "online bookings orders payments card creditguard requests הזמנות אונליין תשלום אשראי בקשות",
-        productType: "tours",
-      },
-      {
-        name: "Leads",
-        href: "/tours/leads",
-        icon: Inbox,
-        keywords: "leads contact inquiries newsletter לידים פניות צור קשר",
+        keywords:
+          "orders bookings sales docket leads online bookings inquiries potential follow-up הזמנות מכירות נוסעים לידים הזמנות אונליין פניות פוטנציאל פולו אפ",
         productType: "tours",
       },
       {
