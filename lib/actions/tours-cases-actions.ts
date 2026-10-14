@@ -903,7 +903,8 @@ export async function mintBookingLink(caseId: string, input: { departureId: stri
     const [departure] = await linkDepartures(company, input.departureId);
     if (!departure) throw new UserError("This departure is not open on the site (unpublished, past, sold out or closed).");
     const rooms = cleanRoomKeys(Array.isArray(input.rooms) ? input.rooms : [], departure.rooms.map((r) => r.key));
-    if (rooms.length === 0) throw new UserError("Choose at least one room this date sells.");
+    // a date with no price table yet: the link opens the date and the customer picks the rooms on the site
+    if (rooms.length === 0 && departure.rooms.length > 0) throw new UserError("Choose at least one room this date sells.");
     if ((input.rooms ?? []).length > LINK_ROOMS_MAX) throw new UserError(`A booking holds up to ${LINK_ROOMS_MAX} rooms.`);
 
     const token = record.link_token ?? randomBytes(24).toString("base64url");

@@ -493,3 +493,27 @@ export interface BookingLinkResult {
   mailto: string | null;
   message: string;
 }
+
+/**
+ * Staff-written HTML (a tour's cancellation terms) as plain text with its line
+ * breaks: scripts and styles dropped with their content, every other tag
+ * stripped, the common entities decoded. The case page prints text, never HTML.
+ */
+export function htmlToText(html: string | null | undefined): string {
+  if (!html) return "";
+  return html
+    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr)\s*>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}

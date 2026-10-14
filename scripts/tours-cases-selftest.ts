@@ -12,6 +12,7 @@ import {
   caseTask,
   cleanRoomKeys,
   followUpDue,
+  htmlToText,
   isClosedStatus,
   linkMessage,
   packagePathOf,
@@ -182,5 +183,13 @@ assert.ok(caseMatches(row, "1042"));
 assert.ok(caseMatches(row, "t10005"));
 assert.ok(caseMatches(row, "123456782"));
 assert.ok(!caseMatches(row, "לונדון"));
+
+// ---------------------------------------------------------------- cancellation terms as text (no HTML reaches the page)
+assert.equal(
+  htmlToText('<p>ביטול עד 30 יום: <strong>100$</strong></p><ul><li>א</li><li>ב&nbsp;&amp;&nbsp;ג</li></ul><script>alert(1)</script><img src=x onerror=alert(1)>סוף'),
+  "ביטול עד 30 יום: 100$\nא\nב & ג\nסוף",
+);
+assert.equal(htmlToText("שורה<br/>שורה"), "שורה\nשורה");
+assert.equal(htmlToText(null), "");
 
 console.log("tours-cases selftest: ok");
