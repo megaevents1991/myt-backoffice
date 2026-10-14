@@ -12,8 +12,11 @@ import { isMetaSource } from "@/lib/services/marketing-attribution";
 import { ORDER_SOURCES, type OrderSource, type SourceFilter } from "@/lib/marketing/order-source";
 import type { FunnelOrder } from "@/lib/marketing/funnel";
 
-/** Report A: date x source x medium. `date` is GA4's yyyymmdd. */
-export interface TrafficDailyRow { date: string; source: string; medium: string; sessions: number; users: number; engaged: number }
+/** Report A: date x source x medium. `date` is GA4's yyyymmdd. No users here - a user who came back on five days
+ *  is in five date rows; users come from report C (per source) and D (the whole period). */
+export interface TrafficDailyRow { date: string; source: string; medium: string; sessions: number; engaged: number }
+/** Report C: source x medium -> totalUsers over the whole period. */
+export interface TrafficSourceUsersRow { source: string; medium: string; users: number }
 /** Report B: source x medium x landing page x event -> sessions in which that event fired. */
 export interface TrafficStepRow { source: string; medium: string; landingPage: string; eventName: string; sessions: number }
 
@@ -87,6 +90,9 @@ const emptyBuckets = () => Object.fromEntries(ORDER_SOURCES.map((b) => [b, 0])) 
 
 export function buildTraffic(input: {
   daily: TrafficDailyRow[];
+  sourceUsers: TrafficSourceUsersRow[];
+  /** Report D: unique users of the period, every source (the "All sources" card). */
+  totalUsers: number;
   steps: TrafficStepRow[];
   partnerCodes: Set<string>;
   src: SourceFilter;
@@ -108,21 +114,28 @@ export function buildTraffic(input: {
     return row;
   };
   let sessions = 0;
-  let users = 0;
   let engaged = 0;
   for (const r of input.daily) {
     const b = bucketOf(r);
     if (!keep(b)) continue;
     sessions += r.sessions;
-    users += r.users;
     engaged += r.engaged;
     const d = byDay.get(isoDay(r.date));
     if (d) d[b] += r.sessions;
     const row = smRow(r, b);
     row.sessions += r.sessions;
-    row.users += r.users;
     row.engaged += r.engaged;
   }
+  // One source = the users of its rows (a user who came through two of them counts twice); every source = GA4's own
+  // unique count of the period.
+  let sourceUsers = 0;
+  for (const r of input.sourceUsers) {
+    const b = bucketOf(r);
+    if (!keep(b)) continue;
+    sourceUsers += r.users;
+    smRow(r, b).users += r.users;
+  }
+  const users = src === "all" ? input.totalUsers : sourceUsers;
 
   // ---- steps per landing kind, landing pages, confirmed / purchased per source (report B)
   const stepSums: Record<EntryFunnelKind | "other", Record<string, number>> = { home: {}, artist: {}, event: {}, other: {} };

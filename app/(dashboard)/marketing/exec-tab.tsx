@@ -17,7 +17,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { CURRENCY_SIGN, money, ordersText, poasTone, useMarketingFilters, useMarketingLoad } from "./marketing-shared";
+import { CURRENCY_SIGN, money, ordersText, poasTone, useMarketingLoad, type LoadedView } from "./marketing-shared";
 
 type Overview = Awaited<ReturnType<typeof getMarketingOverview>>;
 
@@ -123,18 +123,18 @@ function ChartCard({ title, children }: { title: string; children: ReactNode }) 
 }
 
 export function ExecTab() {
-  const { data, error, loading } = useMarketingLoad(getMarketingOverview);
+  const { data, view, error, loading } = useMarketingLoad(getMarketingOverview);
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return <Skeleton className="h-96 w-full" />;
   return (
     <div className={cn("space-y-6", loading && "opacity-60 transition-opacity")}>
-      <ExecBody data={data} />
+      <ExecBody data={data} view={view} />
     </div>
   );
 }
 
-export function ExecBody({ data }: { data: Overview }) {
-  const { cur, brand } = useMarketingFilters();
+export function ExecBody({ data, view }: { data: Overview; view: LoadedView }) {
+  const { cur, brand } = view;
   const { pnl, funnel, src } = data;
   const m = (n: number | null) => (n === null ? dash : money(n, cur));
   const paidSource = src === "all" || src === "meta" || src === "google";

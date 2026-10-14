@@ -289,8 +289,7 @@ function sumCampaigns(campaigns: CampaignPnl[], base: PnlTotals): PnlTotals {
 }
 
 /** The campaign table + the three cards of revenue no campaign row of this view holds. Data in, so it can be rendered without a load. */
-export function MediaBody({ data, loading }: { data: PnlResult; loading: boolean }) {
-  const { cur } = useMarketingFilters();
+export function MediaBody({ data, loading, cur }: { data: PnlResult; loading: boolean; cur: MarketingCurrency }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const columns = useMemo(() => columnsFor(cur), [cur]);
   const campaignTotals = useMemo(() => sumCampaigns(data.campaigns, data.totals), [data]);
@@ -347,11 +346,11 @@ export function MediaBody({ data, loading }: { data: PnlResult; loading: boolean
 
 export function MediaTab() {
   const { src } = useMarketingFilters();
-  const { data, error, loading } = useMarketingLoad(getMarketingPnl);
+  const { data, view, error, loading } = useMarketingLoad(getMarketingPnl);
   if (src !== "all" && src !== "meta" && src !== "google") {
     return <p className="text-sm text-muted-foreground">The Media tab lists paid campaigns - pick All sources, Meta or Google.</p>;
   }
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return <Skeleton className="h-64 w-full" />;
-  return <MediaBody data={data} loading={loading} />;
+  return <MediaBody data={data} loading={loading} cur={view.cur} />;
 }

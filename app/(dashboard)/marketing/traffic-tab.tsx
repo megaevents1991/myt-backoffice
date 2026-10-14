@@ -15,7 +15,7 @@ import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartToo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMarketingLoad } from "./marketing-shared";
 
-type Loaded = Extract<Awaited<ReturnType<typeof getTraffic>>, { connected: true }>;
+type Loaded = Extract<Awaited<ReturnType<typeof getTraffic>>, { connected: true; error?: undefined }>;
 
 const num = (n: number) => n.toLocaleString("en-US");
 const pctText = (p: number | null) => (p === null ? "—" : p < 1 && p > 0 ? `${p.toFixed(2)}%` : `${p.toFixed(1)}%`);
@@ -170,7 +170,7 @@ function SourcesTable({ sources }: { sources: Loaded["sources"] }) {
 const KIND_LABEL: Record<string, string> = { home: "Home", artist: "Artist / team", event: "Event", other: "Other" };
 
 export function TrafficTab() {
-  const { data, error, loading } = useMarketingLoad(getTraffic);
+  const { data, view, error, loading } = useMarketingLoad(getTraffic);
   if (error) return <p className="text-sm text-destructive">{error}</p>;
   if (!data) return <Skeleton className="h-96 w-full" />;
   if (!data.connected) {
@@ -182,11 +182,18 @@ export function TrafficTab() {
       </Card>
     );
   }
+  if (data.error !== undefined) {
+    return <p className="text-sm text-destructive">Google Analytics answered: {data.error}</p>;
+  }
+  return <TrafficBody data={data} loading={loading} allSources={view.src === "all"} />;
+}
+
+function TrafficBody({ data, loading, allSources }: { data: Loaded; loading: boolean; allSources: boolean }) {
   return (
     <div className={cn("space-y-6", loading && "opacity-60 transition-opacity")}>
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <Stat title="Sessions" value={num(data.sessions)} tag="GA4" />
-        <Stat title="Users" value={num(data.users)} tag="GA4" hint="Summed per source" />
+        <Stat title="Users" value={num(data.users)} tag="GA4" hint={allSources ? "Unique users of the period" : "Summed over this source's rows"} />
         <Stat title="Engagement" value={pctText(data.engagementRate)} tag="GA4" hint="Engaged sessions" />
         <Stat title="Leads" value={num(data.leads)} tag="ours" hint="Orders entered" />
         <Stat title="Signups" value={num(data.signups)} tag="ours" hint="Paid orders" />

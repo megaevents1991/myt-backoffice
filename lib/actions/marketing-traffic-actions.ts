@@ -12,9 +12,10 @@ import { buildTraffic, TRAFFIC_EVENTS, type TrafficView } from "@/lib/marketing/
 import type { MarketingQuery } from "@/lib/actions/marketing-actions";
 
 /**
- * The Traffic tab in ONE action (spec 2026-10-14 section 7): two GA4 reports in one batch + our orders of the same
+ * The Traffic tab in ONE action (spec 2026-10-14 section 7): four GA4 reports in one batch + our orders of the same
  * window + the partner codes that name a source. Cached 10 minutes per (window, source). GA4 not configured ->
- * `{ connected: false }` (the tab says which two variables); any other failure THROWS like every marketing read.
+ * `{ connected: false }`; a GA4 failure -> `{ connected: true, error }` shown in the tab (spec: "a GA4 error -> the
+ * error inline") - thrown, Next would replace the message with its generic one in production.
  */
 
 async function partnerCodes(): Promise<string[]> {
@@ -28,25 +29,32 @@ async function buildTrafficFor(since: string, until: string, src: SourceFilter):
   const [[reports, codes], orders] = await Promise.all([
     Promise.all([
       ga4BatchReports([
+        // A: sessions per day per source. No users: a user back on five days is in five date rows.
         {
           dateRanges,
           dimensions: [{ name: "date" }, { name: "sessionSource" }, { name: "sessionMedium" }],
-          metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "engagedSessions" }],
+          metrics: [{ name: "sessions" }, { name: "engagedSessions" }],
         },
+        // B: the funnel steps per landing page and source.
         {
           dateRanges,
           dimensions: [{ name: "sessionSource" }, { name: "sessionMedium" }, { name: "landingPage" }, { name: "eventName" }],
           metrics: [{ name: "sessions" }],
           dimensionFilter: { filter: { fieldName: "eventName", inListFilter: { values: [...TRAFFIC_EVENTS] } } },
         },
+        // C: users per source over the whole period; D: unique users of the period.
+        { dateRanges, dimensions: [{ name: "sessionSource" }, { name: "sessionMedium" }], metrics: [{ name: "totalUsers" }] },
+        { dateRanges, metrics: [{ name: "totalUsers" }] },
       ]),
       partnerCodes(),
     ]),
     funnelOrders(since, until),
   ]);
-  const [a, b] = reports;
+  const [a, b, c, d] = reports;
   const view = buildTraffic({
-    daily: a.map((r) => ({ date: r.dims[0], source: r.dims[1], medium: r.dims[2], sessions: r.mets[0], users: r.mets[1], engaged: r.mets[2] })),
+    daily: a.map((r) => ({ date: r.dims[0], source: r.dims[1], medium: r.dims[2], sessions: r.mets[0], engaged: r.mets[1] })),
+    sourceUsers: c.map((r) => ({ source: r.dims[0], medium: r.dims[1], users: r.mets[0] })),
+    totalUsers: d[0]?.mets[0] ?? 0,
     steps: b.map((r) => ({ source: r.dims[0], medium: r.dims[1], landingPage: r.dims[2], eventName: r.dims[3], sessions: r.mets[0] })),
     partnerCodes: new Set(codes),
     src,
@@ -56,11 +64,21 @@ async function buildTrafficFor(since: string, until: string, src: SourceFilter):
   return { ...view, since, until };
 }
 
-const cachedTraffic = unstable_cache(buildTrafficFor, ["marketing-traffic"], { tags: [MARKETING_TAG.traffic], revalidate: MARKETING_TTL_S.traffic });
+const cachedTraffic = unstable_cache(buildTrafficFor, ["marketing-traffic-v2"], { tags: [MARKETING_TAG.traffic], revalidate: MARKETING_TTL_S.traffic });
 
-export async function getTraffic(q: MarketingQuery): Promise<{ connected: false } | ({ connected: true } & TrafficView & { since: string; until: string })> {
+type TrafficResult =
+  | { connected: false }
+  | { connected: true; error: string }
+  | ({ connected: true; error?: undefined } & TrafficView & { since: string; until: string });
+
+export async function getTraffic(q: MarketingQuery): Promise<TrafficResult> {
   await requireAdmin();
   if (!ga4Configured()) return { connected: false };
   const window = resolveWindow(q);
-  return { connected: true, ...(await cachedTraffic(window.since, window.until, parseSource(q.src))) };
+  try {
+    return { connected: true, ...(await cachedTraffic(window.since, window.until, parseSource(q.src))) };
+  } catch (e) {
+    console.error("[marketing] traffic:", e);
+    return { connected: true, error: e instanceof Error ? e.message : String(e) };
+  }
 }

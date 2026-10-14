@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import { afterUrlWrite, useQueryState } from "@/hooks/use-view-state";
 import type { MarketingQuery } from "@/lib/actions/marketing-actions";
-import { israelToday, resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
+import { israelToday, MAX_SPAN_DAYS, resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
 import { parseSource, SOURCE_FILTERS, SOURCE_LABEL, type SourceFilter } from "@/lib/marketing/order-source";
 import type { MarketingCurrency } from "@/lib/services/marketing-pnl";
 import type { AdBrand, AdPlatform } from "@/types/marketing.types";
@@ -119,10 +119,25 @@ export function useMarketingFilters(): MarketingFilters {
  * THROW on a database error, and an empty state would read as "nothing to see". `afterUrlWrite` first: a filter
  * change writes the URL, and an action queued during the router's restore is dropped (hooks/use-view-state.ts).
  */
-export function useMarketingLoad<T>(load: (q: MarketingQuery) => Promise<T>): { data: T | null; error: string | null; loading: boolean } {
+/** The filters a loaded view was built with - what its numbers are in. While a new load runs, the old data stays on
+ *  screen (dimmed) and must keep ITS currency / brand / source, never the URL's new ones (final review 14.10: a $
+ *  click printed the ILS numbers with a dollar sign until the reload landed). */
+export interface LoadedView {
+  cur: MarketingCurrency;
+  brand: BrandFilter;
+  src: SourceFilter;
+}
+
+const viewOf = (q: MarketingQuery): LoadedView => ({
+  cur: q.cur === "usd" ? "usd" : "ils",
+  brand: (BRAND_FILTERS as readonly string[]).includes(q.brand ?? "") ? (q.brand as BrandFilter) : "mega_events",
+  src: parseSource(q.src),
+});
+
+export function useMarketingLoad<T>(load: (q: MarketingQuery) => Promise<T>): { data: T | null; view: LoadedView; error: string | null; loading: boolean } {
   const { query } = useMarketingFilters();
   const key = JSON.stringify(query);
-  const [data, setData] = useState<T | null>(null);
+  const [loaded, setLoaded] = useState<{ data: T; key: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -134,11 +149,11 @@ export function useMarketingLoad<T>(load: (q: MarketingQuery) => Promise<T>): { 
       await afterUrlWrite();
       try {
         const result = await load(JSON.parse(key) as MarketingQuery);
-        if (!cancelled) setData(result);
+        if (!cancelled) setLoaded({ data: result, key });
       } catch (e) {
         console.error("Error loading the marketing view:", e);
         if (!cancelled) {
-          setData(null);
+          setLoaded(null);
           setError(errorText(e));
         }
       } finally {
@@ -153,7 +168,8 @@ export function useMarketingLoad<T>(load: (q: MarketingQuery) => Promise<T>): { 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  return { data, error, loading };
+  const view = useMemo(() => viewOf(JSON.parse(loaded?.key ?? key) as MarketingQuery), [loaded?.key, key]);
+  return { data: loaded?.data ?? null, view, error, loading };
 }
 
 /** The bar above the tabs. `showSource` is off on tabs the source filter means nothing to (Instagram, Alerts). */
@@ -167,6 +183,7 @@ export function MarketingFilterBar({ showSource = true }: { showSource?: boolean
         from={window.since}
         to={window.until}
         maxDay={israelToday()}
+        maxSpanDays={MAX_SPAN_DAYS}
         onPreset={(id) => set({ range: id === "30d" ? "" : id, from: "", to: "" })}
         onRange={(from, to) => set({ range: "custom", from, to })}
       />

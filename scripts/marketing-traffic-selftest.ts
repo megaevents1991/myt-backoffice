@@ -1,6 +1,6 @@
 // Run: npx tsx scripts/marketing-traffic-selftest.ts
 import assert from "node:assert/strict";
-import { buildTraffic, trafficBucket, type TrafficDailyRow, type TrafficStepRow } from "../lib/marketing/traffic";
+import { buildTraffic, trafficBucket, type TrafficDailyRow, type TrafficSourceUsersRow, type TrafficStepRow } from "../lib/marketing/traffic";
 import type { FunnelOrder } from "../lib/marketing/funnel";
 
 const partners = new Set(["sagi", "aviran"]);
@@ -25,11 +25,19 @@ assert.equal(trafficBucket("notfacebook.com", "referral", partners), "other", "a
 // ---- the view
 const days = ["2026-10-01", "2026-10-02"];
 const daily: TrafficDailyRow[] = [
-  { date: "20261001", source: "facebook", medium: "cpc", sessions: 100, users: 80, engaged: 50 },
-  { date: "20261001", source: "google", medium: "cpc", sessions: 40, users: 30, engaged: 30 },
-  { date: "20261002", source: "(direct)", medium: "(none)", sessions: 20, users: 20, engaged: 10 },
-  { date: "20261002", source: "sagi", medium: "referral", sessions: 10, users: 8, engaged: 6 },
+  { date: "20261001", source: "facebook", medium: "cpc", sessions: 100, engaged: 50 },
+  { date: "20261001", source: "google", medium: "cpc", sessions: 40, engaged: 30 },
+  { date: "20261002", source: "(direct)", medium: "(none)", sessions: 20, engaged: 10 },
+  { date: "20261002", source: "sagi", medium: "referral", sessions: 10, engaged: 6 },
 ];
+// Users come from reports WITHOUT the date (final review 14.10: summing daily rows counted a returning user once a day).
+const sourceUsers: TrafficSourceUsersRow[] = [
+  { source: "facebook", medium: "cpc", users: 70 },
+  { source: "google", medium: "cpc", users: 30 },
+  { source: "(direct)", medium: "(none)", users: 20 },
+  { source: "sagi", medium: "referral", users: 8 },
+];
+const totalUsers = 120; // unique across sources - less than the 128 of the rows
 const steps: TrafficStepRow[] = [
   // homepage via facebook
   { source: "facebook", medium: "cpc", landingPage: "/", eventName: "session_start", sessions: 60 },
@@ -57,9 +65,9 @@ const orders: FunnelOrder[] = [
   { day: "2026-10-02", paid: true, tickets: 1, source: "partners" },
 ];
 
-const all = buildTraffic({ daily, steps, partnerCodes: partners, src: "all", orders, days });
+const all = buildTraffic({ daily, sourceUsers, totalUsers, steps, partnerCodes: partners, src: "all", orders, days });
 assert.equal(all.sessions, 170);
-assert.equal(all.users, 138);
+assert.equal(all.users, 120, "All sources = the unique users of the period, not a sum of rows");
 assert.equal(all.engagementRate, 56.47, "96 engaged / 170");
 assert.equal(all.leads, 4);
 assert.equal(all.signups, 3);
@@ -77,6 +85,8 @@ assert.equal(all.otherEntries, 20, "the football category landing");
 
 const meta = all.sources.find((s) => s.bucket === "meta")!;
 assert.equal(meta.sessions, 100);
+assert.equal(meta.users, 70);
+assert.equal(meta.rows[0].users, 70);
 assert.equal(meta.confirmed, 3);
 assert.equal(meta.purchased, 1);
 assert.equal(meta.signups, 1);
@@ -88,15 +98,16 @@ assert.equal(all.landing[0].sessions, 70);
 assert.equal(all.landing[0].kind, "home");
 assert.equal(all.landing.find((l) => l.page === "/order/1031")!.purchased, 2);
 
-const fb = buildTraffic({ daily, steps, partnerCodes: partners, src: "meta", orders, days });
+const fb = buildTraffic({ daily, sourceUsers, totalUsers, steps, partnerCodes: partners, src: "meta", orders, days });
 assert.equal(fb.sessions, 100);
+assert.equal(fb.users, 70, "one source = the users of its rows");
 assert.equal(fb.leads, 2);
 assert.equal(fb.signups, 1);
 assert.equal(fb.funnels.home[0].sessions, 60, "sagi's homepage sessions are not Meta's");
 assert.equal(fb.funnels.event[0].sessions, 0);
 assert.deepEqual(fb.sources.map((s) => s.bucket), ["meta"]);
 
-const none = buildTraffic({ daily: [], steps: [], partnerCodes: partners, src: "all", orders: [], days });
+const none = buildTraffic({ daily: [], sourceUsers: [], totalUsers: 0, steps: [], partnerCodes: partners, src: "all", orders: [], days });
 assert.equal(none.engagementRate, null);
 assert.equal(none.conversion, null);
 assert.equal(none.funnels.home[1].pct, null, "no visit -> no percent");

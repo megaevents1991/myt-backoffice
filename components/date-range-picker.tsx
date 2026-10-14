@@ -34,6 +34,7 @@ export function DateRangePicker({
   from,
   to,
   maxDay,
+  maxSpanDays,
   onPreset,
   onRange,
   className,
@@ -45,6 +46,8 @@ export function DateRangePicker({
   to: string;
   /** Last pickable day (yyyy-mm-dd). */
   maxDay?: string;
+  /** Longest range in days (both ends counted); the calendar will not stretch past it. */
+  maxSpanDays?: number;
   onPreset: (id: string) => void;
   onRange: (from: string, to: string) => void;
   className?: string;
@@ -59,7 +62,9 @@ export function DateRangePicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) setDraft({ from: toDate(from), to: toDate(to) });
+        // An empty draft: the first click starts a NEW range. Pre-filled with the shown window, react-day-picker only
+        // moves its end on a later click, so "1 Oct, 7 Oct" became "15 Sep - 7 Oct" (final review 14.10).
+        if (next) setDraft(undefined);
       }}
     >
       <PopoverTrigger asChild>
@@ -99,11 +104,12 @@ export function DateRangePicker({
               onSelect={setDraft}
               defaultMonth={toDate(from)}
               disabled={max ? { after: max } : undefined}
+              max={maxSpanDays ? maxSpanDays - 1 : undefined}
               weekStartsOn={0}
             />
             <div className="flex items-center justify-end gap-2 border-t p-2">
               <span dir="ltr" className="me-auto text-xs text-muted-foreground">
-                {draft?.from ? show(toDay(draft.from)) : "—"} – {draft?.to ? show(toDay(draft.to)) : "—"}
+                {draft?.from ? `${show(toDay(draft.from))} – ${draft.to ? show(toDay(draft.to)) : "pick the last day"}` : "Pick the first day"}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setOpen(false)}>
                 Cancel
