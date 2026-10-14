@@ -143,6 +143,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > picture the way the site does (main `lib/events/fallbackImage.ts`; names matched by
 > main's rule, mirrored in `lib/on-tour.ts`). An approximation - the site also rotates
 > gallery cut-outs and draws "crest VS crest"; the board only needs to be recognisable.
+> (Since 14.10 the board draws the SITE's own cards when it can read them - below.)
+>
+> **Carousel control - every card in place (2026-10-14, Dor: "שליטה מלאה בכל הקרוסלות").** Spec
+> `docs/superpowers/specs/2026-10-14-homepage-carousel-control-design.md`, migration
+> `20261014160000_homepage_row_settings.sql`. (a) **Pin in place:** `homepage_items.position` is the
+> card's PLACE in its row (0 = first; pins saved before were 0..n-1 = the same). Any card - one the
+> site picked by itself too - is dragged to any place and stays there; the site fills every other place
+> by the row's rule, so new events still come in. (b) **One merge, two repos:** `lib/homepage/merge.ts`
+> is BYTE-IDENTICAL in myt-main (the site renders with it) and here (the board draws with it) -
+> `mergeRow` / `planHomepage`: the row's automatic POOL minus pinned / hidden / what the row above shows
+> ("החדשים" skips "המבוקשים", "אירועים נוספים" skips both), pins at their places. A pin that cannot be
+> placed (sold out; an artist / team with nothing on sale - `defaultPinnable`) is a dead pin and the pins
+> after it close up by one - exactly how the site treated a pinned list before, so the deploy changed
+> nothing visible (checked row by row against prod HTML). The hero's pool is two lanes (artists /
+> teams) interleaved after the pins are out. **Change merge.ts in one repo = copy it to the other**
+> (`cmp` them). Selftest `scripts/homepage-merge-selftest.ts` (with the board's promise: after any move,
+> `lib/homepage/row-edit.ts` writes pins the merge reads back into exactly the dragged row); main has
+> vitest `lib/__tests__/homepageMerge.test.ts`. (c) **The pools come from the site:** main
+> `GET /api/homepage-pools?categories=` (`x-hotel-secret` = `NEXT_SECRET_REVALIDATION_SECRET`) answers
+> each row's pool in the site's order (main `lib/homepage/rows.ts` `buildPools` - the rules that lived
+> inside ClientSideHomepage, now one server module; one card per artist / home team is applied to the
+> POOL, so an artist "המבוקשים" shows does not reappear in "החדשים" under another date), a slider pool per
+> category, and a card per live event / artist / team / review with the picture the site draws.
+> `getHomepageLayout` fetches it (`fetchPools`, 25 s, never throws); a site that cannot be read = a red
+> line and pinned-only rows, Save still works. A slider category picked on the board is fetched by
+> `getSliderPools`. (d) **Every row** (all seven builtins + every event slider) has `config.hidden`
+> ("event:812" / "team:x" / "review:<key>"; a pin beats it; the old `newest.hidden_event_ids` is read into
+> it and copied by the migration) and `config.max_items` (1..200; empty = 12 for event rows / sliders,
+> all for the rest) - `parseRowSettings` in `lib/homepage/blocks.ts`, lenient. "לקוחות משתפים" pins
+> `review` items (the kind CHECK was widened) and "אירועים נוספים" pins events. (e) **Board UI**
+> (`row-editor.tsx`): a wrapped grid of numbered cards in site order, `@dnd-kit` drag (mouse, touch,
+> keyboard), arrows, click the number to type a place, pin / unpin, hide (chips restore), "הוסף" at a
+> typed place, "כמה להציג", a "changed" tag per row and the count on the Save bar.
 
 > **✅ Marketing dashboard (`/marketing`, 2026-10-08).** Spec
 > `docs/superpowers/specs/2026-10-08-marketing-dashboard-design.md`, plan
@@ -241,6 +274,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > branch) BEFORE the cron's first prod tick, else every tick fails on the missing tables and mails
 > Dor; then `npm run db:types`; the ten secrets go to Vercel (env block below); the first real run
 > is `?backfill_days=90`.
+>
+> **v2 - Tom's CMO round (2026-10-14).** Spec `docs/superpowers/specs/2026-10-14-marketing-dashboard-v2-design.md`,
+> plan `docs/superpowers/plans/2026-10-14-marketing-dashboard-v2.md`; source = Tom's doc "מסמך שיפור דוחות"
+> (`1VYcWHbiJb6Tuftwq9m2qjKKW7K4aZNuMtDK4_xRPWps`, a reference dashboard "Events Deep Dive"). No migration.
+> (a) **One filter bar above the tabs** (`MarketingFiltersProvider` / `MarketingFilterBar` in `marketing-shared.tsx`,
+> URL `range` / `from` / `to` / `cur` / `brand` / `src`): presets incl. yesterday / last month + a range calendar
+> (`components/date-range-picker.tsx`, generic); every rule pure in `lib/marketing/range.ts` - ISRAEL calendar days
+> (reservations are read from `israelDayStartUtc`, an order's day = `israelDayOf(created_at)`), a bad custom window
+> falls back to 30 days, max 366. Each tab loads in ONE action through `useMarketingLoad` (`afterUrlWrite` first).
+> (b) **ILS by default, $ switch** (`buildPnl({ currency, fallbackUsdIls, platform })`, money fields lost their `Usd`
+> suffix): ILS spend = `ad_spend_daily.spend` as billed; an order's USD money x its own
+> `exchange_rate_usd_ils_100 / 100`, else 1 / the newest `ad_spend_daily.fx_rate` (the rate service module throws at
+> load without the supplier env, so it is not called); `platform_value` is in the ACCOUNT currency (ILS) - it was
+> printed with a `$` (Tom's "$131,151" was ₪). (c) **Executive = the reference layout:** SPEND (total / Google / Meta
+> + share), FUNNEL over EVERY order of the period (Dor 14.10: leads = any status, signups = Paid, passengers = tickets
+> on Paid; `lib/marketing/funnel.ts`, `lib/services/marketing-funnel.ts`), EFFICIENCY (cost per step, `null` = "—"
+> when a side is 0), PROFIT from media; three charts. **Order source** (`lib/marketing/order-source.ts`, shared with
+> Traffic): last paid touch (`paidTouchOf`) -> meta / google, else partner code / influencer -> partners, else any
+> UTM -> other, else no_utm. Brand applies to spend; the funnel is the Mega Events site's orders (brand "other" hides
+> it). (d) **Google "Purchases (platform)" = the PURCHASE conversion category only** (`mergeGooglePurchases`, two
+> extra GAQL queries per sync - a conversion segment cannot share a query with cost metrics, and the segment must be
+> in SELECT): it stored `metrics.conversions` = every primary action (forms, calls, submit_application, checkout -
+> Tom's "11.368"). Stored rows change on the next sync; run `marketingSync?only=google&backfill_days=90` once after
+> the deploy. Media has its own "Platform revenue" column, ⓘ hints per header, a totals strip. (e) **The live ad**
+> (`lib/actions/marketing-ads-actions.ts`, `ad-preview.tsx`): a Meta ad set lists its ads (`ad_entities` kind `ad`),
+> "Preview" = Graph `/{ad_id}/previews` (Facebook feed / Instagram feed / story) rendered as an iframe ONLY when the
+> src is https on business.facebook.com / www.facebook.com (`previewSrcFrom`); Google ad groups show RSA / ETA / RDA
+> texts + final URL, a P.Max campaign its asset groups (`asset_group_asset`). Read on click, never stored; ids must be
+> digits (`isAdId`). (f) **Traffic tab** = GA4 Data API v1beta (`lib/services/ga4.ts`, property 483131557, service
+> account `ga4-reader@mega-tourism-ads` with Viewer; env below): one `batchRunReports` of two reports (date x
+> source x medium; source x medium x landing page x event) + our orders, cached 10 min (`marketing-traffic` tag),
+> pure aggregation `lib/marketing/traffic.ts` (`trafficBucket`; landing kind = the Partners screen's
+> `classifyEntry`; steps = select_item / add_to_cart (flight search) / view_cart / begin_checkout + generate_lead /
+> purchase). Non-partner traffic is NOT in our DB (`affiliates_tracking` has an FK to partners) - GA4 is the only
+> source. Missing env -> the tab says so. Measured 14.10: 30 days = 723 + 3,757 rows, 1.3 s. (g) Instagram and Alerts
+> follow the period. Selftests: `marketing-range`, `marketing-funnel`, `marketing-google`, `marketing-traffic`
+> (+ `marketing-pnl` updated).
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.
@@ -1418,6 +1488,11 @@ NEXT_SECRET_GOOGLE_SA_JSON_B64=
 # Site tracking ids (reserved for the GA4 / conversion work): GA4 production stream, Google Ads conversion id.
 NEXT_SECRET_GA4_MEASUREMENT_ID=
 NEXT_SECRET_GOOGLE_ADS_CONVERSION_ID=
+# Marketing Traffic tab (GA4 Data API, read only). The GA4 property id (483131557 = "MegaEvents - Production") and
+# the whole JSON of service account ga4-reader@mega-tourism-ads (Viewer on that property), base64 like the Google
+# Ads one. Missing -> the Traffic tab says GA4 is not connected; every other tab works.
+NEXT_SECRET_GA4_PROPERTY_ID=
+NEXT_SECRET_GA4_SA_JSON_B64=
 ```
 
 ## Database

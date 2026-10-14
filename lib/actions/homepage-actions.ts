@@ -22,6 +22,7 @@ import {
   isBlockType,
   isBuiltinKey,
   itemKindsFor,
+  normalizeItemSlots,
   normalizeSections,
   parseBuiltinConfig,
 } from "@/lib/homepage/blocks";
@@ -34,6 +35,8 @@ import {
   type HomepageCategoryOption,
   type HomepageItemRow,
   type HomepageLayout,
+  type HomepagePools,
+  type HomepagePoolsResult,
   type HomepageSectionConfig,
   type HomepageSectionRow,
   type SaveHomepageLayoutInput,
@@ -98,10 +101,79 @@ const storagePrefix = () => {
   return base ? `${base}/storage/v1/object/public/` : "";
 };
 
+/** An event slider may name up to this many categories at once (main caps the same). */
+const MAX_POOL_CATEGORIES = 30;
+
+/**
+ * What the site's rows are made of right now - myt-main `/api/homepage-pools`:
+ * each row's automatic pool in the site's order, the pools of the categories
+ * asked for, and a card (picture, flags) per thing the board may place. Never
+ * throws: a site that cannot be reached gives `{ ok: false }` and the board
+ * falls back to the pinned cards.
+ */
+async function fetchPools(categoryIds: number[]): Promise<HomepagePoolsResult> {
+  const base = process.env.NEXT_SECRET_HOTEL_SERVICE_URL;
+  const secret = process.env.NEXT_SECRET_REVALIDATION_SECRET;
+  if (!base || !secret) {
+    return { ok: false, error: "The site's address or shared secret is not set on this server." };
+  }
+  const ids = [...new Set(categoryIds.filter((n) => Number.isInteger(n) && n > 0))].slice(
+    0,
+    MAX_POOL_CATEGORIES,
+  );
+  const url = `${base.replace(/\/+$/, "")}/api/homepage-pools${ids.length ? `?categories=${ids.join(",")}` : ""}`;
+  try {
+    const res = await fetch(url, {
+      headers: { "x-hotel-secret": secret },
+      cache: "no-store",
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (res.status === 404) {
+      return { ok: false, error: "The site does not serve its rows yet (myt-main without /api/homepage-pools)." };
+    }
+    if (!res.ok) return { ok: false, error: `The site answered ${res.status}.` };
+    const data = (await res.json()) as HomepagePools;
+    if (!data || typeof data !== "object" || !data.pools || !Array.isArray(data.cards)) {
+      return { ok: false, error: "The site's answer was not understood." };
+    }
+    return { ok: true, data };
+  } catch (error) {
+    console.error("homepage pools:", error);
+    return { ok: false, error: "The site could not be reached." };
+  }
+}
+
+/**
+ * The pools of the categories event sliders name - asked again when staff pick
+ * a category the board has no pool for yet.
+ */
+export async function getSliderPools(
+  categoryIds: number[],
+): Promise<{ ok: true; pools: Record<string, string[]> } | { ok: false; error: string }> {
+  await requireStaff();
+  const res = await fetchPools(Array.isArray(categoryIds) ? categoryIds.map(Number) : []);
+  return res.ok ? { ok: true, pools: res.data.sliderPools } : { ok: false, error: res.error };
+}
+
 export async function getHomepageLayout(): Promise<HomepageLayout> {
   await requireStaff();
 
-  const [sectionsFull, itemsRes, eventsRes, artistsRes, teamsRes, categoriesRes] =
+  // The sliders' categories are needed before the site can be asked for their
+  // pools, so the layout rows are read first - one small read - and the site is
+  // asked while the rest of the board's reads run.
+  const sliderCategories = await db
+    .from("homepage_sections")
+    .select("config")
+    .eq("type", "event_slider")
+    .then((r: { data: { config: unknown }[] | null }) =>
+      (r.data ?? []).flatMap((row) => {
+        const id = Number((row.config as { category_id?: unknown } | null)?.category_id);
+        return Number.isInteger(id) && id > 0 ? [id] : [];
+      }),
+    )
+    .catch(() => [] as number[]);
+
+  const [sectionsFull, itemsRes, eventsRes, artistsRes, teamsRes, categoriesRes, pools] =
     await Promise.all([
       db.from("homepage_sections").select(SECTION_COLUMNS),
       db.from("homepage_items").select("section,kind,ref_id,position"),
@@ -131,6 +203,7 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
         .select("id,name,parent_id")
         .eq("is_deleted", false)
         .eq("is_active", true),
+      fetchPools(sliderCategories),
     ]);
 
   for (const r of [eventsRes, artistsRes, teamsRes]) {
@@ -271,7 +344,7 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
       .sort((a, b) => a.path.localeCompare(b.path, "he"));
   }
 
-  return { sections, items, candidates, categories, blocksReady };
+  return { sections, items, candidates, categories, blocksReady, pools };
 }
 
 /**
@@ -329,29 +402,34 @@ export async function saveHomepageLayout(
   const sections = normalized.sections;
   const sectionByKey = new Map(sections.map((s) => [s.key, s]));
 
+  // A pinned card's `position` is the place it holds in its row (2026-10-14):
+  // kept as sent, made whole and unique per row by normalizeItemSlots.
   const itemKey = (it: HomepageItemRow) => `${it.section}|${it.kind}|${it.ref_id}`;
   const seenItems = new Set<string>();
-  const perSection = new Map<string, HomepageItemRow[]>();
+  const accepted: HomepageItemRow[] = [];
   for (const it of input.items ?? []) {
     const section = sectionByKey.get(it.section);
     if (!section) continue;
     if (!itemKindsFor(section).includes(it.kind)) continue;
     const ref = String(it.ref_id ?? "").trim();
-    if (!ref) continue;
-    const row: HomepageItemRow = { section: section.key, kind: it.kind, ref_id: ref, position: 0 };
+    if (!ref || ref.length > 200) continue;
+    const row: HomepageItemRow = {
+      section: section.key,
+      kind: it.kind,
+      ref_id: ref,
+      position: Number(it.position),
+    };
     const k = itemKey(row);
     if (seenItems.has(k)) continue;
     seenItems.add(k);
-    const list = perSection.get(section.key) ?? [];
-    list.push(row);
-    perSection.set(section.key, list);
+    accepted.push(row);
   }
-  const items: HomepageItemRow[] = [];
-  for (const [, list] of perSection) {
-    list.forEach((it, i) => {
-      it.position = i;
-      items.push(it);
-    });
+  const items = normalizeItemSlots(accepted);
+  const perSection = new Map<string, HomepageItemRow[]>();
+  for (const it of items) {
+    const list = perSection.get(it.section) ?? [];
+    list.push(it);
+    perSection.set(it.section, list);
   }
 
   // The blocks this page has NOW - the ones missing from the payload are the
@@ -446,7 +524,10 @@ export async function saveHomepageLayout(
           }`,
       ),
       items: Object.fromEntries(
-        [...perSection].map(([k, list]) => [k, list.map((it) => `${it.kind}:${it.ref_id}`)]),
+        [...perSection].map(([k, list]) => [
+          k,
+          list.map((it) => `${it.kind}:${it.ref_id}@${it.position + 1}`),
+        ]),
       ),
       ...(removedKeys.length ? { removed_blocks: removedKeys } : {}),
     },

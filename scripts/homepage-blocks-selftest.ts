@@ -5,16 +5,18 @@ import {
   MAX_BLOCKS,
   MAX_DESTINATIONS,
   MAX_GALLERY,
-  MAX_HIDDEN_EVENTS,
+  MAX_HIDDEN,
   TEXT_MAX,
   TITLE_MAX,
-  hiddenEventIds,
   isBlockKey,
   itemKindsFor,
   newBlockKey,
+  normalizeItemSlots,
   normalizeSections,
   normalizeTitle,
   parseBuiltinConfig,
+  parseRowSettings,
+  rowSettingsOf,
 } from "../lib/homepage/blocks";
 import { buildArtIndex, personArtFor } from "../lib/homepage/event-art";
 
@@ -82,7 +84,8 @@ check("a long hex is not a block key", isBlockKey("blk_0123456789"), false);
 // --- item kinds ---
 
 check("builtin newest takes events", itemKindsFor({ key: "newest", type: "builtin" }), ["event"]);
-check("builtin reviews takes nothing", itemKindsFor({ key: "reviews", type: "builtin" }), []);
+check("builtin reviews takes reviews", itemKindsFor({ key: "reviews", type: "builtin" }), ["review"]);
+check("builtin more events takes events", itemKindsFor({ key: "more_events", type: "builtin" }), ["event"]);
 check("an event slider takes events", itemKindsFor({ key: "blk_00000001", type: "event_slider" }), ["event"]);
 check("a banner takes nothing", itemKindsFor({ key: "blk_00000001", type: "banner" }), []);
 
@@ -161,43 +164,79 @@ check("a non-array payload is rejected", errorOf(normalizeSections("nope", opts)
   check("a builtin drops a config that is not its own", newest?.config, {});
 }
 
-// --- "החדשים ביותר": the events removed from its automatic part ---
+// --- row settings: hidden cards + row length (every builtin, every slider) ---
 
 check(
-  "newest: hidden ids survive - coerced, deduped, junk dropped",
-  parseBuiltinConfig("newest", { hidden_event_ids: [12, "7", 12, 0, -3, 1.5, "abc", null], evil: true }),
-  { hidden_event_ids: [12, 7] },
+  "row settings: refs kept, deduped, junk dropped",
+  parseRowSettings({ hidden: ["event:12", "event:12", "team:liverpool", "nope", 5, "event:"], evil: 1 }),
+  { hidden: ["event:12", "team:liverpool"] },
 );
-check("newest: no hidden ids is an empty config", parseBuiltinConfig("newest", { hidden_event_ids: [] }), {});
-check("newest: junk config is an empty config", parseBuiltinConfig("newest", "nope"), {});
 check(
-  "only newest has a builtin config",
-  parseBuiltinConfig("most_wanted", { hidden_event_ids: [5] }),
-  {},
+  "row settings: the old newest hidden_event_ids is read into hidden",
+  parseBuiltinConfig("newest", { hidden_event_ids: [12, "7", 12, 0, -3, 1.5, "abc", null] }),
+  { hidden: ["event:12", "event:7"] },
+);
+check(
+  "row settings: hidden and the old key merge",
+  parseRowSettings({ hidden: ["event:3"], hidden_event_ids: [3, 4] }),
+  { hidden: ["event:3", "event:4"] },
+);
+check("row settings: max_items 1..limit", parseRowSettings({ max_items: 8 }), { max_items: 8 });
+check("row settings: max_items 0 dropped", parseRowSettings({ max_items: 0 }), {});
+check("row settings: max_items 2.5 dropped", parseRowSettings({ max_items: 2.5 }), {});
+check("row settings: max_items over the limit dropped", parseRowSettings({ max_items: 100000 }), {});
+check("row settings: junk config is empty", parseBuiltinConfig("most_wanted", "nope"), {});
+check(
+  "every builtin has row settings now",
+  parseBuiltinConfig("football", { hidden: ["team:x"], max_items: 6 }),
+  { hidden: ["team:x"], max_items: 6 },
 );
 {
-  const many = Array.from({ length: MAX_HIDDEN_EVENTS + 5 }, (_, i) => i + 1);
-  const kept = hiddenEventIds(parseBuiltinConfig("newest", { hidden_event_ids: many }));
-  check("newest: over the cap the oldest removals go first", [kept.length, kept[0], kept.at(-1)], [
-    MAX_HIDDEN_EVENTS,
-    6,
-    MAX_HIDDEN_EVENTS + 5,
+  const many = Array.from({ length: MAX_HIDDEN + 5 }, (_, i) => `event:${i + 1}`);
+  const kept = rowSettingsOf(parseRowSettings({ hidden: many })).hidden;
+  check("row settings: over the cap the oldest removals go first", [kept.length, kept[0], kept.at(-1)], [
+    MAX_HIDDEN,
+    "event:6",
+    `event:${MAX_HIDDEN + 5}`,
   ]);
 }
 {
   const r = normalizeSections(
-    [builtin("hero"), builtin("newest", { config: { hidden_event_ids: [44, 45] } })],
+    [builtin("hero"), builtin("newest", { config: { hidden: ["event:44"], max_items: 10 } })],
     opts,
   );
   const newest = r.ok ? r.sections.find((s) => s.key === "newest") : null;
-  check("newest: the hidden list rides a save", newest?.config, { hidden_event_ids: [44, 45] });
-  check("hiddenEventIds reads it back", hiddenEventIds(newest?.config), [44, 45]);
-  check("hiddenEventIds of another config is empty", hiddenEventIds({ category_id: 3 }), []);
+  check("row settings ride a save", newest?.config, { hidden: ["event:44"], max_items: 10 });
+  check("rowSettingsOf reads them back", rowSettingsOf(newest?.config), { hidden: ["event:44"], max: 10 });
+  check("rowSettingsOf of a bare config", rowSettingsOf({ category_id: 3 }), { hidden: [], max: null });
 }
 {
-  const r = normalizeSections([builtin("hero"), builtin("newest", { config: { hidden_event_ids: "x" } })], opts);
-  check("newest: a junk hidden list never fails the save", r.ok, true);
+  const r = normalizeSections([builtin("hero"), builtin("newest", { config: { hidden: "x" } })], opts);
+  check("a junk hidden list never fails the save", r.ok, true);
 }
+
+// --- pinned places ---
+
+{
+  const it = (section: string, ref_id: string, position: number) => ({
+    section,
+    kind: "event" as const,
+    ref_id,
+    position,
+  });
+  const out = normalizeItemSlots([
+    it("newest", "a", 4),
+    it("newest", "b", 1),
+    it("newest", "c", 1),
+    it("most_wanted", "d", -3),
+    it("most_wanted", "e", Number.NaN),
+    it("newest", "f", 5000),
+  ]);
+  const of = (s: string) => out.filter((x) => x.section === s).map((x) => `${x.ref_id}@${x.position}`);
+  check("slots: sorted, a clash moves the later card on", of("newest"), ["b@1", "c@2", "a@4", "f@999"]);
+  check("slots: junk and negatives become 0, then the next", of("most_wanted"), ["d@0", "e@1"]);
+}
+
 
 // --- event slider ---
 

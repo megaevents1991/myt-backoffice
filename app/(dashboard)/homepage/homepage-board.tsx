@@ -1,25 +1,20 @@
 "use client";
 
-import { Fragment, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  AlertTriangle,
   ArrowDown,
-  ArrowLeft,
-  ArrowRight,
   ArrowUp,
+  ExternalLink,
   Eye,
   EyeOff,
   GripVertical,
   Info,
   Lock,
   Pencil,
-  Pin,
-  Plus,
   RotateCcw,
   Save,
-  Star,
-  StarOff,
   Trash2,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -27,29 +22,32 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  getSliderPools,
   saveHomepageLayout,
   setEventPrioritized,
 } from "@/lib/actions/homepage-actions";
 import {
   MAX_BLOCKS,
-  MAX_HIDDEN_EVENTS,
+  MAX_HIDDEN,
   TITLE_MAX,
-  hiddenEventIds,
   isBuiltinKey,
   itemKindsFor,
   newBlockKey,
+  rowSettingsOf,
 } from "@/lib/homepage/blocks";
+import {
+  defaultPinnable,
+  defaultShowable,
+  planHomepage,
+  rowDefaultMax,
+  toRef,
+  type RowLayout,
+  type RowPool,
+  type RowRef,
+} from "@/lib/homepage/merge";
+import { PUBLIC_SITE_URL } from "@/lib/site";
 import {
   BLOCK_META,
   SECTION_META,
@@ -58,8 +56,6 @@ import {
   type EventSliderConfig,
   type GalleryConfig,
   type HomepageBlockType,
-  type HomepageCandidate,
-  type HomepageItemKind,
   type HomepageItemRow,
   type HomepageLayout,
   type HomepageSectionConfig,
@@ -74,24 +70,36 @@ import {
   SliderSettings,
   TextEditor,
 } from "./homepage-blocks";
-
-const KIND_LABEL: Record<HomepageItemKind, string> = {
-  event: "Event",
-  artist: "Artist",
-  team: "Team",
-};
-
-const candidateKey = (kind: HomepageItemKind, ref: string) => `${kind}:${ref}`;
-
-/** One scroll row on the site - mirrors ROW_MAX in myt-main ClientSideHomepage. */
-const ROW_MAX = 12;
-/** "ADD" on החדשים ביותר offers only the most recently uploaded events. */
-const NEWEST_PICK_MAX = 100;
-
-const createdAtMs = (c: HomepageCandidate) =>
-  c.created_at ? Date.parse(c.created_at) || 0 : 0;
+import { RowEditor, type BoardCard } from "./row-editor";
 
 type ItemsBySection = Record<string, HomepageItemRow[]>;
+
+/** A section's config with its row settings replaced (other keys - a slider's category - kept). */
+const withRowSettings = (
+  config: HomepageSectionConfig,
+  hidden: RowRef[],
+  max: number | null,
+): HomepageSectionConfig => {
+  const rest = { ...(config as Record<string, unknown>) };
+  delete rest.hidden;
+  delete rest.hidden_event_ids;
+  delete rest.max_items;
+  return {
+    ...rest,
+    ...(hidden.length ? { hidden: hidden.slice(-MAX_HIDDEN) } : {}),
+    ...(max !== null ? { max_items: max } : {}),
+  } as HomepageSectionConfig;
+};
+
+/** A row's saved state, for the "changed" tag. */
+const rowFingerprint = (s: HomepageSectionRow | undefined, pins: HomepageItemRow[] | undefined) =>
+  JSON.stringify([
+    rowSettingsOf(s?.config),
+    (s?.config as EventSliderConfig | undefined)?.category_id ?? null,
+    [...(pins ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((p) => `${p.kind}:${p.ref_id}@${p.position}`),
+  ]);
 
 const groupItems = (items: HomepageItemRow[], sections: HomepageSectionRow[]) => {
   const out: ItemsBySection = {};
@@ -140,11 +148,14 @@ const emptyConfig = (type: HomepageBlockType): HomepageSectionConfig => {
 };
 
 /**
- * The dummy homepage: every section as a block in site order, each carousel
- * section with its items as a horizontal strip. Drag (or arrows) reorders both
- * levels; one Save writes the whole layout. Native HTML5 drag, same as the old
- * PeopleOrderList this replaces - no library. Staff can also rename a section
- * (pencil) and add their own blocks between sections (homepage-blocks.tsx).
+ * The dummy homepage: every section as a block in site order; every carousel
+ * drawn exactly as the site will show it (myt-main's automatic pools from
+ * /api/homepage-pools, merged with the draft through lib/homepage/merge.ts -
+ * the same file the site renders with). Sections move by drag (native) or
+ * arrows; cards move by drag (@dnd-kit - mouse, touch, keyboard), arrows or a
+ * typed place, and stay where they are put (row-editor.tsx). One Save writes
+ * the whole layout. Staff can also rename a section (pencil) and add their own
+ * blocks between sections (homepage-blocks.tsx).
  */
 export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
   const { toast } = useToast();
@@ -155,11 +166,38 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
   const [dirty, setDirty] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const candidates = useMemo(() => {
-    const m = new Map<string, HomepageCandidate>();
-    for (const c of initial.candidates) m.set(candidateKey(c.kind, c.ref_id), c);
+  const poolsData = initial.pools.ok ? initial.pools.data : null;
+  // The site's own cards: their picture and the flags that decide whether they show.
+  const siteCards = useMemo(
+    () => new Map<RowRef, BoardCard>((poolsData?.cards ?? []).map((c) => [c.ref, c])),
+    [poolsData],
+  );
+  // Every card the board can draw or add: the site's, else the board's own list.
+  const cards = useMemo(() => {
+    const m = new Map<RowRef, BoardCard>();
+    for (const c of initial.candidates) {
+      const ref = toRef(c.kind, c.ref_id);
+      m.set(ref, {
+        ref,
+        name: c.name,
+        sub: c.subtitle,
+        image: c.image_url,
+        prioritized: c.prioritized,
+        createdAt: c.created_at ?? null,
+      });
+    }
+    for (const [ref, c] of siteCards) m.set(ref, c);
     return m;
-  }, [initial.candidates]);
+  }, [initial.candidates, siteCards]);
+  const cardOf = (ref: RowRef) => cards.get(ref);
+  // What "הוסף" offers: newest uploads first, so "החדשים" finds them on top.
+  const pickable = useMemo(
+    () =>
+      [...cards.values()].sort(
+        (a, b) => (Date.parse(b.createdAt ?? "") || 0) - (Date.parse(a.createdAt ?? "") || 0),
+      ),
+    [cards],
+  );
 
   // Section drag state (vertical).
   const sectionDrag = useRef<number | null>(null);
@@ -215,56 +253,41 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
   };
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
 
-  const moveItem = (key: string, from: number, to: number) => {
-    setItems((prev) => ({ ...prev, [key]: moveIn(prev[key] ?? [], from, to) }));
+  // A row's pinned cards, each at the place it holds (row-editor.tsx writes them).
+  const setPins = (key: string, pins: HomepageItemRow[]) => {
+    setItems((prev) => ({ ...prev, [key]: pins }));
     setDirty(true);
   };
-  const removeItem = (key: string, idx: number) => {
-    setItems((prev) => ({ ...prev, [key]: (prev[key] ?? []).filter((_, i) => i !== idx) }));
-    setDirty(true);
-  };
-  // "החדשים ביותר" only: events staff removed from the AUTOMATIC part of the
-  // row. Lives in the section's config, so it is part of Save / Discard.
-  const newestHidden = useMemo(
-    () => hiddenEventIds(sections.find((s) => s.key === "newest")?.config),
-    [sections],
-  );
-  const setNewestHidden = (ids: number[]) =>
-    setConfig("newest", ids.length ? { hidden_event_ids: ids.slice(-MAX_HIDDEN_EVENTS) } : {});
-  const hideFromNewest = (c: HomepageCandidate) => {
-    const id = Number(c.ref_id);
-    if (!Number.isInteger(id) || newestHidden.includes(id)) return;
-    setNewestHidden([...newestHidden, id]);
-  };
-  const restoreToNewest = (id: number) => setNewestHidden(newestHidden.filter((x) => x !== id));
-
-  const addItem = (key: string, c: HomepageCandidate) => {
-    // Pinning wins over hiding - a pinned event is shown whatever the hidden list says.
-    if (key === "newest" && newestHidden.includes(Number(c.ref_id))) {
-      restoreToNewest(Number(c.ref_id));
-    }
-    setItems((prev) => {
-      const list = prev[key] ?? [];
-      if (list.some((it) => it.kind === c.kind && it.ref_id === c.ref_id)) return prev;
-      return {
-        ...prev,
-        [key]: [...list, { section: key, kind: c.kind, ref_id: c.ref_id, position: list.length }],
-      };
-    });
+  // A row's hidden cards and length live in its section config - part of Save / Discard.
+  const setRowSettings = (key: string, patch: { hidden?: RowRef[]; max?: number | null }) => {
+    setSections((prev) =>
+      prev.map((s) => {
+        if (s.key !== key) return s;
+        const cur = rowSettingsOf(s.config);
+        return {
+          ...s,
+          config: withRowSettings(
+            s.config,
+            patch.hidden ?? cur.hidden,
+            patch.max !== undefined ? patch.max : cur.max,
+          ),
+        };
+      }),
+    );
     setDirty(true);
   };
 
   // Events un-prioritized from the board this visit. The write is immediate
   // (setEventPrioritized), so this only keeps the screen in step with it.
-  const [unprioritized, setUnprioritized] = useState<Set<string>>(new Set());
-  const unprioritize = (c: HomepageCandidate) => {
+  const [unprioritized, setUnprioritized] = useState<Set<RowRef>>(new Set());
+  const unprioritize = (card: BoardCard) => {
     startTransition(async () => {
-      const res = await setEventPrioritized(Number(c.ref_id), false);
+      const res = await setEventPrioritized(Number(card.ref.slice("event:".length)), false);
       if (res.ok) {
-        setUnprioritized((prev) => new Set(prev).add(c.ref_id));
+        setUnprioritized((prev) => new Set(prev).add(card.ref));
         toast({
           title: "Prioritize removed",
-          description: `${c.name} no longer fills "המבוקשים ביותר" on its own.`,
+          description: `${card.name} no longer fills "המבוקשים ביותר" on its own.`,
         });
       } else {
         toast({ variant: "destructive", title: "Could not update", description: res.error });
@@ -272,56 +295,103 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
     });
   };
 
-  // What the site shows AFTER the pinned items, so a strip is never an empty
-  // box: "המבוקשים ביותר" = the Prioritized events, "החדשים ביותר" = the latest
-  // uploads that the row above does not already show. An approximation of
-  // myt-main's rule (it also collapses several dates of one artist into a
-  // card) - good enough to see what is live and act on it.
-  const autoBySection = useMemo(() => {
-    const events = initial.candidates.filter((c) => c.kind === "event");
-    const pinnedIn = (key: string) =>
-      new Set((items[key] ?? []).map((it) => it.ref_id));
-    const wantedPinned = pinnedIn("most_wanted");
-    const prioritized = events.filter(
-      (c) => c.prioritized && !unprioritized.has(c.ref_id) && !wantedPinned.has(c.ref_id),
+  // The pool of every category an event slider names. A category picked on
+  // the board that the site has not been asked about yet is fetched once.
+  const [sliderPools, setSliderPools] = useState<Record<string, string[]>>(
+    () => poolsData?.sliderPools ?? {},
+  );
+  const missingCategories = sections.flatMap((s) => {
+    if (s.type !== "event_slider") return [];
+    const id = (s.config as EventSliderConfig).category_id;
+    return id && !(String(id) in sliderPools) ? [id] : [];
+  });
+  const missingKey = missingCategories.join(",");
+  useEffect(() => {
+    if (!poolsData || !missingKey) return;
+    let gone = false;
+    getSliderPools(missingKey.split(",").map(Number)).then((res) => {
+      if (gone) return;
+      if (res.ok) {
+        setSliderPools((prev) => {
+          const next = { ...prev, ...res.pools };
+          // A category the site knows nothing about still counts as asked.
+          for (const id of missingKey.split(",")) next[id] ??= [];
+          return next;
+        });
+      } else {
+        toast({ variant: "destructive", title: "Could not read the category's events", description: res.error });
+      }
+    });
+    return () => {
+      gone = true;
+    };
+  }, [missingKey, poolsData, toast]);
+
+  // Every row exactly as the site will build it: the site's automatic pools,
+  // merged with the draft (pins in their places, hidden cards, row lengths,
+  // what the row above shows) by the very file the site renders with.
+  const plan = useMemo(() => {
+    if (!poolsData) return null;
+    const pools: Record<string, RowPool> = { ...poolsData.pools };
+    if (unprioritized.size && Array.isArray(pools.most_wanted)) {
+      pools.most_wanted = (pools.most_wanted as RowRef[]).filter((r) => !unprioritized.has(r));
+    }
+    const rows: RowLayout[] = [];
+    for (const s of sections) {
+      if (s.type === "event_slider") {
+        const id = (s.config as EventSliderConfig).category_id;
+        pools[s.key] = id ? (sliderPools[String(id)] ?? []) : [];
+      }
+      if (!itemKindsFor(s).length) continue;
+      const st = rowSettingsOf(s.config);
+      rows.push({
+        key: s.key,
+        pins: (items[s.key] ?? []).map((p) => ({ ref: toRef(p.kind, p.ref_id), slot: p.position })),
+        hidden: st.hidden,
+        max: st.max,
+      });
+    }
+    return planHomepage(
+      rows,
+      pools,
+      (ref, key) => defaultShowable(siteCards.get(ref), key, ref),
+      (ref, key) => defaultPinnable(siteCards.get(ref), key, ref),
     );
-    const wantedShown = new Set([
-      ...wantedPinned,
-      ...prioritized.slice(0, Math.max(0, ROW_MAX - wantedPinned.size)).map((c) => c.ref_id),
-    ]);
-    const newestPinned = pinnedIn("newest");
-    const hidden = new Set(newestHidden.map(String));
-    const newest = events
-      .filter(
-        (c) => !newestPinned.has(c.ref_id) && !wantedShown.has(c.ref_id) && !hidden.has(c.ref_id),
-      )
-      .sort((a, b) => createdAtMs(b) - createdAtMs(a))
-      .slice(0, Math.max(0, ROW_MAX - newestPinned.size));
-    const auto: Record<string, HomepageCandidate[]> = { most_wanted: prioritized, newest };
-    return auto;
-  }, [initial.candidates, items, unprioritized, newestHidden]);
+  }, [poolsData, sections, items, sliderPools, unprioritized, siteCards]);
+
+  // The last saved state - Discard goes back to it, "changed" compares with it.
+  const [saved, setSaved] = useState(() => ({
+    sections: initial.sections,
+    items: groupItems(initial.items, initial.sections),
+  }));
+  const savedRows = useMemo(
+    () => new Map(saved.sections.map((s) => [s.key, rowFingerprint(s, saved.items[s.key])])),
+    [saved],
+  );
+  const changedRows = sections.filter(
+    (s) => itemKindsFor(s).length > 0 && savedRows.get(s.key) !== rowFingerprint(s, items[s.key]),
+  ).length;
 
   const reset = () => {
-    setSections(initial.sections);
-    setItems(groupItems(initial.items, initial.sections));
+    setSections(saved.sections);
+    setItems(saved.items);
     setDirty(false);
   };
 
   const save = () => {
     startTransition(async () => {
       const flat: HomepageItemRow[] = [];
-      for (const s of sections) {
-        (items[s.key] ?? []).forEach((it, i) => flat.push({ ...it, position: i }));
-      }
+      for (const s of sections) for (const it of items[s.key] ?? []) flat.push(it);
       const res = await saveHomepageLayout({
         sections: sections.map((s, i) => ({ ...s, position: i })),
         items: flat,
       });
       if (res.ok) {
+        setSaved({ sections, items });
         setDirty(false);
         toast({
-          title: "Homepage saved",
-          description: "The live site is refreshing - allow a minute for the new order.",
+          title: "עמוד הבית נשמר",
+          description: "האתר מתעדכן עכשיו - רענון של עמוד הבית באתר יראה את הסדר החדש.",
         });
       } else {
         toast({ variant: "destructive", title: "Save failed", description: res.error });
@@ -332,7 +402,22 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-4">
-        {/* The dummy site. Narrow like a real page so the strips read as rows. */}
+        {!initial.pools.ok && (
+          <div
+            className="mx-auto flex w-full max-w-4xl items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
+            dir="rtl"
+            role="alert"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden />
+            <div>
+              <div className="font-semibold">לא הצלחנו לקרוא מהאתר מה מוצג בו עכשיו</div>
+              <div className="text-xs text-muted-foreground">
+                השורות מציגות רק את הכרטיסים הנעוצים. אפשר לערוך ולשמור כרגיל. ({initial.pools.error})
+              </div>
+            </div>
+          </div>
+        )}
+        {/* The dummy site. Narrow like a real page so the rows read as rows. */}
         <div className="mx-auto w-full max-w-4xl rounded-2xl border bg-muted/30 p-3 sm:p-5">
           <ol className="space-y-3">
             {sections.map((s, i) => {
@@ -467,9 +552,15 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                         {kinds.length > 0 && (
                           <>
                             {" · "}
-                            {list.length} pinned {list.length === 1 ? "item" : "items"}
+                            {list.length} pinned
                           </>
                         )}
+                        {kinds.length > 0 &&
+                          savedRows.get(s.key) !== rowFingerprint(s, items[s.key]) && (
+                            <Badge className="ms-2 h-4 bg-amber-500/15 px-1.5 text-[10px] text-amber-700 hover:bg-amber-500/15 dark:text-amber-400">
+                              changed
+                            </Badge>
+                          )}
                       </div>
                     </div>
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -544,30 +635,36 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       onChange={(config) => setConfig(s.key, config)}
                     />
                   ) : kinds.length > 0 ? (
-                    <ItemStrip
+                    <RowEditor
                       sectionKey={s.key}
                       label={meta.labelEn}
+                      kinds={kinds}
+                      row={plan?.[s.key] ?? null}
+                      pins={list}
+                      hidden={rowSettingsOf(s.config).hidden}
+                      max={rowSettingsOf(s.config).max}
+                      defaultMax={rowDefaultMax(s.key)}
+                      cardOf={cardOf}
+                      pickable={pickable}
+                      onPinsChange={(pins) => setPins(s.key, pins)}
+                      onHiddenChange={(hidden) => setRowSettings(s.key, { hidden })}
+                      onMaxChange={(max) => setRowSettings(s.key, { max })}
+                      onUnprioritize={s.key === "most_wanted" ? unprioritize : undefined}
+                      busy={isPending}
                       emptyHint={
                         s.type === "event_slider"
                           ? (s.config as EventSliderConfig).category_id
-                            ? "אין פריטים מוצמדים - השורה מתמלאת מהקטגוריה שנבחרה למטה."
-                            : "אין פריטים מוצמדים ואין קטגוריה - הבלוק לא יוצג באתר עד שיהיה אחד מהם."
+                            ? "הקטגוריה שנבחרה ריקה כרגע - הוסיפו אירועים, או בחרו קטגוריה אחרת למטה."
+                            : "אין אירועים ואין קטגוריה - הבלוק לא יוצג באתר עד שיהיה אחד מהם."
                           : undefined
                       }
-                      kinds={kinds}
-                      list={list}
-                      candidates={candidates}
-                      allCandidates={initial.candidates}
-                      autoItems={autoBySection[s.key] ?? []}
-                      unprioritized={unprioritized}
-                      busy={isPending}
-                      onMove={(from, to) => moveItem(s.key, from, to)}
-                      onRemove={(idx) => removeItem(s.key, idx)}
-                      onAdd={(c) => addItem(s.key, c)}
-                      onUnprioritize={s.key === "most_wanted" ? unprioritize : undefined}
-                      onHide={s.key === "newest" ? hideFromNewest : undefined}
-                      hiddenIds={s.key === "newest" ? newestHidden : undefined}
-                      onRestore={s.key === "newest" ? restoreToNewest : undefined}
+                      note={
+                        s.key === "more_events"
+                          ? "באתר: גריד. בטלפון רואים את 5 הראשונים ובמחשב 20, ואז 'הצג עוד אירועים'."
+                          : s.key === "hero"
+                            ? "בהירו מוצגים רק אמנים וקבוצות עם אירוע זמין."
+                            : undefined
+                      }
                     />
                   ) : (
                     <div className="px-3 py-3 text-xs text-muted-foreground" dir="rtl">
@@ -609,8 +706,22 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
           )}
           aria-live="polite"
         >
-          <span className="text-sm">Unsaved changes</span>
+          <span className="text-sm">
+            Unsaved changes
+            {changedRows > 0 && (
+              <span className="text-muted-foreground">
+                {" "}
+                · {changedRows} {changedRows === 1 ? "row" : "rows"}
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <a href={PUBLIC_SITE_URL} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-1.5 h-4 w-4" />
+                Site
+              </a>
+            </Button>
             <Button variant="ghost" size="sm" onClick={reset} disabled={isPending}>
               <RotateCcw className="mr-1.5 h-4 w-4" />
               Discard
@@ -623,359 +734,5 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
         </div>
       </div>
     </TooltipProvider>
-  );
-}
-
-function ItemStrip({
-  sectionKey,
-  label,
-  emptyHint,
-  kinds,
-  list,
-  candidates,
-  allCandidates,
-  autoItems,
-  unprioritized,
-  busy,
-  onMove,
-  onRemove,
-  onAdd,
-  onUnprioritize,
-  onHide,
-  hiddenIds,
-  onRestore,
-}: {
-  sectionKey: string;
-  /** English name of the section, for the Add button's accessible label. */
-  label: string;
-  /** Replaces the builtin "fills by its automatic rule" line under an empty strip. */
-  emptyHint?: string;
-  kinds: HomepageItemKind[];
-  list: HomepageItemRow[];
-  candidates: Map<string, HomepageCandidate>;
-  allCandidates: HomepageCandidate[];
-  /** What the site shows after the pinned items - drawn as dashed "auto" cards. */
-  autoItems: HomepageCandidate[];
-  unprioritized: Set<string>;
-  busy: boolean;
-  onMove: (from: number, to: number) => void;
-  onRemove: (idx: number) => void;
-  onAdd: (c: HomepageCandidate) => void;
-  /** Only the section whose auto rule IS the Prioritized flag passes this. */
-  onUnprioritize?: (c: HomepageCandidate) => void;
-  /** Only "החדשים ביותר": drop an event from the automatic part of the row (part of Save). */
-  onHide?: (c: HomepageCandidate) => void;
-  hiddenIds?: number[];
-  onRestore?: (eventId: number) => void;
-}) {
-  const drag = useRef<number | null>(null);
-  const [open, setOpen] = useState(false);
-
-  const listed = useMemo(
-    () => new Set(list.map((it) => candidateKey(it.kind, it.ref_id))),
-    [list],
-  );
-  const pickable = useMemo(() => {
-    const rows = allCandidates.filter(
-      (c) => kinds.includes(c.kind) && !listed.has(candidateKey(c.kind, c.ref_id)),
-    );
-    // "החדשים ביותר": the picker is the last NEWEST_PICK_MAX packages uploaded
-    // to the site, in upload order - not every future event by date.
-    if (sectionKey !== "newest") return rows;
-    return [...rows]
-      .sort((a, b) => createdAtMs(b) - createdAtMs(a))
-      .slice(0, NEWEST_PICK_MAX);
-  }, [allCandidates, kinds, listed, sectionKey]);
-  // Auto cards past this index do not fit the site's single row.
-  const autoRoom = Math.max(0, ROW_MAX - list.length);
-
-  return (
-    <div className="px-3 py-3">
-      <div className="flex gap-3 overflow-x-auto pb-2" dir="rtl">
-        {list.map((it, i) => {
-          const c = candidates.get(candidateKey(it.kind, it.ref_id));
-          return (
-            <div
-              key={candidateKey(it.kind, it.ref_id)}
-              draggable
-              onDragStart={(e) => {
-                e.stopPropagation();
-                drag.current = i;
-                e.dataTransfer.effectAllowed = "move";
-              }}
-              onDragOver={(e) => {
-                if (drag.current === null) return;
-                e.preventDefault();
-                e.stopPropagation();
-                if (drag.current === i) return;
-                onMove(drag.current, i);
-                drag.current = i;
-              }}
-              onDragEnd={() => (drag.current = null)}
-              className="group relative w-36 shrink-0 cursor-grab overflow-hidden rounded-lg border bg-background active:cursor-grabbing"
-            >
-              <div className="relative aspect-[4/3] w-full bg-muted">
-                {c?.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={c.image_url}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-                <span className="absolute right-1 top-1 rounded bg-background/90 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {i + 1}
-                </span>
-                {c?.prioritized && (
-                  <span
-                    className="absolute left-1 top-1 rounded bg-background/90 p-0.5 text-amber-500"
-                    title="Prioritized event"
-                  >
-                    <Star className="h-3 w-3 fill-current" />
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onRemove(i)}
-                  className="absolute bottom-1 left-1 hidden rounded-full bg-background/90 p-1 text-muted-foreground hover:text-destructive group-hover:block focus-visible:block"
-                  aria-label={`Remove ${c?.name ?? it.ref_id}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="p-2 text-right">
-                <div className="truncate text-xs font-semibold" title={c?.name ?? it.ref_id}>
-                  {c?.name ?? (
-                    <span className="text-destructive">{it.ref_id} (not live)</span>
-                  )}
-                </div>
-                <div className="truncate text-[10px] text-muted-foreground" dir="ltr">
-                  {c?.subtitle ?? KIND_LABEL[it.kind]}
-                </div>
-              </div>
-              <div className="flex items-center justify-between border-t px-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => onMove(i, i - 1)}
-                  disabled={i === 0}
-                  aria-label="Move earlier"
-                >
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => onMove(i, i + 1)}
-                  disabled={i === list.length - 1}
-                  aria-label="Move later"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* What the site adds on its own after the pinned items. Dashed and
-            not draggable: pin one to place it, or drop its Prioritized flag. */}
-        {autoItems.map((c, i) => {
-          const fits = i < autoRoom;
-          return (
-            <div
-              key={`auto:${candidateKey(c.kind, c.ref_id)}`}
-              className={cn(
-                "group relative w-36 shrink-0 overflow-hidden rounded-lg border border-dashed bg-background",
-                !fits && "opacity-50",
-              )}
-              title={
-                fits
-                  ? "Shown on the site by the automatic rule"
-                  : `Does not fit the row (first ${ROW_MAX} are shown)`
-              }
-            >
-              <div className="relative aspect-[4/3] w-full bg-muted">
-                {c.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={c.image_url}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
-                <span className="absolute right-1 top-1 rounded bg-background/90 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {fits ? list.length + i + 1 : "-"}
-                </span>
-                <span className="absolute left-1 top-1 flex items-center gap-0.5 rounded bg-background/90 px-1 py-0.5 text-[10px] text-muted-foreground">
-                  {c.prioritized && !unprioritized.has(c.ref_id) && (
-                    <Star className="h-3 w-3 fill-current text-amber-500" />
-                  )}
-                  auto
-                </span>
-              </div>
-              <div className="p-2 text-right">
-                <div className="truncate text-xs font-semibold" title={c.name}>
-                  {c.name}
-                </div>
-                <div className="truncate text-[10px] text-muted-foreground" dir="ltr">
-                  {c.subtitle ?? KIND_LABEL[c.kind]}
-                </div>
-              </div>
-              <div className="flex items-center justify-between border-t px-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 gap-1 px-1.5 text-[10px]"
-                  onClick={() => onAdd(c)}
-                  aria-label={`Pin ${c.name}`}
-                  title="Pin = מצמיד את הכרטיס לתחילת השורה, במקום קבוע שאתם קובעים. בלי Pin הוא מוצג רק כל עוד החוקיות האוטומטית בוחרת בו."
-                >
-                  <Pin className="h-3 w-3" />
-                  Pin
-                </Button>
-                {onUnprioritize && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground hover:text-destructive"
-                    onClick={() => onUnprioritize(c)}
-                    disabled={busy}
-                    aria-label={`Remove prioritize from ${c.name}`}
-                    title="Removes the Prioritized flag now (not part of Save)"
-                  >
-                    <StarOff className="h-3 w-3" />
-                    Remove
-                  </Button>
-                )}
-                {onHide && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 gap-1 px-1.5 text-[10px] text-muted-foreground hover:text-destructive"
-                    onClick={() => onHide(c)}
-                    aria-label={`Remove ${c.name} from this row`}
-                    title="מוריד את האירוע מהשורה הזו בלבד (נכנס לתוקף ב-Save). האירוע נשאר באתר בכל מקום אחר."
-                  >
-                    <EyeOff className="h-3 w-3" />
-                    Remove
-                  </Button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="flex h-[168px] w-36 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-sm text-muted-foreground hover:border-primary hover:text-foreground"
-              aria-label={`Add to ${label}`}
-            >
-              <Plus className="h-5 w-5" />
-              Add
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 p-0" align="end">
-            <Command>
-              <CommandInput placeholder="Search…" />
-              <CommandList>
-                <CommandEmpty>Nothing left to add.</CommandEmpty>
-                {kinds.map((kind) => {
-                  const rows = pickable.filter((c) => c.kind === kind);
-                  if (!rows.length) return null;
-                  return (
-                    <CommandGroup
-                      key={kind}
-                      heading={
-                        sectionKey === "newest"
-                          ? `Last ${NEWEST_PICK_MAX} uploaded - newest first`
-                          : `${KIND_LABEL[kind]}s`
-                      }
-                    >
-                      {rows.map((c) => (
-                        <CommandItem
-                          key={candidateKey(c.kind, c.ref_id)}
-                          value={`${c.name} ${c.subtitle ?? ""} ${c.ref_id}`}
-                          onSelect={() => {
-                            onAdd(c);
-                            setOpen(false);
-                          }}
-                          className="gap-2"
-                        >
-                          {c.image_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={c.image_url}
-                              alt=""
-                              className="h-7 w-10 shrink-0 rounded object-cover"
-                            />
-                          ) : (
-                            <div className="h-7 w-10 shrink-0 rounded bg-muted" />
-                          )}
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm">{c.name}</span>
-                            {c.subtitle && (
-                              <span className="block truncate text-[11px] text-muted-foreground" dir="ltr">
-                                {c.subtitle}
-                              </span>
-                            )}
-                          </span>
-                          {c.prioritized && (
-                            <Star className="h-3.5 w-3.5 shrink-0 fill-current text-amber-500" />
-                          )}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  );
-                })}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
-      {autoItems.length > 0 && (
-        <p className="mt-1 text-[11px] text-muted-foreground" dir="rtl">
-          מקווקו = האתר מציג לבד לפי החוקיות האוטומטית ·{" "}
-          <Pin className="inline h-3 w-3" aria-hidden /> Pin = מצמיד לתחילת השורה במקום קבוע
-          {onUnprioritize && " · Remove = מוריד את הסימון Prioritized מהאירוע (מיידי, לא חלק מ-Save)"}
-          {onHide && " · Remove = מוריד מהשורה הזו בלבד (ב-Save)"}
-        </p>
-      )}
-      {onRestore && hiddenIds && hiddenIds.length > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5" dir="rtl">
-          <span className="text-[11px] text-muted-foreground">הוסרו מהשורה ({hiddenIds.length}):</span>
-          {hiddenIds.map((id) => {
-            const c = candidates.get(candidateKey("event", String(id)));
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onRestore(id)}
-                className="flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-foreground"
-                title="החזר לשורה האוטומטית"
-                aria-label={`Restore ${c?.name ?? id}`}
-              >
-                {c?.name ?? `#${id} (לא באוויר)`}
-                <RotateCcw className="h-3 w-3" aria-hidden />
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {list.length === 0 && (
-        <p className="mt-1 text-xs text-muted-foreground" dir="rtl">
-          {emptyHint
-            ? emptyHint
-            : autoItems.length > 0
-            ? "אין פריטים מוצמדים - הכרטיסים המקווקווים הם מה שהאתר מציג עכשיו לפי החוקיות האוטומטית. Pin מצמיד למקום."
-            : "אין פריטים מוצמדים - הסקשן מתמלא לפי החוקיות האוטומטית בלבד."}
-        </p>
-      )}
-    </div>
   );
 }

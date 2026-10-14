@@ -25,8 +25,11 @@ import {
   type HomepageSectionKey,
   type HomepageSectionRow,
   type HomepageSectionType,
+  type HomepageItemRow,
+  type RowSettings,
   type TextConfig,
 } from "../../types/homepage.types";
+import { ROW_MAX_LIMIT } from "./merge";
 
 /** Staff-added blocks per page. The homepage is ISR'd and image-heavy - a ceiling, not a target. */
 export const MAX_BLOCKS = 12;
@@ -36,8 +39,10 @@ export const TEXT_MAX = 1200;
 export const MAX_GALLERY = 12;
 /** Tiles staff place by hand; a parent category's children follow without a cap here. */
 export const MAX_DESTINATIONS = 20;
-/** Events removed from the automatic part of "החדשים ביותר". */
-export const MAX_HIDDEN_EVENTS = 100;
+/** Cards hidden from one row - over it, the oldest removals go first. */
+export const MAX_HIDDEN = 300;
+/** The furthest place a pin may hold (0-based). */
+export const MAX_SLOT = 999;
 const LINK_MAX = 300;
 
 const BLOCK_KEY_RE = /^blk_[0-9a-f]{8}$/;
@@ -78,12 +83,53 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
+const REF_RE = /^(event|artist|team|review):\S{1,200}$/;
+
+/**
+ * A row's own settings (any builtin, any event slider). Lenient on purpose - a
+ * row setting can never fail a save, so junk is dropped instead of reported:
+ * `hidden` keeps well-formed "kind:id" refs, deduped, the newest MAX_HIDDEN;
+ * the older `hidden_event_ids` of "החדשים" is read into it; `max_items` keeps
+ * a whole number 1..ROW_MAX_LIMIT. Nothing set = an empty object.
+ */
+export const parseRowSettings = (raw: unknown): RowSettings => {
+  const rec = isRecord(raw) ? raw : {};
+  const hidden: string[] = [];
+  const add = (ref: string) => {
+    if (REF_RE.test(ref) && !hidden.includes(ref)) hidden.push(ref);
+  };
+  for (const v of Array.isArray(rec.hidden) ? rec.hidden : []) if (typeof v === "string") add(v.trim());
+  for (const v of Array.isArray(rec.hidden_event_ids) ? rec.hidden_event_ids : []) {
+    const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
+    if (Number.isInteger(n) && n > 0) add(`event:${n}`);
+  }
+  const out: RowSettings = {};
+  if (hidden.length) out.hidden = hidden.slice(-MAX_HIDDEN);
+  const max = Number(rec.max_items);
+  if (rec.max_items !== null && rec.max_items !== undefined && rec.max_items !== "" &&
+      Number.isInteger(max) && max >= 1 && max <= ROW_MAX_LIMIT) {
+    out.max_items = max;
+  }
+  return out;
+};
+
+/** The settings a section config carries, read back (any config shape). */
+export const rowSettingsOf = (
+  config: HomepageSectionConfig | null | undefined,
+): { hidden: string[]; max: number | null } => {
+  const s = parseRowSettings(config);
+  return { hidden: s.hidden ?? [], max: s.max_items ?? null };
+};
+
 const parseSlider = (raw: unknown): Parsed<EventSliderConfig> => {
+  const settings = parseRowSettings(raw);
   const v = isRecord(raw) ? raw.category_id : null;
-  if (v === null || v === undefined || v === "") return { ok: true, value: { category_id: null } };
+  if (v === null || v === undefined || v === "") {
+    return { ok: true, value: { category_id: null, ...settings } };
+  }
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
   if (!Number.isInteger(n) || n <= 0) return { ok: false, error: "קטגוריה לא תקינה" };
-  return { ok: true, value: { category_id: n } };
+  return { ok: true, value: { category_id: n, ...settings } };
 };
 
 /** `/path` (never `//host`) or an https URL. Empty = no link. */
@@ -207,30 +253,43 @@ const parseConfig = (
 };
 
 /**
- * The config of a BUILTIN section. Only "החדשים ביותר" has one - the events
- * staff removed from its automatic part. Lenient on purpose: a builtin can
- * never fail a save, so junk is dropped instead of reported. Over the cap the
- * OLDEST removals go first - the row has long moved past them.
+ * The config of a BUILTIN section = its row settings (hidden cards, length).
+ * Lenient on purpose: a builtin can never fail a save.
  */
 export const parseBuiltinConfig = (
-  key: HomepageSectionKey,
+  _key: HomepageSectionKey,
   raw: unknown,
-): HomepageSectionConfig => {
-  if (key !== "newest") return {};
-  const list = isRecord(raw) && Array.isArray(raw.hidden_event_ids) ? raw.hidden_event_ids : [];
-  const ids: number[] = [];
-  for (const v of list) {
-    const n = toId(v);
-    if (Number.isInteger(n) && n > 0 && !ids.includes(n)) ids.push(n);
-  }
-  return ids.length ? { hidden_event_ids: ids.slice(-MAX_HIDDEN_EVENTS) } : {};
-};
+): HomepageSectionConfig => parseRowSettings(raw);
 
-/** The ids a "החדשים ביותר" config hides; any other config hides none. */
-export const hiddenEventIds = (config: HomepageSectionConfig | null | undefined): number[] =>
-  config && "hidden_event_ids" in config && Array.isArray(config.hidden_event_ids)
-    ? config.hidden_event_ids
-    : [];
+/**
+ * The pinned cards of a save → rows to write. Per section, in the order of the
+ * place each holds (`position`, ties keep the order sent): a place is a whole
+ * number 0..MAX_SLOT, and two cards never share one - a clash moves the later
+ * card to the next free place. Pure; the kind / section checks are the caller's.
+ */
+export const normalizeItemSlots = (items: HomepageItemRow[]): HomepageItemRow[] => {
+  const bySection = new Map<string, { it: HomepageItemRow; i: number }[]>();
+  items.forEach((it, i) => {
+    const list = bySection.get(it.section) ?? [];
+    list.push({ it, i });
+    bySection.set(it.section, list);
+  });
+  const out: HomepageItemRow[] = [];
+  for (const [, list] of bySection) {
+    const slotOf = (x: { it: HomepageItemRow }) => {
+      const n = Math.floor(Number(x.it.position));
+      return Number.isFinite(n) ? Math.min(Math.max(n, 0), MAX_SLOT) : 0;
+    };
+    list.sort((a, b) => slotOf(a) - slotOf(b) || a.i - b.i);
+    let last = -1;
+    for (const x of list) {
+      const slot = Math.max(slotOf(x), last + 1);
+      last = slot;
+      out.push({ ...x.it, position: slot });
+    }
+  }
+  return out;
+};
 
 export type NormalizedSections =
   | { ok: true; sections: HomepageSectionRow[] }
@@ -245,7 +304,7 @@ export type NormalizedSections =
  *  - builtins the payload lacks are appended visible (they can never be deleted)
  *  - `hero` first, the rest in the order sent, positions 0..n
  *  - a block whose config does not validate fails the WHOLE save, named by its title
- *  - a builtin keeps a config only where it has one (`newest`: the hidden events)
+ *  - a builtin's config is its row settings (hidden cards, row length)
  */
 export function normalizeSections(
   raw: unknown,

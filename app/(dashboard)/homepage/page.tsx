@@ -14,7 +14,7 @@ export default async function HomepagePage() {
     <div className="space-y-6">
       <PageHeader
         title="Homepage"
-        description="A dummy of the customer site's homepage. Drag sections into order, hide one, and pin the items that open each carousel - the hero ring, the most-wanted and newest rows, the football and artist rows. Whatever is not pinned follows each section's automatic rule after the pinned items."
+        description="Every carousel of the site's homepage exactly as the site shows it - the cards it picks by itself included. Drag sections into order or hide one; drag any card to any place and it stays there while the site fills the other places by its rule. Hide a card from a row, add one at a place, set a row's length."
         actions={
           <>
             <Button variant="outline" asChild>

@@ -26,18 +26,18 @@ export const HOMEPAGE_BLOCK_TYPES = ["event_slider", "banner", "text", "destinat
 export type HomepageBlockType = (typeof HOMEPAGE_BLOCK_TYPES)[number];
 export type HomepageSectionType = "builtin" | HomepageBlockType;
 
-export const HOMEPAGE_ITEM_KINDS = ["event", "artist", "team"] as const;
+export const HOMEPAGE_ITEM_KINDS = ["event", "artist", "team", "review"] as const;
 export type HomepageItemKind = (typeof HOMEPAGE_ITEM_KINDS)[number];
 
-/** Which kinds a builtin section's strip accepts; empty = no manual items (order/visibility only). */
+/** Which kinds a builtin section's row accepts (every builtin has cards since 2026-10-14). */
 export const SECTION_ITEM_KINDS: Record<HomepageSectionKey, HomepageItemKind[]> = {
   hero: ["artist", "team"],
   most_wanted: ["event"],
   newest: ["event"],
   football: ["team"],
   artists: ["artist"],
-  reviews: [],
-  more_events: [],
+  reviews: ["review"],
+  more_events: ["event"],
 };
 
 export const SECTION_META: Record<
@@ -55,43 +55,43 @@ export const SECTION_META: Record<
     title: "הירו - קרוסלת אמנים וקבוצות",
     titleEn: "Hero ring",
     siteTitle: null,
-    rule: "תמיד ראשון. הפריטים שכאן מוצגים לפי הסדר; אחריהם כל אמן/קבוצה עם אירוע זמין, אמן-קבוצה לסירוגין.",
+    rule: "תמיד ראשון. כל אמן/קבוצה עם אירוע זמין, אמן-קבוצה לסירוגין. נעוץ נשאר במקום שלו.",
   },
   most_wanted: {
     title: "המבוקשים ביותר",
     titleEn: "Most wanted",
     siteTitle: "המבוקשים ביותר",
-    rule: "שורה אחת (עד 12). הפריטים שכאן ראשונים; אחריהם אירועים מסומנים Prioritized ואז השלמה אוטומטית.",
+    rule: "שורה אחת (12 אם לא נקבע אחרת). אירועים מסומנים Prioritized, ואז השלמה אוטומטית. נעוץ נשאר במקום שלו.",
   },
   newest: {
     title: "החדשים ביותר",
     titleEn: "Newest",
     siteTitle: "החדשים ביותר",
-    rule: "שורה אחת (עד 12). הפריטים שכאן ראשונים; אחריהם האירועים שנוצרו לאחרונה (לא כאלה שכבר במבוקשים).",
+    rule: "שורה אחת (12 אם לא נקבע אחרת). האירועים שנוצרו לאחרונה, בלי מה שכבר במבוקשים. נעוץ נשאר במקום שלו.",
   },
   football: {
     title: "כדורגל",
     titleEn: "Football",
     siteTitle: "כדורגל",
-    rule: "כל הקבוצות הפעילות. זמינות באתר תמיד קופצות קדימה; בתוך כל קבוצה - הסדר שכאן, השאר לפי שם.",
+    rule: "כל הקבוצות הפעילות, הזמינות באתר קודם (לפי שם). אפשר לנעוץ רק קבוצה זמינה.",
   },
   artists: {
     title: "אמנים מובילים",
     titleEn: "Artists",
     siteTitle: "אמנים מובילים",
-    rule: "כל האמנים הפעילים. זמינים באתר תמיד קופצים קדימה; בתוך כל קבוצה - הסדר שכאן, השאר לפי שם.",
+    rule: "כל האמנים הפעילים, הזמינים באתר קודם (לפי שם). אפשר לנעוץ רק אמן זמין.",
   },
   reviews: {
     title: "לקוחות משתפים (Google)",
     titleEn: "Google reviews",
     siteTitle: "לקוחות משתפים",
-    rule: "ביקורות מהמראה של גוגל. רק מיקום והסתרה.",
+    rule: "ביקורות 5 כוכבים עם טקסט מגוגל, החדשה קודם.",
   },
   more_events: {
     title: "אירועים נוספים",
     titleEn: "More events",
     siteTitle: "אירועים נוספים",
-    rule: "כל אירועי המוזיקה שלא הופיעו למעלה, בגריד. רק מיקום והסתרה.",
+    rule: "כל אירועי המוזיקה שלא הופיעו בשתי השורות של האירועים, בגריד (בטלפון 5 ראשונים, במחשב 20, ואז 'הצג עוד').",
   },
 };
 
@@ -125,8 +125,15 @@ export const BLOCK_META: Record<HomepageBlockType, { label: string; labelEn: str
 
 /* ---------- block configs (jsonb - `type` aliases, assignable to Json) ---------- */
 
-/** category_id = the category whose events fill the row after the pinned ones; null = pinned only. */
-export type EventSliderConfig = { category_id: number | null };
+/**
+ * A row's own settings (2026-10-14) - every builtin and every event slider:
+ * `hidden` = cards removed from THIS row ("event:812", "team:liverpool",
+ * "review:<key>"; a pin beats it), `max_items` = how many cards it shows
+ * (absent = the row's default, lib/homepage/merge rowDefaultMax).
+ */
+export type RowSettings = { hidden?: string[]; max_items?: number };
+/** category_id = the category whose events fill the row around the pinned ones; null = pinned only. */
+export type EventSliderConfig = { category_id: number | null } & RowSettings;
 export type BannerItem = { image_url: string; link_url: string | null; title: string | null };
 export type BannerConfig = { banners: BannerItem[] };
 /** body = plain text; a blank line separates paragraphs. */
@@ -135,19 +142,15 @@ export type TextConfig = { body: string };
 export type DestinationsConfig = { category_ids: number[]; parent_id: number | null };
 export type GalleryImage = { image_url: string; alt: string | null };
 export type GalleryConfig = { images: GalleryImage[] };
-/**
- * The one builtin with a config: events staff removed from the AUTOMATIC part
- * of "החדשים ביותר". A pinned event is never hidden - pinning un-hides it.
- */
-export type NewestConfig = { hidden_event_ids: number[] };
+/** A builtin's config is its row settings (before 2026-10-14 only "החדשים" had one). */
+export type BuiltinConfig = RowSettings;
 export type HomepageSectionConfig =
   | EventSliderConfig
   | BannerConfig
   | TextConfig
   | DestinationsConfig
   | GalleryConfig
-  | NewestConfig
-  | Record<string, never>;
+  | BuiltinConfig;
 
 export interface HomepageSectionRow {
   /** A builtin key, or `blk_` + 8 hex chars for a block. */
@@ -195,9 +198,48 @@ export interface HomepageLayout {
   categories: HomepageCategoryOption[];
   /** false = the blocks migration has not run yet: titles and blocks cannot be saved. */
   blocksReady: boolean;
+  /** The site's rows as it builds them now; failure = the board shows the pinned cards only. */
+  pools: HomepagePoolsResult;
 }
 
 export interface SaveHomepageLayoutInput {
   sections: HomepageSectionRow[];
   items: HomepageItemRow[];
 }
+
+/**
+ * One card the board draws - what myt-main's `/api/homepage-pools` sends
+ * (`HomepageCard` in main's lib/homepage/rows.ts): the picture the site's card
+ * shows, and the flags that decide whether it can be shown / pinned.
+ */
+export type HomepageCard = {
+  ref: string;
+  name: string;
+  sub: string | null;
+  image: string | null;
+  image2: string | null;
+  soldOut?: boolean;
+  available?: boolean;
+  prioritized?: boolean;
+  vip?: boolean;
+  date?: string;
+  createdAt?: string | null;
+  rating?: number;
+};
+
+/** A row's automatic pool (same shape as RowPool in lib/homepage/merge.ts). */
+export type HomepagePool = string[] | { lanes: string[][] };
+
+/** What the site's rows are made of right now (myt-main `/api/homepage-pools`). */
+export type HomepagePools = {
+  generatedAt: string;
+  /** Builtin rows' automatic pools, in the site's order. */
+  pools: Record<string, HomepagePool>;
+  /** An event slider's pool per category id. */
+  sliderPools: Record<string, string[]>;
+  cards: HomepageCard[];
+};
+
+export type HomepagePoolsResult =
+  | { ok: true; data: HomepagePools }
+  | { ok: false; error: string };
