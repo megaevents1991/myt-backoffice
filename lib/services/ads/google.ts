@@ -79,20 +79,58 @@ export async function gaqlSearch<T = Record<string, unknown>>(customerId: string
 const micros = (v: unknown) => Math.round((Number(v) || 0) / 10_000) / 100;
 const n = (v: unknown) => Number(v) || 0;
 
-/** Daily spend: ad-group rows for every channel but Performance Max, campaign rows for P.Max. */
+/** One purchase-category conversion row of a spend row's key (campaign, ad group or "" for P.Max, day). */
+export interface GooglePurchaseRow { campaignId: string; adsetKey: string; day: string; conversions: number; value: number }
+
+/**
+ * Pure: put the PURCHASE-category conversions on the spend rows (spec 2026-10-14 section 5). Before, the rows held
+ * `metrics.conversions` = every primary action (forms, calls, submit_application, checkout...). A spend row with no
+ * purchase gets 0; a purchase row with no spend row adds nothing; two purchase actions on one key add up.
+ * scripts/marketing-google-selftest.ts.
+ */
+export function mergeGooglePurchases(rows: AdSpendRow[], purchases: GooglePurchaseRow[]): AdSpendRow[] {
+  const key = (campaignId: string, adsetKey: string, day: string) => `${campaignId}|${adsetKey}|${day}`;
+  const sums = new Map<string, { conversions: number; value: number }>();
+  for (const p of purchases) {
+    const k = key(p.campaignId, p.adsetKey, p.day);
+    const s = sums.get(k) ?? { conversions: 0, value: 0 };
+    s.conversions += p.conversions;
+    s.value += p.value;
+    sums.set(k, s);
+  }
+  return rows.map((r) => {
+    const s = sums.get(key(r.campaign_id, r.adset_key, r.day));
+    return { ...r, platform_conversions: s ? Math.round(s.conversions * 1000) / 1000 : 0, platform_value: s ? Math.round(s.value * 100) / 100 : 0 };
+  });
+}
+
+/**
+ * Daily spend: ad-group rows for every channel but Performance Max, campaign rows for P.Max. "Purchases (platform)"
+ * comes from two more queries segmented by `conversion_action_category = 'PURCHASE'` - a conversion segment cannot
+ * share a query with cost metrics. `all_conversions` counts a purchase action whether or not it is set to feed the
+ * "Conversions" column (the GA4 purchase import is not, on our account). The value is in the account currency.
+ */
 export async function fetchGoogleSpend(opts: { customerId: string; since: string; until: string; currency: string; fxRate: number }): Promise<AdSpendRow[]> {
   const range = `segments.date BETWEEN '${opts.since}' AND '${opts.until}'`;
-  type CRow = { campaign: { id: string; advertisingChannelType: string }; segments: { date: string }; metrics: { costMicros?: string; impressions?: string; clicks?: string; conversions?: number; conversionsValue?: number } };
+  type CRow = { campaign: { id: string; advertisingChannelType: string }; segments: { date: string }; metrics: { costMicros?: string; impressions?: string; clicks?: string } };
   type AgRow = CRow & { adGroup: { id: string } };
-  const [agRows, pmaxRows] = await Promise.all([
-    gaqlSearch<AgRow>(opts.customerId, `SELECT campaign.id, campaign.advertising_channel_type, ad_group.id, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM ad_group WHERE ${range} AND campaign.advertising_channel_type != 'PERFORMANCE_MAX' AND metrics.cost_micros > 0`),
-    gaqlSearch<CRow>(opts.customerId, `SELECT campaign.id, campaign.advertising_channel_type, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions, metrics.conversions_value FROM campaign WHERE ${range} AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' AND metrics.cost_micros > 0`),
+  type PRow = { campaign: { id: string }; adGroup?: { id: string }; segments: { date: string }; metrics: { allConversions?: number; allConversionsValue?: number } };
+  const purchase = "segments.conversion_action_category = 'PURCHASE'";
+  const [agRows, pmaxRows, agPurchases, pmaxPurchases] = await Promise.all([
+    gaqlSearch<AgRow>(opts.customerId, `SELECT campaign.id, campaign.advertising_channel_type, ad_group.id, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks FROM ad_group WHERE ${range} AND campaign.advertising_channel_type != 'PERFORMANCE_MAX' AND metrics.cost_micros > 0`),
+    gaqlSearch<CRow>(opts.customerId, `SELECT campaign.id, campaign.advertising_channel_type, segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks FROM campaign WHERE ${range} AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' AND metrics.cost_micros > 0`),
+    gaqlSearch<PRow>(opts.customerId, `SELECT campaign.id, ad_group.id, segments.date, segments.conversion_action_category, metrics.all_conversions, metrics.all_conversions_value FROM ad_group WHERE ${range} AND campaign.advertising_channel_type != 'PERFORMANCE_MAX' AND ${purchase}`),
+    gaqlSearch<PRow>(opts.customerId, `SELECT campaign.id, segments.date, segments.conversion_action_category, metrics.all_conversions, metrics.all_conversions_value FROM campaign WHERE ${range} AND campaign.advertising_channel_type = 'PERFORMANCE_MAX' AND ${purchase}`),
   ]);
   const toRow = (r: CRow, adsetKey: string, level: "adset" | "campaign"): AdSpendRow => {
     const spend = micros(r.metrics.costMicros);
-    return { platform: "google", account_id: opts.customerId, campaign_id: r.campaign.id, adset_key: adsetKey, level, day: r.segments.date, spend, currency: opts.currency, spend_usd: Math.round(spend * opts.fxRate * 100) / 100, fx_rate: opts.fxRate, impressions: n(r.metrics.impressions), clicks: n(r.metrics.clicks), platform_conversions: n(r.metrics.conversions), platform_value: n(r.metrics.conversionsValue) };
+    return { platform: "google", account_id: opts.customerId, campaign_id: r.campaign.id, adset_key: adsetKey, level, day: r.segments.date, spend, currency: opts.currency, spend_usd: Math.round(spend * opts.fxRate * 100) / 100, fx_rate: opts.fxRate, impressions: n(r.metrics.impressions), clicks: n(r.metrics.clicks), platform_conversions: 0, platform_value: 0 };
   };
-  return [...agRows.map((r) => toRow(r, r.adGroup.id, "adset")), ...pmaxRows.map((r) => toRow(r, "", "campaign"))];
+  const toPurchase = (r: PRow, adsetKey: string): GooglePurchaseRow => ({ campaignId: r.campaign.id, adsetKey, day: r.segments.date, conversions: n(r.metrics.allConversions), value: n(r.metrics.allConversionsValue) });
+  return mergeGooglePurchases(
+    [...agRows.map((r) => toRow(r, r.adGroup.id, "adset")), ...pmaxRows.map((r) => toRow(r, "", "campaign"))],
+    [...agPurchases.map((r) => toPurchase(r, r.adGroup?.id ?? "")), ...pmaxPurchases.map((r) => toPurchase(r, ""))],
+  );
 }
 
 /**
