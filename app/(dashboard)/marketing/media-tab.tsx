@@ -29,6 +29,10 @@ import {
   useMarketingFilters,
   useMarketingLoad,
 } from "./marketing-shared";
+import { AdsButton } from "./ad-preview";
+
+/** An ad set / ad group key that names a real object (campaign-level rows carry "" ). */
+const isObjectId = (k: string) => /^d+$/.test(k);
 
 type PnlResult = Awaited<ReturnType<typeof getMarketingPnl>>;
 
@@ -201,12 +205,20 @@ function TotalsStrip({ totals, cur }: { totals: PnlTotals; cur: MarketingCurrenc
 }
 
 function AdsetRows({ campaign, cur }: { campaign: CampaignPnl; cur: MarketingCurrency }) {
-  if (campaign.adsets.length === 0) {
+  const pmax = campaign.platform === "google" && campaign.channel === "PERFORMANCE_MAX";
+  if (campaign.adsets.length === 0 && !pmax) {
     return <p className="text-sm text-muted-foreground">No ad sets in this campaign.</p>;
   }
   // The row spans every column of a table that may scroll sideways - keep the panel in view.
   return (
-    <div className="sticky left-0 max-w-3xl">
+    <div className="sticky left-0 max-w-3xl space-y-2">
+      {pmax && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          Performance Max has no ad groups - its creative lives in asset groups.
+          <AdsButton target={{ platform: "google", campaignId: campaign.campaignId, title: campaign.name }} label="Asset groups" />
+        </div>
+      )}
+      {campaign.adsets.length > 0 && !pmax && (
       <Table>
         <TableHeader>
           <TableRow>
@@ -215,6 +227,7 @@ function AdsetRows({ campaign, cur }: { campaign: CampaignPnl; cur: MarketingCur
             <TableHead>Orders</TableHead>
             <TableHead>Revenue</TableHead>
             <TableHead>POAS</TableHead>
+            <TableHead className="w-0" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -229,10 +242,18 @@ function AdsetRows({ campaign, cur }: { campaign: CampaignPnl; cur: MarketingCur
               <TableCell className="tabular-nums">{num(a.purchases)}</TableCell>
               <TableCell className="tabular-nums">{money(a.revenue, cur)}</TableCell>
               <TableCell className={cn("font-medium tabular-nums", poasTone(a.poas))}>{a.poas === null ? "—" : a.poas.toFixed(2)}</TableCell>
+              <TableCell>
+                {isObjectId(a.key) && (
+                  <AdsButton
+                    target={campaign.platform === "meta" ? { platform: "meta", adsetId: a.key, title: a.name } : { platform: "google", adGroupId: a.key, title: a.name }}
+                  />
+                )}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      )}
     </div>
   );
 }

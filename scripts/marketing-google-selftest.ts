@@ -1,6 +1,7 @@
 // Run: npx tsx scripts/marketing-google-selftest.ts
 import assert from "node:assert/strict";
 import { mergeGooglePurchases } from "../lib/services/ads/google";
+import { isAdId, previewSrcFrom } from "../lib/marketing/ad-preview";
 import type { AdSpendRow } from "../types/marketing.types";
 
 const row = (p: Partial<AdSpendRow>): AdSpendRow => ({ platform: "google", account_id: "1", campaign_id: "c1", adset_key: "ag1", level: "adset", day: "2026-10-01", spend: 100, currency: "ILS", spend_usd: 27, fx_rate: 0.27, impressions: 10, clicks: 1, platform_conversions: 0, platform_value: 0, ...p });
@@ -34,5 +35,20 @@ const twice = mergeGooglePurchases([row({})], [
 ]);
 assert.equal(twice[0].platform_conversions, 3);
 assert.equal(twice[0].platform_value, 150);
+
+// ---- the live ad preview (spec 2026-10-14 section 6): only a Facebook-hosted https iframe is ever rendered.
+const good = `<iframe src="https://business.facebook.com/ads/api/preview_iframe.php?d=AQKZ&amp;t=AQL" width="540" height="690" scrolling="yes" style="border: none;"></iframe>`;
+assert.equal(previewSrcFrom(good), "https://business.facebook.com/ads/api/preview_iframe.php?d=AQKZ&t=AQL", "&amp; unescaped");
+assert.equal(previewSrcFrom(`<iframe src="https://www.facebook.com/ads/api/preview_iframe.php?d=1"></iframe>`), "https://www.facebook.com/ads/api/preview_iframe.php?d=1");
+assert.equal(previewSrcFrom(`<iframe src="https://evil.example/x"></iframe>`), null, "another host is refused");
+assert.equal(previewSrcFrom(`<iframe src="https://business.facebook.com.evil.example/x"></iframe>`), null, "a look-alike host is refused");
+assert.equal(previewSrcFrom(`<iframe src="http://business.facebook.com/x"></iframe>`), null, "http is refused");
+assert.equal(previewSrcFrom(`<iframe src="javascript:alert(1)"></iframe>`), null);
+assert.equal(previewSrcFrom("no frame here"), null);
+assert.equal(previewSrcFrom(""), null);
+
+assert.equal(isAdId("120249159793840141"), true);
+assert.equal(isAdId("12' OR 1=1"), false, "nothing but digits reaches a GAQL string or a Graph path");
+assert.equal(isAdId(""), false);
 
 console.log("marketing-google selftest: ok");
