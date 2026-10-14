@@ -1,6 +1,6 @@
 /**
- * Paid reservations of a window with their revenue / cogs and last paid touch (spec
- * section 5) - the one read both /marketing and the alerts use. Session-free; the
+ * Paid reservations of a window (Israel calendar days, lib/marketing/range.ts) with their revenue /
+ * cogs, the rate they were charged at and the last paid touch (spec section 5) - the one read both /marketing and the alerts use. Session-free; the
  * callers guard.
  */
 import { mdb } from "@/lib/services/marketing-db";
@@ -8,6 +8,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { cogsUsd, revenueUsd, type PnlReservation } from "@/lib/services/reservation-pnl";
 import { META_ID, paidTouchOf, type UtmTouchLike } from "@/lib/services/marketing-attribution";
 import type { AttributedReservation } from "@/lib/services/marketing-pnl";
+import { addDays, israelDayOf, israelDayStartUtc } from "@/lib/marketing/range";
 
 const PNL_COLUMNS = "id, created_at, status, user_shown_price, exchange_rate_usd_ils_100, agent_card_discount_ils, partner_settlement_method, flight_order_info, hotel_order_info, hotel_segments, offline_flight_cost, offline_hotel_cost, ticket_cost_usd, ticket_cost_source, actual_cost_usd, event_order_info";
 
@@ -22,11 +23,17 @@ const GCLID_CHUNK = 50;
 /** Paid reservations read per window. Past it the read throws - a P&L missing rows is worse than none. */
 const RESERVATIONS_MAX = 5000;
 
+/** ILS per USD the order was charged at - the column holds ILS per 100 USD (reservation-pnl.ts reads it the same way). */
+export function usdIlsOf(per100: number | string | null | undefined): number | null {
+  const n = Number(per100);
+  return Number.isFinite(n) && n > 0 ? n / 100 : null;
+}
+
 function chunks<T>(arr: T[], size: number): T[][] { const out: T[][] = []; for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size)); return out; }
 
 export async function attributedReservations(since: string, until: string): Promise<AttributedReservation[]> {
   const { rows, truncated, error } = await fetchPaged<{ id: number; created_at: string } & PnlReservation>(
-    () => mdb.from("reservations").select(PNL_COLUMNS).eq("status", "Paid").is("is_deleted", null).gte("created_at", `${since}T00:00:00Z`).lte("created_at", `${until}T23:59:59Z`).order("id"),
+    () => mdb.from("reservations").select(PNL_COLUMNS).eq("status", "Paid").is("is_deleted", null).gte("created_at", israelDayStartUtc(since)).lt("created_at", israelDayStartUtc(addDays(until, 1))).order("id"),
     RESERVATIONS_MAX,
   );
   if (error) throw new Error(`reservations read: ${error.message}`);
@@ -54,7 +61,7 @@ export async function attributedReservations(since: string, until: string): Prom
     for (const c of (data ?? []) as { gclid: string; campaign_id: string; ad_group_id: string | null }[]) clicks.set(c.gclid, { campaignId: c.campaign_id, adGroupId: c.ad_group_id });
   }
   const lookups = { metaAdCampaign: (id: string) => ads.get(id) ?? null, gclidCampaign: (g: string) => clicks.get(g) ?? null };
-  return rows.map((r) => { const c = cogsUsd(r); return { id: r.id, day: r.created_at.slice(0, 10), revenue: revenueUsd(r) ?? 0, cogs: c.total, estimated: c.estimated, touch: paidTouchOf(touches.get(r.id) ?? [], lookups) }; });
+  return rows.map((r) => { const c = cogsUsd(r); return { id: r.id, day: israelDayOf(r.created_at), revenue: revenueUsd(r) ?? 0, cogs: c.total, estimated: c.estimated, usdIls: usdIlsOf(r.exchange_rate_usd_ils_100), touch: paidTouchOf(touches.get(r.id) ?? [], lookups) }; });
 }
 
 /** Purchases of ours per resolved campaign id, for the budget-bleed rule. */

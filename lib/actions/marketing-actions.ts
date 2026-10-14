@@ -5,7 +5,9 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { mdb, readAll } from "@/lib/services/marketing-db";
 import { attributedReservations } from "@/lib/services/marketing-purchases";
-import { buildPnl, rangeWindow, MARKETING_RANGES, type MarketingRange, type Pnl } from "@/lib/services/marketing-pnl";
+import { buildPnl, MARKETING_CURRENCIES, type MarketingCurrency, type Pnl } from "@/lib/services/marketing-pnl";
+import { resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
+import { parseSource, type SourceFilter } from "@/lib/marketing/order-source";
 import { MARKETING_TAG, MARKETING_TTL_S, invalidateMarketing } from "@/lib/services/marketing-cache";
 import { runMarketingSync, type MarketingSyncSummary } from "@/lib/services/marketing-sync";
 import { IG_MEDIA_READ } from "@/lib/marketing/engagement";
@@ -31,28 +33,55 @@ async function readSettings(): Promise<MarketingSettings> {
 /** Paged reads (lib/services/marketing-db.ts `readAll`) stop here: past it the read throws - narrow the range. */
 const READ_MAX = 50_000;
 
-async function buildPnlFor(range: MarketingRange, brand: AdBrand | "all"): Promise<Pnl & { since: string; until: string; settings: MarketingSettings }> {
-  const { since, until } = rangeWindow(range);
-  const [settings, reservations, spend, entities] = await Promise.all([
+/** USD -> ILS for an order with no stored rate (and a non-ILS spend row): 1 / the newest `fx_rate` the sync wrote
+ *  (always a live rate - the sync writes no spend on the fallback rate). The rate service itself is not called here:
+ *  its module throws at load without the supplier env (see marketing-sync.ts). Throws when none was ever written. */
+async function currentUsdIls(): Promise<number> {
+  const { data, error } = await mdb.from("ad_spend_daily").select("fx_rate").gt("fx_rate", 0).order("synced_at", { ascending: false }).limit(1);
+  if (error) throw new Error(`ad_spend_daily rate read: ${error.message}`);
+  const fx = Number((data as { fx_rate: number }[] | null)?.[0]?.fx_rate);
+  if (!(fx > 0)) throw new Error("No USD/ILS rate stored yet - run the marketing sync once");
+  return Math.round((1 / fx) * 10_000) / 10_000;
+}
+
+/** The screen's filters as they sit in the URL (`useMarketingFilters`). */
+export interface MarketingQuery { range?: string; from?: string; to?: string; brand?: string; cur?: string; src?: string }
+
+/** Validated filters - anything unknown falls to its default; the window never throws (range.ts falls back). */
+function parseQuery(q: MarketingQuery): { window: MarketingWindow; brand: AdBrand | "all"; currency: MarketingCurrency; src: SourceFilter } {
+  const brand = q.brand === "all" || q.brand === "other" ? q.brand : "mega_events";
+  const currency = (MARKETING_CURRENCIES as readonly string[]).includes(q.cur ?? "") ? (q.cur as MarketingCurrency) : "ils";
+  return { window: resolveWindow(q), brand, currency, src: parseSource(q.src) };
+}
+
+/** The P&L of one ad platform when the source filter names one, else every platform. */
+const platformOf = (src: SourceFilter): AdPlatform | null => (src === "meta" || src === "google" ? src : null);
+
+type PnlView = Pnl & { since: string; until: string; settings: MarketingSettings; usdIls: number };
+
+async function buildPnlFor(since: string, until: string, brand: AdBrand | "all", currency: MarketingCurrency, platform: AdPlatform | null): Promise<PnlView> {
+  const [settings, reservations, spend, entities, usdIls] = await Promise.all([
     readSettings(),
     attributedReservations(since, until),
     readAll<Parameters<typeof buildPnl>[0]["spend"][number]>(
-      "ad_spend_daily", "platform, campaign_id, adset_key, day, spend_usd, clicks, impressions, platform_conversions, platform_value",
+      "ad_spend_daily", "platform, campaign_id, adset_key, day, spend, currency, fx_rate, spend_usd, clicks, impressions, platform_conversions, platform_value",
       ["day", "platform", "campaign_id", "adset_key"], READ_MAX, "marketing", (q) => q.gte("day", since).lte("day", until)),
     readAll<Parameters<typeof buildPnl>[0]["entities"][number]>(
       "ad_entities", "platform, id, kind, name, brand, status, campaign_id, channel",
       ["platform", "id"], READ_MAX, "marketing", (q) => q.in("kind", ["campaign", "adset", "ad_group"])),
+    currentUsdIls(),
   ]);
-  return { ...buildPnl({ spend, entities, reservations, feePct: settings.processing_fee_pct, brand }), since, until, settings };
+  const pnl = buildPnl({ spend, entities, reservations, feePct: settings.processing_fee_pct, brand, currency, fallbackUsdIls: usdIls, platform: platform ?? undefined });
+  return { ...pnl, since, until, settings, usdIls };
 }
 
-const cachedPnl = unstable_cache(buildPnlFor, ["marketing-pnl"], { tags: [MARKETING_TAG.pnl], revalidate: MARKETING_TTL_S.pnl });
+// unstable_cache keys on the arguments, so every (window, brand, currency, platform) is its own entry.
+const cachedPnl = unstable_cache(buildPnlFor, ["marketing-pnl-v2"], { tags: [MARKETING_TAG.pnl], revalidate: MARKETING_TTL_S.pnl });
 
-export async function getMarketingPnl(range: MarketingRange, brand: AdBrand | "all") {
+export async function getMarketingPnl(q: MarketingQuery): Promise<PnlView & { range: MarketingWindow["range"] }> {
   await requireAdmin();
-  const safeRange = MARKETING_RANGES.includes(range) ? range : "30d";
-  const safeBrand = brand === "all" || brand === "other" ? brand : "mega_events";
-  return cachedPnl(safeRange, safeBrand);
+  const { window, brand, currency, src } = parseQuery(q);
+  return { ...(await cachedPnl(window.since, window.until, brand, currency, platformOf(src))), range: window.range };
 }
 
 /** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "Viral" badge
