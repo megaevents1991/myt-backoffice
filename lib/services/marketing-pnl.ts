@@ -31,7 +31,7 @@ export interface AttributedReservation { id: number; day: string; revenue: numbe
 export interface PnlTotals { spend: number; revenue: number; cogs: number; fee: number; net: number; purchases: number; clicks: number; impressions: number; platformPurchases: number; platformValue: number; estimatedCount: number; poas: number | null; roas: number | null; cac: number | null }
 export interface AdsetPnl extends PnlTotals { key: string; name: string }
 export interface CampaignPnl extends PnlTotals { key: string; platform: AdPlatform; campaignId: string; name: string; brand: AdBrand; status: string | null; channel: string | null; adsets: AdsetPnl[] }
-export interface DailyPoint { day: string; spend: number; revenue: number }
+export interface DailyPoint { day: string; spend: number; spendMeta: number; spendGoogle: number; revenue: number }
 export interface Pnl { currency: MarketingCurrency; campaigns: CampaignPnl[]; unresolved: (PnlTotals & { platform: AdPlatform })[]; unattributed: PnlTotals; otherBrand: PnlTotals; totals: PnlTotals; daily: DailyPoint[] }
 
 export interface BuildPnlInput {
@@ -101,13 +101,17 @@ export function buildPnl(input: BuildPnlInput): Pnl {
   };
 
   const daily = new Map<string, DailyPoint>();
-  const dayOf = (d: string) => { let p = daily.get(d); if (!p) { p = { day: d, spend: 0, revenue: 0 }; daily.set(d, p); } return p; };
+  const dayOf = (d: string) => { let p = daily.get(d); if (!p) { p = { day: d, spend: 0, spendMeta: 0, spendGoogle: 0, revenue: 0 }; daily.set(d, p); } return p; };
 
   for (const s of input.spend) {
     if (!onPlatform(s.platform) || !inBrand(s.platform, s.campaign_id)) continue;
     const c = campaign(s.platform, s.campaign_id);
     addSpend(c, s); addSpend(adset(c, s.adset_key), s);
-    dayOf(s.day).spend += spendIn(s, currency, fallbackUsdIls);
+    const p = dayOf(s.day);
+    const amount = spendIn(s, currency, fallbackUsdIls);
+    p.spend += amount;
+    if (s.platform === "meta") p.spendMeta += amount;
+    else p.spendGoogle += amount;
   }
   // An unresolved touch is a click on one of OUR ad links - it belongs to Mega Events, never to the "other" view.
   const unresolvedInTotals = input.brand === "mega_events" || input.brand === "all";
@@ -148,6 +152,6 @@ export function buildPnl(input: BuildPnlInput): Pnl {
     unattributed: finish(unattributed),
     otherBrand: finish(otherBrand),
     totals: finish(totals),
-    daily: [...daily.values()].map((d) => ({ ...d, spend: r2(d.spend), revenue: r2(d.revenue) })).sort((a, b) => a.day.localeCompare(b.day)),
+    daily: [...daily.values()].map((d) => ({ ...d, spend: r2(d.spend), spendMeta: r2(d.spendMeta), spendGoogle: r2(d.spendGoogle), revenue: r2(d.revenue) })).sort((a, b) => a.day.localeCompare(b.day)),
   };
 }

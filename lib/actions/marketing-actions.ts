@@ -6,8 +6,10 @@ import { logAudit } from "@/lib/audit";
 import { mdb, readAll } from "@/lib/services/marketing-db";
 import { attributedReservations } from "@/lib/services/marketing-purchases";
 import { buildPnl, MARKETING_CURRENCIES, type MarketingCurrency, type Pnl } from "@/lib/services/marketing-pnl";
-import { resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
+import { daysBetween, resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
 import { parseSource, type SourceFilter } from "@/lib/marketing/order-source";
+import { buildFunnel, type Funnel } from "@/lib/marketing/funnel";
+import { funnelOrders } from "@/lib/services/marketing-funnel";
 import { MARKETING_TAG, MARKETING_TTL_S, invalidateMarketing } from "@/lib/services/marketing-cache";
 import { runMarketingSync, type MarketingSyncSummary } from "@/lib/services/marketing-sync";
 import { IG_MEDIA_READ } from "@/lib/marketing/engagement";
@@ -82,6 +84,26 @@ export async function getMarketingPnl(q: MarketingQuery): Promise<PnlView & { ra
   await requireAdmin();
   const { window, brand, currency, src } = parseQuery(q);
   return { ...(await cachedPnl(window.since, window.until, brand, currency, platformOf(src))), range: window.range };
+}
+
+const cachedFunnelOrders = unstable_cache(funnelOrders, ["marketing-funnel-orders"], { tags: [MARKETING_TAG.pnl], revalidate: MARKETING_TTL_S.pnl });
+
+/**
+ * The Executive tab in ONE action (Next runs a tab's actions one at a time): the P&L (sliced to Meta / Google when
+ * the source filter names one) + the funnel of every order of the window (spec 2026-10-14 sections 3-4). The
+ * funnel's spend comes from the P&L's own daily series, so the two can never disagree; brand applies to spend only
+ * (the funnel's orders are the Mega Events site's - the screen says so under "Other brand").
+ */
+export async function getMarketingOverview(q: MarketingQuery): Promise<{ pnl: PnlView & { range: MarketingWindow["range"] }; funnel: Funnel; src: SourceFilter }> {
+  await requireAdmin();
+  const { window, brand, currency, src } = parseQuery(q);
+  const [pnl, orders] = await Promise.all([
+    cachedPnl(window.since, window.until, brand, currency, platformOf(src)),
+    cachedFunnelOrders(window.since, window.until),
+  ]);
+  const spendDaily = pnl.daily.map((d) => ({ day: d.day, meta: d.spendMeta, google: d.spendGoogle }));
+  const funnel = buildFunnel(orders, spendDaily, daysBetween(window.since, window.until), src);
+  return { pnl: { ...pnl, range: window.range }, funnel, src };
 }
 
 /** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "Viral" badge

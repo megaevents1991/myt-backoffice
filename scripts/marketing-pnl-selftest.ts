@@ -94,6 +94,9 @@ assert.equal(c1Ils.net, 3700 - 2590 - 74 - 800);
 assert.equal(c1Ils.platformValue, 4500, "ILS value as stored");
 assert.equal(ils.unresolved.find((u) => u.platform === "meta")!.revenue, 1750, "no rate on the order -> the fallback 3.5, never 0");
 assert.equal(ils.daily.find((d) => d.day === "2026-10-01")!.spend, 400);
+// The Executive's "Daily spend - Google vs Meta" reads the split from the same series.
+const allIls = buildPnl({ spend, entities, reservations: [], feePct: 0, brand: "all", currency: "ils", fallbackUsdIls: 3.5 });
+assert.deepEqual(allIls.daily.map((d) => [d.day, d.spendMeta, d.spendGoogle, d.spend]), [["2026-10-01", 400, 0, 400], ["2026-10-02", 400, 200, 600]]);
 
 // A non-ILS spend row in the ILS view goes through USD at the fallback rate.
 const usdRow = { platform: "meta" as const, campaign_id: "c1", adset_key: "a1", day: "2026-10-03", spend: 10, currency: "USD", fx_rate: 1, spend_usd: 10, clicks: 0, impressions: 0, platform_conversions: 0, platform_value: 0 };
