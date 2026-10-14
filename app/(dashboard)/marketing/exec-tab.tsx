@@ -98,15 +98,17 @@ const crossConfig = {
 
 /** A tooltip row: dot, series name, value. `ChartTooltipContent`'s `formatter` REPLACES the whole row. */
 function tooltipRow(config: ChartConfig, fmt: (key: string, v: number) => string): ComponentProps<typeof ChartTooltipContent>["formatter"] {
-  return (value, name, item) => (
-    <div className="flex w-full items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-muted-foreground">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
-        {config[String(name)]?.label ?? name}
-      </span>
-      <span className="font-mono font-medium tabular-nums text-foreground">{fmt(String(name), Number(value))}</span>
-    </div>
-  );
+  return function TooltipRow(value, name, item) {
+    return (
+      <div className="flex w-full items-center justify-between gap-3">
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: item.color }} />
+          {config[String(name)]?.label ?? name}
+        </span>
+        <span className="font-mono font-medium tabular-nums text-foreground">{fmt(String(name), Number(value))}</span>
+      </div>
+    );
+  };
 }
 
 function ChartCard({ title, children }: { title: string; children: ReactNode }) {
