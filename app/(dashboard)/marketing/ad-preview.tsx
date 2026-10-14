@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Eye } from "lucide-react";
 
-import { getGoogleAds, getMetaAdPreview, listAdsetAds, type AdRow, type GoogleAdCard } from "@/lib/actions/marketing-ads-actions";
+import { getGoogleAds, getMetaAdPreview, listAdsetAds, type AdRow, type CatalogStandIn, type GoogleAdCard } from "@/lib/actions/marketing-ads-actions";
 import { META_PREVIEW_FORMATS, META_PREVIEW_LABEL, type AdsTarget, type MetaPreviewFormat } from "@/lib/marketing/ad-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,7 +96,7 @@ function MetaAds({ adsetId }: { adsetId: string }) {
 
 function MetaPreviewDialog({ ad, onClose }: { ad: AdRow | null; onClose: () => void }) {
   const [format, setFormat] = useState<MetaPreviewFormat>("MOBILE_FEED_STANDARD");
-  const [state, setState] = useState<{ src?: string; error?: string; loading: boolean }>({ loading: false });
+  const [state, setState] = useState<{ src?: string; catalog?: CatalogStandIn; error?: string; loading: boolean }>({ loading: false });
 
   useEffect(() => {
     if (!ad) return;
@@ -104,7 +104,7 @@ function MetaPreviewDialog({ ad, onClose }: { ad: AdRow | null; onClose: () => v
     setState({ loading: true });
     getMetaAdPreview(ad.id, format).then((r) => {
       if (cancelled) return;
-      setState(r.ok ? { src: r.src, loading: false } : { error: r.error, loading: false });
+      setState(!r.ok ? { error: r.error, loading: false } : "catalog" in r ? { catalog: r.catalog, loading: false } : { src: r.src, loading: false });
     });
     return () => {
       cancelled = true;
@@ -130,6 +130,8 @@ function MetaPreviewDialog({ ad, onClose }: { ad: AdRow | null; onClose: () => v
             <Skeleton className="h-[600px] w-[340px]" />
           ) : state.error ? (
             <Failed error={state.error} />
+          ) : state.catalog ? (
+            <CatalogView catalog={state.catalog} />
           ) : state.src ? (
             <iframe
               key={state.src}
@@ -224,6 +226,55 @@ function GoogleAds({ target }: { target: Extract<Target, { platform: "google" }>
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * A catalog ad: Meta shows each viewer different products, and draws a preview only on a product of the catalog -
+ * which our token cannot read yet. Until then: the ad's own texts and our feed pictures of the events it most likely
+ * shows (ad name words first). Read-only; nothing stored.
+ */
+function CatalogView({ catalog }: { catalog: CatalogStandIn }) {
+  const { texts, items } = catalog;
+  return (
+    <div className="w-full space-y-3 text-sm">
+      <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+        Catalog ad - Meta picks the products for each viewer, so this is our stand-in: the texts of the ad and the feed
+        pictures it draws from. A live preview needs catalog access (guide sent to marketing).
+      </p>
+      {texts.bodies.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Primary text</div>
+          {texts.bodies.map((b, i) => (
+            <p key={i} dir="auto" className="whitespace-pre-line">{b}</p>
+          ))}
+        </div>
+      )}
+      {texts.titles.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Headlines</div>
+          <div className="flex flex-wrap gap-1.5">
+            {texts.titles.map((t, i) => (
+              <span key={i} dir="auto" className="rounded bg-muted px-2 py-0.5 text-xs">{t}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {items.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">From the feed</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {items.map((it) => (
+              <a key={it.id} href={it.url} target="_blank" rel="noreferrer noopener" className="w-36 shrink-0 space-y-1 hover:opacity-90">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={it.image} alt="" loading="lazy" className="aspect-square w-36 rounded border object-cover" />
+                <div dir="auto" className="line-clamp-2 text-xs">{it.name}</div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

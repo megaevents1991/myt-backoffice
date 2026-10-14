@@ -37,6 +37,16 @@ export async function graphGetAll<T = Json>(path: string, params: Record<string,
   return out;
 }
 
+/** One Graph GET of a single object (no paging). Throws with Meta's message on an error. */
+export async function graphGetOne<T = Json>(path: string, params: Record<string, string>): Promise<T> {
+  const url = new URL(GRAPH + path);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token()}` }, signal: AbortSignal.timeout(30_000) });
+  const body = (await res.json().catch(() => ({}))) as T & { error?: { message: string; code: number } };
+  if (!res.ok || body.error) throw new Error(`Meta ${path}: ${body.error?.message ?? res.status} (code ${body.error?.code ?? "-"})`);
+  return body;
+}
+
 export interface MetaInsightRaw {
   campaign_id: string;
   adset_id?: string;

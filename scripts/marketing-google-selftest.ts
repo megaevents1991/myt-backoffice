@@ -1,7 +1,7 @@
 // Run: npx tsx scripts/marketing-google-selftest.ts
 import assert from "node:assert/strict";
 import { mergeGooglePurchases } from "../lib/services/ads/google";
-import { adsTargetFor, isAdId, previewSrcFrom } from "../lib/marketing/ad-preview";
+import { adsTargetFor, isAdId, pickCatalogExamples, previewSrcFrom, productSetOf } from "../lib/marketing/ad-preview";
 import type { AdSpendRow } from "../types/marketing.types";
 
 const row = (p: Partial<AdSpendRow>): AdSpendRow => ({ platform: "google", account_id: "1", campaign_id: "c1", adset_key: "ag1", level: "adset", day: "2026-10-01", spend: 100, currency: "ILS", spend_usd: 27, fx_rate: 0.27, impressions: 10, clicks: 1, platform_conversions: 0, platform_value: 0, ...p });
@@ -56,5 +56,23 @@ assert.deepEqual(adsTargetFor("meta", "120249159793840141", "Set A"), { platform
 assert.deepEqual(adsTargetFor("google", "138746264051", "AG"), { platform: "google", adGroupId: "138746264051", title: "AG" });
 assert.equal(adsTargetFor("google", "", "—"), null, "a campaign-level row (P.Max) has no ad group");
 assert.equal(adsTargetFor("meta", "ddd", "x"), null);
+
+// ---- catalog ads (14.10): Meta previews them only with a catalog product id, which our read token cannot read yet -
+// so the dialog shows the ad's own texts + our feed pictures of the events the ad is most likely about.
+assert.equal(productSetOf({ creative: { product_set_id: "272" } }), "272");
+assert.equal(productSetOf({ adset: { promoted_object: { product_set_id: "273" } } }), "273");
+assert.equal(productSetOf({ creative: {}, adset: { promoted_object: { pixel_id: "1" } } }), null, "a regular ad");
+assert.equal(productSetOf(null), null);
+
+const feedEvents = [
+  { id: 1, name: "סלין דיון - פריז", date: "2026-10-20", campaign_image_url: "https://x/1.png" },
+  { id: 2, name: "אואזיס - לונדון", date: "2027-07-11", campaign_image_url: "https://x/2.png" },
+  { id: 3, name: "אואזיס - מנצ'סטר", date: "2027-07-04", campaign_image_url: "https://x/3.png" },
+  { id: 4, name: "סטיבי וונדר", date: "2026-11-03", campaign_image_url: "https://x/4.png" },
+];
+assert.deepEqual(pickCatalogExamples("‎Feed_v2 Broad‎‎ - אואזיס", feedEvents, 3).map((e) => e.id), [3, 2, 1], "the ad's subject first (soonest first), then the rest by date; LRM marks ignored");
+assert.deepEqual(pickCatalogExamples("Feed_v2 Broad", feedEvents, 2).map((e) => e.id), [1, 4], "no subject in the name -> soonest events");
+assert.deepEqual(pickCatalogExamples("סטיבי וונדר feed_v2", feedEvents, 1).map((e) => e.id), [4]);
+assert.equal(pickCatalogExamples("x", [], 3).length, 0);
 
 console.log("marketing-google selftest: ok");

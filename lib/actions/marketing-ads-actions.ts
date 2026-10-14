@@ -2,9 +2,10 @@
 
 import { requireAdmin } from "@/lib/auth/guards";
 import { mdb } from "@/lib/services/marketing-db";
-import { graphGetAll } from "@/lib/services/ads/meta";
+import { graphGetAll, graphGetOne } from "@/lib/services/ads/meta";
 import { gaqlSearch } from "@/lib/services/ads/google";
-import { isAdId, META_PREVIEW_FORMATS, previewSrcFrom, type MetaPreviewFormat } from "@/lib/marketing/ad-preview";
+import { eventSiteUrl } from "@/lib/site";
+import { isAdId, META_PREVIEW_FORMATS, pickCatalogExamples, previewSrcFrom, productSetOf, type CatalogExampleEvent, type MetaPreviewFormat } from "@/lib/marketing/ad-preview";
 
 /**
  * The live ad behind a Media row (spec 2026-10-14 section 6) - read on click, never stored. Every action is
@@ -27,13 +28,79 @@ export async function listAdsetAds(adsetId: string): Promise<{ ok: true; ads: Ad
   return { ok: true, ads: (data ?? []) as AdRow[] };
 }
 
-/** Meta's own rendering of the ad, as an iframe URL on facebook.com (anything else is refused). */
-export async function getMetaAdPreview(adId: string, format: MetaPreviewFormat): Promise<{ ok: true; src: string } | Fail> {
+/** A catalog ad we cannot have Meta draw: its own texts + our feed pictures of the events it most likely shows. */
+export interface CatalogStandIn {
+  texts: { bodies: string[]; titles: string[]; descriptions: string[] };
+  items: { id: number; name: string; date: string | null; image: string; url: string }[];
+}
+
+type MetaAdInfo = {
+  name?: string;
+  adset?: { promoted_object?: { product_set_id?: string | null } | null } | null;
+  creative?: {
+    product_set_id?: string | null;
+    body?: string;
+    title?: string;
+    asset_feed_spec?: { bodies?: { text?: string }[]; titles?: { text?: string }[]; descriptions?: { text?: string }[] };
+    object_story_spec?: { template_data?: { message?: string; name?: string; description?: string } };
+  } | null;
+};
+
+const CATALOG_EXAMPLES = 8;
+
+async function catalogStandIn(info: MetaAdInfo): Promise<CatalogStandIn> {
+  const spec = info.creative?.asset_feed_spec;
+  const td = info.creative?.object_story_spec?.template_data;
+  // "{{activity.name}}" and the like are Meta's per-product placeholders - filled per viewer, meaningless here.
+  const uniq = (list: (string | undefined)[]) => [...new Set(list.map((s) => (s ?? "").trim()).filter((s) => s && !s.includes("{{")))];
+  const { data, error } = await mdb
+    .from("events")
+    .select("id, name, date, campaign_image_url")
+    .is("is_deleted", null)
+    .not("campaign_image_url", "is", null)
+    .gte("date", new Date().toISOString().slice(0, 10))
+    .order("date")
+    .limit(400);
+  if (error) throw new Error(`events read: ${error.message}`);
+  const picked = pickCatalogExamples(info.name ?? "", (data ?? []) as CatalogExampleEvent[], CATALOG_EXAMPLES);
+  return {
+    texts: {
+      bodies: uniq([...(spec?.bodies ?? []).map((b) => b.text), info.creative?.body, td?.message]),
+      titles: uniq([...(spec?.titles ?? []).map((t) => t.text), info.creative?.title, td?.name]),
+      descriptions: uniq([...(spec?.descriptions ?? []).map((d) => d.text), td?.description]),
+    },
+    items: picked.map((e) => ({ id: e.id, name: e.name, date: e.date, image: e.campaign_image_url ?? "", url: eventSiteUrl(e.id) })),
+  };
+}
+
+/**
+ * Meta's own rendering of the ad, as an iframe URL on facebook.com (anything else is refused). A CATALOG ad needs a
+ * product of its catalog (`product_item_ids`): when our token may read the catalog, Meta draws it on the set's first
+ * product; when it may not (the token lacks catalog_management - 14.10, guide "הרשאת קטלוג לדשבורד השיווק"), the
+ * answer is our stand-in instead of Meta's empty "Preview Not Available".
+ */
+export async function getMetaAdPreview(adId: string, format: MetaPreviewFormat): Promise<{ ok: true; src: string } | ({ ok: true; catalog: CatalogStandIn }) | Fail> {
   await requireAdmin();
   if (!isAdId(adId)) return { ok: false, error: "invalid ad id" };
   if (!(META_PREVIEW_FORMATS as readonly string[]).includes(format)) return { ok: false, error: "invalid format" };
   try {
-    const rows = await graphGetAll<{ body?: string }>(`/${adId}/previews`, { ad_format: format }, 1);
+    const info = await graphGetOne<MetaAdInfo>(`/${adId}`, { fields: "name,adset{promoted_object},creative{product_set_id,body,title,asset_feed_spec,object_story_spec}" });
+    const productSet = productSetOf(info);
+    let params: Record<string, string> = { ad_format: format };
+    if (productSet) {
+      let productId: string | null = null;
+      try {
+        // One object read, not graphGetAll: a catalog has more than one page and graphGetAll would throw on that.
+        const products = await graphGetOne<{ data?: { id: string }[] }>(`/${productSet}/products`, { fields: "id", limit: "1" });
+        productId = products.data?.[0]?.id ?? null;
+      } catch {
+        // No catalog access for this token - not an error of the screen: show our stand-in.
+        productId = null;
+      }
+      if (!productId) return { ok: true, catalog: await catalogStandIn(info) };
+      params = { ...params, product_item_ids: JSON.stringify([productId]) };
+    }
+    const rows = await graphGetAll<{ body?: string }>(`/${adId}/previews`, params, 1);
     const src = previewSrcFrom(rows[0]?.body ?? "");
     return src ? { ok: true, src } : { ok: false, error: "Meta returned no preview for this format" };
   } catch (e) {
