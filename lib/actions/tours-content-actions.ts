@@ -340,6 +340,7 @@ const packageSchema = z.object({
   countries: shortText,
   seasons: textList,
   isActive: z.boolean(),
+  waitlist: z.boolean(),
   heroImage: imagePath,
   cardImage: imagePath,
   gallery: z.array(imagePath).max(300),
@@ -388,6 +389,9 @@ const variantSchema = z.object({
   returnCity: cityCode,
 });
 
+/** The term pages the site's menus leave out while they list no tour (unless `menuAlways`). */
+const MENU_TERM_KINDS = ["destinations", "artists", "tags", "categories"];
+
 const termSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(300),
   descriptionHtml: htmlText,
@@ -399,6 +403,8 @@ const termSchema = z.object({
   brandName: z.string().trim().max(120),
   color: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
   colorDeep: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
+  ctaColor: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
+  menuAlways: z.boolean(),
   icon: imagePath,
   externalUrl: z.string().trim().max(600).refine((v) => v === "" || /^https?:\/\//i.test(v), "A link to another site starts with https://"),
   worldSlug: z.string().trim().max(200),
@@ -544,6 +550,7 @@ function toPackageForm(pkg: TourPackage, termIds: string[]): PackageForm {
     countries: pkg.countries ?? "",
     seasons: pkg.seasons ?? [],
     isActive: pkg.is_active,
+    waitlist: asObject(pkg.data).waitlist === true,
     heroImage: pkg.hero_image ?? "",
     cardImage: pkg.card_image ?? "",
     gallery: pkg.gallery ?? [],
@@ -863,6 +870,8 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
     patch.set("countries", before.countries, countries, "countries");
     patch.set("seasons", before.seasons, seasons, "seasons");
     patch.set("is_active", before.is_active, input.isActive);
+    // no column: the site lists a tour with no open priced date only while its waiting list is open
+    patch.setData("waitlist", data.waitlist === true, input.waitlist);
     patch.set("hero_image", before.hero_image, orNull(input.heroImage), "heroImage");
     patch.set("card_image", before.card_image, orNull(input.cardImage), "cardImage");
     patch.set("gallery", before.gallery, cleanList(input.gallery), "gallery");
@@ -1562,6 +1571,8 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         brandName: dataText(data, "brandName"),
         color: dataText(data, "color"),
         colorDeep: dataText(data, "colorDeep"),
+        ctaColor: dataText(data, "ctaColor"),
+        menuAlways: data.menuAlways === true,
         icon: dataText(data, "icon"),
         externalUrl: dataText(data, "externalUrl"),
         worldSlug: dataText(data, "worldSlug"),
@@ -1619,6 +1630,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       patch.setData("brandName", dataText(stored, "brandName"), input.brandName);
       patch.setData("color", dataText(stored, "color"), input.color);
       patch.setData("colorDeep", dataText(stored, "colorDeep"), input.colorDeep);
+      patch.setData("ctaColor", dataText(stored, "ctaColor"), input.ctaColor);
       patch.setData("icon", dataText(stored, "icon"), input.icon);
       patch.setData("externalUrl", dataText(stored, "externalUrl"), input.externalUrl);
       // the key the tours of this world carry; given once, when the audience becomes a world
@@ -1627,6 +1639,8 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       }
     }
     if (before.kind === "tags") patch.setData("worldSlug", dataText(stored, "worldSlug"), input.worldSlug);
+    // the site hides a menu link to a page with no tour, unless the page asks to stay (mega-family lib/menus.ts)
+    if (MENU_TERM_KINDS.includes(before.kind)) patch.setData("menuAlways", stored.menuAlways === true, input.menuAlways);
     if (isTermPageKind(before.kind)) {
       // The page as staff arranged it. A page they never touched compares equal to its default
       // layout, so nothing is stored for it and the site keeps drawing it the way it always did.

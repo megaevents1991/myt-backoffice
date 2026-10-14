@@ -44,7 +44,8 @@ export const ROOM_COMPOSITIONS: RoomComposition[] = [
   { key: "couple_2_kids", title: "Couple + 2 children", adults: 2, children: 2, summaryLabel: "Quad room" },
   { key: "adult_3_kids", title: "Adult + 3 children", adults: 1, children: 3, summaryLabel: "Quad room" },
   { key: "three_adults_kid", title: "3 adults + child", adults: 3, children: 1, summaryLabel: "Quad room" },
-  { key: "couple_3_kids", title: "Couple + 3 children", adults: 2, children: 3, summaryLabel: "Quintuple room" },
+  // two rooms at the hotel - a double and a triple (Alon, 14.10) - sold as one composition
+  { key: "couple_3_kids", title: "Couple + 3 children", adults: 2, children: 3, summaryLabel: "Double room + triple room" },
 ];
 
 export function toPriceMatrix(rows: { pax_type: string; room_position: number; price: number }[]): PriceMatrix {

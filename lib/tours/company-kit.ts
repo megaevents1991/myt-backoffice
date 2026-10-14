@@ -41,6 +41,45 @@ export const SITE_DEPLOY_HOOK_KEY = "site_deploy_hook";
 /** companies.features key of the last publish attempt. */
 export const LAST_SITE_PUBLISH_KEY = "last_site_publish";
 
+/** The deploy hook stored in companies.features, when it is a usable http(s) URL. */
+export function siteDeployHookOf(features: JsonObject): string | null {
+  const value = features[SITE_DEPLOY_HOOK_KEY];
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POSTs a deploy hook: the customer site rebuilds from the database. Never throws, and the
+ * problem it reports never quotes the error itself - a fetch error can carry the hook URL.
+ * Shared by "Publish to site" (lib/tours/site-publish.ts) and the Mega Events feed cron.
+ */
+export async function postSiteDeployHook(
+  hook: string,
+  timeoutMs = 20_000,
+): Promise<{ status: number | null; problem?: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(hook, { method: "POST", cache: "no-store", signal: controller.signal });
+    return response.ok
+      ? { status: response.status }
+      : { status: response.status, problem: `The site server returned ${response.status}` };
+  } catch (e) {
+    const timedOut = e instanceof Error && e.name === "AbortError";
+    return {
+      status: null,
+      problem: timedOut ? "The site server did not respond in time" : "Could not reach the site server",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The stored record of a publish attempt, or null when there is none. */
 export function publishRecordOf(value: Json | undefined): SitePublishRecord | null {
   const o = asObject(value);

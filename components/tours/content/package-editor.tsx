@@ -350,13 +350,24 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                   : "The last part of the tour's address on the site. No spaces."
               }
               extra={
-                <div className="flex items-center gap-3 self-end rounded-md border p-3">
-                  <Switch id="pkg-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
-                  <label htmlFor="pkg-active" className="text-sm">
-                    <span className="font-medium">Active on site</span>
-                    <span className="block text-xs text-muted-foreground">An inactive tour is left out of the site build.</span>
-                  </label>
-                </div>
+                <>
+                  <div className="flex items-center gap-3 self-end rounded-md border p-3">
+                    <Switch id="pkg-active" checked={form.isActive} onCheckedChange={(on) => set("isActive", on)} />
+                    <label htmlFor="pkg-active" className="text-sm">
+                      <span className="font-medium">Active on site</span>
+                      <span className="block text-xs text-muted-foreground">An inactive tour is left out of the site build.</span>
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-3 self-end rounded-md border p-3">
+                    <Switch id="pkg-waitlist" checked={form.waitlist} onCheckedChange={(on) => set("waitlist", on)} />
+                    <label htmlFor="pkg-waitlist" className="text-sm">
+                      <span className="font-medium">Waiting list</span>
+                      <span className="block text-xs text-muted-foreground">
+                        A tour with no open date that has a price is left out of the site&apos;s lists. With the waiting list on it stays listed, and its card and page ask customers to join the list (they arrive in Leads as &quot;Waiting list&quot;).
+                      </span>
+                    </label>
+                  </div>
+                </>
               }
             />
           </Section>

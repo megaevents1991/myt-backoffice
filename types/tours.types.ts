@@ -177,6 +177,9 @@ export const LEAD_KIND_LABELS: Record<string, string> = {
   newsletter: "Newsletter",
   advisor: "Advisor request (booking)",
   booking: "Online booking (card)",
+  // the Mega Family site (14.10): a page with no tour asks to be told when tours open; a tour's waiting list
+  notify: "Notify me when tours open",
+  waitlist: "Waiting list",
 };
 
 /** The numeric id the customer site uses for a departure (?product_id=). */

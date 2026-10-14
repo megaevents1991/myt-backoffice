@@ -19,15 +19,14 @@ import { logAudit } from "@/lib/audit";
 import { actionFail } from "@/lib/tours/action-kit";
 import {
   LAST_SITE_PUBLISH_KEY,
-  SITE_DEPLOY_HOOK_KEY,
   asObject,
   companyAudit,
+  postSiteDeployHook,
   publishRecordOf,
+  siteDeployHookOf,
   type JsonObject,
 } from "@/lib/tours/company-kit";
 import type { ActionResult, SitePublishRecord, SitePublishStatus } from "@/components/tours/content/shared";
-
-const TIMEOUT_MS = 20_000;
 
 /**
  * Only the error's message reaches the log: a database error's details can
@@ -45,23 +44,13 @@ async function featuresOf(companyId: string): Promise<JsonObject> {
   return asObject(data.features);
 }
 
-function hookOf(features: JsonObject): string | null {
-  const value = features[SITE_DEPLOY_HOOK_KEY];
-  if (typeof value !== "string" || !value.trim()) return null;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Whether a deploy hook is configured for the active company, and how the last publish went. */
 export async function getSitePublishStatus(): Promise<ActionResult<SitePublishStatus>> {
   try {
     const { company } = await requireCompany("tours");
     const features = await featuresOf(company.id);
-    return { success: true, data: { configured: hookOf(features) !== null, last: publishRecordOf(features[LAST_SITE_PUBLISH_KEY]) } };
+    const last = publishRecordOf(features[LAST_SITE_PUBLISH_KEY]);
+    return { success: true, data: { configured: siteDeployHookOf(features) !== null, last } };
   } catch (e) {
     return failure(e, "Failed to load the publish status");
   }
@@ -74,7 +63,7 @@ export async function getSitePublishStatus(): Promise<ActionResult<SitePublishSt
 export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
   try {
     const { session, company } = await requireCompany("tours");
-    const hook = hookOf(await featuresOf(company.id));
+    const hook = siteDeployHookOf(await featuresOf(company.id));
     if (!hook) {
       return {
         success: false,
@@ -82,21 +71,8 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
       };
     }
 
-    let status: number | null = null;
-    let problem: string | undefined;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    try {
-      const response = await fetch(hook, { method: "POST", cache: "no-store", signal: controller.signal });
-      status = response.status;
-      if (!response.ok) problem = `The site server returned ${response.status}`;
-    } catch (e) {
-      // never log or return the error text itself - it can carry the hook URL
-      problem =
-        e instanceof Error && e.name === "AbortError" ? "The site server did not respond in time" : "Could not reach the site server";
-    } finally {
-      clearTimeout(timer);
-    }
+    // never log or return the fetch error itself - it can carry the hook URL (postSiteDeployHook words it)
+    const { status, problem } = await postSiteDeployHook(hook);
 
     const record: SitePublishRecord = {
       at: new Date().toISOString(),

@@ -168,6 +168,11 @@ export interface PackageForm {
   countries: string;
   seasons: string[];
   isActive: boolean;
+  /**
+   * The tour's waiting list is open (`data.waitlist`): the site keeps listing the tour while it has no open date with
+   * a price - its card and page invite to the list. Off = such a tour is left out of the site's lists.
+   */
+  waitlist: boolean;
   heroImage: string;
   cardImage: string;
   gallery: string[];
@@ -203,6 +208,7 @@ export const EMPTY_PACKAGE_FORM: PackageForm = {
   countries: "",
   seasons: [],
   isActive: false,
+  waitlist: false,
   heroImage: "",
   cardImage: "",
   gallery: [],
@@ -554,6 +560,10 @@ export interface TermForm {
   color: string;
   /** The world's second colour, when its logo has two (Mega Family: red and blue): the site's header, footer and dark cards wear it. "" = shades of `color`. */
   colorDeep: string;
+  /** The booking button's colour while a customer is in the world. "" = the site's red (a red world lends its own). */
+  ctaColor: string;
+  /** A destination, artist, tag or category page stays in the site's menus even while it lists no tour. */
+  menuAlways: boolean;
   icon: string;
   externalUrl: string;
   /** A tag that is a sub-category of a world: that audience's slug ("" = none). */
