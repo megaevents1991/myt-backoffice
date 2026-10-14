@@ -80,8 +80,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("5. After it is live", "5. אחרי שהוא באוויר"),
         steps: [
-          t("Every form a customer sends from the site lands in [Leads](/tours/leads).", "כל טופס שלקוח שולח מהאתר נוחת ב[לידים](/tours/leads)."),
-          t("Open the lead and click \"Create Reservation\". The customer's details are filled in (and the date, when the lead came from a date's page). Set the travelers and click \"Save Reservation\" - they count on the date's seats at once, and the lead turns \"Done\".", "פותחים את הליד ולוחצים \"Create Reservation\". פרטי הלקוח כבר ממולאים (וגם התאריך, כשהליד הגיע מעמוד של תאריך). קובעים את מספר הנוסעים ולוחצים \"Save Reservation\" - הם נספרים מיד על המושבים של התאריך, והליד עובר ל-\"Done\"."),
+          t("Every form and every booking a customer sends from the site lands in [Reservations](/tours/reservations) - one row per customer.", "כל טופס וכל הזמנה שלקוח שולח מהאתר נוחתים ב[הזמנות](/tours/reservations) - שורה אחת לכל לקוח."),
+          t("Open the customer's row and click \"Add travelers\" (or send a booking link with their rooms). The travelers count on the date's seats at once, and the row becomes a reservation.", "פותחים את השורה של הלקוח ולוחצים \"Add travelers\" (או שולחים לינק הרשמה עם ההרכב). הנוסעים נספרים מיד על המושבים של התאריך, והשורה הופכת להזמנה."),
           t("Watch the seats on the [Departures](/tours/departures) board. \"Last places\" and \"Sold out\" follow the seats on their own - nothing to change by hand.", "עוקבים אחרי המושבים ב[לוח היציאות](/tours/departures). \"Last places\" ו-\"Sold out\" מתעדכנים לבד לפי המושבים - אין מה לשנות ידנית."),
         ],
       },
@@ -204,116 +204,56 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     id: "tours-reservations",
     nav: "/tours/reservations",
     productType: "tours",
-    title: t("Reservations - bookings and cancellations", "הזמנות - הזמנות וביטולים"),
+    title: t("Reservations - every lead and every booking in one table", "הזמנות - כל ליד וכל הזמנה בטבלה אחת"),
     intro: t(
-      "Bookings taken by phone, by agents or in the office - one row per booking or cancellation, with the customer and the Docket number. The site has no online booking yet. The travelers count on the departure's seats the moment the row is saved.",
-      "הזמנות שנלקחו בטלפון, דרך סוכנים או במשרד - שורה לכל הזמנה או ביטול, עם הלקוח ומספר ה-Docket. באתר עוד אין הזמנה אונליין. הנוסעים נספרים על המושבים של היציאה ברגע שהשורה נשמרת.",
+      "One row per customer. A form on the site opens a lead; a booking on the site, or one the customer sends through a booking link you gave them, turns the SAME row into a reservation. Calls and walk-ins are added with \"New\". The table has the road map's columns: ID, names, phone, rep, email, ACC NUM, notes, product, status, source, follow-up, departure, TYPE and TASK.",
+      "שורה אחת לכל לקוח. טופס באתר פותח ליד; הזמנה באתר, או הזמנה שהלקוח שולח דרך לינק הרשמה ששלחתם לו, הופכת את אותה שורה להזמנה. שיחות ומי שמגיע למשרד נוספים ב-\"New\". בטבלה העמודות של הרוד מאפ: ID, שמות, טלפון, נציג, מייל, ACC NUM, הערות, מוצר, סטטוס, מקור, פולו אפ, יציאה, TYPE ו-TASK.",
     ),
     howTo: [
       {
-        title: t("Add a reservation", "להוסיף הזמנה"),
+        title: t("Work the table", "לעבוד על הטבלה"),
         steps: [
-          t("Open [Reservations](/tours/reservations) and click \"Add Reservation\".", "פותחים את [ההזמנות](/tours/reservations) ולוחצים \"Add Reservation\"."),
-          t("\"Departure\": search by code, date or tour. A date not yet on the site carries a \"Draft\" tag.", "\"Departure\": מחפשים לפי קוד, תאריך או טיול. תאריך שעוד לא באתר מסומן \"Draft\"."),
-          t("\"Type\": \"Booking\" (seats taken) or \"Cancellation\" (seats given back), then \"Travelers\".", "\"Type\": \"Booking\" (מושבים נלקחים) או \"Cancellation\" (מושבים חוזרים), ואז \"Travelers\"."),
-          t("Fill \"Customer\", \"Phone\", \"Email\", \"Docket\" (the accounting number) and \"Note\", then \"Save Reservation\".", "ממלאים \"Customer\", \"Phone\", \"Email\", \"Docket\" (מספר הנהלת החשבונות) ו-\"Note\", ואז \"Save Reservation\"."),
-          t("Shortcuts: from a lead, \"Create Reservation\" fills the customer in; from a date's card, the \"Reservations\" tab → \"Add Reservation\" fixes the date and its Docket.", "קיצורי דרך: מליד, \"Create Reservation\" ממלא את פרטי הלקוח; מכרטיס של תאריך, לשונית \"Reservations\" ← \"Add Reservation\" קובעת את התאריך וה-Docket שלו."),
+          t("Open [Reservations](/tours/reservations). The views \"Reservations\", \"Leads\", \"Potential\", \"Mine\", \"Follow-up due\" and \"Unassigned\" split it; the search finds a name, phone, email, ID, national id, ACC NUM, booking number or tour.", "פותחים את [ההזמנות](/tours/reservations). התצוגות \"Reservations\", \"Leads\", \"Potential\", \"Mine\", \"Follow-up due\" ו-\"Unassigned\" מחלקות את הטבלה; החיפוש מוצא שם, טלפון, מייל, ID, ת\"ז, ACC NUM, מספר הזמנה או טיול."),
+          t("In the row itself set the rep, the status, the follow-up day, ACC NUM and a note - each saves when you leave the field.", "בשורה עצמה קובעים נציג, סטטוס, יום פולו אפ, ACC NUM והערה - כל אחד נשמר כשיוצאים מהשדה."),
+          t("TASK says what to do now, by itself: a new reservation, a new lead, a service call (contact / cancellation forms), a follow-up whose day came, a payment to complete or to check, a confirmation to send. On the case page \"Task\" can set it by hand (✎) or back to \"Automatic\".", "TASK אומר מה לעשות עכשיו, לבד: הזמנה חדשה, ליד חדש, שיחת שירות (טפסי צור קשר / ביטול), פולו אפ שהגיע היום שלו, תשלום להשלים או לבדוק, אישור לשלוח. בעמוד הלקוח אפשר לקבוע אותו ידנית (✎) או להחזיר ל-\"Automatic\"."),
+          t("Tick rows to set the status or the rep of many at once; \"Export\" downloads what the screen shows.", "מסמנים שורות כדי לקבוע סטטוס או נציג להרבה בבת אחת; \"Export\" מוריד את מה שהמסך מציג."),
         ],
       },
       {
-        title: t("Find or fix a reservation", "למצוא או לתקן הזמנה"),
+        title: t("Send a booking link with the customer's rooms", "לשלוח לינק הרשמה עם ההרכב של הלקוח"),
         steps: [
-          t("The tabs \"All\", \"Bookings\", \"Cancellations\" and the search (customer, phone, docket or tour) narrow the list. \"Departure\" in a row opens that date's card.", "הלשוניות \"All\", \"Bookings\", \"Cancellations\" והחיפוש (לקוח, טלפון, docket או טיול) מצמצמים את הרשימה. \"Departure\" בשורה פותח את הכרטיס של התאריך."),
-          t("A saved row can't be edited. Typo? Delete it (the bin → \"Delete\") and add it again.", "שורה שנשמרה לא נערכת. טעות? מוחקים אותה (הפח ← \"Delete\") ומוסיפים מחדש."),
-          t("A customer cancels: add a \"Cancellation\" row with the travelers given back - the booking row stays as history.", "לקוח מבטל: מוסיפים שורת \"Cancellation\" עם הנוסעים שחוזרים - שורת ההזמנה נשארת כהיסטוריה."),
+          t("Open the customer's row. In \"Booking link\" click \"Build a link\", choose the departure and the rooms (couple, couple + child...), then \"Create link\".", "פותחים את השורה של הלקוח. ב-\"Booking link\" לוחצים \"Build a link\", בוחרים יציאה וחדרים (זוגי, זוג + ילד...), ואז \"Create link\"."),
+          t("\"WhatsApp\" opens your WhatsApp on a chat with the customer with the link typed in; \"Copy\" and \"E-mail\" work too.", "\"WhatsApp\" פותח את הוואטסאפ שלכם בצ'אט עם הלקוח והלינק כבר מוקלד; גם \"Copy\" ו-\"E-mail\" עובדים."),
+          t("The customer lands on the tour with the rooms filled in, types the travelers and sends. The booking lands on the same row: it becomes a reservation with the task \"טיפול בהזמנה חדשה\".", "הלקוח נוחת בטיול עם החדרים ממולאים, מקליד את הנוסעים ושולח. ההזמנה נוחתת על אותה שורה: היא הופכת להזמנה עם המשימה \"טיפול בהזמנה חדשה\"."),
+        ],
+      },
+      {
+        title: t("A booking from the site", "הזמנה מהאתר"),
+        steps: [
+          t("Open the row: \"Order\" shows the rooms, the passengers, the price the site computed and the payment; beside it the cancellation terms and the departure's gift.", "פותחים את השורה: \"Order\" מציג את החדרים, הנוסעים, המחיר שהאתר חישב והתשלום; לידו תנאי הביטול והמתנה של היציאה."),
+          t("A request: call the customer; when the trip is sold click \"Add travelers\" - the seats count on the departure at once.", "בקשה: מתקשרים ללקוח; כשהטיול נמכר לוחצים \"Add travelers\" - המושבים נספרים מיד על היציאה."),
+          t("A card payment: \"Paid\" means CreditGuard confirmed exactly the computed amount and the seats were added by themselves. Send the confirmation, type the receipt number and switch on \"Confirmation sent\". \"Check payment\": the charge had another amount - check it in CreditGuard and set the booking \"Paid\" when it is right.", "תשלום בכרטיס: \"Paid\" אומר ש-CreditGuard אישר בדיוק את הסכום שחושב והמושבים נוספו לבד. שולחים אישור, מקלידים מספר קבלה ומדליקים \"Confirmation sent\". \"Check payment\": החיוב היה בסכום אחר - בודקים ב-CreditGuard ומסמנים את ההזמנה \"Paid\" כשהוא תקין."),
+        ],
+      },
+      {
+        title: t("Statuses", "סטטוסים"),
+        steps: [
+          t("\"Statuses\" above the table: rename, recolour, reorder, \"Add status\", or switch one off. \"Closed\" ends the work on a case (no task, out of follow-up).", "\"Statuses\" מעל הטבלה: משנים שם, צבע, סדר, \"Add status\", או מכבים סטטוס. \"Closed\" מסיים את הטיפול בלקוח (בלי משימה, מחוץ לפולו אפ)."),
+          t("Statuses with a lock are moved by the system (new booking, payment) - they can be renamed, never switched off. Nothing is ever deleted: a case may carry it.", "סטטוסים עם מנעול זזים לבד ע\"י המערכת (הזמנה חדשה, תשלום) - אפשר לשנות להם שם, לא לכבות. שום סטטוס לא נמחק: יכול להיות שלקוח מחזיק אותו."),
         ],
       },
     ],
     points: [
-      t("A row holds the customer, the travelers count, the Docket and a note - not passenger names or payments. A missing Docket shows \"TBD\".", "שורה מחזיקה את הלקוח, מספר הנוסעים, ה-Docket והערה - לא שמות נוסעים ולא תשלומים. Docket חסר מוצג כ-\"TBD\"."),
-      t("Seats on a date: Allocated (on live flight blocks) - Sold (these rows) = Left. The card's \"Reservations\" tab warns when a date is oversold.", "מושבים בתאריך: Allocated (בבלוקי טיסה חיים) פחות Sold (השורות האלה) = Left. לשונית \"Reservations\" בכרטיס מתריעה כשתאריך נמכר מעבר למושבים."),
+      t("TYPE: Reservation (booked on the site or with seats), Lead (a form or a call), Potential (\"notify me when tours open\", a waiting list, the newsletter).", "TYPE: Reservation (הזמין באתר או עם מושבים), Lead (טופס או שיחה), Potential (\"עדכנו אותי כשייפתחו טיולים\", רשימת המתנה, ניוזלטר)."),
+      t("A booking on the site finds its customer by the booking link first, otherwise by the same phone or email on an open lead of the last 90 days. A phone match never changes the customer's details, and the case says so - check the order's own customer before you call.", "הזמנה באתר מוצאת את הלקוח שלה קודם לפי לינק ההרשמה, אחרת לפי אותו טלפון או מייל על ליד פתוח מ-90 הימים האחרונים. התאמה לפי טלפון לא משנה את פרטי הלקוח, והעמוד אומר זאת - בודקים את הלקוח של ההזמנה עצמה לפני שמתקשרים."),
+      t("\"Source\" is the campaign (UTM) when the visit came from one, else how the customer reached us. The case page shows the landing page, the page the form was sent from and every field of the form.", "\"Source\" הוא הקמפיין (UTM) כשהביקור הגיע ממנו, אחרת איך הלקוח הגיע. עמוד הלקוח מציג את עמוד הנחיתה, העמוד שממנו נשלח הטופס וכל שדות הטופס."),
+      t("Seats on a date: Allocated (on live flight blocks) - Sold (the travelers of every case) = Left.", "מושבים בתאריך: Allocated (בבלוקי טיסה חיים) פחות Sold (הנוסעים של כל הלקוחות) = Left."),
     ],
     rules: [
-      t("Deleting only marks the row deleted: it stops counting on the seats and stays recoverable.", "מחיקה רק מסמנת את השורה כמחוקה: היא מפסיקה להיספר על המושבים ונשארת ניתנת לשחזור."),
+      t("Deleting a case only marks it deleted; a case with a paid site booking is cancelled, never deleted.", "מחיקת לקוח רק מסמנת אותו כמחוק; לקוח עם הזמנה ששולמה באתר מבטלים, לא מוחקים."),
+      t("The price of a site booking is computed by the system, never taken from the customer's browser - a booking link carries rooms, never a price.", "המחיר של הזמנה באתר מחושב במערכת, אף פעם לא לפי הדפדפן של הלקוח - לינק הרשמה נושא חדרים, אף פעם לא מחיר."),
     ],
     links: [{ label: t("Reservations", "הזמנות"), href: "/tours/reservations" }],
-  },
-  {
-    id: "tours-bookings",
-    nav: "/tours/bookings",
-    productType: "tours",
-    title: t("Online Bookings - what customers booked on the site", "הזמנות אונליין - מה שלקוחות הזמינו באתר"),
-    intro: t(
-      "At the end of a booking on the site the customer either sends a request (a rep calls back) or pays by card on the CreditGuard page. Each one is a row here and a lead in Leads. The price is computed by the system from the date's prices, never taken from the customer's browser.",
-      "בסוף הזמנה באתר הלקוח שולח בקשה (נציג חוזר אליו) או משלם בכרטיס בדף של CreditGuard. כל אחת היא שורה כאן וליד בלידים. המחיר מחושב במערכת לפי המחירים של התאריך, אף פעם לא לפי מה שהדפדפן של הלקוח שלח.",
-    ),
-    howTo: [
-      {
-        title: t("Handle a request", "לטפל בבקשה"),
-        steps: [
-          t("Open [Online Bookings](/tours/bookings) and click the row: the panel shows the rooms, the passengers and the price the customer saw.", "פותחים את [הזמנות אונליין](/tours/bookings) ולוחצים על השורה: החלונית מציגה את החדרים, הנוסעים והמחיר שהלקוח ראה."),
-          t("Call the customer. When the trip is sold, click \"Create Reservation\": it adds the seats to the departure.", "מתקשרים ללקוח. כשהטיול נמכר, לוחצים \"Create Reservation\": זה מוסיף את המושבים ליציאה."),
-          t("Set the status, the receipt number and \"Confirmation sent\" - each saves at once.", "קובעים סטטוס, מספר קבלה ו-\"Confirmation sent\" - כל אחד נשמר מיד."),
-        ],
-      },
-      {
-        title: t("A card payment", "תשלום בכרטיס"),
-        steps: [
-          t("\"Paid\" means CreditGuard confirmed exactly the amount the system computed. The seats were added to the departure by themselves.", "\"Paid\" אומר ש-CreditGuard אישר בדיוק את הסכום שהמערכת חישבה. המושבים נוספו ליציאה לבד."),
-          t("Send the customer the confirmation, issue the receipt, type its number, and set \"Done\".", "שולחים ללקוח את האישור, מפיקים קבלה, מקלידים את המספר שלה, ומסמנים \"Done\"."),
-          t("\"Check payment\": CreditGuard reported a charge with another amount. Check the transaction in CreditGuard; when it is right, set \"Paid\".", "\"Check payment\": CreditGuard דיווח על חיוב בסכום אחר. בודקים את העסקה ב-CreditGuard; אם היא תקינה, מסמנים \"Paid\"."),
-          t("\"Waiting for payment\": the customer reached the payment page and did not pay. Call them.", "\"Waiting for payment\": הלקוח הגיע לדף התשלום ולא שילם. מתקשרים אליו."),
-        ],
-      },
-    ],
-    points: [
-      t("The charge is in shekels: today's rate from the [Rates](/tours/rates) screen when it was typed in, otherwise the automatic rate plus the margin.", "החיוב בשקלים: השער של היום ממסך [השערים](/tours/rates) אם הוזן, אחרת השער האוטומטי ועוד המרווח."),
-      t("Only dates with prices in the price table can be booked on the site. On a date without them the tour page shows \"השאירו פרטים\" and WhatsApp instead of a price, and what the customer leaves arrives as a lead.", "רק תאריכים עם מחירים בטבלת המחירים אפשר להזמין באתר. בתאריך בלי מחירים עמוד הטיול מציג \"השאירו פרטים\" ו-WhatsApp במקום מחיר, ומה שהלקוח משאיר מגיע כליד."),
-      t("On a tour page the customer fills in every traveler: first and last name in English as in the passport, a birth date and a gender; the first traveler adds an email and a phone. The booking is not sent while a name or a birth date is missing. Each traveler's birth date shows beside the name under Passengers.", "בעמוד טיול הלקוח ממלא כל נוסע: שם פרטי ושם משפחה באנגלית כמו בדרכון, תאריך לידה ומין; הנוסע הראשון מוסיף אימייל וטלפון. ההזמנה לא נשלחת כל עוד חסר שם או תאריך לידה. תאריך הלידה של כל נוסע מופיע ליד השם תחת Passengers."),
-      t("Refunds are done by hand in CreditGuard; then set the booking \"Cancelled\" and remove its seats in Reservations.", "החזרים נעשים ידנית ב-CreditGuard; אחר כך מסמנים את ההזמנה \"Cancelled\" ומורידים את המושבים שלה בהזמנות."),
-    ],
-    links: [
-      { label: t("Online Bookings", "הזמנות אונליין"), href: "/tours/bookings" },
-      { label: t("Leads", "לידים"), href: "/tours/leads" },
-    ],
-  },
-  {
-    id: "tours-leads",
-    nav: "/tours/leads",
-    productType: "tours",
-    title: t("Leads - every form from the site", "לידים - כל טופס מהאתר"),
-    intro: t(
-      "Every form sent from the website: lead form, contact, cancellation request, newsletter and advisor request. Open a lead to set its status, assign it to a teammate or turn it into a reservation.",
-      "כל טופס שנשלח מהאתר: טופס ליד, צור קשר, בקשת ביטול, ניוזלטר ובקשת יועץ. פותחים ליד כדי לקבוע סטטוס, לשייך לעמית או להפוך אותו להזמנה.",
-    ),
-    howTo: [
-      {
-        title: t("Work the inbox", "לעבוד על תיבת הלידים"),
-        steps: [
-          t("Open [Leads](/tours/leads). The tabs \"New\", \"In progress\", \"Done\", \"Spam\" (and \"All\") split the list; \"All types\" and the search narrow it.", "פותחים את [הלידים](/tours/leads). הלשוניות \"New\", \"In progress\", \"Done\", \"Spam\" (ו-\"All\") מחלקות את הרשימה; \"All types\" והחיפוש מצמצמים."),
-          t("Click a row: the panel shows the message, \"Source Page\" (the site page it came from), \"More from the form\" and \"Campaign (UTM)\". Click the phone to dial, the email to write.", "לוחצים על שורה: החלונית מציגה את ההודעה, \"Source Page\" (העמוד באתר שממנו הגיע), \"More from the form\" ו-\"Campaign (UTM)\". לחיצה על הטלפון מחייגת, על המייל כותבת."),
-          t("Set \"Status\" and \"Assigned To\" in the panel - each saves at once.", "קובעים \"Status\" ו-\"Assigned To\" בחלונית - כל אחד נשמר מיד."),
-        ],
-      },
-      {
-        title: t("Turn a lead into a reservation", "להפוך ליד להזמנה"),
-        steps: [
-          t("In the lead's panel click \"Create Reservation\". Name, phone and email are filled in, the message goes into the note, and a lead from a date's page brings that date.", "בחלונית הליד לוחצים \"Create Reservation\". שם, טלפון ומייל כבר ממולאים, ההודעה נכנסת להערה, וליד מעמוד של תאריך מביא את התאריך."),
-          t("Check the departure and the travelers, then \"Save Reservation\". The lead turns \"Done\" by itself.", "בודקים את היציאה ואת מספר הנוסעים, ואז \"Save Reservation\". הליד עובר ל-\"Done\" לבד."),
-        ],
-      },
-      {
-        title: t("Export to Excel", "לייצא לאקסל"),
-        steps: [
-          t("Set the tab, type and search you want, then \"Export to Excel\" - the file holds exactly those leads, with the form details and the UTM.", "קובעים לשונית, סוג וחיפוש, ואז \"Export to Excel\" - הקובץ מכיל בדיוק את הלידים האלה, עם פרטי הטופס וה-UTM."),
-        ],
-      },
-    ],
-    points: [
-      t("A new lead arrives as \"New\" with no owner. A lead can be assigned only to a member of the company's staff.", "ליד חדש מגיע כ-\"New\" בלי אחראי. אפשר לשייך ליד רק לאיש צוות של החברה."),
-      t("New-lead notifications by email go to the \"Leads email\" set in [Settings](/tours/settings).", "התראות מייל על לידים חדשים נשלחות ל-\"Leads email\" שמוגדר ב[הגדרות](/tours/settings)."),
-    ],
-    links: [{ label: t("Leads", "לידים"), href: "/tours/leads" }],
   },
   {
     id: "tours-tasks",

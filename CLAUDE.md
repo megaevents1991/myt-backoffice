@@ -77,6 +77,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > stats, activity feed, user log. **Reporting only** - the monthly report and
 > commission maths never read it.
 
+> **✅ Tours: one table for leads and reservations (`/tours/reservations`, 2026-10-14).** Spec
+> `docs/superpowers/specs/2026-10-14-tours-unified-reservations-design.md`, plan
+> `docs/superpowers/plans/2026-10-14-tours-unified-reservations.md`, migration
+> `20261014220000_tours_unified_cases.sql` (Alon's road-map tab "חיבור למקום אחד שהוא בעצם לידים והזמנות":
+> Online Bookings and Leads fold into Reservations). **`public.leads` is the CASE** - one row per customer:
+> every site form, every site booking (`tours.bookings.lead_id`) and every staff-typed reservation
+> (`departure_sales_entries.lead_id`, seats unchanged). New columns: `case_no` (the ID column, sequence from
+> 1001), `type` (`reservation` / `lead` / `potential`; no CHECK), `first_name` / `last_name`, `id_number`
+> (ת"ז), `acc_num`, `departure_id` / `package_id`, `source` (`site` / `phone` / `whatsapp` / `office` / `agent`
+> / `other`), `task_override`, `link_token` / `link_sent_at`, `is_deleted`, `updated_at`. The BEFORE INSERT
+> trigger `public.leads_fill` sets TYPE from the form (notify / waitlist / newsletter -> potential, booking /
+> advisor -> reservation), splits the name, finds the departure from the page's `?product_id=` and the tour,
+> and cleans the UTM (`public.clean_utm`) - so the site's `submit_lead` functions did not change.
+> `public.lead_statuses` = each company's status list (seeded; staff edit it in "Statuses"); system keys
+> `new / pending_payment / payment_failed / payment_review / paid / cancelled / spam` are moved by code, never
+> switched off; nothing is deleted. The case follows its booking's payment (trigger
+> `tours.bookings_status_to_case`); `booking_finish_payment` no longer forces "done" (a paid case reads `paid`
+> and shows "שליחת אישור" until the confirmation is sent). **Every rule is pure in `lib/tours/cases.ts`**
+> (`scripts/tours-cases-selftest.ts`): `typeOfKind`, `caseTask` (first match: override, closed -> none,
+> payment_review, follow-up due, pending/failed payment, new by TYPE / service form, paid + confirmation
+> pending), `validateStatuses`, `phoneKey` (last 9 digits), `bookingLink`, `waLink`, `htmlToText`
+> (cancellation terms print as text, never HTML), `siteHref` (a visitor-sent page path links only when it
+> stays on our origin). **Lead -> reservation:** `tours.booking_create` attaches a site booking to the case
+> by the booking link's token (`args.lead_ref`, full completion) else by the same phone / e-mail on an open
+> lead / potential of the last 90 days with no booking - that contact match NEVER writes the case's names,
+> contact or UTM (security review) and records `payload.matched_by`, which the case page turns into a
+> warning. **Booking link:** the case page builds `{site}/package/<slug>/?product_id=&rooms=k1,k2&lr=<token>`
+> (rooms only those the date's price matrix prices; WhatsApp = `wa.me` on the rep's own app, no API); the
+> site (mega-family) pre-fills the funnel from `rooms` and sends `lr` as `lead_ref`. Actions:
+> `lib/actions/tours-cases-actions.ts` (one action per screen load); screens `components/tours/cases/*`;
+> `/tours/bookings` and `/tours/leads` redirect. `scripts/tours-cases-sql-dryrun.mjs` runs the migration +
+> checks on prod inside a transaction that aborts itself (nothing stays). Not built (phase 2, needs the
+> WhatsApp Cloud API): automations, several reps on one number, "it is live" to potentials, bulk messages,
+> marketing reports.
+>
 > **✅ Homepage layout board (`/homepage`, 2026-09-16).** Spec
 > `docs/superpowers/specs/2026-09-16-homepage-layout-design.md`. One dummy of
 > main's homepage where staff drag SECTIONS into order / hide them and pin the
