@@ -31,6 +31,17 @@ export function usdIlsOf(per100: number | string | null | undefined): number | n
 
 function chunks<T>(arr: T[], size: number): T[][] { const out: T[][] = []; for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size)); return out; }
 
+/** Every reservation's `utm_touches` rows, by reservation id (the funnel read shares it). Throws on a read error. */
+export async function readTouches(ids: number[]): Promise<Map<number, UtmTouchLike[]>> {
+  const touches = new Map<number, UtmTouchLike[]>();
+  for (const chunk of chunks(ids, TOUCH_CHUNK)) {
+    const { data, error } = await mdb.from("utm_touches").select("reservation_id, position, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, is_influencer").in("reservation_id", chunk);
+    if (error) throw new Error(`utm_touches read: ${error.message}`);
+    for (const t of (data ?? []) as (UtmTouchLike & { reservation_id: number })[]) { const list = touches.get(t.reservation_id) ?? []; list.push(t); touches.set(t.reservation_id, list); }
+  }
+  return touches;
+}
+
 export async function attributedReservations(since: string, until: string): Promise<AttributedReservation[]> {
   const { rows, truncated, error } = await fetchPaged<{ id: number; created_at: string } & PnlReservation>(
     () => mdb.from("reservations").select(PNL_COLUMNS).eq("status", "Paid").is("is_deleted", null).gte("created_at", israelDayStartUtc(since)).lt("created_at", israelDayStartUtc(addDays(until, 1))).order("id"),
@@ -38,13 +49,7 @@ export async function attributedReservations(since: string, until: string): Prom
   );
   if (error) throw new Error(`reservations read: ${error.message}`);
   if (truncated) throw new Error(`reservations read: more than ${RESERVATIONS_MAX} Paid reservations in ${since}..${until} - narrow the range`);
-  const ids = rows.map((r) => r.id);
-  const touches = new Map<number, UtmTouchLike[]>();
-  for (const chunk of chunks(ids, TOUCH_CHUNK)) {
-    const { data, error: terr } = await mdb.from("utm_touches").select("reservation_id, position, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, is_influencer").in("reservation_id", chunk);
-    if (terr) throw new Error(`utm_touches read: ${terr.message}`);
-    for (const t of (data ?? []) as (UtmTouchLike & { reservation_id: number })[]) { const list = touches.get(t.reservation_id) ?? []; list.push(t); touches.set(t.reservation_id, list); }
-  }
+  const touches = await readTouches(rows.map((r) => r.id));
   const adIds = new Set<string>();
   const gclids = new Set<string>();
   for (const list of touches.values()) for (const t of list) { if (t.utm_content && META_ID.test(t.utm_content)) adIds.add(t.utm_content); if (t.gclid) gclids.add(t.gclid); }
