@@ -3392,56 +3392,145 @@ export type Database = {
         }
         Relationships: []
       }
-      leads: {
+      lead_statuses: {
         Row: {
-          assigned_to: string | null
+          color: string
           company_id: string
           created_at: string
+          id: string
+          is_active: boolean
+          is_closed: boolean
+          is_system: boolean
+          key: string
+          label: string
+          position: number
+        }
+        Insert: {
+          color?: string
+          company_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_closed?: boolean
+          is_system?: boolean
+          key: string
+          label: string
+          position?: number
+        }
+        Update: {
+          color?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_closed?: boolean
+          is_system?: boolean
+          key?: string
+          label?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_statuses_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          acc_num: string | null
+          assigned_to: string | null
+          case_no: number
+          company_id: string
+          created_at: string
+          departure_id: string | null
           email: string | null
+          first_name: string | null
           follow_up_date: string | null
           id: string
+          id_number: string | null
+          is_deleted: string | null
           kind: string
+          last_name: string | null
+          link_sent_at: string | null
+          link_token: string | null
           message: string | null
           name: string | null
           notes: string | null
+          package_id: string | null
           payload: Json
           phone: string | null
+          source: string
           source_path: string | null
           status: string
+          task_override: string | null
+          type: string
+          updated_at: string | null
           utm: Json
         }
         Insert: {
+          acc_num?: string | null
           assigned_to?: string | null
+          case_no?: number
           company_id: string
           created_at?: string
+          departure_id?: string | null
           email?: string | null
+          first_name?: string | null
           follow_up_date?: string | null
           id?: string
+          id_number?: string | null
+          is_deleted?: string | null
           kind: string
+          last_name?: string | null
+          link_sent_at?: string | null
+          link_token?: string | null
           message?: string | null
           name?: string | null
           notes?: string | null
+          package_id?: string | null
           payload?: Json
           phone?: string | null
+          source?: string
           source_path?: string | null
           status?: string
+          task_override?: string | null
+          type?: string
+          updated_at?: string | null
           utm?: Json
         }
         Update: {
+          acc_num?: string | null
           assigned_to?: string | null
+          case_no?: number
           company_id?: string
           created_at?: string
+          departure_id?: string | null
           email?: string | null
+          first_name?: string | null
           follow_up_date?: string | null
           id?: string
+          id_number?: string | null
+          is_deleted?: string | null
           kind?: string
+          last_name?: string | null
+          link_sent_at?: string | null
+          link_token?: string | null
           message?: string | null
           name?: string | null
           notes?: string | null
+          package_id?: string | null
           payload?: Json
           phone?: string | null
+          source?: string
           source_path?: string | null
           status?: string
+          task_override?: string | null
+          type?: string
+          updated_at?: string | null
           utm?: Json
         }
         Relationships: [
