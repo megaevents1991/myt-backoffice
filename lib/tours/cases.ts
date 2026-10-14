@@ -12,6 +12,8 @@
  * public.lead_status_closed) - change both together.
  */
 import { matchesSearch } from "@/lib/search";
+import type { BookingRow } from "@/components/tours/bookings/shared";
+import type { ToursReservationRow } from "@/components/tours/reservations/types";
 
 // ---------------------------------------------------------------- TYPE
 export const CASE_TYPES = ["reservation", "lead", "potential"] as const;
@@ -393,3 +395,101 @@ export const caseMatches = (row: CaseRow, q: string): boolean =>
     row.notes,
     row.message,
   );
+
+// ---------------------------------------------------------------- what the actions answer
+/** A member of the company's staff who can own a case. */
+export interface CaseRep {
+  id: string;
+  name: string;
+}
+
+/** The Reservations screen in one load. */
+export interface CasesPage {
+  rows: CaseRow[];
+  truncated: boolean;
+  statuses: CaseStatus[];
+  reps: CaseRep[];
+  currentUserId: string;
+}
+
+/** What staff change on a case; a field left out is not touched. */
+export interface CaseChange {
+  status?: string;
+  assignedTo?: string | null;
+  followUpDate?: string | null;
+  notes?: string;
+  accNum?: string | null;
+  idNumber?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  type?: CaseType;
+  taskOverride?: string | null;
+  departureId?: string | null;
+  source?: CaseSource;
+}
+
+/** A case staff open by hand (a call, a walk-in). A reservation needs a departure and travelers. */
+export interface NewCaseInput {
+  type: CaseType;
+  firstName: string;
+  lastName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  idNumber?: string | null;
+  source: CaseSource;
+  departureId?: string | null;
+  travelers?: number | null;
+  assignedTo?: string | null;
+  notes?: string | null;
+  followUpDate?: string | null;
+}
+
+export interface CaseHistoryItem {
+  at: string;
+  actor: string | null;
+  action: string;
+  changes: Record<string, unknown>;
+}
+
+export interface CaseGift {
+  label: string;
+  validUntil: string | null;
+}
+
+/** The case page in one load. */
+export interface CaseDetail {
+  row: CaseRow;
+  /** The form's other fields. */
+  payload: Record<string, unknown>;
+  bookings: BookingRow[];
+  sales: ToursReservationRow[];
+  departure: { id: string; code: string; startDate: string; endDate: string; siteId: number; isPublished: boolean } | null;
+  pkg: { id: string; name: string; path: string; cancellationHtml: string | null } | null;
+  gifts: CaseGift[];
+  history: CaseHistoryItem[];
+  statuses: CaseStatus[];
+  reps: CaseRep[];
+  currentUserId: string;
+  siteUrl: string | null;
+  linkSentAt: string | null;
+}
+
+/** A departure a booking link can point at, with the rooms its price table prices. */
+export interface LinkDeparture {
+  id: string;
+  code: string;
+  startDate: string;
+  tourName: string | null;
+  siteId: number;
+  packagePath: string;
+  rooms: { key: string; title: string }[];
+}
+
+export interface BookingLinkResult {
+  url: string;
+  whatsapp: string | null;
+  mailto: string | null;
+  message: string;
+}

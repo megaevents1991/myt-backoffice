@@ -1,6 +1,6 @@
 /**
  * Plumbing the company-level tours actions share: the site content
- * (tours-content-actions.ts), the leads inbox (tours-leads-actions.ts), the
+ * (tours-content-actions.ts), the cases (tours-cases-actions.ts), the
  * company settings (tours-settings-actions.ts) and "Publish to site"
  * (lib/tours/site-publish.ts). The company's people are managed on the Users
  * screen (lib/actions/user-actions.ts), which uses companyAudit from here.

@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { BookingsScreen } from "@/components/tours/bookings/bookings-screen";
-
-export const metadata: Metadata = { title: "Online Bookings" };
-
-/** /tours/bookings - what customers booked on the site. Data loads through its server actions. */
+/** /tours/bookings - folded into the one Reservations table (14.10.2026): site bookings are its reservations. */
 export default function TourBookingsPage() {
-  return <BookingsScreen />;
+  redirect("/tours/reservations?view=reservations");
 }

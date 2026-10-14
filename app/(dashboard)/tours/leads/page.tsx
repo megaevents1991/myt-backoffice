@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { LeadsInbox } from "@/components/tours/content/leads-inbox";
-
-export const metadata: Metadata = { title: "Leads" };
-
-/** /tours/leads - the site leads of a tours company. Data loads through its server actions. */
+/** /tours/leads - folded into the one Reservations table (14.10.2026): every site form is a case there. */
 export default function TourLeadsPage() {
-  return <LeadsInbox />;
+  redirect("/tours/reservations?view=leads");
 }

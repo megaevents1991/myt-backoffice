@@ -170,7 +170,8 @@ export async function listReservationDepartures(): Promise<ActionResult<Reservat
 
 /**
  * A new booking (+pax) or cancellation (-pax) on a departure. With `leadId`
- * the row remembers the site lead it came from, and that lead is marked done.
+ * the row hangs on the customer's case (public.leads), and a booking (+pax)
+ * turns that case into a reservation.
  */
 export async function createToursReservation(input: ReservationInput): Promise<ActionResult<ToursReservationRow>> {
   try {
@@ -199,6 +200,7 @@ export async function createToursReservation(input: ReservationInput): Promise<A
         .select("id, status")
         .eq("company_id", company.id)
         .eq("id", input.leadId)
+        .is("is_deleted", null)
         .maybeSingle();
       if (leadError) throw new Error(`leads: ${leadError.message}`);
       if (!lead) throw new UserError("The lead was not found.");
@@ -223,14 +225,14 @@ export async function createToursReservation(input: ReservationInput): Promise<A
       .single();
     if (error) throw new Error(`departure_sales_entries: ${error.message}`);
 
-    if (leadId) {
+    if (leadId && pax > 0) {
+      // travelers on the seats make the case a reservation (its status stays the rep's call)
       const { error: leadUpdateError } = await supabaseTyped
         .from("leads")
-        .update({ status: "done" })
+        .update({ type: "reservation" })
         .eq("company_id", company.id)
-        .eq("id", leadId)
-        .neq("status", "spam");
-      if (leadUpdateError) console.error(`${SCOPE}: lead ${leadId} not marked done:`, leadUpdateError.message);
+        .eq("id", leadId);
+      if (leadUpdateError) console.error(`${SCOPE}: case ${leadId} not turned into a reservation:`, leadUpdateError.message);
     }
 
     await logAudit({
