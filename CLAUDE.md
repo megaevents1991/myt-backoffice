@@ -303,8 +303,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > src is https on business.facebook.com / www.facebook.com (`previewSrcFrom`); Google ad groups show RSA / ETA / RDA
 > texts + final URL, a P.Max campaign its asset groups (`asset_group_asset`). Read on click, never stored; ids must be
 > digits (`isAdId`). (f) **Traffic tab** = GA4 Data API v1beta (`lib/services/ga4.ts`, property 483131557, service
-> account `ga4-reader@mega-tourism-ads` with Viewer; env below): one `batchRunReports` of two reports (date x
-> source x medium; source x medium x landing page x event) + our orders, cached 10 min (`marketing-traffic` tag),
+> account `ga4-reader@mega-tourism-ads` with Viewer; env below): one `batchRunReports` of four reports (sessions:
+> date x source x medium; steps: source x medium x landing page x event; users: source x medium, and the period's
+> unique users - users never come from a date row, a returning user would count once a day) + our orders, cached
+> 10 min (`marketing-traffic` tag); a GA4 failure is returned as `{ connected: true, error }` and printed in the tab,
 > pure aggregation `lib/marketing/traffic.ts` (`trafficBucket`; landing kind = the Partners screen's
 > `classifyEntry`; steps = select_item / add_to_cart (flight search) / view_cart / begin_checkout + generate_lead /
 > purchase). Non-partner traffic is NOT in our DB (`affiliates_tracking` has an FK to partners) - GA4 is the only
