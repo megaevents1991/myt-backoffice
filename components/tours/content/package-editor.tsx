@@ -363,7 +363,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
                     <label htmlFor="pkg-waitlist" className="text-sm">
                       <span className="font-medium">Waiting list</span>
                       <span className="block text-xs text-muted-foreground">
-                        A tour with no open date (none, or all sold out / closed) is left out of the site&apos;s lists. With the waiting list on it stays listed, and its card and page ask customers to join the list (they arrive in Leads as &quot;Waiting list&quot;).
+                        A tour with no open date that has a price is left out of the site&apos;s lists. With the waiting list on it stays listed, and its card and page ask customers to join the list (they arrive in Leads as &quot;Waiting list&quot;).
                       </span>
                     </label>
                   </div>

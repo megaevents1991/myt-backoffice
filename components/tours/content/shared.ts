@@ -169,8 +169,8 @@ export interface PackageForm {
   seasons: string[];
   isActive: boolean;
   /**
-   * The tour's waiting list is open (`data.waitlist`): the site keeps listing the tour while it has no open date -
-   * its card and page invite to the list. Off = such a tour is left out of the site's lists.
+   * The tour's waiting list is open (`data.waitlist`): the site keeps listing the tour while it has no open date with
+   * a price - its card and page invite to the list. Off = such a tour is left out of the site's lists.
    */
   waitlist: boolean;
   heroImage: string;

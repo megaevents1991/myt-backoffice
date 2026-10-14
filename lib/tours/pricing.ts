@@ -12,9 +12,10 @@
  *   couple + kid = 2 x adult-in-double + third-kid
  *   adult + 2 kids is priced like couple + kid (the first kid pays the adult price)
  *   every further person pays fourth-kid when it is set, else adult-in-double
- *   adult + 3 kids and 3 adults + kid need the fourth-kid price itself (as on WordPress):
- *     adult + 3 kids = 2 x adult-in-double + third-kid + fourth-kid
- *     3 adults + kid = 2 x adult-in-double + third-adult + fourth-kid
+ *   adult + 3 kids = 2 x adult-in-double + third-kid + that fourth person
+ *   3 adults + kid = 2 x adult-in-double + third-adult + that fourth person
+ *   (until 14.10.2026 these two needed fourth-kid itself, as on WordPress, and most dates never offered
+ *   them; Alon: "לא נותן 3 מבוגרים וילד", Dor chose the same fallback - migration 20261014230000)
  *
  * Pure functions, no I/O. The same table lives in the customer site
  * (mega-family/lib/data/departures.mjs) and in the database, which prices online
@@ -78,9 +79,9 @@ export function roomPrice(key: string, m: PriceMatrix): number | null {
     case "couple_2_kids":
       return double != null && thirdKid != null && extra != null ? 2 * double + thirdKid + extra : null;
     case "adult_3_kids":
-      return double != null && thirdKid != null && fourth != null ? 2 * double + thirdKid + fourth : null;
+      return double != null && thirdKid != null && extra != null ? 2 * double + thirdKid + extra : null;
     case "three_adults_kid":
-      return double != null && thirdAdult != null && fourth != null ? 2 * double + thirdAdult + fourth : null;
+      return double != null && thirdAdult != null && extra != null ? 2 * double + thirdAdult + extra : null;
     case "couple_3_kids":
       return double != null && thirdKid != null && extra != null ? 2 * double + thirdKid + 2 * extra : null;
     default:

@@ -870,7 +870,7 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
     patch.set("countries", before.countries, countries, "countries");
     patch.set("seasons", before.seasons, seasons, "seasons");
     patch.set("is_active", before.is_active, input.isActive);
-    // no column: the site lists a tour with no open date only while its waiting list is open
+    // no column: the site lists a tour with no open priced date only while its waiting list is open
     patch.setData("waitlist", data.waitlist === true, input.waitlist);
     patch.set("hero_image", before.hero_image, orNull(input.heroImage), "heroImage");
     patch.set("card_image", before.card_image, orNull(input.cardImage), "cardImage");
