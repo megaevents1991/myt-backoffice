@@ -13,6 +13,7 @@ import {
   cleanRoomKeys,
   followUpDue,
   htmlToText,
+  siteHref,
   isClosedStatus,
   linkMessage,
   packagePathOf,
@@ -191,5 +192,14 @@ assert.equal(
 );
 assert.equal(htmlToText("שורה<br/>שורה"), "שורה\nשורה");
 assert.equal(htmlToText(null), "");
+
+// ---------------------------------------------------------------- a visitor's page path links to OUR site only
+assert.equal(siteHref("https://megafamily.co.il/", "/package/x/?product_id=1"), "https://megafamily.co.il/package/x/?product_id=1");
+assert.equal(siteHref("https://megafamily.co.il", "@evil.example/x"), null, "a userinfo trick never leaves the site");
+assert.equal(siteHref("https://megafamily.co.il", "//evil.example/x"), null);
+assert.equal(siteHref("https://megafamily.co.il", "https://evil.example/"), null);
+assert.equal(siteHref("https://megafamily.co.il", "/\\evil.example"), null);
+assert.equal(siteHref(null, "/x"), null);
+assert.equal(siteHref("https://megafamily.co.il", null), null);
 
 console.log("tours-cases selftest: ok");

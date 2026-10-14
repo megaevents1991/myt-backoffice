@@ -31,6 +31,7 @@ import {
   caseTask,
   followUpDue,
   htmlToText,
+  siteHref,
   isCaseTask,
   sourceLabel,
   waLink,
@@ -144,6 +145,8 @@ export function CasePage({ id }: { id: string }) {
       ? `${data.siteUrl.replace(/\/+$/, "")}${data.pkg.path}${data.departure ? `?product_id=${data.departure.siteId}` : ""}`
       : null;
   const formFields = Object.entries(data.payload).filter(([key]) => !SHOWN_PAYLOAD_KEYS.has(key));
+  // the form's page is what the visitor's browser sent: linked only when it stays on our site
+  const sourceHref = siteHref(data.siteUrl, row.sourcePath);
 
   const save = async (change: CaseChange): Promise<boolean> => {
     setBusy(true);
@@ -403,8 +406,8 @@ export function CasePage({ id }: { id: string }) {
               <Fact label="Form">{LEAD_KIND_LABELS[row.kind] ?? (row.kind === "manual" ? "Entered by staff" : row.kind)}</Fact>
               <Fact label="Sent from">
                 {row.sourcePath &&
-                  (data.siteUrl ? (
-                    <a href={`${data.siteUrl.replace(/\/+$/, "")}${row.sourcePath}`} target="_blank" rel="noreferrer" dir="auto" className="break-all text-primary hover:underline">
+                  (sourceHref ? (
+                    <a href={sourceHref} target="_blank" rel="noreferrer" dir="auto" className="break-all text-primary hover:underline">
                       {readablePath(row.sourcePath)}
                     </a>
                   ) : (

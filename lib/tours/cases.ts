@@ -517,3 +517,20 @@ export function htmlToText(html: string | null | undefined): string {
     .filter(Boolean)
     .join("\n");
 }
+
+/**
+ * A page of the company's own site from a path a VISITOR sent (a form's page,
+ * the landing page): the absolute link when the path is site-relative and the
+ * result stays on the site's origin, else null (print it as text, no link).
+ */
+export function siteHref(siteUrl: string | null | undefined, path: string | null | undefined): string | null {
+  // "/x" only - not "//host" nor "/\host", which a browser reads as another host
+  if (!siteUrl || !path || !/^\/(?![/\\])/.test(path)) return null;
+  try {
+    const base = new URL(siteUrl);
+    const target = new URL(path, base);
+    return target.origin === base.origin ? target.toString() : null;
+  } catch {
+    return null;
+  }
+}
