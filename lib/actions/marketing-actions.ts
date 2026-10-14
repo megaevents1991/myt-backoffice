@@ -6,7 +6,7 @@ import { logAudit } from "@/lib/audit";
 import { mdb, readAll } from "@/lib/services/marketing-db";
 import { attributedReservations } from "@/lib/services/marketing-purchases";
 import { buildPnl, MARKETING_CURRENCIES, type MarketingCurrency, type Pnl } from "@/lib/services/marketing-pnl";
-import { daysBetween, resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
+import { addDays, daysBetween, israelDayStartUtc, resolveWindow, type MarketingWindow } from "@/lib/marketing/range";
 import { parseSource, type SourceFilter } from "@/lib/marketing/order-source";
 import { buildFunnel, type Funnel } from "@/lib/marketing/funnel";
 import { funnelOrders } from "@/lib/services/marketing-funnel";
@@ -108,23 +108,38 @@ export async function getMarketingOverview(q: MarketingQuery): Promise<{ pnl: Pn
 
 /** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "Viral" badge
  *  uses the alert's own threshold without a second action on mount. */
-export async function getInstagramFeed(): Promise<{ media: IgMediaRow[]; followers: { day: string; followers: number }[]; viralPct: number }> {
+/**
+ * Instagram follows the period (spec 2026-10-14 section 8): the newest posts published up to the period's end - the
+ * whole read, so the "Viral" rule still has the 30 posts before each one - with `sinceIso` telling the grid which of
+ * them to show; followers inside the period.
+ */
+export async function getInstagramFeed(q: MarketingQuery): Promise<{ media: IgMediaRow[]; followers: { day: string; followers: number }[]; viralPct: number; sinceIso: string }> {
   await requireAdmin();
+  const { since, until } = resolveWindow(q);
+  const sinceIso = israelDayStartUtc(since);
   const [m, f, settings] = await Promise.all([
-    mdb.from("ig_media").select("*").order("posted_at", { ascending: false }).limit(IG_MEDIA_READ),
-    mdb.from("ig_account_daily").select("day, followers").order("day", { ascending: false }).limit(90),
+    mdb.from("ig_media").select("*").lt("posted_at", israelDayStartUtc(addDays(until, 1))).order("posted_at", { ascending: false }).limit(IG_MEDIA_READ),
+    mdb.from("ig_account_daily").select("day, followers").gte("day", since).lte("day", until).order("day", { ascending: false }).limit(400),
     readSettings(),
   ]);
   if (m.error) throw new Error(`ig_media read: ${m.error.message}`);
   if (f.error) throw new Error(`ig_account_daily read: ${f.error.message}`);
-  return { media: m.data ?? [], followers: [...(f.data ?? [])].reverse(), viralPct: settings.viral_pct };
+  return { media: m.data ?? [], followers: [...(f.data ?? [])].reverse(), viralPct: settings.viral_pct, sinceIso };
 }
 
-export async function getMarketingAlerts(): Promise<MarketingAlertRow[]> {
+/** Alerts first seen inside the period; an open alert is always listed, whenever it started. */
+export async function getMarketingAlerts(q: MarketingQuery): Promise<MarketingAlertRow[]> {
   await requireAdmin();
-  const { data, error } = await mdb.from("marketing_alerts").select("*").order("first_seen_at", { ascending: false }).limit(200);
+  const { since, until } = resolveWindow(q);
+  // Compared as instants: PostgREST prints "+00:00", toISOString "Z" - as strings they do not sort together.
+  const from = Date.parse(israelDayStartUtc(since));
+  const to = Date.parse(israelDayStartUtc(addDays(until, 1)));
+  const { data, error } = await mdb.from("marketing_alerts").select("*").order("first_seen_at", { ascending: false }).limit(500);
   if (error) throw new Error(`marketing_alerts read: ${error.message}`);
-  return data ?? [];
+  return ((data ?? []) as MarketingAlertRow[]).filter((a) => {
+    const seen = Date.parse(a.first_seen_at);
+    return !a.resolved_at || (seen >= from && seen < to);
+  });
 }
 
 export async function getMarketingSettings(): Promise<MarketingSettings> { await requireAdmin(); return readSettings(); }

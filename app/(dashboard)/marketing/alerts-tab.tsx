@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import { getMarketingAlerts } from "@/lib/actions/marketing-actions";
 import { writeUrlParam } from "@/hooks/use-view-state";
 import type { MarketingAlertRow } from "@/types/marketing.types";
@@ -9,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorText } from "./marketing-shared";
+import { useMarketingLoad } from "./marketing-shared";
 
 const KIND_LABEL: Record<MarketingAlertRow["kind"], string> = {
   budget_bleed: "Budget bleed",
@@ -98,33 +96,14 @@ export function AlertsView({ alerts }: { alerts: MarketingAlertRow[] }) {
   return (
     <div className="space-y-4">
       <AlertList title="Open" alerts={alerts.filter((a) => !a.resolved_at)} empty="No open alerts." />
-      <AlertList title="Resolved" alerts={alerts.filter((a) => a.resolved_at)} empty="No alert has been resolved yet." />
+      <AlertList title="Resolved" alerts={alerts.filter((a) => a.resolved_at)} empty="No alert first seen in this period was resolved." />
     </div>
   );
 }
 
 export function AlertsTab() {
-  const [alerts, setAlerts] = useState<MarketingAlertRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        const rows = await getMarketingAlerts();
-        if (!cancelled) setAlerts(rows);
-      } catch (e) {
-        console.error("Error loading the marketing alerts:", e);
-        if (!cancelled) setError(errorText(e));
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const { data, error } = useMarketingLoad(getMarketingAlerts);
   if (error) return <p className="text-sm text-destructive">{error}</p>;
-  if (!alerts) return <Skeleton className="h-48 w-full" />;
-  return <AlertsView alerts={alerts} />;
+  if (!data) return <Skeleton className="h-48 w-full" />;
+  return <AlertsView alerts={data} />;
 }

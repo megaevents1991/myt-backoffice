@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Bookmark, Eye, Heart, ImageOff, MessageCircle, Share2, type LucideIcon } from "lucide-react";
 
 import { useSessionState } from "@/hooks/use-view-state";
@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { errorText } from "./marketing-shared";
+import { useMarketingLoad } from "./marketing-shared";
 
 const SORTS = ["engagement", "reach", "date"] as const;
 type Sort = (typeof SORTS)[number];
@@ -108,7 +108,10 @@ export function InstagramView({ feed }: { feed: Feed }) {
       reach: (m) => m.reach,
       date: byDate,
     };
-    return [...feed.media].sort((a, b) => key[sort](b) - key[sort](a));
+    // The read holds the posts BEFORE the period too (the viral rule needs them); the grid shows the period only.
+    const from = Date.parse(feed.sinceIso);
+    const inPeriod = feed.media.filter((m) => m.posted_at && Date.parse(m.posted_at) >= from);
+    return inPeriod.sort((a, b) => key[sort](b) - key[sort](a));
   }, [feed, sort]);
 
   const followers = feed.followers[feed.followers.length - 1]?.followers ?? null;
@@ -138,7 +141,7 @@ export function InstagramView({ feed }: { feed: Feed }) {
 
       {sorted.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No posts yet. They appear after the first sync.
+          No posts published in this period.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
@@ -152,27 +155,8 @@ export function InstagramView({ feed }: { feed: Feed }) {
 }
 
 export function InstagramTab() {
-  const [feed, setFeed] = useState<Feed | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      try {
-        const result = await getInstagramFeed();
-        if (!cancelled) setFeed(result);
-      } catch (e) {
-        console.error("Error loading the Instagram feed:", e);
-        if (!cancelled) setError(errorText(e));
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const { data, error } = useMarketingLoad(getInstagramFeed);
   if (error) return <p className="text-sm text-destructive">{error}</p>;
-  if (!feed) return <Skeleton className="h-64 w-full" />;
-  return <InstagramView feed={feed} />;
+  if (!data) return <Skeleton className="h-64 w-full" />;
+  return <InstagramView feed={data} />;
 }
