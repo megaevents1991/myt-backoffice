@@ -549,6 +549,8 @@ export interface TermForm {
   /** A world (an audience): its brand name ("מגה פמילי"), its color, a tile picture and a link when it lives on another site. */
   brandName: string;
   color: string;
+  /** The world's second colour, when its logo has two (Mega Family: red and blue): the site's header, footer and dark cards wear it. "" = shades of `color`. */
+  colorDeep: string;
   icon: string;
   externalUrl: string;
   /** A tag that is a sub-category of a world: that audience's slug ("" = none). */

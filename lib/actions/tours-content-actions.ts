@@ -397,6 +397,7 @@ const termSchema = z.object({
   seoTitle: z.string().trim().max(300),
   brandName: z.string().trim().max(120),
   color: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
+  colorDeep: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
   icon: imagePath,
   externalUrl: z.string().trim().max(600).refine((v) => v === "" || /^https?:\/\//i.test(v), "A link to another site starts with https://"),
   worldSlug: z.string().trim().max(200),
@@ -1556,6 +1557,7 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         seoTitle: dataText(data, "seoTitle"),
         brandName: dataText(data, "brandName"),
         color: dataText(data, "color"),
+        colorDeep: dataText(data, "colorDeep"),
         icon: dataText(data, "icon"),
         externalUrl: dataText(data, "externalUrl"),
         worldSlug: dataText(data, "worldSlug"),
@@ -1612,6 +1614,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
     if (before.kind === "audiences") {
       patch.setData("brandName", dataText(stored, "brandName"), input.brandName);
       patch.setData("color", dataText(stored, "color"), input.color);
+      patch.setData("colorDeep", dataText(stored, "colorDeep"), input.colorDeep);
       patch.setData("icon", dataText(stored, "icon"), input.icon);
       patch.setData("externalUrl", dataText(stored, "externalUrl"), input.externalUrl);
       // the key the tours of this world carry; given once, when the audience becomes a world

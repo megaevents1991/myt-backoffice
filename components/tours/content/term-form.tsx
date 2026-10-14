@@ -110,13 +110,14 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
       {isWorld && (
         <Section
           title="World"
-          description="A world with a brand name gets a tile in the Worlds section of the home page, a link in the footer's worlds row and its name in the trail at the top of its tours' pages. While a customer has the world's tile chosen on the home page - and on the world's own page - the site's fresh look wears the world: the header, the buttons and the footer take its color, and the header says its brand name instead of the logo. The color also paints its sub-categories and the cards of its tours."
+          description="A world with a brand name gets a tile in the Worlds section of the home page, a link in the footer's worlds row and its name in the trail at the top of its tours' pages. Once a customer enters the world - its tile on the home page, its own page, one of its tours - the site's fresh look wears the world for the rest of the visit (the tour, the booking steps, the other pages): the header, the buttons and the footer take its colors, and the header says its brand name instead of the logo. The color also paints its sub-categories and the cards of its tours."
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Brand name" hint='As the group names the world, e.g. "מגה פמילי". Empty = a plain audience: no tile, no link in the footer, and the header keeps the logo.'>
               <Input dir="auto" value={form.brandName} onChange={(e) => set("brandName", e.target.value)} />
             </Field>
             <ColorInput label="World color" value={form.color} onChange={(color) => set("color", color)} />
+            <ColorInput label="Second color (header and footer)" value={form.colorDeep} onChange={(color) => set("colorDeep", color)} fallback="#0b5cad" />
             <Field label="Link to another site" hint="For a world that lives on its own site (Mega Events): the tile opens that site. Empty = the world's page on this site.">
               <Input dir="ltr" placeholder="https://www.mega-events.co.il/" value={form.externalUrl} onChange={(e) => set("externalUrl", e.target.value)} />
             </Field>
@@ -130,7 +131,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
             hint="Shown faintly behind the name on the world's tile. Empty = the first hero image."
           />
           <p className="text-xs text-muted-foreground">
-            Any color works as the world&apos;s color: where white text would not read on it, the site darkens it until it does.
+            Any color works as the world&apos;s color: where white text would not read on it, the site darkens it until it does. The second color is for a world whose logo has two (Mega Family: the red of &quot;פמילי&quot; and the blue of &quot;מגה&quot;): the buttons, links and tints take the world color, while the header, the footer, the title card and the dark cards take the second color. Empty = darker shades of the world color.
           </p>
         </Section>
       )}
