@@ -76,6 +76,8 @@ insert into _dry select 'c_after_request', jsonb_build_object(
   'type', (select type from public.leads where phone = '054-000 1111'),
   'status', (select status from public.leads where phone = '054-000 1111'),
   'utm_kept_first', (select utm->>'source' from public.leads where phone = '054-000 1111'),
+  'matched_by', (select payload->>'matched_by' from public.leads where phone = '054-000 1111'),
+  'phone_untouched', (select phone from public.leads where right(regexp_replace(phone, '\\D', '', 'g'), 9) = '540001111'),
   'bookings', (select count(*) from tours.bookings b join public.leads l on l.id = b.lead_id where l.phone = '054-000 1111'));
 
 -- (d) a second booking through the case's link token, from ANOTHER phone: same case
@@ -84,7 +86,8 @@ insert into _dry select 'd_token_booking', tours.booking_create(${C}, 'request',
   ${booking("אחר", "0549999999", { lead_ref: "TESTtoken_0123456789" })}::jsonb);
 insert into _dry select 'e_after_token', jsonb_build_object(
   'cases_for_other_phone', (select count(*) from public.leads where phone = '0549999999'),
-  'bookings_on_case', (select count(*) from tours.bookings b where b.lead_id = (select id from public.leads where phone = '054-000 1111')));
+  'bookings_on_case', (select count(*) from tours.bookings b where b.lead_id = (select id from public.leads where phone = '054-000 1111')),
+  'matched_by', (select payload->>'matched_by' from public.leads where phone = '054-000 1111'));
 
 -- (f) the booking is paid: the case reads paid
 update tours.bookings set status = 'paid' where lead_id = (select id from public.leads where phone = '054-000 1111');
@@ -148,8 +151,10 @@ expect(lines.b_request?.ok === true, "(b) booking_create request ok");
 const c = lines.c_after_request;
 expect(c?.cases === 1 && c.type === "reservation" && c.status === "new" && c.bookings === 1, "(c) one case, reservation, new, 1 booking");
 expect(c?.utm_kept_first === "fb", "(c) the case keeps its first utm");
+expect(c?.matched_by === "contact" && c?.phone_untouched === "054-000 1111", "(c) a contact match writes no contact field");
 expect(lines.d_token_booking?.ok === true, "(d) token booking ok");
 expect(lines.e_after_token?.cases_for_other_phone === 0 && lines.e_after_token?.bookings_on_case === 2, "(e) token attaches to the same case");
+expect(lines.e_after_token?.matched_by === "token", "(e) the token match is recorded");
 expect(lines.f_after_paid?.status === "paid", "(f) paid booking -> case paid");
 expect(lines.g_notify?.type === "potential", "(g) notify -> potential");
 expect(lines.i_spam_cases?.cases === 2 && lines.i_spam_cases?.spam_still_spam === "spam", "(i) spam lead not reused");

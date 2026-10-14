@@ -311,6 +311,7 @@ declare
   v_phone_key text;
   v_payload jsonb;
   v_case uuid;
+  v_match text;
 begin
   if pg_column_size(p_args) > 32000 then
     return jsonb_build_object('ok', false, 'error', 'too_large');
@@ -391,6 +392,9 @@ begin
     select l.id into v_case
       from public.leads l
      where l.company_id = p_company and l.link_token = v_token and l.is_deleted is null;
+    if v_case is not null then
+      v_match := 'token';
+    end if;
   end if;
   if v_case is null then
     select l.id into v_case
@@ -404,21 +408,28 @@ begin
             or (v_email <> '' and lower(l.email) = v_email))
      order by l.created_at desc
      limit 1;
+    if v_case is not null then
+      v_match := 'contact';
+    end if;
   end if;
 
   if v_case is not null then
+    -- The token is a secret the rep sent this customer: the booking may complete the case.
+    -- A phone / e-mail match is only what an anonymous visitor typed: the booking hangs on the
+    -- case and makes it a new reservation, but never writes the case's names, contact or UTM,
+    -- and the case says how it was matched so staff can check the order's own customer.
     update public.leads l
        set type = 'reservation',
            status = v_status,
            departure_id = v_dep_id,
            package_id = coalesce((select d.package_id from tours.departures d where d.id = v_dep_id), l.package_id),
-           first_name = coalesce(nullif(l.first_name, ''), nullif(v_first, '')),
-           last_name = coalesce(nullif(l.last_name, ''), nullif(v_last, '')),
-           name = coalesce(nullif(l.name, ''), v_name),
-           phone = coalesce(nullif(l.phone, ''), v_phone),
-           email = coalesce(nullif(l.email, ''), nullif(v_email, '')),
-           utm = case when l.utm = '{}'::jsonb then v_utm else l.utm end,
-           payload = l.payload || v_payload
+           first_name = case when v_match = 'token' then coalesce(nullif(l.first_name, ''), nullif(v_first, '')) else l.first_name end,
+           last_name = case when v_match = 'token' then coalesce(nullif(l.last_name, ''), nullif(v_last, '')) else l.last_name end,
+           name = case when v_match = 'token' then coalesce(nullif(l.name, ''), v_name) else l.name end,
+           phone = case when v_match = 'token' then coalesce(nullif(l.phone, ''), v_phone) else l.phone end,
+           email = case when v_match = 'token' then coalesce(nullif(l.email, ''), nullif(v_email, '')) else l.email end,
+           utm = case when v_match = 'token' and l.utm = '{}'::jsonb then v_utm else l.utm end,
+           payload = l.payload || v_payload || jsonb_build_object('matched_by', v_match)
      where l.id = v_case;
     v_lead_id := v_case;
   else
