@@ -125,7 +125,7 @@ function MetaPreviewDialog({ ad, onClose }: { ad: AdRow | null; onClose: () => v
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <div className="flex min-h-[420px] justify-center">
+        <div className="flex min-h-[420px] min-w-0 justify-center">
           {state.loading ? (
             <Skeleton className="h-[600px] w-[340px]" />
           ) : state.error ? (
@@ -137,7 +137,7 @@ function MetaPreviewDialog({ ad, onClose }: { ad: AdRow | null; onClose: () => v
               key={state.src}
               src={state.src}
               title={`${ad?.name ?? "Ad"} preview`}
-              className="rounded-md border bg-white"
+              className="max-w-full rounded-md border bg-white"
               style={{ width: story ? 340 : 500, height: story ? 600 : 640 }}
               sandbox="allow-scripts allow-same-origin allow-popups"
               referrerPolicy="no-referrer"
@@ -238,7 +238,9 @@ function GoogleAds({ target }: { target: Extract<Target, { platform: "google" }>
 function CatalogView({ catalog }: { catalog: CatalogStandIn }) {
   const { texts, items } = catalog;
   return (
-    <div className="w-full space-y-3 text-sm">
+    // min-w-0: a flex child grows to its widest row by default - the card row stretched it past the dialog and pushed the
+    // right-aligned Hebrew text off-screen (14.10, 1208px inside a 600px dialog).
+    <div className="w-full min-w-0 space-y-3 text-sm">
       <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
         Catalog ad - Meta picks the products for each viewer, so this is our stand-in: the texts of the ad and the feed
         pictures it draws from. A live preview needs catalog access (guide sent to marketing).
