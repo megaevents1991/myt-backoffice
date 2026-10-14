@@ -415,6 +415,16 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
               folder="packages"
             />
           </Section>
+          <Section>
+            <ImageListEditor
+              label="Destination photos"
+              value={form.destinationPhotos}
+              onChange={(value) => set("destinationPhotos", value)}
+              siteUrl={siteUrl}
+              hint={`Pictures of the places the tour goes to - not of past tours. The tour page shows them under "צילומים מהיעד", these first and then the pictures of the tour's destinations (Categories & Tags > Destinations), up to 9. Empty = the destinations' pictures alone.`}
+              folder="terms"
+            />
+          </Section>
         </TabsContent>
 
         {/* ------------------------------------------------------------ dates */}

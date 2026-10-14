@@ -343,6 +343,7 @@ const packageSchema = z.object({
   heroImage: imagePath,
   cardImage: imagePath,
   gallery: z.array(imagePath).max(300),
+  destinationPhotos: z.array(imagePath).max(60),
   descriptionHtml: htmlText,
   attractions: textList,
   included: textList,
@@ -546,6 +547,7 @@ function toPackageForm(pkg: TourPackage, termIds: string[]): PackageForm {
     heroImage: pkg.hero_image ?? "",
     cardImage: pkg.card_image ?? "",
     gallery: pkg.gallery ?? [],
+    destinationPhotos: asStrings(asObject(pkg.data).destinationPhotos),
     descriptionHtml: pkg.description_html ?? "",
     attractions: pkg.attractions ?? [],
     included: pkg.included ?? [],
@@ -864,6 +866,8 @@ export async function saveTourPackage(id: string, form: PackageForm): Promise<Ac
     patch.set("hero_image", before.hero_image, orNull(input.heroImage), "heroImage");
     patch.set("card_image", before.card_image, orNull(input.cardImage), "cardImage");
     patch.set("gallery", before.gallery, cleanList(input.gallery), "gallery");
+    // no column: the site reads it from `data` (the "צילומים מהיעד" band of the tour page)
+    patch.setData("destinationPhotos", asStrings(data.destinationPhotos), cleanList(input.destinationPhotos));
     patch.set("description_html", before.description_html, orNull(input.descriptionHtml), "descriptionHtml");
     patch.set("attractions", before.attractions, cleanList(input.attractions), "attractions");
     patch.set("included", before.included, cleanList(input.included), "included");

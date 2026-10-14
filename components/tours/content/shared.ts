@@ -171,6 +171,8 @@ export interface PackageForm {
   heroImage: string;
   cardImage: string;
   gallery: string[];
+  /** Pictures of the places the tour goes to (the site's "צילומים מהיעד" band, before the destinations' own pictures). Kept in `data.destinationPhotos`. */
+  destinationPhotos: string[];
   descriptionHtml: string;
   attractions: string[];
   included: string[];
@@ -204,6 +206,7 @@ export const EMPTY_PACKAGE_FORM: PackageForm = {
   heroImage: "",
   cardImage: "",
   gallery: [],
+  destinationPhotos: [],
   descriptionHtml: "",
   attractions: [],
   included: [],
