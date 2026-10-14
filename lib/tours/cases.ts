@@ -534,3 +534,11 @@ export function siteHref(siteUrl: string | null | undefined, path: string | null
     return null;
   }
 }
+
+/** Booking states that mean money taken or on the way: a case holding one is never deleted (it would vanish with it). */
+const LIVE_PAYMENT_STATES = new Set(["pending_payment", "review", "paid"]);
+export const bookingBlocksDelete = (status: string): boolean => LIVE_PAYMENT_STATES.has(status);
+
+/** "Send the confirmation" while ANY paid booking of the case has not had it - not only the newest. */
+export const confirmationPendingOf = (bookings: readonly { status: string; confirmationSentAt: string | null }[]): boolean =>
+  bookings.some((b) => b.status === "paid" && !b.confirmationSentAt);

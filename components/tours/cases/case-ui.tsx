@@ -9,6 +9,7 @@ import { Pencil } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { isFollowUpDate } from "@/lib/reservations/follow-up";
 import {
   CASE_TASK_LABELS,
   CASE_TYPE_LABELS,
@@ -149,5 +150,47 @@ export function RepSelect({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/**
+ * The follow-up day, edited in place. Uncontrolled like the Mega Events
+ * reservations' box: a picked or fully typed day saves at once, an emptied box
+ * saves on blur - a controlled box saved every half-typed day (a year typed digit
+ * by digit read as "0002-10-14"), so a day from before 2000 never saves.
+ */
+export function FollowUpInput({
+  value,
+  due,
+  onSave,
+  className,
+}: {
+  value: string | null;
+  due: boolean;
+  onSave: (next: string | null) => void;
+  className?: string;
+}) {
+  return (
+    <input
+      // remount when the stored day changes elsewhere (a bulk change, a failed save)
+      key={value ?? "none"}
+      type="date"
+      dir="ltr"
+      aria-label="Follow-up day"
+      title={due ? "The follow-up day has come" : "The day to get back to the customer"}
+      defaultValue={value ?? ""}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (isFollowUpDate(next) && next >= "2000-01-01" && next !== value) onSave(next);
+      }}
+      onBlur={(e) => {
+        if (e.target.value === "" && value) onSave(null);
+      }}
+      className={cn(
+        "h-8 w-36 rounded-md border border-input bg-background px-2 text-sm tabular text-foreground",
+        due && "border-destructive font-semibold text-destructive",
+        className,
+      )}
+    />
   );
 }

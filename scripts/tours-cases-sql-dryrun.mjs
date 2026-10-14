@@ -93,6 +93,12 @@ insert into _dry select 'e_after_token', jsonb_build_object(
 update tours.bookings set status = 'paid' where lead_id = (select id from public.leads where phone = '054-000 1111');
 insert into _dry select 'f_after_paid', to_jsonb(x) from (select status from public.leads where phone = '054-000 1111') x;
 
+-- (f2) a payment that lands on a case staff deleted brings the case back
+update tours.bookings set status = 'review' where lead_id = (select id from public.leads where phone = '054-000 1111') and status = 'paid';
+update public.leads set is_deleted = current_date where phone = '054-000 1111';
+update tours.bookings set status = 'paid' where lead_id = (select id from public.leads where phone = '054-000 1111');
+insert into _dry select 'f2_undeleted', to_jsonb(x) from (select status, is_deleted is null as visible from public.leads where phone = '054-000 1111') x;
+
 -- (g) "notify me" opens a potential
 insert into public.leads (company_id, kind, name, phone, payload, source_path)
 values (${C}, 'notify', 'פוטנציאל לבדיקה', '0547777777', '{}'::jsonb, '/destination/x/');
@@ -120,7 +126,8 @@ end
 $dry$;
 `;
 
-const run = await query(`${migration}\n${checks}`, false);
+// an explicit transaction: the RAISE at the end aborts it whatever the API does with several statements
+const run = await query(`begin;\n${migration}\n${checks}`, false);
 const text = (() => { try { const j = JSON.parse(run.body); return typeof j.message === "string" ? j.message : run.body; } catch { return run.body; } })();
 // the error text: "...DRYRUN_RESULT\n<step> = <json>\n...", possibly followed by a CONTEXT line
 const result = /DRYRUN_RESULT([\s\S]*?)(?:\nCONTEXT:|$)/.exec(text)?.[1];
@@ -156,6 +163,7 @@ expect(lines.d_token_booking?.ok === true, "(d) token booking ok");
 expect(lines.e_after_token?.cases_for_other_phone === 0 && lines.e_after_token?.bookings_on_case === 2, "(e) token attaches to the same case");
 expect(lines.e_after_token?.matched_by === "token", "(e) the token match is recorded");
 expect(lines.f_after_paid?.status === "paid", "(f) paid booking -> case paid");
+expect(lines.f2_undeleted?.status === "paid" && lines.f2_undeleted?.visible === true, "(f2) a payment brings a deleted case back");
 expect(lines.g_notify?.type === "potential", "(g) notify -> potential");
 expect(lines.i_spam_cases?.cases === 2 && lines.i_spam_cases?.spam_still_spam === "spam", "(i) spam lead not reused");
 expect(lines.j_helpers?.decoded === "טיול" && lines.j_helpers?.broken === "%E0%A4%A", "(j) url_decode");

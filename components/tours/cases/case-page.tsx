@@ -41,7 +41,7 @@ import {
   type CaseSource,
   type CaseType,
 } from "@/lib/tours/cases";
-import { RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
 import { BookingCard } from "@/components/tours/cases/booking-card";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 
@@ -243,14 +243,7 @@ export function CasePage({ id }: { id: string }) {
           <label className="grid gap-1 text-sm">
             <span className="text-xs text-muted-foreground">Follow-up day</span>
             <div className="flex items-center gap-1">
-              <Input
-                type="date"
-                dir="ltr"
-                value={row.followUpDate ?? ""}
-                disabled={busy}
-                className={cn("h-9", due && "border-destructive font-semibold text-destructive")}
-                onChange={(e) => void save({ followUpDate: e.target.value || null })}
-              />
+              <FollowUpInput value={row.followUpDate} due={due} className="h-9 w-full" onSave={(followUpDate) => void save({ followUpDate })} />
               {row.followUpDate && (
                 <Button variant="ghost" size="sm" disabled={busy} onClick={() => void save({ followUpDate: null })}>
                   Clear

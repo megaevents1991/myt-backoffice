@@ -103,6 +103,9 @@ export function BookingLinkCard({
             onValueChange={(id) => {
               setDepartureId(id);
               setResult(null);
+              // another date sells other rooms: start from its double room, never carry keys it does not sell
+              const next = departures.find((d) => d.id === id);
+              setCounts(next?.rooms.some((r) => r.key === "double_room") ? { double_room: 1 } : {});
             }}
           >
             <SelectTrigger aria-label="Departure">
@@ -120,7 +123,7 @@ export function BookingLinkCard({
           </Select>
 
           {chosen && chosen.rooms.length === 0 && (
-            <p className="text-sm text-muted-foreground">This date has no price table yet - the customer will choose the rooms on the site.</p>
+            <p className="text-sm text-muted-foreground">This date has no price table yet, so the site cannot take a booking for it. Price the date first, or send the tour page.</p>
           )}
           {chosen && chosen.rooms.length > 0 && (
             <div className="space-y-1">
@@ -141,7 +144,7 @@ export function BookingLinkCard({
             </div>
           )}
 
-          <Button className="w-full" onClick={mint} disabled={minting || !chosen || (chosen.rooms.length > 0 && total === 0)}>
+          <Button className="w-full" onClick={mint} disabled={minting || !chosen || chosen.rooms.length === 0 || total === 0}>
             {minting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
             Create link
           </Button>

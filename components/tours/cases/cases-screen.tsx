@@ -31,7 +31,7 @@ import {
   type CasesPage,
   type CaseStatus,
 } from "@/lib/tours/cases";
-import { InRow, NOBODY, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, InRow, NOBODY, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
 
@@ -290,16 +290,7 @@ export function CasesScreen() {
           const due = followUpDue(row.original, statuses, today);
           return (
             <InRow>
-              <Input
-                type="date"
-                dir="ltr"
-                aria-label="Follow-up day"
-                value={row.original.followUpDate ?? ""}
-                disabled={busy === row.original.id}
-                className={cn("h-8 w-36", due && "border-destructive font-semibold text-destructive")}
-                title={due ? "The follow-up day has come" : undefined}
-                onChange={(event) => void save(row.original, { followUpDate: event.target.value || null })}
-              />
+              <FollowUpInput value={row.original.followUpDate} due={due} onSave={(followUpDate) => void save(row.original, { followUpDate })} />
             </InRow>
           );
         },

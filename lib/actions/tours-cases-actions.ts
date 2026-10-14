@@ -35,6 +35,8 @@ import {
   CASE_TASK_LABELS,
   CASE_TYPE_LABELS,
   DEFAULT_STATUSES,
+  bookingBlocksDelete,
+  confirmationPendingOf,
   LINK_ROOMS_MAX,
   bookingLink,
   caseTask,
@@ -116,7 +118,7 @@ type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 interface Enrichment {
   departures: Map<string, { code: string; startDate: string; packageId: string | null; tourName: string | null }>;
   packages: Map<string, string>;
-  bookings: Map<string, { ref: string; status: string; confirmationSentAt: string | null }>;
+  bookings: Map<string, { ref: string; status: string; confirmationPending: boolean }>;
   travelers: Map<string, number>;
 }
 
@@ -195,11 +197,17 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
         .is("is_deleted", null)
         .order("created_at", { ascending: false });
       if (error) throw new Error(`bookings: ${error.message}`);
+      const all = new Map<string, { status: string; confirmationSentAt: string | null }[]>();
       for (const b of data ?? []) {
-        // newest first: the first one seen per case is its newest booking
-        if (b.lead_id && !out.bookings.has(b.lead_id)) {
-          out.bookings.set(b.lead_id, { ref: b.ref, status: b.status, confirmationSentAt: b.confirmation_sent_at });
-        }
+        if (!b.lead_id) continue;
+        // newest first: the first one seen per case is the one the row names
+        if (!out.bookings.has(b.lead_id)) out.bookings.set(b.lead_id, { ref: b.ref, status: b.status, confirmationPending: false });
+        all.set(b.lead_id, [...(all.get(b.lead_id) ?? []), { status: b.status, confirmationSentAt: b.confirmation_sent_at }]);
+      }
+      // "send the confirmation" while ANY paid booking of the case waits for it, not only the newest
+      for (const [leadId, list] of all) {
+        const row = out.bookings.get(leadId);
+        if (row) row.confirmationPending = confirmationPendingOf(list);
       }
     }
   };
@@ -255,7 +263,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment): CaseRow {
     taskOverride: r.task_override,
     bookingRef: booking?.ref ?? null,
     bookingStatus: booking?.status ?? null,
-    confirmationPending: booking?.status === "paid" && !booking.confirmationSentAt,
+    confirmationPending: booking?.confirmationPending ?? false,
     travelers: x.travelers.get(r.id) ?? 0,
   };
 }
@@ -516,7 +524,8 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
       if (!Number.isInteger(travelers) || travelers < 1 || travelers > MAX_TRAVELERS) throw new UserError(TRAVELERS_RULE);
     }
     const reps = await repsOf(company);
-    let assignedTo = input.assignedTo ?? (reps.some((p) => p.id === session.sub) ? session.sub : null);
+    // "Unassigned" (null) is a choice; only a field left out defaults to whoever creates the case
+    let assignedTo = input.assignedTo !== undefined ? input.assignedTo : reps.some((p) => p.id === session.sub) ? session.sub : null;
     if (assignedTo && !reps.some((p) => p.id === assignedTo)) assignedTo = null;
 
     const { data: created, error } = await supabaseTyped
@@ -582,16 +591,16 @@ export async function deleteCase(id: string): Promise<ActionResult> {
   try {
     const { company } = await requireCompany("tours");
     const before = await caseRecord(company, id);
-    const { data: paid, error: paidError } = await toursDb()
+    const { data: bookings, error: bookingsError } = await toursDb()
       .from("bookings")
-      .select("ref")
+      .select("ref, status")
       .eq("company_id", company.id)
       .eq("lead_id", id)
-      .eq("status", "paid")
-      .is("is_deleted", null)
-      .limit(1);
-    if (paidError) throw new Error(`bookings: ${paidError.message}`);
-    if (paid && paid.length) throw new UserError(`Booking ${paid[0].ref} on this case is paid - cancel it instead of deleting the case.`);
+      .is("is_deleted", null);
+    if (bookingsError) throw new Error(`bookings: ${bookingsError.message}`);
+    // money taken or on the way: the booking would vanish with the case
+    const live = (bookings ?? []).find((b) => bookingBlocksDelete(b.status));
+    if (live) throw new UserError(`Booking ${live.ref} on this case is ${live.status === "paid" ? "paid" : live.status === "review" ? "waiting for a payment check" : "at the payment page"} - set the booking Cancelled (or Done) instead of deleting the case.`);
     const { error } = await supabaseTyped
       .from("leads")
       .update({ is_deleted: todayIso() })
@@ -903,8 +912,9 @@ export async function mintBookingLink(caseId: string, input: { departureId: stri
     const [departure] = await linkDepartures(company, input.departureId);
     if (!departure) throw new UserError("This departure is not open on the site (unpublished, past, sold out or closed).");
     const rooms = cleanRoomKeys(Array.isArray(input.rooms) ? input.rooms : [], departure.rooms.map((r) => r.key));
-    // a date with no price table yet: the link opens the date and the customer picks the rooms on the site
-    if (rooms.length === 0 && departure.rooms.length > 0) throw new UserError("Choose at least one room this date sells.");
+    // a date with no price table cannot be booked on the site - its page only takes a lead form
+    if (departure.rooms.length === 0) throw new UserError("This date has no price table yet, so the site cannot take a booking for it. Price the date first, or send the tour page.");
+    if (rooms.length === 0) throw new UserError("Choose at least one room this date sells.");
     if ((input.rooms ?? []).length > LINK_ROOMS_MAX) throw new UserError(`A booking holds up to ${LINK_ROOMS_MAX} rooms.`);
 
     const token = record.link_token ?? randomBytes(24).toString("base64url");

@@ -7,10 +7,12 @@
 import assert from "node:assert/strict";
 import {
   DEFAULT_STATUSES,
+  bookingBlocksDelete,
   bookingLink,
   caseMatches,
   caseTask,
   cleanRoomKeys,
+  confirmationPendingOf,
   followUpDue,
   htmlToText,
   siteHref,
@@ -201,5 +203,17 @@ assert.equal(siteHref("https://megafamily.co.il", "https://evil.example/"), null
 assert.equal(siteHref("https://megafamily.co.il", "/\\evil.example"), null);
 assert.equal(siteHref(null, "/x"), null);
 assert.equal(siteHref("https://megafamily.co.il", null), null);
+
+// ---------------------------------------------------------------- a case whose money is taken or on the way is never deleted
+assert.equal(bookingBlocksDelete("paid"), true);
+assert.equal(bookingBlocksDelete("review"), true, "a charge to check");
+assert.equal(bookingBlocksDelete("pending_payment"), true, "the customer may be paying right now");
+assert.equal(bookingBlocksDelete("new"), false, "a request with no payment");
+assert.equal(bookingBlocksDelete("failed"), false);
+assert.equal(bookingBlocksDelete("cancelled"), false);
+// ---------------------------------------------------------------- "send the confirmation" looks at every booking of the case
+assert.equal(confirmationPendingOf([{ status: "new", confirmationSentAt: null }, { status: "paid", confirmationSentAt: null }]), true, "an older paid booking still waits");
+assert.equal(confirmationPendingOf([{ status: "paid", confirmationSentAt: "2026-10-14T10:00:00Z" }]), false);
+assert.equal(confirmationPendingOf([]), false);
 
 console.log("tours-cases selftest: ok");

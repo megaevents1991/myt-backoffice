@@ -263,7 +263,11 @@ begin
     when 'paid' then 'paid'
   end;
   if v_status is not null then
-    update public.leads set status = v_status where id = new.lead_id and company_id = new.company_id;
+    -- money arrived or needs a check on a case staff deleted: it comes back, or nobody would see it
+    update public.leads
+       set status = v_status,
+           is_deleted = case when v_status in ('paid', 'payment_review') then null else is_deleted end
+     where id = new.lead_id and company_id = new.company_id;
   end if;
   return new;
 end
@@ -537,5 +541,11 @@ revoke all on function tours.booking_finish_payment(uuid, jsonb) from public;
 revoke all on function public.clean_utm(jsonb) from public;
 revoke all on function public.url_decode(text) from public;
 revoke all on function public.lead_status_closed(uuid, text) from public;
+-- Supabase grants new functions to anon / authenticated by default: none of these is theirs to call
+revoke execute on function public.clean_utm(jsonb) from anon, authenticated;
+revoke execute on function public.url_decode(text) from anon, authenticated;
+revoke execute on function public.lead_status_closed(uuid, text) from anon, authenticated;
+revoke execute on function public.leads_fill() from anon, authenticated;
+revoke execute on function tours.bookings_status_to_case() from anon, authenticated;
 grant execute on function public.clean_utm(jsonb) to service_role;
 grant execute on function public.lead_status_closed(uuid, text) to service_role;

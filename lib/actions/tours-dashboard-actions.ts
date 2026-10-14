@@ -153,6 +153,9 @@ export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>>
             .from("leads")
             .select("id, kind, source_path, created_at")
             .eq("company_id", company.id)
+            // site leads only: not a deleted case, not one staff typed in
+            .is("is_deleted", null)
+            .neq("kind", "manual")
             // a day early: just after midnight in Israel it is still the day before in UTC.
             // The rows are cut to Israel days below.
             .gte("created_at", addDays(last30, -1))
@@ -164,6 +167,9 @@ export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>>
         .from("leads")
         .select("id", { count: "exact", head: true })
         .eq("company_id", company.id)
+        // the leads waiting for a first reply (the card opens the Leads view of Reservations)
+        .is("is_deleted", null)
+        .eq("type", "lead")
         .eq("status", "new"),
     ]);
     for (const [where, res] of [
@@ -260,6 +266,8 @@ export async function getToursLeadsSeries(range: TrendRange): Promise<TrendPoint
         .from("leads")
         .select("id, created_at")
         .eq("company_id", company.id)
+        .is("is_deleted", null)
+        .neq("kind", "manual")
         .gte("created_at", start.toISOString())
         .lt("created_at", end.toISOString())
         .order("created_at", { ascending: true })
