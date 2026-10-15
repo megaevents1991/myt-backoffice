@@ -238,6 +238,12 @@ assert.equal(feedDateLabel("2027-01-05T23:30:00+00:00"), "05/01/27", "the stored
 assert.equal(feedDateLabel("not a date"), null);
 assert.equal(feedCategory({ type: "tx_event", name: "מונדיאל 2026: ארגנטינה" }), "sports");
 assert.equal(feedCategory({ type: "tx_event", name: "קולדפליי" }), "music");
+// a TixStock fixture is sport (16.10: every match of the hot row came out "music")
+assert.equal(feedCategory({ type: "tx_event", name: "ווסטהאם יונייטד - סאוטהמפטון" }), "sports");
+assert.equal(feedCategory({ type: "tx_event", name: "ליגת האלופות: א.א.ק אתונה - א.ס רומא" }), "sports");
+assert.equal(feedCategory({ type: "tx_event", name: "Real Madrid vs Barcelona" }), "sports");
+assert.equal(feedCategory({ type: "tx_event", name: "ג'יי-זי" }), "music");
+assert.equal(feedCategory({ type: "tx_event", name: "קולדפליי: מיוזיק אוף דה ספירס" }), "music");
 assert.equal(feedCategory({ type: "something_new", name: "x" }), "other");
 
 /* change detection: jsonb hands the keys back in its own order; the stamp is not part of the list */

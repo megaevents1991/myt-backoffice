@@ -229,12 +229,25 @@ export function fallbackPool<T extends FeedOrderRow>(listed: T[], soldOut: (e: T
 const SPORTS_TYPES = new Set(["sports_event", "sports_event_dynamic", "sports_live_event_dynamic"]);
 const MUSIC_TYPES = new Set(["music_event", "music_live_event_dynamic"]);
 
-/** sports / music by event type; a TixStock event is music unless it is the World Cup (myt-main rows.ts isMusic). */
+/**
+ * A TixStock event named like a fixture: "ווסטהאם יונייטד - סאוטהמפטון", "A vs B", "ליגת האלופות: A - B". A concert
+ * name has no spaced dash ("ג'יי-זי" keeps its dash unspaced), and a colon alone ("קולדפליי: סיבוב") says nothing.
+ */
+const FIXTURE_NAME = /\s[-–]\s|\svs\.?\s/i;
+
+/**
+ * sports / music by event type; a TixStock event is music unless it is the World Cup (myt-main rows.ts isMusic) or
+ * is named like a fixture - Mega Family's "ספורט" pill listed no football at all until 16.10 (every match of the
+ * hot row is a tx_event).
+ */
 export function feedCategory(e: Pick<FeedEventRow, "type" | "name">): EventsFeedCategory {
   const type = e.type ?? "";
   if (SPORTS_TYPES.has(type)) return "sports";
   if (MUSIC_TYPES.has(type)) return "music";
-  if (type === "tx_event") return (e.name ?? "").startsWith("מונדיאל 2026") ? "sports" : "music";
+  if (type === "tx_event") {
+    const name = e.name ?? "";
+    return name.startsWith("מונדיאל 2026") || FIXTURE_NAME.test(name) ? "sports" : "music";
+  }
   return "other";
 }
 
