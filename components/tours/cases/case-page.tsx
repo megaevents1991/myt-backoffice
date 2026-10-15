@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ExternalLink, Gift, Loader2, MessageCircle, PlusCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Gift, Loader2, MessageCircle, PlusCircle, Trash2, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -20,6 +20,7 @@ import { Fact, FactList, LoadError, Notice, Section } from "@/components/tours/u
 import { readablePath } from "@/components/tours/content/shared";
 import { ReservationDialog } from "@/components/tours/reservations/reservation-dialog";
 import { ToursReservationsTable } from "@/components/tours/reservations/reservations-table";
+import type { ReservationPrefill } from "@/components/tours/reservations/types";
 import {
   CASE_SOURCES,
   CASE_SOURCE_LABELS,
@@ -33,6 +34,8 @@ import {
   htmlToText,
   siteHref,
   isCaseTask,
+  seatBookingOf,
+  seatGap,
   sourceLabel,
   waLink,
   type CaseChange,
@@ -117,7 +120,9 @@ export function CasePage({ id }: { id: string }) {
   const { data, error, loading, reload, setData } = useActionData<CaseDetail>(() => getCase(id), [id]);
   const [busy, setBusy] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
-  const [addingTravelers, setAddingTravelers] = useState(false);
+  const [travelersOpen, setTravelersOpen] = useState(false);
+  // set when the dialog opens, so it keeps one prefill while it is open
+  const [travelersPrefill, setTravelersPrefill] = useState<ReservationPrefill | null>(null);
   const today = todayIso();
 
   if (!data) {
@@ -142,6 +147,9 @@ export function CasePage({ id }: { id: string }) {
   const whatsapp = waLink(row.phone, `היי ${row.firstName ?? ""}`.trim());
   // bookings add, cancellations give back - the net is what the departure counts
   const seatsHeld = data.sales.reduce((sum, s) => sum + s.pax, 0);
+  // a settled deal whose travelers hold no seat: a request closed by phone adds none by itself (case #1004)
+  const gap = seatGap(row.status, statuses, data.bookings.map(seatBookingOf), data.sales);
+  const gapBooking = gap ? data.bookings.find((b) => b.ref === gap.ref) : undefined;
   const siteLink =
     data.siteUrl && data.pkg
       ? `${data.siteUrl.replace(/\/+$/, "")}${data.pkg.path}${data.departure ? `?product_id=${data.departure.siteId}` : ""}`
@@ -156,6 +164,18 @@ export function CasePage({ id }: { id: string }) {
     setBusy(false);
     if (result.success) setData((current) => current && { ...current, row: result.data });
     return result.success;
+  };
+
+  const addTravelers = (extra: ReservationPrefill = {}) => {
+    setTravelersPrefill({
+      leadId: row.id,
+      customerName: name,
+      customerPhone: row.phone,
+      customerEmail: row.email,
+      siteId: data.departure?.siteId ?? null,
+      ...extra,
+    });
+    setTravelersOpen(true);
   };
 
   const remove = async () => {
@@ -297,6 +317,37 @@ export function CasePage({ id }: { id: string }) {
             )}
           </Section>
 
+          {gap && (
+            <Notice tone="warning" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <TriangleAlert className="h-4 w-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">
+                  {gap.missing === 1 ? "1 traveler" : `${gap.missing} travelers`} of booking {gap.ref}{" "}
+                  {gap.missing === 1 ? "is" : "are"} not on the departure
+                  {gapBooking?.departureCode ? ` (${gapBooking.departureCode})` : ""}
+                </p>
+                <p className="text-xs opacity-90">
+                  The deal is closed, but its seats were never held - the departure still sells these places. Only a card payment adds seats by
+                  itself; a booking closed by phone needs them added here.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() =>
+                  addTravelers({
+                    departureId: gap.departureId,
+                    siteId: gapBooking?.siteId ?? null,
+                    travelers: gap.missing,
+                    note: `Online booking ${gap.ref}`,
+                  })
+                }
+              >
+                <PlusCircle className="h-4 w-4" />
+                {gap.missing === 1 ? "Hold 1 seat" : `Hold ${gap.missing} seats`}
+              </Button>
+            </Notice>
+          )}
+
           {/* closed by default (Dor 15.10): the seats count by themselves - a paid booking adds them - so the
               ledger is there for whoever needs it, not in every rep's way */}
           <Collapsible asChild>
@@ -312,7 +363,7 @@ export function CasePage({ id }: { id: string }) {
                     Travelers this customer holds on a departure - a paid booking adds them by itself, a cancellation gives them back. Add travelers by
                     hand for a phone or office booking.
                   </p>
-                  <Button size="sm" onClick={() => setAddingTravelers(true)}>
+                  <Button size="sm" onClick={() => addTravelers()}>
                     <PlusCircle className="h-4 w-4" />
                     Add travelers
                   </Button>
@@ -477,15 +528,9 @@ export function CasePage({ id }: { id: string }) {
       </div>
 
       <ReservationDialog
-        open={addingTravelers}
-        onOpenChange={setAddingTravelers}
-        prefill={{
-          leadId: row.id,
-          customerName: name,
-          customerPhone: row.phone,
-          customerEmail: row.email,
-          siteId: data.departure?.siteId ?? null,
-        }}
+        open={travelersOpen}
+        onOpenChange={setTravelersOpen}
+        prefill={travelersPrefill ?? undefined}
         onCreated={() => void reload({ quiet: true })}
       />
     </div>

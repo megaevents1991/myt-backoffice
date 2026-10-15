@@ -403,6 +403,8 @@ export interface CaseRow {
   confirmationPending: boolean;
   /** Travelers on the departure's seats (the sum of the case's sales rows). */
   travelers: number;
+  /** Travelers of a settled booking that hold no seat (seatGap); 0 = nothing owed. */
+  seatsMissing: number;
 }
 
 export const caseName = (row: Pick<CaseRow, "firstName" | "lastName">): string =>
@@ -571,3 +573,77 @@ export const bookingBlocksDelete = (status: string): boolean => LIVE_PAYMENT_STA
 /** "Send the confirmation" while ANY paid booking of the case has not had it - not only the newest. */
 export const confirmationPendingOf = (bookings: readonly { status: string; confirmationSentAt: string | null }[]): boolean =>
   bookings.some((b) => b.status === "paid" && !b.confirmationSentAt);
+
+// ---------------------------------------------------------------- seats a settled deal still owes
+/**
+ * Seats are put on the departure by a card payment (or "Check payment" -> Paid) only. A request
+ * closed by phone needs "Add travelers" by hand - forget it and the case reads paid while the
+ * departure still sells those places (prod case #1004, 15.10). These rules say when that happened.
+ */
+export interface SeatBooking {
+  ref: string;
+  status: string;
+  departureId: string;
+  travelers: number;
+}
+/** One row of the case's seat ledger: +travelers booked, -travelers given back. */
+export interface SeatHold {
+  departureId: string;
+  pax: number;
+}
+/** The booking whose travelers are not all on the departure, and how many are missing. */
+export interface SeatGap {
+  ref: string;
+  departureId: string;
+  travelers: number;
+  missing: number;
+}
+
+/** A booking's travelers = adults + children; seniors are adults with a discount (SQL: b.adults + b.children). */
+export const seatBookingOf = (b: { ref: string; status: string; departureId: string; adults: number; children: number }): SeatBooking => ({
+  ref: b.ref,
+  status: b.status,
+  departureId: b.departureId,
+  travelers: b.adults + b.children,
+});
+
+/** The deal is closed: the case says so, or one of its bookings does. */
+const SETTLED = new Set(["paid", "done"]);
+
+/**
+ * The seats a settled deal still owes the departure, or null. Settled = a booking Done or Paid; or
+ * the case Paid / Done, which then owes its newest booking. A cancelled booking owes nothing, nor a
+ * case in a closed status other than Done (cancelled, not relevant, spam, a closed status of the
+ * company's own). Per departure the biggest booking counts - a request and a card payment for the
+ * same trip are one party. Seats held on ANY departure count, so a customer moved to another date
+ * is not short; the departure furthest short is the one named. `bookings` newest first.
+ */
+export function seatGap(
+  status: string,
+  statuses: readonly CaseStatus[],
+  bookings: readonly SeatBooking[],
+  sales: readonly SeatHold[],
+): SeatGap | null {
+  if (status !== "done" && isClosedStatus(status, statuses)) return null;
+  const live = bookings.filter((b) => b.status !== "cancelled" && b.travelers > 0);
+  let owed = live.filter((b) => SETTLED.has(b.status));
+  if (owed.length === 0 && SETTLED.has(status)) owed = live.slice(0, 1);
+  if (owed.length === 0) return null;
+  const byDeparture = new Map<string, SeatBooking>();
+  for (const b of owed) {
+    const current = byDeparture.get(b.departureId);
+    if (!current || b.travelers > current.travelers) byDeparture.set(b.departureId, b);
+  }
+  const heldOn = (departureId: string) => sales.reduce((sum, s) => (s.departureId === departureId ? sum + s.pax : sum), 0);
+  const expected = [...byDeparture.values()].reduce((sum, b) => sum + b.travelers, 0);
+  const short = expected - sales.reduce((sum, s) => sum + s.pax, 0);
+  if (short <= 0) return null;
+  let worst: { booking: SeatBooking; gap: number } | null = null;
+  for (const booking of byDeparture.values()) {
+    const gap = booking.travelers - heldOn(booking.departureId);
+    if (!worst || gap > worst.gap) worst = { booking, gap };
+  }
+  if (!worst) return null;
+  const { booking, gap } = worst;
+  return { ref: booking.ref, departureId: booking.departureId, travelers: booking.travelers, missing: gap > 0 ? Math.min(short, gap) : short };
+}

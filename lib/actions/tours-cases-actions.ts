@@ -47,6 +47,8 @@ import {
   isStatusColor,
   linkMessage,
   packagePathOf,
+  seatBookingOf,
+  seatGap,
   sourceLabel,
   splitName,
   statusOf,
@@ -60,6 +62,8 @@ import {
   type CaseRow,
   type CasesPage,
   type CaseStatus,
+  type SeatBooking,
+  type SeatHold,
   type LinkDeparture,
   type NewCaseInput,
   type StatusDraft,
@@ -120,6 +124,9 @@ interface Enrichment {
   packages: Map<string, string>;
   bookings: Map<string, { ref: string; status: string; confirmationPending: boolean }>;
   travelers: Map<string, number>;
+  /** Every booking of the case, newest first, and its seat ledger - what seatGap reads. */
+  seatBookings: Map<string, SeatBooking[]>;
+  seatHolds: Map<string, SeatHold[]>;
 }
 
 const clean = (value: string | null | undefined, max: number): string | null => {
@@ -159,7 +166,14 @@ async function repsOf(company: Company): Promise<CaseRep[]> {
 async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichment> {
   const departureIds = [...new Set(records.map((r) => r.departure_id).filter((v): v is string => !!v))];
   const caseIds = records.map((r) => r.id);
-  const out: Enrichment = { departures: new Map(), packages: new Map(), bookings: new Map(), travelers: new Map() };
+  const out: Enrichment = {
+    departures: new Map(),
+    packages: new Map(),
+    bookings: new Map(),
+    travelers: new Map(),
+    seatBookings: new Map(),
+    seatHolds: new Map(),
+  };
 
   const readDepartures = async () => {
     for (const part of chunk(departureIds, IN_CHUNK)) {
@@ -191,7 +205,7 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     for (const part of chunk(caseIds, IN_CHUNK)) {
       const { data, error } = await toursDb()
         .from("bookings")
-        .select("lead_id, ref, status, confirmation_sent_at, created_at")
+        .select("lead_id, ref, status, confirmation_sent_at, created_at, departure_id, adults, children")
         .eq("company_id", companyId)
         .in("lead_id", part)
         .is("is_deleted", null)
@@ -203,6 +217,8 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
         // newest first: the first one seen per case is the one the row names
         if (!out.bookings.has(b.lead_id)) out.bookings.set(b.lead_id, { ref: b.ref, status: b.status, confirmationPending: false });
         all.set(b.lead_id, [...(all.get(b.lead_id) ?? []), { status: b.status, confirmationSentAt: b.confirmation_sent_at }]);
+        const seat = seatBookingOf({ ref: b.ref, status: b.status, departureId: b.departure_id, adults: b.adults, children: b.children });
+        out.seatBookings.set(b.lead_id, [...(out.seatBookings.get(b.lead_id) ?? []), seat]);
       }
       // "send the confirmation" while ANY paid booking of the case waits for it, not only the newest
       for (const [leadId, list] of all) {
@@ -215,13 +231,15 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     for (const part of chunk(caseIds, IN_CHUNK)) {
       const { data, error } = await toursDb()
         .from("departure_sales_entries")
-        .select("lead_id, pax")
+        .select("lead_id, pax, departure_id")
         .eq("company_id", companyId)
         .in("lead_id", part)
         .is("is_deleted", null);
       if (error) throw new Error(`departure_sales_entries: ${error.message}`);
       for (const e of data ?? []) {
-        if (e.lead_id) out.travelers.set(e.lead_id, (out.travelers.get(e.lead_id) ?? 0) + e.pax);
+        if (!e.lead_id) continue;
+        out.travelers.set(e.lead_id, (out.travelers.get(e.lead_id) ?? 0) + e.pax);
+        out.seatHolds.set(e.lead_id, [...(out.seatHolds.get(e.lead_id) ?? []), { departureId: e.departure_id, pax: e.pax }]);
       }
     }
   };
@@ -229,7 +247,7 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
   return out;
 }
 
-function toCaseRow(r: CaseRecord, x: Enrichment): CaseRow {
+function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]): CaseRow {
   const departure = r.departure_id ? x.departures.get(r.departure_id) : undefined;
   const booking = x.bookings.get(r.id);
   // a row written before the case columns existed may carry only `name`
@@ -265,6 +283,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment): CaseRow {
     bookingStatus: booking?.status ?? null,
     confirmationPending: booking?.confirmationPending ?? false,
     travelers: x.travelers.get(r.id) ?? 0,
+    seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
   };
 }
 
@@ -285,7 +304,8 @@ async function caseRecord(company: Company, id: string): Promise<CaseRecord> {
 
 async function freshRow(company: Company, id: string): Promise<CaseRow> {
   const record = await caseRecord(company, id);
-  return toCaseRow(record, await enrich(company.id, [record]));
+  const [x, statuses] = await Promise.all([enrich(company.id, [record]), statusesOf(company)]);
+  return toCaseRow(record, x, statuses);
 }
 
 /** A departure of the company that a case may point at. */
@@ -326,7 +346,7 @@ export async function listCases(): Promise<ActionResult<CasesPage>> {
     if (page.error) throw new Error(`leads: ${page.error.message}`);
     const x = await enrich(company.id, page.rows);
     return actionOk({
-      rows: page.rows.map((r) => toCaseRow(r, x)),
+      rows: page.rows.map((r) => toCaseRow(r, x, statuses)),
       truncated: page.truncated,
       statuses,
       reps,
@@ -774,7 +794,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     if (giftsAnswer.error) throw new Error(`promotions: ${giftsAnswer.error.message}`);
     const pkg = pkgAnswer.data as { id: string; name: string; slug: string; data: unknown; cancellation_html: string | null } | null;
     const repNames = new Map(reps.map((p) => [p.id, p.name]));
-    const row = toCaseRow(record, x);
+    const row = toCaseRow(record, x, statuses);
 
     const sales: ToursReservationRow[] = seats.map((s) => {
       const d = seatDepartures.get(s.departure_id);
@@ -1003,7 +1023,7 @@ export async function exportCases(ids: string[]): Promise<ActionResult<{ fileNam
       { header: "UTM", key: "utm", width: 30 },
     ];
     for (const record of records) {
-      const row = toCaseRow(record, x);
+      const row = toCaseRow(record, x, statuses);
       const task = caseTask(row, statuses, today);
       sheet.addRow({
         caseNo: row.caseNo,

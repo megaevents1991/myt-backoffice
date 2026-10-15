@@ -93,7 +93,7 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
     if (!open) return;
     setDepartureId(departure?.id ?? "");
     setKind("booking");
-    setTravelers("1");
+    setTravelers(String(prefill?.travelers ?? 1));
     setCustomerName(prefill?.customerName ?? "");
     setCustomerPhone(prefill?.customerPhone ?? "");
     setCustomerEmail(prefill?.customerEmail ?? "");
@@ -102,12 +102,14 @@ export function ReservationDialog({ open, onOpenChange, departure, prefill, onCr
     setError(null);
   }, [open, departure?.id, prefill]);
 
-  // A lead sent from a departure's page picks that departure once the list is in.
+  // A booking's own departure, or the one a lead was sent from, is picked once the list is in.
   useEffect(() => {
-    if (!open || locked || !prefill?.siteId) return;
-    const fromLead = departures?.find((d) => d.siteId === prefill.siteId);
+    if (!open || locked || (!prefill?.departureId && !prefill?.siteId)) return;
+    const fromLead =
+      departures?.find((d) => d.id === prefill.departureId) ??
+      (prefill.siteId ? departures?.find((d) => d.siteId === prefill.siteId) : undefined);
     if (fromLead) setDepartureId(fromLead.id);
-  }, [open, locked, departures, prefill?.siteId]);
+  }, [open, locked, departures, prefill?.departureId, prefill?.siteId]);
 
   const chosen = useMemo(
     () => (departure ? departure : departures?.find((d) => d.id === departureId)),

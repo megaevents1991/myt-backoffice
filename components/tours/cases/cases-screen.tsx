@@ -22,7 +22,7 @@ import { downloadBase64 } from "@/lib/download";
 import { followUpLabel } from "@/lib/reservations/follow-up";
 import { EMPTY, fmtDate, fmtInstant, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, deleteCase, exportCases, listCases, updateCase } from "@/lib/actions/tours-cases-actions";
-import { LoadError } from "@/components/tours/ui";
+import { Chip, LoadError } from "@/components/tours/ui";
 import {
   CASE_TASK_LABELS,
   caseMatches,
@@ -361,18 +361,28 @@ export function CasesScreen() {
       {
         accessorKey: "departureDate",
         header: ({ column }) => <SortableHeader label="Departure" column={column} />,
-        cell: ({ row }) =>
-          row.original.departureDate ? (
+        cell: ({ row }) => {
+          const { departureDate, departureCode, travelers, seatsMissing } = row.original;
+          // a closed booking whose travelers hold no seat (seatGap) - the departure still sells them
+          const short =
+            seatsMissing > 0 ? (
+              <Chip tone="warning" className="mt-0.5" title="A closed booking's travelers hold no seat on the departure - open the case and hold them.">
+                {travelers > 0 ? `${seatsMissing} without a seat` : "No seats"}
+              </Chip>
+            ) : null;
+          return departureDate ? (
             <div className="whitespace-nowrap tabular">
-              {fmtDate(row.original.departureDate)}
+              {fmtDate(departureDate)}
               <span className="block text-xs text-muted-foreground">
-                {row.original.departureCode}
-                {row.original.travelers > 0 && ` · ${row.original.travelers} seats`}
+                {departureCode}
+                {travelers > 0 && ` · ${travelers} seats`}
               </span>
+              {short}
             </div>
           ) : (
-            EMPTY
-          ),
+            (short ?? EMPTY)
+          );
+        },
       },
       { accessorKey: "type", header: ({ column }) => <SortableHeader label="Type" column={column} />, cell: ({ row }) => <TypeBadge type={row.original.type} /> },
       {

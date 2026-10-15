@@ -59,4 +59,8 @@ export interface ReservationPrefill {
   note?: string | null;
   /** The site id of the departure the lead was sent from (?product_id=). */
   siteId?: number | null;
+  /** A departure to pick outright (beats `siteId`) - a booking's own. */
+  departureId?: string | null;
+  /** Travelers to start with (else 1). */
+  travelers?: number | null;
 }

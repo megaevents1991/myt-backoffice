@@ -24,6 +24,8 @@ import {
   phoneKey,
   sameCustomer,
   productIdOf,
+  seatBookingOf,
+  seatGap,
   sourceLabel,
   splitName,
   typeOfKind,
@@ -32,6 +34,8 @@ import {
   whatsappPhone,
   type CaseRow,
   type CaseStatus,
+  type SeatBooking,
+  type SeatGap,
   type TaskFacts,
 } from "../lib/tours/cases";
 
@@ -231,5 +235,41 @@ assert.equal(bookingBlocksDelete("cancelled"), false);
 assert.equal(confirmationPendingOf([{ status: "new", confirmationSentAt: null }, { status: "paid", confirmationSentAt: null }]), true, "an older paid booking still waits");
 assert.equal(confirmationPendingOf([{ status: "paid", confirmationSentAt: "2026-10-14T10:00:00Z" }]), false);
 assert.equal(confirmationPendingOf([]), false);
+
+// ---------------------------------------------------------------- seats a settled booking still owes the departure
+// a booking's travelers: seniors are adults with a discount, never extra people
+const withSenior = { ref: "T1", status: "done", departureId: "dep-a", adults: 3, children: 2, seniors: 1 };
+assert.deepEqual(seatBookingOf(withSenior), {
+  ref: "T1",
+  status: "done",
+  departureId: "dep-a",
+  travelers: 5,
+});
+const bk = (over: Partial<SeatBooking> = {}): SeatBooking => ({ ref: "T10026", status: "done", departureId: "dep-a", travelers: 4, ...over });
+const missingOf = (gap: SeatGap | null) => gap?.missing ?? 0;
+// prod case #1004: a request closed by phone - booking Done, case paid, nothing on the departure
+assert.deepEqual(seatGap("paid", S, [bk()], []), { ref: "T10026", departureId: "dep-a", travelers: 4, missing: 4 });
+assert.equal(seatGap("paid", S, [bk()], [{ departureId: "dep-a", pax: 4 }]), null, "every traveler holds a seat");
+assert.equal(missingOf(seatGap("in_progress", S, [bk()], [{ departureId: "dep-a", pax: 1 }])), 3, "a Done booking alone is enough");
+assert.equal(missingOf(seatGap("new", S, [bk({ status: "paid" })], [])), 4, "a paid booking whose seats are gone");
+assert.equal(seatGap("in_progress", S, [bk({ status: "new" })], []), null, "nothing settled - nothing owed yet");
+assert.equal(missingOf(seatGap("done", S, [bk({ status: "in_progress" })], [])), 4, "a closed deal owes its booking's travelers");
+assert.equal(missingOf(seatGap("paid", S, [bk({ ref: "T2", status: "new", travelers: 2 }), bk({ ref: "T1", status: "failed" })], [])), 2, "...the newest booking's");
+assert.equal(seatGap("paid", S, [bk({ status: "cancelled" })], []), null, "a cancelled booking owes nothing");
+assert.equal(seatGap("cancelled", S, [bk()], []), null, "a cancelled case owes nothing");
+assert.equal(seatGap("not_relevant", S, [bk()], []), null);
+const closedCustom: CaseStatus[] = [...S, { key: "custom_1", label: "חזר בו", color: "gray", isClosed: true, isSystem: false, isActive: true }];
+assert.equal(seatGap("custom_1", closedCustom, [bk()], []), null, "any closed status but Done");
+assert.equal(seatGap("paid", S, [], []), null, "no booking - nothing to compare with");
+assert.equal(seatGap("paid", S, [bk({ travelers: 0 })], []), null);
+assert.equal(
+  seatGap("paid", S, [bk({ ref: "T2", status: "paid" }), bk({ ref: "T1" })], [{ departureId: "dep-a", pax: 4 }]),
+  null,
+  "a request and a card payment for the same trip are one party, not two",
+);
+assert.equal(missingOf(seatGap("paid", S, [bk()], [{ departureId: "dep-a", pax: 4 }, { departureId: "dep-a", pax: -4 }])), 4, "a cancellation gave them back");
+assert.equal(seatGap("paid", S, [bk()], [{ departureId: "dep-b", pax: 4 }]), null, "seats moved to another departure still count");
+const twoTrips = seatGap("paid", S, [bk({ ref: "T2", departureId: "dep-b", travelers: 2 }), bk()], [{ departureId: "dep-a", pax: 4 }]);
+assert.deepEqual(twoTrips, { ref: "T2", departureId: "dep-b", travelers: 2, missing: 2 }, "two trips: the one short is named");
 
 console.log("tours-cases selftest: ok");
