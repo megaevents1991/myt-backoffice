@@ -38,8 +38,6 @@ import {
   statusAfterLink,
   bookingPhase,
   travelerGroups,
-  relatedCaseOf,
-  mergedIntoOf,
   payloadText,
   type CaseRow,
   type CaseStatus,
@@ -329,15 +327,6 @@ assert.deepEqual(
   "live bookings only, blank rows dropped, a booking with no names left out",
 );
 assert.equal(groups[0].passengers[1].type, "child");
-
-// 6-7. the earlier case a booking points at, and a merged case
-assert.deepEqual(relatedCaseOf({ related_case: { id: "1b4e28ba-2fa1-11d2-883f-0016d3cca427", case_no: 1004 } }), {
-  id: "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
-  caseNo: 1004,
-});
-assert.equal(relatedCaseOf({ related_case: { id: "nope", case_no: 1004 } }), null, "a broken id is no link");
-assert.equal(relatedCaseOf({}), null);
-assert.equal(mergedIntoOf({ merged_into: { id: "1b4e28ba-2fa1-11d2-883f-0016d3cca427", case_no: "1007" } })?.caseNo, 1007);
 
 // 1. WhatsApp opens the app itself - no browser tab
 assert.equal(whatsappAppLink("052-896-8912", "היי"), `whatsapp://send?phone=972528968912&text=${encodeURIComponent("היי")}`);

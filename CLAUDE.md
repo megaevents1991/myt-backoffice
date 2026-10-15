@@ -123,10 +123,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > ("הצעה נשלחה", seeded after "פולו אפ") unless a payment owns it or it is Done (`statusAfterLink`). (5) A closing
 > status other than Done / Spam needs a reason (`needsCloseReason`, `leads.close_reason`, `CloseReasonDialog`, also
 > in bulk). (6) `booking_create`: a booking that cannot hang on an open lead but whose phone / e-mail matches ANY
-> earlier case opens its case on that case's rep with `payload.related_case` ("Same customer as #…", table chip
-> "↔ #…"). (7) `public.merge_lead_cases` (one transaction, service role): "Link to another case" / "Merge the two"
-> joins two cases - the OLDER stays, the newer one's bookings, seats, notes and missing fields move in, the newer one
-> is soft-deleted with `payload.merged_into`. (9) Two or more orders fold into rows tagged Active / Past / Cancelled
+> earlier case opens its case on that case's rep with `leads.related_lead_id` ("Same customer as #…", table chip
+> "↔ #…") - a COLUMN, because site forms write `payload` freely; `leads_fill` also drops the system payload keys
+> (`matched_by`, `related_case`, `merged`, `merged_into`) from every new row. (7) `public.merge_lead_cases` (one
+> transaction, service role): "Link to another case" / "Merge the two" joins two cases - the OLDER stays, the newer
+> one's bookings, seats and notes move in; phone, e-mail and national id are never copied from it (a site booking's
+> details are what a visitor typed), names only fill an empty target; the newer one is soft-deleted with
+> `payload.merged_into`. (9) Two or more orders fold into rows tagged Active / Past / Cancelled
 > (`bookingPhase`). (10) "Campaign (UTM): None" when a visit carried no campaign. `leads_fill` also reads a waiting
 > list's `payload.date.productId` into the departure. Rules pure in `lib/tours/cases.ts` (selftest extended); prod
 > dry run `scripts/tours-cases-rejects-sql-dryrun.mjs`. The case reads tolerate the migration not applied yet

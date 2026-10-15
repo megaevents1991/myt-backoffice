@@ -82,8 +82,14 @@ insert into _dry select 'd_related', jsonb_build_object(
   'first_bookings', (select count(*) from tours.bookings where lead_id = ${A}),
   'second_rep_same', (select l.assigned_to is not distinct from (select assigned_to from public.leads where id = ${A})
                         from public.leads l join tours.bookings b on b.lead_id = l.id where b.ref = (select result->>'ref' from _dry where step = 'c_second')),
-  'second_names_first', (select (l.payload->'related_case'->>'case_no')::bigint = (select case_no from public.leads where id = ${A})
+  'second_names_first', (select l.related_lead_id = ${A}
                            from public.leads l join tours.bookings b on b.lead_id = l.id where b.ref = (select result->>'ref' from _dry where step = 'c_second')));
+
+-- (d2) a visitor cannot forge the system keys through a form payload
+insert into public.leads (company_id, kind, name, phone, payload)
+values (${C}, 'lead', 'זיוף בדיקה', '0547771111',
+        jsonb_build_object('related_case', jsonb_build_object('id', gen_random_uuid(), 'case_no', 1), 'matched_by', 'contact', 'merged_into', 'x', 'keep', 'yes'));
+insert into _dry select 'd2_forged', to_jsonb(x) from (select payload, related_lead_id from public.leads where phone = '0547771111') x;
 
 -- (e) the close reason column takes a value
 update public.leads set close_reason = 'dry run reason' where id = ${A};
@@ -108,6 +114,7 @@ insert into _dry select 'h_after_merge', jsonb_build_object(
                         and is_deleted is not null and payload ? 'merged_into'),
   'notes', (select notes from public.leads where id = ${A}),
   'merged_list', (select jsonb_array_length(payload->'merged') from public.leads where id = ${A}),
+  'contact_kept', (select phone = '054-000 2222' and email is null from public.leads where id = ${A}),
   'type', (select type from public.leads where id = ${A}));
 -- merging a deleted case again is refused
 insert into _dry select 'i_merge_again', public.merge_lead_cases(${C},
@@ -158,6 +165,7 @@ const d = lines.d_related;
 expect(d?.cases === 2 && d.first_bookings === 1, "(d) the second booking opens its own case");
 expect(d?.second_rep_same === true, "(d) ...on the same rep");
 expect(d?.second_names_first === true, "(d) ...naming the first case");
+expect(JSON.stringify(lines.d2_forged?.payload) === '{"keep":"yes"}' && lines.d2_forged?.related_lead_id === null, "(d2) form payload cannot carry system keys");
 expect(lines.e_close_reason?.close_reason === "dry run reason", "(e) close_reason writable");
 const f = lines.f_waitlist;
 expect(f?.type === "potential" && f.departure_ok && f.package_ok, "(f) waitlist date -> departure");
@@ -166,6 +174,7 @@ const h = lines.h_after_merge;
 expect(h?.first_bookings === 2 && h.live_cases === 1 && h.merged_into_set === 1, "(h) bookings on the older case, newer one merged");
 expect(typeof h?.notes === "string" && h.notes.includes("note A") && h.notes.includes("note B"), "(h) notes joined");
 expect(h?.merged_list === 1 && h?.type === "reservation", "(h) merged list + reservation");
+expect(h?.contact_kept === true, "(h) the target keeps its own contact");
 expect(lines.i_merge_again?.ok === false, "(i) a merged case cannot merge again");
 
 const after = await query(

@@ -3445,6 +3445,7 @@ export type Database = {
           assigned_to: string | null
           case_no: number
           close_reason: string | null
+          related_lead_id: string | null
           company_id: string
           created_at: string
           departure_id: string | null
@@ -3477,6 +3478,7 @@ export type Database = {
           assigned_to?: string | null
           case_no?: number
           close_reason?: string | null
+          related_lead_id?: string | null
           company_id: string
           created_at?: string
           departure_id?: string | null
@@ -3509,6 +3511,7 @@ export type Database = {
           assigned_to?: string | null
           case_no?: number
           close_reason?: string | null
+          related_lead_id?: string | null
           company_id?: string
           created_at?: string
           departure_id?: string | null

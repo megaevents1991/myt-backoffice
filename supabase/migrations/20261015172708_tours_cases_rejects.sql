@@ -31,12 +31,17 @@ begin
 end
 $$;
 
--- ---------------------------------------------------------------- 2. close reason
+-- ---------------------------------------------------------------- 2. close reason, the related case
 alter table public.leads add column if not exists close_reason text;
+-- Set by booking_create only. A column, not a payload key: the site's forms write `payload` freely
+-- (c_<slug>.submit_lead), so a link kept there could be forged by any visitor.
+alter table public.leads add column if not exists related_lead_id uuid references public.leads(id) on delete set null;
 
 -- ---------------------------------------------------------------- 4. waiting-list date -> departure
--- Same as 20261014220000 except the product id: the page's ?product_id=, else the waiting-list
--- form's own date (payload.date.productId).
+-- Same as 20261014220000 except: the product id is the page's ?product_id=, else the waiting-list
+-- form's own date (payload.date.productId); and the keys the SYSTEM writes into a case's payload
+-- (matched_by, related_case, merged, merged_into) are dropped from every new row - only an update
+-- by booking_create / merge_lead_cases may carry them, never a visitor's form.
 create or replace function public.leads_fill()
 returns trigger
 language plpgsql
@@ -48,6 +53,7 @@ declare
   v_slug text;
   v_dep record;
 begin
+  new.payload := coalesce(new.payload, '{}'::jsonb) - 'matched_by' - 'related_case' - 'merged' - 'merged_into';
   if new.type is null or new.type = '' then
     new.type := case when new.kind in ('notify', 'waitlist', 'newsletter') then 'potential'
                      when new.kind in ('booking', 'advisor') then 'reservation'
@@ -97,8 +103,8 @@ revoke execute on function public.leads_fill() from anon, authenticated;
 -- ---------------------------------------------------------------- 3. booking_create
 -- Same as 20261014220000 except the last branch: a booking that opens a new case first looks for
 -- the customer's newest case of any kind (same phone, last 9 digits, or e-mail). When one exists the
--- new case is given that case's rep and names it in payload.related_case - never its names, contact
--- or UTM, and nothing on the old case changes (an anonymous visitor typed that phone).
+-- new case is given that case's rep and names it in related_lead_id - never its names, contact or
+-- UTM, and nothing on the old case changes (an anonymous visitor typed that phone).
 create or replace function tours.booking_create(p_company uuid, p_kind text, p_args jsonb)
 returns jsonb
 language plpgsql
@@ -133,7 +139,6 @@ declare
   v_match text;
   -- the customer's earlier case, when the booking cannot hang on it
   v_rel_id uuid;
-  v_rel_no bigint;
   v_rel_rep uuid;
 begin
   if pg_column_size(p_args) > 32000 then
@@ -258,21 +263,18 @@ begin
   else
     -- a known customer (a case with a booking already, a closed one, an older one): the new case goes
     -- to the same rep and names the earlier one, which staff may merge it into
-    select l.id, l.case_no, l.assigned_to into v_rel_id, v_rel_no, v_rel_rep
+    select l.id, l.assigned_to into v_rel_id, v_rel_rep
       from public.leads l
      where l.company_id = p_company and l.is_deleted is null
        and ((length(v_phone_key) = 9 and right(regexp_replace(coalesce(l.phone, ''), '\D', '', 'g'), 9) = v_phone_key)
             or (v_email <> '' and lower(l.email) = v_email))
      order by l.created_at desc
      limit 1;
-    if v_rel_id is not null then
-      v_payload := v_payload || jsonb_build_object('related_case', jsonb_build_object('id', v_rel_id, 'case_no', v_rel_no));
-    end if;
     insert into public.leads (company_id, kind, type, status, name, first_name, last_name, phone, email,
-                              message, payload, source_path, utm, departure_id, assigned_to)
+                              message, payload, source_path, utm, departure_id, assigned_to, related_lead_id)
     values (p_company, case p_kind when 'card' then 'booking' else 'advisor' end, 'reservation', v_status,
             v_name, nullif(v_first, ''), nullif(v_last, ''), v_phone, nullif(v_email, ''),
-            left(p_args->>'note', 2000), v_payload, left(p_args->>'source_path', 300), v_utm, v_dep_id, v_rel_rep)
+            left(p_args->>'note', 2000), v_payload, left(p_args->>'source_path', 300), v_utm, v_dep_id, v_rel_rep, v_rel_id)
     returning id into v_lead_id;
   end if;
 
@@ -298,9 +300,12 @@ revoke all on function tours.booking_create(uuid, text, jsonb) from public;
 -- ---------------------------------------------------------------- 5. merge two cases
 -- Staff link a site booking to the customer's lead (the customer typed another phone, or the
 -- automatic match did not apply): every booking and seat row of the source case moves to the
--- target, the target fills what it lacks from the source, the source is marked deleted and
--- names the target. One transaction - a half-moved customer is never left behind. Called only by
--- the backoffice (service role), which checked the company and wrote the audit.
+-- target, the source is marked deleted and names the target. One transaction - a half-moved
+-- customer is never left behind. The target keeps its own contact and identity: phone, e-mail and
+-- national id are NEVER copied from the source (a site booking's details are whatever a visitor
+-- typed); names only fill an empty target, and each moved booking still shows its own customer
+-- (the case page warns when it differs). Called only by the backoffice (service role), which
+-- checked the company and wrote the audit.
 create or replace function public.merge_lead_cases(p_company uuid, p_source uuid, p_target uuid)
 returns jsonb
 language plpgsql
@@ -339,6 +344,9 @@ begin
          is_deleted = current_date,
          payload = payload || jsonb_build_object('merged_into', jsonb_build_object('id', t.id, 'case_no', t.case_no))
    where id = s.id;
+  -- a case that named the source as its customer's earlier case now names the case that stays
+  update public.leads set related_lead_id = t.id
+   where company_id = p_company and related_lead_id = s.id and id <> t.id;
 
   update public.leads l
      set type = case when v_bookings > 0 or s.type = 'reservation' or t.type = 'reservation' then 'reservation'
@@ -349,10 +357,8 @@ begin
          first_name = coalesce(nullif(t.first_name, ''), s.first_name),
          last_name = coalesce(nullif(t.last_name, ''), s.last_name),
          name = coalesce(nullif(t.name, ''), s.name),
-         phone = coalesce(nullif(t.phone, ''), s.phone),
-         email = coalesce(nullif(t.email, ''), s.email),
-         id_number = coalesce(nullif(t.id_number, ''), s.id_number),
          acc_num = coalesce(nullif(t.acc_num, ''), s.acc_num),
+         related_lead_id = case when t.related_lead_id = s.id then null else t.related_lead_id end,
          message = coalesce(nullif(t.message, ''), s.message),
          source_path = coalesce(t.source_path, s.source_path),
          departure_id = case when v_bookings > 0 and not v_target_had then coalesce(s.departure_id, t.departure_id)
@@ -366,7 +372,7 @@ begin
                                   case when coalesce(s.notes, '') <> '' then 'From case #' || s.case_no || ': ' || s.notes end), ''),
          link_token = coalesce(t.link_token, v_token),
          link_sent_at = greatest(t.link_sent_at, s.link_sent_at),
-         payload = (t.payload - 'related_case')
+         payload = t.payload
                    || jsonb_build_object('merged',
                         coalesce(t.payload->'merged', '[]'::jsonb)
                         || jsonb_build_array(jsonb_build_object('id', s.id, 'case_no', s.case_no, 'at', now())))

@@ -688,23 +688,6 @@ export function travelerGroups(
     .filter((g) => g.passengers.length > 0);
 }
 
-// ---------------------------------------------------------------- cases that belong together
-const CASE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export interface CaseRef {
-  id: string;
-  caseNo: number;
-}
-const caseRefOf = (value: unknown): CaseRef | null => {
-  if (!value || typeof value !== "object") return null;
-  const v = value as { id?: unknown; case_no?: unknown };
-  const caseNo = Number(v.case_no);
-  return typeof v.id === "string" && CASE_ID.test(v.id) && Number.isInteger(caseNo) && caseNo > 0 ? { id: v.id, caseNo } : null;
-};
-/** The customer's earlier case a site booking named when it could not hang on it (booking_create). */
-export const relatedCaseOf = (payload: Record<string, unknown>): CaseRef | null => caseRefOf(payload.related_case);
-/** The case a merged one now lives in (public.merge_lead_cases). */
-export const mergedIntoOf = (payload: Record<string, unknown>): CaseRef | null => caseRefOf(payload.merged_into);
-
 /** A form field as one line: a waiting list's date by its label, anything else as text. */
 export function payloadText(value: unknown): string {
   if (value === null || value === undefined || value === "") return "";

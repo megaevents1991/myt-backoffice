@@ -43,7 +43,6 @@ import {
   isClosedStatus,
   needsCloseReason,
   phoneKey,
-  relatedCaseOf,
   statusAfterLink,
   whatsappAppLink,
   whatsappPhone,
@@ -94,12 +93,12 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, task_override, link_token, link_sent_at, payload, close_reason";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, task_override, link_token, link_sent_at, payload, close_reason, related_lead_id";
 
-/** The same without close_reason (migration 20261015172708): a deploy that beat its migration still reads. */
-const LEGACY_CASE_COLUMNS = CASE_COLUMNS.replace(", close_reason", "");
+/** The same without close_reason / related_lead_id (migration 20261015172708): a deploy that beat its migration still reads. */
+const LEGACY_CASE_COLUMNS = CASE_COLUMNS.replace(", close_reason, related_lead_id", "");
 const missingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
-  error?.code === "42703" || error?.code === "PGRST204" || /close_reason.*does not exist/.test(error?.message ?? "");
+  error?.code === "42703" || error?.code === "PGRST204" || /(close_reason|related_lead_id).*does not exist/.test(error?.message ?? "");
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 type CaseRecord = Pick<
@@ -132,6 +131,7 @@ type CaseRecord = Pick<
   | "link_sent_at"
   | "payload"
   | "close_reason"
+  | "related_lead_id"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 
@@ -144,6 +144,8 @@ interface Enrichment {
   /** Every booking of the case, newest first, and its seat ledger - what seatGap reads. */
   seatBookings: Map<string, SeatBooking[]>;
   seatHolds: Map<string, SeatHold[]>;
+  /** The case number of each related case (related_lead_id), live ones only. */
+  related: Map<string, number>;
 }
 
 const clean = (value: string | null | undefined, max: number): string | null => {
@@ -174,6 +176,7 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     travelers: new Map(),
     seatBookings: new Map(),
     seatHolds: new Map(),
+    related: new Map(),
   };
 
   const readDepartures = async () => {
@@ -244,7 +247,15 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
       }
     }
   };
-  await Promise.all([readDepartures(), readPackages(), readBookings(), readSeats()]);
+  const readRelated = async () => {
+    const ids = [...new Set(records.map((r) => r.related_lead_id).filter((v): v is string => !!v))];
+    for (const part of chunk(ids, IN_CHUNK)) {
+      const { data, error } = await supabaseTyped.from("leads").select("id, case_no").eq("company_id", companyId).in("id", part).is("is_deleted", null);
+      if (error) throw new Error(`leads: ${error.message}`);
+      for (const l of data ?? []) out.related.set(l.id, l.case_no);
+    }
+  };
+  await Promise.all([readDepartures(), readPackages(), readBookings(), readSeats(), readRelated()]);
   return out;
 }
 
@@ -286,7 +297,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     travelers: x.travelers.get(r.id) ?? 0,
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
     closeReason: r.close_reason ?? null,
-    relatedCaseNo: relatedCaseOf(asObject(r.payload))?.caseNo ?? null,
+    relatedCaseNo: r.related_lead_id ? (x.related.get(r.related_lead_id) ?? null) : null,
   };
 }
 
@@ -300,7 +311,7 @@ async function caseRecord(company: Company, id: string): Promise<CaseRecord> {
   if (error) throw new Error(`leads: ${error.message}`);
   if (!data) throw new UserError("The case was not found - it may have been deleted.");
   const record = data as unknown as CaseRecord;
-  return { ...record, close_reason: record.close_reason ?? null };
+  return { ...record, close_reason: record.close_reason ?? null, related_lead_id: record.related_lead_id ?? null };
 }
 
 /** Every case of the company (not deleted), newest first - tolerant of the close_reason migration. */
@@ -854,8 +865,8 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     });
 
     const payload = asObject(record.payload);
-    const related = relatedCaseOf(payload);
-    const [relatedCase] = related && related.id !== record.id ? await candidatesOf(company, [related.id], record) : [];
+    const related = record.related_lead_id;
+    const [relatedCase] = related && related !== record.id ? await candidatesOf(company, [related], record) : [];
     return actionOk({
       row,
       payload,
