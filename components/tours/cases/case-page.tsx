@@ -3,10 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, Gift, Loader2, MessageCircle, PlusCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Gift, Loader2, MessageCircle, PlusCircle, Trash2 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -140,6 +140,8 @@ export function CasePage({ id }: { id: string }) {
   const due = followUpDue(row, statuses, today);
   const notes = notesDraft ?? row.notes ?? "";
   const whatsapp = waLink(row.phone, `היי ${row.firstName ?? ""}`.trim());
+  // bookings add, cancellations give back - the net is what the departure counts
+  const seatsHeld = data.sales.reduce((sum, s) => sum + s.pax, 0);
   const siteLink =
     data.siteUrl && data.pkg
       ? `${data.siteUrl.replace(/\/+$/, "")}${data.pkg.path}${data.departure ? `?product_id=${data.departure.siteId}` : ""}`
@@ -295,18 +297,30 @@ export function CasePage({ id }: { id: string }) {
             )}
           </Section>
 
-          <Section
-            title="Seats"
-            description="Travelers this customer holds on a departure - a booking adds, a cancellation gives back."
-            actions={
-              <Button size="sm" onClick={() => setAddingTravelers(true)}>
-                <PlusCircle className="h-4 w-4" />
-                Add travelers
-              </Button>
-            }
-          >
-            <ToursReservationsTable rows={data.sales} onDeleted={() => void reload({ quiet: true })} />
-          </Section>
+          {/* closed by default (Dor 15.10): the seats count by themselves - a paid booking adds them - so the
+              ledger is there for whoever needs it, not in every rep's way */}
+          <Collapsible asChild>
+            <section className="group rounded-lg border bg-card">
+              <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-lg p-4 text-start hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90 rtl:-scale-x-100" />
+                <h2 className="font-display text-base font-semibold">Seats</h2>
+                <span className="text-sm text-muted-foreground">{seatsHeld > 0 ? `${seatsHeld} held on the departure` : "none held"}</span>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 px-4 pb-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    Travelers this customer holds on a departure - a paid booking adds them by itself, a cancellation gives them back. Add travelers by
+                    hand for a phone or office booking.
+                  </p>
+                  <Button size="sm" onClick={() => setAddingTravelers(true)}>
+                    <PlusCircle className="h-4 w-4" />
+                    Add travelers
+                  </Button>
+                </div>
+                <ToursReservationsTable rows={data.sales} onDeleted={() => void reload({ quiet: true })} />
+              </CollapsibleContent>
+            </section>
+          </Collapsible>
 
           {data.pkg?.cancellationHtml && (
             <Section title="Cancellation terms" description={`As the tour page shows them (${data.pkg.name}).`}>

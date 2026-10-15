@@ -81,7 +81,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("5. After it is live", "5. אחרי שהוא באוויר"),
         steps: [
           t("Every form and every booking a customer sends from the site lands in [Reservations](/tours/reservations) - one row per customer.", "כל טופס וכל הזמנה שלקוח שולח מהאתר נוחתים ב[הזמנות](/tours/reservations) - שורה אחת לכל לקוח."),
-          t("Open the customer's row and click \"Add travelers\" (or send a booking link with their rooms). The travelers count on the date's seats at once, and the row becomes a reservation.", "פותחים את השורה של הלקוח ולוחצים \"Add travelers\" (או שולחים לינק הרשמה עם ההרכב). הנוסעים נספרים מיד על המושבים של התאריך, והשורה הופכת להזמנה."),
+          t("Open the customer's row, open \"Seats\" (closed by default) and click \"Add travelers\" (or send a booking link with their rooms). The travelers count on the date's seats at once, and the row becomes a reservation.", "פותחים את השורה של הלקוח, פותחים את \"Seats\" (סגור כברירת מחדל) ולוחצים \"Add travelers\" (או שולחים לינק הרשמה עם ההרכב). הנוסעים נספרים מיד על המושבים של התאריך, והשורה הופכת להזמנה."),
           t("Watch the seats on the [Departures](/tours/departures) board. \"Last places\" and \"Sold out\" follow the seats on their own - nothing to change by hand.", "עוקבים אחרי המושבים ב[לוח היציאות](/tours/departures). \"Last places\" ו-\"Sold out\" מתעדכנים לבד לפי המושבים - אין מה לשנות ידנית."),
         ],
       },
@@ -232,7 +232,7 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("A booking from the site", "הזמנה מהאתר"),
         steps: [
           t("Open the row: \"Order\" shows the rooms, the passengers, the price the site computed and the payment; beside it the cancellation terms and the departure's gift.", "פותחים את השורה: \"Order\" מציג את החדרים, הנוסעים, המחיר שהאתר חישב והתשלום; לידו תנאי הביטול והמתנה של היציאה."),
-          t("A request: call the customer; when the trip is sold click \"Add travelers\" - the seats count on the departure at once.", "בקשה: מתקשרים ללקוח; כשהטיול נמכר לוחצים \"Add travelers\" - המושבים נספרים מיד על היציאה."),
+          t("A request: call the customer; when the trip is sold open \"Seats\" and click \"Add travelers\" - the seats count on the departure at once. A card payment on the site adds them by itself.", "בקשה: מתקשרים ללקוח; כשהטיול נמכר פותחים את \"Seats\" ולוחצים \"Add travelers\" - המושבים נספרים מיד על היציאה. תשלום בכרטיס באתר מוסיף אותם לבד."),
           t("A card payment: \"Paid\" means CreditGuard confirmed exactly the computed amount and the seats were added by themselves. Send the confirmation, type the receipt number and switch on \"Confirmation sent\". \"Check payment\": the charge had another amount - check it in CreditGuard and set the booking \"Paid\" when it is right.", "תשלום בכרטיס: \"Paid\" אומר ש-CreditGuard אישר בדיוק את הסכום שחושב והמושבים נוספו לבד. שולחים אישור, מקלידים מספר קבלה ומדליקים \"Confirmation sent\". \"Check payment\": החיוב היה בסכום אחר - בודקים ב-CreditGuard ומסמנים את ההזמנה \"Paid\" כשהוא תקין."),
         ],
       },
