@@ -185,7 +185,10 @@ export interface CardAllocation {
   flight: CardFlight;
 }
 
-export type CardDeparture = Omit<TourDeparture, "data">;
+export type CardDeparture = Omit<TourDeparture, "data"> & {
+  /** `data.waitlist`: the site shows a "join the waiting list" button on this date (General tab). */
+  waitlist: boolean;
+};
 
 export type CardOption = Pick<
   TourDepartureOption,
@@ -356,6 +359,8 @@ export interface DepartureGeneralInput {
   senior_min_age?: number | null;
   senior_discount?: number | null;
   notes?: string | null;
+  /** No column: kept as `data.waitlist` (true, or the key removed), which the site's departure carries. */
+  waitlist?: boolean;
 }
 
 export interface PromotionInput {

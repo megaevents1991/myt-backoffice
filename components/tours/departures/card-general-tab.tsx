@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { CheckField, Field, Ltr, Notice, Section, selectClass } from "@/components/tours/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useActionToast } from "@/hooks/use-action-toast";
 import {
@@ -33,6 +34,7 @@ interface Draft {
   return_airport: string;
   season_id: string;
   card_badge: string;
+  waitlist: boolean;
   date_labels: string;
   itinerary_id: string;
   leader_id: string;
@@ -60,6 +62,7 @@ function toDraft(d: DepartureCardData["departure"]): Draft {
     return_airport: inputValue(d.return_airport),
     season_id: inputValue(d.season_id),
     card_badge: inputValue(d.card_badge),
+    waitlist: d.waitlist,
     date_labels: d.date_labels.join(", "),
     itinerary_id: inputValue(d.itinerary_id),
     leader_id: inputValue(d.leader_id),
@@ -94,6 +97,7 @@ function changes(base: Draft, draft: Draft): DepartureGeneralInput {
   if (draft.return_airport !== base.return_airport) out.return_airport = textOrNull(draft.return_airport);
   if (draft.season_id !== base.season_id) out.season_id = draft.season_id || null;
   if (draft.card_badge !== base.card_badge) out.card_badge = textOrNull(draft.card_badge);
+  if (draft.waitlist !== base.waitlist) out.waitlist = draft.waitlist;
   if (draft.date_labels !== base.date_labels) out.date_labels = labelsOf(draft.date_labels);
   if (draft.itinerary_id !== base.itinerary_id) out.itinerary_id = draft.itinerary_id || null;
   if (draft.leader_id !== base.leader_id) out.leader_id = draft.leader_id || null;
@@ -230,6 +234,16 @@ export function CardGeneralTab({ data, onSaved }: { data: DepartureCardData; onS
           <Field label="Card badge" hint='The red badge on the date card, e.g. "חדש באתר" or "מבצע"'>
             <Input dir="auto" className="h-9" value={draft.card_badge} onChange={(e) => set("card_badge", e.target.value)} />
           </Field>
+        </div>
+        <div className="flex items-center gap-3 rounded-md border p-3">
+          <Switch id="dep-waitlist" checked={draft.waitlist} onCheckedChange={(on) => set("waitlist", on)} />
+          <label htmlFor="dep-waitlist" className="text-sm">
+            <span className="font-medium">Waiting list</span>
+            <span className="block text-xs text-muted-foreground">
+              The site shows a &quot;join the waiting list&quot; button on this date; requests arrive in Leads as &quot;Waiting
+              list&quot; with the date. A sold-out date shows the button by itself.
+            </span>
+          </label>
         </div>
       </Section>
 

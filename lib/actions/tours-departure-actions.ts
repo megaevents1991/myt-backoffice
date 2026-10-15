@@ -19,6 +19,7 @@
  * Spec: mega-family/docs/plans/MEGA-FAMILY-FUNCTIONAL-SPEC.md (4.4-4.6, 5.1, 5.2, 6).
  */
 import ExcelJS from "exceljs";
+import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { requireCompany, requireCompanyViewer } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
@@ -86,7 +87,7 @@ import type {
   ViewTicketOption,
 } from "@/components/tours/departures/types";
 import { actionFail, actionOk as ok, chunk, fetchAll, intOrNull, must, mustRow, UserError, UUID } from "@/lib/tours/action-kit";
-import { companyAudit } from "@/lib/tours/company-kit";
+import { asObject, companyAudit } from "@/lib/tours/company-kit";
 import { departureKeptReason } from "@/lib/tours/bulk-delete";
 import type { SheetRemoveResult } from "@/components/tours/sheet/sheet-core";
 
@@ -112,8 +113,9 @@ const SERIES_SELECT =
 const BOARD_SELECT =
   "id, code, series_id, package_id, season_year, start_date, end_date, season, season_id, itinerary_id, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, docket_no, flight_mode, flight_price, markup_fixed, is_deleted, departure_prices(pax_type, room_position, price), departure_options(kind, position, price, room_prices), promotions(id, kind, value, label, valid_until, show_on_card, is_active), flight_allocations(id, flight_id, seats, legs)";
 
+// `data` itself stays out (it holds a date's WordPress import); only its `waitlist` key is read.
 const CARD_SELECT =
-  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, season_id, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, origin_flight_id, is_deleted, created_at, updated_at";
+  "id, company_id, package_id, series_id, code, season_year, start_date, end_date, season, season_id, currency, is_published, sale_status, card_badge, date_labels, arrival_airport, return_airport, itinerary_id, leader_id, capacity, docket_no, meeting_at, flight_mode, flight_price, baggage_included, meal_included, transfers_included, connection_out, connection_back, child_max_age, senior_min_age, senior_discount, markup_percent, markup_fixed, price_source, costing_id, legacy_product_id, site_id, notes, origin_flight_id, is_deleted, created_at, updated_at, waitlist:data->waitlist";
 
 /** What the publish rules and the price writers need to know about a departure. */
 const CORE_SELECT =
@@ -808,7 +810,7 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
     const { company } = await requireCompany("tours");
     const db = toursDb();
 
-    let departure: DepartureCardData["departure"] | null = null;
+    let departure: (Omit<DepartureCardData["departure"], "waitlist"> & { waitlist: unknown }) | null = null;
     if (ref.id && UUID.test(ref.id)) {
       departure = must(
         await db.from("departures").select(CARD_SELECT).eq("company_id", company.id).eq("id", ref.id).maybeSingle(),
@@ -830,7 +832,7 @@ export async function getDepartureCard(ref: { id?: string; code?: string }): Pro
         live.find((m) => m.end_date >= today) ?? live[live.length - 1] ?? matches[matches.length - 1] ?? null;
     }
     if (!departure) throw new UserError("Departure not found in the active company");
-    const dep = departure;
+    const dep: DepartureCardData["departure"] = { ...departure, waitlist: departure.waitlist === true };
 
     const [series, pkg, itineraries, seasons, prices, options, promotions, allocations, stats] = await Promise.all([
       db.from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", dep.series_id).maybeSingle(),
@@ -1040,10 +1042,28 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
     if (has("senior_min_age")) patch.senior_min_age = intOrNull(input.senior_min_age, 40, 120, "Senior from age");
     if (has("senior_discount")) patch.senior_discount = numOrNull(input.senior_discount, 0, 100_000, "Senior discount");
     if (has("notes")) patch.notes = text(input.notes, 4000);
+    // No column: `data.waitlist` - the site spreads a date's `data` into its departure (lib/data/departures.mjs)
+    // and shows a "join the waiting list" button on it. On = true, off = the key removed.
+    let waitlist: boolean | undefined;
+    if (has("waitlist")) {
+      const parsed = z.boolean().safeParse(input.waitlist);
+      if (!parsed.success) throw new UserError("Waiting list: invalid value");
+      waitlist = parsed.data;
+      const row = must(
+        await toursDb().from("departures").select("data").eq("company_id", company.id).eq("id", id).maybeSingle(),
+      );
+      const data = { ...asObject(row?.data) };
+      if ((data.waitlist === true) !== waitlist) {
+        if (waitlist) data.waitlist = true;
+        else delete data.waitlist;
+        patch.data = data;
+      }
+    }
 
     if (Object.keys(patch).length === 0) return ok(undefined);
 
-    if (core.is_published) {
+    // the waiting list does not change what a date needs to be published
+    if (core.is_published && Object.keys(patch).some((key) => key !== "data")) {
       const series = must(
         await toursDb().from("series").select(SERIES_SELECT).eq("company_id", company.id).eq("id", core.series_id).maybeSingle(),
       );
@@ -1058,11 +1078,13 @@ export async function updateDeparture(id: string, input: DepartureGeneralInput):
       if (error.code === "23505") throw new UserError(`A departure with code ${core.code} already exists in ${String(patch.season_year)}`);
       throw new Error(error.message);
     }
+    // the trail names the switch, not the whole `data` document
+    const { data: dataPatch, ...fields } = patch;
     await logAudit({
       action: "update",
       entityType: "tours_departure",
       entityId: id,
-      changes: patch,
+      changes: dataPatch === undefined ? patch : { ...fields, waitlist },
       metadata: { ...companyAudit(company), code: core.code },
     });
     return ok(undefined);
