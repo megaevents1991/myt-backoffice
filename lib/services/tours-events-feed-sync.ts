@@ -1,8 +1,9 @@
 /**
  * Keeps the Mega Events packages a tours company site shows (lib/tours/events-feed.ts) fresh:
- * builds the list, stores it in tours.site_content (key 'events_feed') of every tours company,
- * and - only when the list changed - rebuilds that company's site through its deploy hook, the
- * same POST as "Publish to site". Run by /api/cron/toursEventsFeed. Server-only (service role).
+ * builds the list and the search index of every listed event, stores both in tours.site_content
+ * (key 'events_feed') of every tours company, and - only when the list or the index changed -
+ * rebuilds that company's site through its deploy hook, the same POST as "Publish to site". Run
+ * by /api/cron/toursEventsFeed. Server-only (service role).
  *
  * Every database call has a deadline and every step logs its duration ("[toursEventsFeed] <step>
  * <ms>ms"): on 14.10.2026 the run hung until Vercel killed it at 60 s, and nothing said where.
@@ -19,17 +20,19 @@ import {
 import type { RowRef, ShowFlags } from "@/lib/homepage/merge";
 import {
   EVENTS_FEED_KEY,
-  FEED_ORDER_COLUMNS,
+  FEED_LIGHT_COLUMNS,
   HOT_ROW_KEY,
   buildEventsFeedInPages,
+  buildEventsIndex,
   feedCutoffDate,
   hotRowHidden,
   hotRowPins,
   sameFeedItems,
+  storedFeedIndex,
   storedFeedItems,
   type EventsFeedDoc,
   type FeedEventRow,
-  type FeedOrderRow,
+  type FeedLightRow,
   type SiteHotRow,
 } from "@/lib/tours/events-feed";
 import type { Json } from "@/types/database.types";
@@ -61,8 +64,8 @@ async function step<T>(name: string, run: () => Promise<T>, detail?: (result: T)
   }
 }
 
-/** What orders the list - read for every listed event. */
-const ORDER_COLUMNS = FEED_ORDER_COLUMNS.join(",");
+/** What orders the list and what the search index prints - read for every listed event. No tickets. */
+const LIGHT_COLUMNS = FEED_LIGHT_COLUMNS.join(",");
 
 /**
  * What the list prints and prices: the card fields + everything siteCardPrice reads
@@ -88,6 +91,8 @@ export type ToursEventsFeedResult = {
   /** "site" = the site's own row; "database" = rebuilt from the rows; "kept" = nothing built. */
   source: "site" | "database" | "kept";
   items: number;
+  /** Events in the search index (0 = nothing built). */
+  indexed: number;
   /** Why the site's row could not be used. */
   siteError?: string;
   companies: CompanyFeedResult[];
@@ -161,20 +166,20 @@ async function readSiteHotRow(): Promise<{ row: SiteHotRow } | { error: string }
 
 /**
  * Every event a Mega Events listing may show (myt-main lib/eventsData.ts getEvents), light
- * columns only. Until 14.10.2026 this read took the tickets of all of them too (~7 MB) and the
- * run timed out.
+ * columns only - what orders the list and what the search index prints (name, place, pictures).
+ * Until 14.10.2026 this read took the tickets of all of them too (~7 MB) and the run timed out.
  */
-async function readEventOrder(now: Date): Promise<FeedOrderRow[]> {
+async function readEventOrder(now: Date): Promise<FeedLightRow[]> {
   const { data, error } = await db
     .from("events")
-    .select(ORDER_COLUMNS)
+    .select(LIGHT_COLUMNS)
     .is("is_deleted", null)
     .gte("date", feedCutoffDate(now))
     .order("date", { ascending: true })
     .limit(2000)
     .abortSignal(deadline());
   if (error) throw new Error(`events read: ${error.message}`);
-  return (data ?? []) as FeedOrderRow[];
+  return (data ?? []) as FeedLightRow[];
 }
 
 /** The full rows (tickets and prices) of one page of the list's candidates. */
@@ -184,7 +189,10 @@ async function readFullEvents(ids: number[]): Promise<FeedEventRow[]> {
   return (data ?? []) as FeedEventRow[];
 }
 
-async function storedDoc(companyId: string): Promise<unknown[] | null> {
+/** A company's stored list and index; null = no list worth comparing with. */
+type StoredFeed = { items: unknown[]; index: unknown[] | null } | null;
+
+async function storedDoc(companyId: string): Promise<StoredFeed> {
   const { data, error } = await toursDb()
     .from("site_content")
     .select("data")
@@ -193,7 +201,8 @@ async function storedDoc(companyId: string): Promise<unknown[] | null> {
     .abortSignal(deadline())
     .maybeSingle();
   if (error) throw new Error(`site_content read: ${error.message}`);
-  return data ? storedFeedItems(data.data) : null;
+  const items = data ? storedFeedItems(data.data) : null;
+  return items ? { items, index: storedFeedIndex(data?.data) } : null;
 }
 
 /** POSTs the company's deploy hook and records the attempt as its last publish (what the Publish button shows). */
@@ -232,7 +241,7 @@ async function rebuildSite(companyId: string): Promise<CompanyFeedResult["deploy
 
 export async function syncToursEventsFeed(now = new Date()): Promise<ToursEventsFeedResult> {
   const companies = await step("companies", feedCompanies, (list) => `${list.length} to feed`);
-  if (companies.length === 0) return { source: "kept", items: 0, companies: [] };
+  if (companies.length === 0) return { source: "kept", items: 0, indexed: 0, companies: [] };
 
   const [layout, site, order, stored] = await Promise.all([
     step("homepage layout", readHotRowLayout, (l) => `${l.pins.length} pins, ${l.hidden.length} hidden`),
@@ -245,10 +254,11 @@ export async function syncToursEventsFeed(now = new Date()): Promise<ToursEvents
 
   // Without the site's row the order is rebuilt from the rows (fallbackPool), which is close but
   // not card-for-card - so a list already stored is kept until the site answers again, and only a
-  // company with no list yet gets the rebuilt one.
-  if (!siteRow && stored.every((items) => items !== null)) {
+  // company with no list yet gets the rebuilt one. Its index is kept with it: without the site's
+  // card flags the index could list sold-out events, and flip back on the next run (two deploys).
+  if (!siteRow && stored.every((before) => before !== null)) {
     const kept = companies.map((c) => ({ slug: c.slug, changed: false, deploy: null }));
-    return { source: "kept", items: 0, siteError, companies: kept };
+    return { source: "kept", items: 0, indexed: 0, siteError, companies: kept };
   }
 
   let page = 0;
@@ -260,13 +270,21 @@ export async function syncToursEventsFeed(now = new Date()): Promise<ToursEvents
     (p) => `${p.items.length} items, ${p.read} events read in full${p.complete ? "" : " (not final)"}`,
   );
   const items = plan.items;
-  const doc: EventsFeedDoc = { updatedAt: now.toISOString(), source: siteRow ? "site" : "database", items };
+  // every listed event, from the first read alone (no tickets), the list's own prices on its events
+  const index = await step(
+    "index",
+    async () => buildEventsIndex({ events: order, now, flags: siteRow?.flags ?? null, read: plan.rows, priced: items }),
+    (list) => `${list.length} events`,
+  );
+  const doc: EventsFeedDoc = { updatedAt: now.toISOString(), source: siteRow ? "site" : "database", items, index };
 
   const results: CompanyFeedResult[] = [];
   for (const [i, company] of companies.entries()) {
     const before = stored[i];
     try {
-      if (before !== null && (!siteRow || sameFeedItems(before, items))) {
+      // the index counts as a change too (a document without one - before 15.10.2026 - gets it now)
+      const same = before !== null && sameFeedItems(before.items, items) && sameFeedItems(before.index, index);
+      if (before !== null && (!siteRow || same)) {
         results.push({ slug: company.slug, changed: false, deploy: null });
         continue;
       }
@@ -302,5 +320,11 @@ export async function syncToursEventsFeed(now = new Date()): Promise<ToursEvents
       results.push({ slug: company.slug, changed: false, deploy: null, error: message });
     }
   }
-  return { source: doc.source, items: items.length, ...(siteError ? { siteError } : {}), companies: results };
+  return {
+    source: doc.source,
+    items: items.length,
+    indexed: index.length,
+    ...(siteError ? { siteError } : {}),
+    companies: results,
+  };
 }

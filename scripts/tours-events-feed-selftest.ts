@@ -9,14 +9,19 @@
 // to the event's order page. And the cron's two-step read (14.10.2026 - reading every event's
 // tickets at once timed it out): the order from the light columns, the tickets a page at a time
 // for the events the list can reach, and the result exactly what every full row would give.
+// And the search index (15.10.2026): every listed event that is not sold out, by date, capped,
+// built from the light read alone, priced only where the list priced it.
 import assert from "node:assert/strict";
 import {
   EVENTS_FEED_MAX,
   EVENTS_FEED_PAGE,
+  EVENTS_INDEX_MAX,
+  FEED_LIGHT_COLUMNS,
   FEED_ORDER_COLUMNS,
   PRICE_LABEL,
   buildEventsFeed,
   buildEventsFeedInPages,
+  buildEventsIndex,
   fallbackPool,
   feedCandidateIds,
   feedCategory,
@@ -29,9 +34,10 @@ import {
   isListedFeedEvent,
   planEventsFeed,
   sameFeedItems,
+  storedFeedIndex,
   storedFeedItems,
   type FeedEventRow,
-  type FeedOrderRow,
+  type FeedLightRow,
   type SiteHotRow,
 } from "../lib/tours/events-feed";
 import type { RowPin, RowRef, ShowFlags } from "../lib/homepage/merge";
@@ -74,9 +80,11 @@ const ev = (over: Partial<FeedEventRow> = {}): FeedEventRow => ({
   ...over,
 });
 const ids = (items: { id: number }[]) => items.map((i) => i.id);
-/** What the cron's first read returns of an event: the order columns, no tickets. */
-const light = (e: FeedEventRow): FeedOrderRow =>
-  Object.fromEntries(FEED_ORDER_COLUMNS.map((k) => [k, e[k]])) as FeedOrderRow;
+/** What the cron's first read returns of an event: the order columns + what the index prints, no tickets. */
+const light = (e: FeedEventRow): FeedLightRow =>
+  Object.fromEntries(FEED_LIGHT_COLUMNS.map((k) => [k, e[k]])) as FeedLightRow;
+assert.ok(FEED_ORDER_COLUMNS.every((k) => (FEED_LIGHT_COLUMNS as readonly string[]).includes(k)));
+assert.ok(!(FEED_LIGHT_COLUMNS as readonly string[]).includes("tickets_and_rates"), "the first read never takes tickets");
 
 /* the 3-day window: an event lists from today + 3 (myt-main AVAILABILITY_WINDOW_DAYS) */
 assert.equal(feedCutoffDate(NOW), "2026-10-17");
@@ -239,6 +247,103 @@ assert.equal(sameFeedItems(capped, JSON.parse(JSON.stringify(capped))), true);
 assert.deepEqual(storedFeedItems({ updatedAt: "x", items: [1] }), [1]);
 assert.equal(storedFeedItems(null), null);
 assert.equal(storedFeedItems({ items: "no" }), null);
+assert.deepEqual(storedFeedIndex({ items: [], index: [{ id: 1 }] }), [{ id: 1 }]);
+assert.equal(storedFeedIndex({ items: [] }), null, "a document from before 15.10 has no index");
+assert.equal(storedFeedIndex([1]), null);
+// a stored document without an index differs from any index with an event in it (the first run writes it)
+assert.equal(sameFeedItems(storedFeedIndex({ items: [] }), [{ id: 1 }]), false);
+assert.equal(sameFeedItems(storedFeedIndex({ items: [] }), []), true);
+
+/* the search index: every listed event, light fields only, by date */
+{
+  nextId = 700;
+  const celine1 = ev({ name: "סלין דיון בפריז", date: "2027-05-10T19:00:00+00:00" }); // 700
+  const celine2 = ev({ name: " סלין דיון בלונדון ", date: "2026-12-01T19:00:00+00:00", event_location: manchester }); // 701
+  const celine3 = ev({ name: "סלין דיון בלאס וגאס", date: "2027-01-15T19:00:00+00:00", card_image_url: null }); // 702
+  const ticketsGone = ev({ name: "סלין דיון - אזל", tickets_and_rates: [ticket(100, false)] }); // 703 - the light read cannot see it
+  const tagged = ev({ name: "סלין דיון - Sold", tags: "Sold" }); // 704
+  const soon = ev({ name: "סלין דיון מחר", date: "2026-10-15T19:00:00+00:00" }); // 705 - inside the 3-day window
+  const qaEvent = ev({ name: "סלין QA", is_test: true }); // 706
+  const offSite = ev({ name: "סלין off", deactivated_reason: "tx_sold_out" }); // 707
+  const deleted = ev({ name: "סלין deleted", is_deleted: "10-01-2026" }); // 708
+  const nameless = ev({ name: "   " }); // 709
+  const httpOnly = ev({ name: "http", card_image_url: "http://cdn.example/card.jpg" }); // 710
+  const cutoutArt = ev({ name: "cutout", card_image_url: null, art_image_url: "//cdn.example/art.png" }); // 711
+  const relative = ev({ name: "relative", card_image_url: "/images/x.jpg", type: "tx_event" }); // 712
+  const all = [celine1, celine2, celine3, ticketsGone, tagged, soon, qaEvent, offSite, deleted, nameless, httpOnly, cutoutArt, relative];
+  const lightAll = all.map(light);
+
+  const index = buildEventsIndex({ events: lightAll, now: NOW });
+  // the light read knows the Sold tag only; 703 stays until its tickets are read (the list reads the hot ones)
+  assert.deepEqual(ids(index), [703, 710, 711, 712, 701, 702, 700], "listed, by date then id, the dead ones out");
+  assert.deepEqual(
+    index.filter((i) => i.name.includes("סלין")).map((i) => i.id),
+    [703, 701, 702, 700],
+    'typing "סלין" finds every listed Celine Dion show',
+  );
+  const inLondon = index.find((i) => i.id === 701);
+  assert.deepEqual(
+    inLondon,
+    {
+      id: 701,
+      name: "סלין דיון בלונדון",
+      date: "2026-12-01T19:00:00+00:00",
+      dateLabel: "01/12/26",
+      place: "מנצ'סטר · טיסה ללונדון",
+      category: "music",
+      href: `${PUBLIC_SITE_URL}/order/701`,
+      image: "https://cdn.example/card.jpg",
+    },
+    "the exact shape - no price on an event the list did not price",
+  );
+  assert.equal(index.find((i) => i.id === 702)?.image, null, "no picture still lists (the search finds it)");
+  assert.equal(index.find((i) => i.id === 710)?.image, null, "an http picture is dropped, the event stays");
+  assert.equal(index.find((i) => i.id === 711)?.image, "https://cdn.example/art.png", "the cut-out when there is no photo");
+  assert.equal(index.find((i) => i.id === 712)?.image, `${PUBLIC_SITE_URL}/images/x.jpg`);
+  assert.equal(index.find((i) => i.id === 712)?.category, "music", "a TixStock event is music");
+
+  // tickets read in full (the list's candidates): a sold-out one leaves, a gone one leaves, an unread one stays
+  const read = new Map<number, FeedEventRow | null>([
+    [703, ticketsGone],
+    [700, celine1],
+    [702, null],
+  ]);
+  assert.deepEqual(ids(buildEventsIndex({ events: lightAll, now: NOW, read })), [710, 711, 712, 701, 700]);
+
+  // the site's card flags (its own sold-out test) when its row was read: no card = not on the site
+  const flags = new Map<RowRef, ShowFlags>([
+    ["event:700", { soldOut: false }],
+    ["event:701", { soldOut: true }],
+    ["event:703", { soldOut: false }],
+    ["event:704", { soldOut: false }], // the Sold tag still wins
+  ]);
+  assert.deepEqual(ids(buildEventsIndex({ events: lightAll, now: NOW, flags })), [703, 700]);
+
+  // the price only where the list priced it, copied from its item - the index never prices anything
+  const item = feedItemOf(celine1, { pinned: false });
+  assert.ok(item);
+  const priced = buildEventsIndex({ events: lightAll, now: NOW, priced: [item] });
+  const hot = priced.find((i) => i.id === 700);
+  assert.ok(hot);
+  assert.equal(hot.price, item.price);
+  assert.equal(hot.currency, "USD");
+  assert.equal(hot.priceLabel, PRICE_LABEL);
+  assert.equal(hot.priceNote, item.priceNote);
+  assert.ok(priced.filter((i) => i.id !== 700).every((i) => !("price" in i) && !("priceLabel" in i)));
+
+  // capped at EVENTS_INDEX_MAX, the soonest; a repeated row counts once
+  nextId = 5000;
+  const lots = Array.from({ length: EVENTS_INDEX_MAX + 50 }, (_, i) =>
+    ev({ date: new Date(Date.parse("2027-06-01T19:00:00Z") - i * 3_600_000).toISOString() }),
+  );
+  const capped = buildEventsIndex({ events: [...lots, lots[0]].map(light), now: NOW });
+  assert.equal(capped.length, EVENTS_INDEX_MAX);
+  assert.deepEqual(ids(capped), ids(lots.slice(50).reverse()), "the 400 soonest, by date");
+  assert.equal(buildEventsIndex({ events: lots.map(light), now: NOW, max: 3 }).length, 3);
+  assert.deepEqual(buildEventsIndex({ events: [], now: NOW }), []);
+  // 400 events stay a small document (the site copies it at every build)
+  assert.ok(JSON.stringify(capped).length < 200_000, `${JSON.stringify(capped).length} bytes`);
+}
 
 /* the cron's paged read: tickets only where the list needs them, the same list as from every row */
 
@@ -296,7 +401,7 @@ async function testPagedRead(): Promise<void> {
   // nothing to list: no read at all
   const none = fakeReader([]);
   const nonePlan = await buildEventsFeedInPages({ order: [], pins: [], now: NOW }, none.read);
-  assert.deepEqual(nonePlan, { items: [], complete: true, pages: 0, read: 0 });
+  assert.deepEqual(nonePlan, { items: [], complete: true, pages: 0, read: 0, rows: new Map() });
   assert.equal(none.calls.length, 0);
 
   // random catalogs, with and without the site's row, every page size: always the full-row list
@@ -361,6 +466,34 @@ async function testPagedRead(): Promise<void> {
     );
     const without = buildEventsFeed({ events: rows.filter((e) => e.id !== goneId), pins, hidden, site, now: NOW, max });
     assert.deepEqual(gonePlan.items, without, `trial ${trial}, gone ${goneId}`);
+
+    // the index of the same run: no sold-out event among those whose tickets were read, every priced
+    // event of the list in it with the list's own price, nothing else priced, by date
+    const fullPlan = await buildEventsFeedInPages(
+      { order: rows.map(light), pins, hidden, site, now: NOW, max },
+      fakeReader(rows).read,
+    );
+    const index = buildEventsIndex({
+      events: rows.map(light),
+      now: NOW,
+      flags: site?.flags ?? null,
+      read: fullPlan.rows,
+      priced: fullPlan.items,
+    });
+    const indexContext = `trial ${trial}, index`;
+    assert.ok(
+      index.every((i) => {
+        const full = fullPlan.rows.get(i.id);
+        return full === undefined || (full !== null && !isFeedEventSoldOut(full));
+      }),
+      indexContext,
+    );
+    for (const item of fullPlan.items) {
+      assert.equal(index.find((i) => i.id === item.id)?.price, item.price, `${indexContext}: item ${item.id}`);
+    }
+    const pricedIds = new Set(fullPlan.items.map((i) => i.id));
+    assert.ok(index.every((i) => (i.price === undefined) === !pricedIds.has(i.id)), indexContext);
+    assert.ok(index.every((i, k) => k === 0 || Date.parse(index[k - 1].date) <= Date.parse(i.date)), indexContext);
   }
 }
 

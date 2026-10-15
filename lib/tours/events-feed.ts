@@ -16,6 +16,11 @@
  * list for every listed event, then the tickets and prices only of the events the list can
  * reach (buildEventsFeedInPages) - every event's tickets in one read (~7 MB) timed the cron out
  * on 14.10.2026. Pure: no DB, no network (the paged builder is handed its reader).
+ *
+ * The same document carries `index` (15.10.2026, Dor): EVERY event Mega Events lists, light fields
+ * only, for the live search of a company site (typing "סלין" lists every Celine Dion show). It
+ * is built from the first pass alone (buildEventsIndex) - never a ticket read for it - and only
+ * the events of `items` carry a price, copied from them.
  */
 import { defaultPinnable, defaultShowable, mergeRow, refId, refKind, toRef } from "@/lib/homepage/merge";
 import type { RowPin, RowRef, ShowFlags } from "@/lib/homepage/merge";
@@ -28,6 +33,8 @@ import { eventSiteUrl, PUBLIC_SITE_URL } from "@/lib/site";
 export const EVENTS_FEED_KEY = "events_feed";
 /** How many packages a company site gets. */
 export const EVENTS_FEED_MAX = 12;
+/** How many events the search index holds at most: the soonest. */
+export const EVENTS_INDEX_MAX = 400;
 /**
  * How many events the cron reads in full (tickets and prices) at a time: four lists' worth, so
  * the sold-out and unpriced events the list skips rarely cost a second read.
@@ -83,13 +90,35 @@ export type EventsFeedItem = {
   prioritized: boolean;
 };
 
+/**
+ * One event of the search index: every listed event that is not sold out, as far as the first
+ * pass knows (buildEventsIndex). The price fields only on an event of `items`.
+ */
+export type EventsIndexItem = {
+  id: number;
+  name: string;
+  /** The event's start as stored (ISO). */
+  date: string;
+  /** "DD/MM/YY". */
+  dateLabel: string;
+  /** As EventsFeedItem.place. */
+  place: string;
+  category: EventsFeedCategory;
+  /** The event's order page on mega-events.co.il. */
+  href: string;
+  /** The picture `items` would use (photo, else cut-out art), only when it is https; else null. */
+  image: string | null;
+} & Partial<Pick<EventsFeedItem, "price" | "currency" | "priceLabel" | "priceNote">>;
+
 /** The stored document (tours.site_content.data). */
 export type EventsFeedDoc = {
-  /** When the list last changed. */
+  /** When the list (or the index) last changed. */
   updatedAt: string;
   /** Where the order came from: the site's own row, or rebuilt from the database. */
   source: "site" | "database";
   items: EventsFeedItem[];
+  /** Every listed event by date, at most EVENTS_INDEX_MAX - for the site's search. */
+  index: EventsIndexItem[];
 };
 
 /** The event columns the builder reads (the cron selects exactly these). */
@@ -124,6 +153,12 @@ export const FEED_ORDER_COLUMNS = [
   "is_deleted",
 ] as const;
 export type FeedOrderRow = Pick<FeedEventRow, (typeof FEED_ORDER_COLUMNS)[number]>;
+
+/** What the search index prints of every listed event, read in the same first pass. Still no tickets. */
+export const FEED_INDEX_COLUMNS = ["name", "location", "event_location", "card_image_url", "art_image_url"] as const;
+/** The cron's first read of every listed event: what orders the list + what the index prints. */
+export const FEED_LIGHT_COLUMNS = [...FEED_ORDER_COLUMNS, ...FEED_INDEX_COLUMNS] as const;
+export type FeedLightRow = Pick<FeedEventRow, (typeof FEED_LIGHT_COLUMNS)[number]>;
 
 /** The site's own row, as /api/homepage-pools sends it. */
 export type SiteHotRow = {
@@ -445,20 +480,82 @@ export async function buildEventsFeedInPages(
   input: PagedFeedInput,
   readFull: (ids: number[]) => Promise<FeedEventRow[]>,
   pageSize = EVENTS_FEED_PAGE,
-): Promise<EventsFeedPlan & { pages: number; read: number }> {
+): Promise<EventsFeedPlan & { pages: number; read: number; rows: ReadonlyMap<number, FeedEventRow | null> }> {
   const candidates = feedCandidateIds({ ...input, events: input.order });
   const read = new Map<number, FeedEventRow | null>();
   let next = 0;
   let pages = 0;
   for (;;) {
     const plan = planEventsFeed({ ...input, read });
-    if (plan.complete || next >= candidates.length) return { ...plan, pages, read: read.size };
+    if (plan.complete || next >= candidates.length) return { ...plan, pages, read: read.size, rows: read };
     const ids = candidates.slice(next, next + Math.max(1, Math.floor(pageSize)));
     next += ids.length;
     pages += 1;
     for (const id of ids) read.set(id, null);
     for (const row of await readFull(ids)) if (read.has(row.id)) read.set(row.id, row);
   }
+}
+
+export type EventsIndexInput = {
+  /** Every listed event, light columns (the cron's first read). */
+  events: FeedLightRow[];
+  now: Date;
+  /** The site's card flags (its own sold-out test), when its row was read: no card or sold out = left out. */
+  flags?: ReadonlyMap<RowRef, ShowFlags> | null;
+  /** The rows the list read in full (null = gone since the first read): a sold-out one is left out. */
+  read?: ReadonlyMap<number, FeedEventRow | null>;
+  /** The list's items: their price is copied onto their events - the index never prices anything. */
+  priced?: readonly EventsFeedItem[];
+  max?: number;
+};
+
+/** The picture feedItemOf would take (photo, else cut-out art), only when it is https - a site never loads http. */
+const indexImage = (e: Pick<FeedEventRow, "card_image_url" | "art_image_url">): string | null => {
+  const url = absoluteUrl(e.card_image_url) ?? absoluteUrl(e.art_image_url);
+  return url && /^https:\/\//i.test(url) ? url : null;
+};
+
+/**
+ * The search index: every event a Mega Events listing may show (isListedFeedEvent) that is not
+ * sold out as far as the cron knows - the "Sold" tag of the light row, the site's card flags when
+ * the site was read (the feed's showable test), the tickets of the rows the list read in full -
+ * soonest first, at most `max`. Light fields only; no ticket is read and nothing is priced for it.
+ */
+export function buildEventsIndex(input: EventsIndexInput): EventsIndexItem[] {
+  const cutoff = feedCutoffDate(input.now);
+  const hot = new Map((input.priced ?? []).map((item) => [item.id, item]));
+  const seen = new Set<number>();
+  const out: EventsIndexItem[] = [];
+  for (const e of input.events) {
+    if (seen.has(e.id) || !isListedFeedEvent(e, cutoff) || e.tags === "Sold") continue;
+    const ref = toRef("event", e.id);
+    if (input.flags && !defaultShowable(input.flags.get(ref), HOT_ROW_KEY, ref)) continue;
+    if (input.read?.has(e.id)) {
+      const full = input.read.get(e.id);
+      if (!full || isFeedEventSoldOut(full)) continue;
+    }
+    const name = (e.name ?? "").trim();
+    const dateLabel = feedDateLabel(e.date);
+    if (!name || !dateLabel) continue;
+    seen.add(e.id);
+    const lodging = e.location ? { location: e.location, event_location: e.event_location ?? null } : null;
+    const priced = hot.get(e.id);
+    out.push({
+      id: e.id,
+      name,
+      date: e.date,
+      dateLabel,
+      place: placeLabel(lodging),
+      category: feedCategory(e),
+      href: eventSiteUrl(e.id),
+      image: indexImage(e),
+      ...(priced
+        ? { price: priced.price, currency: priced.currency, priceLabel: priced.priceLabel, priceNote: priced.priceNote }
+        : {}),
+    });
+  }
+  out.sort((a, b) => time(a.date) - time(b.date) || a.id - b.id);
+  return out.slice(0, Math.max(0, Math.floor(input.max ?? EVENTS_INDEX_MAX)));
 }
 
 /** JSON with every object's keys sorted - jsonb hands keys back in its own order. */
@@ -485,4 +582,11 @@ export function storedFeedItems(data: unknown): unknown[] | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const items = (data as { items?: unknown }).items;
   return Array.isArray(items) ? items : null;
+}
+
+/** The index of a stored document, or null (a document written before 15.10.2026 has none). */
+export function storedFeedIndex(data: unknown): unknown[] | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const index = (data as { index?: unknown }).index;
+  return Array.isArray(index) ? index : null;
 }
