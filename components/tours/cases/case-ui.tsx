@@ -4,17 +4,30 @@
  * The small pieces the Reservations table and the case page share: the status
  * tag, the TYPE and TASK badges, and the status / rep pickers.
  */
-import type { MouseEvent, ReactNode } from "react";
-import { Pencil } from "lucide-react";
+import { useState, type MouseEvent, type ReactNode } from "react";
+import { ChevronDown, ExternalLink, MessageCircle, Pencil } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { isFollowUpDate } from "@/lib/reservations/follow-up";
 import {
+  BOOKING_PHASE_LABELS,
   CASE_TASK_LABELS,
   CASE_TYPE_LABELS,
+  CLOSE_REASON_MAX,
+  CLOSE_REASON_MIN,
+  CLOSE_REASON_PRESETS,
   STATUS_COLOR_CLASSES,
+  checkCloseReason,
+  needsCloseReason,
   statusOf,
+  waLink,
+  whatsappAppLink,
+  type BookingPhase,
   type CaseRep,
   type CaseStatus,
   type CaseTask,
@@ -82,36 +95,203 @@ export function TaskBadge({ task, overridden }: { task: CaseTask | null; overrid
   );
 }
 
-/** The company's active statuses, plus the case's own one when it was switched off since. */
+/**
+ * The company's active statuses, plus the case's own one when it was switched off since. A status
+ * that closes the case without a deal (Not relevant, Cancelled, ...) first asks why - the change is
+ * saved only with a reason (Alon 15.10); cancelling the question keeps the old status.
+ */
 export function StatusSelect({
   value,
   statuses,
   disabled,
   onChange,
   className,
+  title,
 }: {
   value: string;
   statuses: readonly CaseStatus[];
   disabled?: boolean;
-  onChange: (status: string) => void;
+  onChange: (status: string, closeReason?: string) => void;
   className?: string;
+  /** Hover text - the close reason of a closed case. */
+  title?: string;
 }) {
+  const [asking, setAsking] = useState<string | null>(null);
   const offered = statuses.filter((s) => s.isActive || s.key === value);
   return (
-    <Select value={value} disabled={disabled} onValueChange={onChange}>
-      <SelectTrigger aria-label="Status" className={cn("h-8 w-auto min-w-[8rem] gap-1 border-none bg-transparent px-1 shadow-none", className)}>
-        <SelectValue>
-          <StatusTag status={value} statuses={statuses} />
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        {offered.map((s) => (
-          <SelectItem key={s.key} value={s.key}>
-            <StatusTag status={s.key} statuses={statuses} />
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <Select value={value} disabled={disabled} onValueChange={(next) => (needsCloseReason(next, statuses) ? setAsking(next) : onChange(next))}>
+        <SelectTrigger aria-label="Status" title={title} className={cn("h-8 w-auto min-w-[8rem] gap-1 border-none bg-transparent px-1 shadow-none", className)}>
+          <SelectValue>
+            <StatusTag status={value} statuses={statuses} />
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {offered.map((s) => (
+            <SelectItem key={s.key} value={s.key}>
+              <StatusTag status={s.key} statuses={statuses} />
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <CloseReasonDialog
+        status={asking}
+        statuses={statuses}
+        onCancel={() => setAsking(null)}
+        onConfirm={(reason) => {
+          if (asking) onChange(asking, reason);
+          setAsking(null);
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * "Why is it closed?" - one click on a common reason or the rep's own words; Save stays off until
+ * there is a reason (CLOSE_REASON_MIN). `status` null = closed. Used by one case and by the bulk bar.
+ */
+export function CloseReasonDialog({
+  status,
+  statuses,
+  count,
+  onCancel,
+  onConfirm,
+}: {
+  status: string | null;
+  statuses: readonly CaseStatus[];
+  /** Several cases at once (the bulk bar). */
+  count?: number;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const checked = checkCloseReason(reason);
+  const label = status ? (statusOf(status, statuses)?.label ?? status) : "";
+  const close = () => {
+    setReason("");
+    onCancel();
+  };
+  return (
+    <Dialog open={status !== null} onOpenChange={(open) => !open && close()}>
+      {/* inside a clickable table row: a click in the dialog must not open the case */}
+      <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle>
+            Why {count && count > 1 ? `are ${count} cases` : "is the case"} <span dir="auto">&quot;{label}&quot;</span>?
+          </DialogTitle>
+          <DialogDescription>The reason is saved on the case and shows in the table - the team learns why customers drop.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap gap-2" dir="rtl">
+          {CLOSE_REASON_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setReason(preset)}
+              aria-pressed={reason === preset}
+              className={cn(
+                "min-h-9 rounded-full border px-3 text-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                reason === preset && "border-primary bg-primary/10 text-primary",
+              )}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+        <div className="grid gap-1">
+          <label htmlFor="close-reason" className="text-sm font-medium">
+            Reason <span className="text-destructive">*</span>
+          </label>
+          <Textarea
+            id="close-reason"
+            dir="auto"
+            rows={3}
+            maxLength={CLOSE_REASON_MAX}
+            value={reason}
+            autoFocus
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="What happened - in a few words"
+            aria-invalid={reason.length > 0 && !checked.ok}
+          />
+          <p className="text-xs text-muted-foreground">Required - at least {CLOSE_REASON_MIN} characters.</p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={close}>
+            Keep the status
+          </Button>
+          <Button
+            disabled={!checked.ok}
+            onClick={() => {
+              if (!checked.ok) return;
+              setReason("");
+              onConfirm(checked.reason);
+            }}
+          >
+            Save with reason
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * WhatsApp to the customer from the rep's OWN app: whatsapp:// opens WhatsApp Desktop (or the phone's
+ * app) on the chat, no browser tab (Alon 15.10). The menu keeps WhatsApp Web for a computer without
+ * the app. Nothing when the phone cannot be a WhatsApp number.
+ */
+export function WhatsAppButton({ phone, message, iconOnly }: { phone: string | null; message: string; iconOnly?: boolean }) {
+  const app = whatsappAppLink(phone, message);
+  const web = waLink(phone, message);
+  if (!app || !web) return null;
+  if (iconOnly) {
+    return (
+      <Button variant="ghost" size="icon" className="h-8 w-8 text-success hover:text-success" asChild>
+        <a href={app} aria-label="WhatsApp - opens the WhatsApp app" title="Opens WhatsApp on this computer">
+          <MessageCircle className="h-4 w-4" />
+        </a>
+      </Button>
+    );
+  }
+  return (
+    <div className="inline-flex items-center">
+      <Button variant="outline" size="sm" className="rounded-e-none" asChild>
+        <a href={app} title="Opens WhatsApp on this computer">
+          <MessageCircle className="h-4 w-4" />
+          WhatsApp
+        </a>
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="rounded-s-none border-s-0 px-1.5" aria-label="More WhatsApp options">
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem asChild>
+            <a href={web} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              Open in WhatsApp Web
+            </a>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+const PHASE_CLASSES: Record<BookingPhase, string> = {
+  active: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300",
+  past: "border-border bg-muted text-muted-foreground",
+  cancelled: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+};
+
+/** Active / Past / Cancelled - where one of the customer's orders stands. */
+export function PhaseTag({ phase }: { phase: BookingPhase }) {
+  return (
+    <span className={cn("inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold", PHASE_CLASSES[phase])}>
+      {BOOKING_PHASE_LABELS[phase]}
+    </span>
   );
 }
 

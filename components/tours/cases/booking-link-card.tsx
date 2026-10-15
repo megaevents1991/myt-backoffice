@@ -1,35 +1,53 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Copy, Link2, Loader2, Mail, MessageCircle, Minus, Plus } from "lucide-react";
+import { CalendarClock, Copy, ExternalLink, Link2, Loader2, Mail, MessageCircle, Minus, Plus, Send } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { fmtDate, fmtInstant } from "@/lib/tours/format";
+import { fmtDate, fmtInstant, todayIso } from "@/lib/tours/format";
 import { listLinkDepartures, mintBookingLink } from "@/lib/actions/tours-cases-actions";
 import { LINK_ROOMS_MAX, type BookingLinkResult, type LinkDeparture } from "@/lib/tours/cases";
 import { Section } from "@/components/tours/ui";
+
+/** A day `n` days from today, as YYYY-MM-DD (the date box's value). */
+function inDays(n: number): string {
+  const [y, m, d] = todayIso().split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + n));
+  return date.toISOString().slice(0, 10);
+}
+const QUICK_DAYS = [
+  { label: "Tomorrow", days: 1 },
+  { label: "In 2 days", days: 2 },
+  { label: "In a week", days: 7 },
+];
 
 /**
  * "Send a booking link": a date and the customer's rooms, and the site opens on
  * that tour with the rooms filled - the customer types the passengers and
  * sends. The link carries the case's token, so the booking lands on this case.
- * Nothing loads until "Build a link" is clicked.
+ * A link is an offer (Alon 15.10): the case moves to "Offer sent" and the rep
+ * must say when to call back - no day, no link. Nothing loads until "Build a
+ * link" is clicked.
  */
 export function BookingLinkCard({
   caseId,
   defaultDepartureId,
   linkSentAt,
   hasSite,
+  whatsappApi,
   onSent,
 }: {
   caseId: string;
   defaultDepartureId: string | null;
   linkSentAt: string | null;
   hasSite: boolean;
+  /** The company's own WhatsApp number is connected (Cloud API): the link can go out from it. */
+  whatsappApi: boolean;
   onSent: () => void;
 }) {
   const run = useActionToast();
@@ -38,6 +56,7 @@ export function BookingLinkCard({
   const [loading, setLoading] = useState(false);
   const [departureId, setDepartureId] = useState("");
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [followUp, setFollowUp] = useState("");
   const [minting, setMinting] = useState(false);
   const [result, setResult] = useState<BookingLinkResult | null>(null);
 
@@ -54,6 +73,9 @@ export function BookingLinkCard({
 
   const chosen = useMemo(() => departures?.find((d) => d.id === departureId), [departures, departureId]);
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  const today = todayIso();
+  const followUpOk = /^\d{4}-\d{2}-\d{2}$/.test(followUp) && followUp >= today;
+  const ready = !!chosen && chosen.rooms.length > 0 && total > 0 && followUpOk;
   const bump = (key: string, by: 1 | -1) =>
     setCounts((current) => {
       const next = Math.max(0, (current[key] ?? 0) + by);
@@ -61,11 +83,14 @@ export function BookingLinkCard({
       return { ...current, [key]: next };
     });
 
-  const mint = async () => {
-    if (!chosen) return;
+  const mint = async (sendWhatsApp: boolean) => {
+    if (!chosen || !ready) return;
     const rooms = chosen.rooms.flatMap((r) => Array<string>(counts[r.key] ?? 0).fill(r.key));
     setMinting(true);
-    const answer = await run(() => mintBookingLink(caseId, { departureId: chosen.id, rooms }), "Booking link ready");
+    const answer = await run(
+      () => mintBookingLink(caseId, { departureId: chosen.id, rooms, followUpDate: followUp, sendWhatsApp }),
+      'Booking link ready - the case is "Offer sent"',
+    );
     setMinting(false);
     if (!answer.success) return;
     setResult(answer.data);
@@ -144,45 +169,102 @@ export function BookingLinkCard({
             </div>
           )}
 
-          <Button className="w-full" onClick={mint} disabled={minting || !chosen || chosen.rooms.length === 0 || total === 0}>
-            {minting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-            Create link
-          </Button>
+          {/* the offer's follow-up: required, so no link goes out without a day to call back */}
+          <div className="space-y-1.5 rounded-md border p-2">
+            <label htmlFor="link-follow-up" className="flex items-center gap-1.5 text-sm font-medium">
+              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+              Follow up on <span className="text-destructive">*</span>
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {QUICK_DAYS.map((q) => {
+                const day = inDays(q.days);
+                return (
+                  <button
+                    key={q.days}
+                    type="button"
+                    onClick={() => setFollowUp(day)}
+                    aria-pressed={followUp === day}
+                    className={cn(
+                      "min-h-8 rounded-full border px-2.5 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      followUp === day && "border-primary bg-primary/10 font-semibold text-primary",
+                    )}
+                  >
+                    {q.label}
+                  </button>
+                );
+              })}
+              <input
+                id="link-follow-up"
+                type="date"
+                dir="ltr"
+                min={today}
+                value={followUp}
+                onChange={(e) => setFollowUp(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm tabular"
+                aria-describedby="link-follow-up-hint"
+              />
+            </div>
+            <p id="link-follow-up-hint" className="text-xs text-muted-foreground">
+              {followUpOk ? `The case moves to "Offer sent" and comes back to you on ${fmtDate(followUp)}.` : "Pick the day to get back to the customer - the link needs it."}
+            </p>
+          </div>
+
+          <div className={cn("grid gap-2", whatsappApi && "sm:grid-cols-2")}>
+            <Button className="w-full" variant={whatsappApi ? "outline" : "default"} onClick={() => void mint(false)} disabled={minting || !ready}>
+              {minting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+              Create link
+            </Button>
+            {whatsappApi && (
+              <Button className="w-full" onClick={() => void mint(true)} disabled={minting || !ready} title="Sends the link from the company's WhatsApp number">
+                {minting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Send on WhatsApp
+              </Button>
+            )}
+          </div>
 
           {result && (
             <div className="space-y-2">
-              <Input readOnly dir="ltr" value={result.url} onFocus={(e) => e.currentTarget.select()} className="text-xs" />
-              <div className="grid grid-cols-3 gap-2">
+              <Input readOnly dir="ltr" value={result.url} onFocus={(e) => e.currentTarget.select()} className="text-xs" aria-label="Booking link" />
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Button variant="outline" size="sm" onClick={copy}>
                   <Copy className="h-4 w-4" />
                   Copy
                 </Button>
-                <Button variant="outline" size="sm" asChild disabled={!result.whatsapp}>
-                  {result.whatsapp ? (
-                    <a href={result.whatsapp} target="_blank" rel="noreferrer">
+                {result.whatsappApp ? (
+                  <Button variant="outline" size="sm" asChild>
+                    {/* the rep's WhatsApp app, on this chat, the message typed in - no browser tab */}
+                    <a href={result.whatsappApp} title="Opens WhatsApp on this computer">
                       <MessageCircle className="h-4 w-4" />
                       WhatsApp
                     </a>
-                  ) : (
-                    <span>
-                      <MessageCircle className="h-4 w-4" />
-                      No phone
-                    </span>
-                  )}
-                </Button>
-                <Button variant="outline" size="sm" asChild disabled={!result.mailto}>
-                  {result.mailto ? (
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>
+                    <MessageCircle className="h-4 w-4" />
+                    No phone
+                  </Button>
+                )}
+                {result.whatsapp && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={result.whatsapp} target="_blank" rel="noreferrer" title="WhatsApp Web, in a new tab">
+                      <ExternalLink className="h-4 w-4" />
+                      Web
+                    </a>
+                  </Button>
+                )}
+                {result.mailto ? (
+                  <Button variant="outline" size="sm" asChild>
                     <a href={result.mailto}>
                       <Mail className="h-4 w-4" />
                       E-mail
                     </a>
-                  ) : (
-                    <span>
-                      <Mail className="h-4 w-4" />
-                      No e-mail
-                    </span>
-                  )}
-                </Button>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>
+                    <Mail className="h-4 w-4" />
+                    No e-mail
+                  </Button>
+                )}
               </div>
             </div>
           )}

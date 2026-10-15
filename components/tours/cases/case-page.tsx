@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ExternalLink, Gift, Loader2, MessageCircle, PlusCircle, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, Gift, GitMerge, Loader2, PlusCircle, Trash2, TriangleAlert, Users } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useConfirm } from "@/components/confirm-provider";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { EMPTY, fmtDate, fmtDateRange, fmtInstant, todayIso } from "@/lib/tours/format";
+import { EMPTY, fmtDate, fmtDateRange, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { deleteCase, getCase, updateCase } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
 import { Fact, FactList, LoadError, Notice, Section } from "@/components/tours/ui";
@@ -21,6 +22,7 @@ import { readablePath } from "@/components/tours/content/shared";
 import { ReservationDialog } from "@/components/tours/reservations/reservation-dialog";
 import { ToursReservationsTable } from "@/components/tours/reservations/reservations-table";
 import type { ReservationPrefill } from "@/components/tours/reservations/types";
+import type { BookingRow } from "@/components/tours/bookings/shared";
 import {
   CASE_SOURCES,
   CASE_SOURCE_LABELS,
@@ -28,29 +30,33 @@ import {
   CASE_TASK_LABELS,
   CASE_TYPES,
   CASE_TYPE_LABELS,
+  bookingPhase,
   caseName,
   caseTask,
   followUpDue,
   htmlToText,
+  isClosedStatus,
+  payloadText,
   siteHref,
   isCaseTask,
   seatBookingOf,
   seatGap,
   sourceLabel,
-  waLink,
+  travelerGroups,
   type CaseChange,
   type CaseDetail,
   type CaseHistoryItem,
   type CaseSource,
   type CaseType,
 } from "@/lib/tours/cases";
-import { FollowUpInput, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TaskBadge, TypeBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { BookingCard } from "@/components/tours/cases/booking-card";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
+import { MergeDialog } from "@/components/tours/cases/merge-dialog";
 
 const AUTO = "auto";
 /** Fields of a form that the page already shows in its own place. */
-const SHOWN_PAYLOAD_KEYS = new Set(["name", "phone", "email", "message", "matched_by", "acceptance", "website"]);
+const SHOWN_PAYLOAD_KEYS = new Set(["name", "phone", "email", "message", "matched_by", "acceptance", "website", "related_case", "merged"]);
 const UTM_LABELS: Record<string, string> = {
   source: "Source",
   medium: "Medium",
@@ -63,9 +69,10 @@ const UTM_LABELS: Record<string, string> = {
   referrer: "Came from",
   at: "Visit",
 };
+/** The keys that say a campaign brought the visit (the rest - landing, referrer, time - come with any visit). */
+const CAMPAIGN_KEYS = ["source", "medium", "campaign", "term", "content", "gclid", "fbclid"];
 
-const show = (value: unknown): string =>
-  value === null || value === undefined || value === "" ? EMPTY : typeof value === "string" ? value : JSON.stringify(value);
+const show = (value: unknown): string => payloadText(value) || EMPTY;
 
 /** One history line: "status: new → in_progress", "travelers: 3". */
 function changeLines(item: CaseHistoryItem): string[] {
@@ -112,6 +119,40 @@ function CustomerField({
   );
 }
 
+/**
+ * The customer's orders (Alon 15.10): one booking is shown whole; two or more fold into rows that
+ * say where each stands - Active, Past, Cancelled - with the first active one open.
+ */
+function Orders({ bookings, caseName: name, casePhone, onChanged }: { bookings: BookingRow[]; caseName: string; casePhone: string | null; onChanged: () => void }) {
+  const today = todayIso();
+  if (bookings.length === 1) return <BookingCard booking={bookings[0]} caseName={name} casePhone={casePhone} onChanged={onChanged} />;
+  const phases = bookings.map((b) => bookingPhase(b, today));
+  const openFirst = Math.max(0, phases.indexOf("active"));
+  return (
+    <div className="space-y-2">
+      {bookings.map((b, i) => (
+        <Collapsible key={b.id} defaultOpen={i === openFirst} asChild>
+          <div className="group rounded-lg border">
+            <CollapsibleTrigger className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2.5 text-start text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90 rtl:-scale-x-100" />
+              <span className="font-mono font-semibold">{b.ref}</span>
+              <PhaseTag phase={phases[i]} />
+              <span className="tabular text-muted-foreground">
+                {b.departureCode ?? EMPTY} · {fmtDate(b.departureStart)}
+              </span>
+              <span className="text-muted-foreground">{b.adults + b.children} travelers</span>
+              <span className="ms-auto tabular font-medium">{fmtPrice(b.total, b.currency)}</span>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="px-3 pb-3">
+              <BookingCard booking={b} caseName={name} casePhone={casePhone} onChanged={onChanged} />
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+      ))}
+    </div>
+  );
+}
+
 /** /tours/reservations/[id] - one customer: the case, its bookings, seats, tour, source and booking link. */
 export function CasePage({ id }: { id: string }) {
   const router = useRouter();
@@ -121,6 +162,7 @@ export function CasePage({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const [travelersOpen, setTravelersOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   // set when the dialog opens, so it keeps one prefill while it is open
   const [travelersPrefill, setTravelersPrefill] = useState<ReservationPrefill | null>(null);
   const today = todayIso();
@@ -144,12 +186,14 @@ export function CasePage({ id }: { id: string }) {
   const task = caseTask(row, statuses, today);
   const due = followUpDue(row, statuses, today);
   const notes = notesDraft ?? row.notes ?? "";
-  const whatsapp = waLink(row.phone, `היי ${row.firstName ?? ""}`.trim());
   // bookings add, cancellations give back - the net is what the departure counts
   const seatsHeld = data.sales.reduce((sum, s) => sum + s.pax, 0);
-  // a settled deal whose travelers hold no seat: a request closed by phone adds none by itself (case #1004)
+  // a settled deal whose travelers hold no seat (closed before closing held them by itself - case #1004)
   const gap = seatGap(row.status, statuses, data.bookings.map(seatBookingOf), data.sales);
   const gapBooking = gap ? data.bookings.find((b) => b.ref === gap.ref) : undefined;
+  // every traveler the customer sent, per live order (Alon 15.10: "all the passengers' names")
+  const travelers = travelerGroups(data.bookings);
+  const bookedTravelers = data.bookings.find((b) => b.status !== "cancelled" && b.status !== "failed");
   const siteLink =
     data.siteUrl && data.pkg
       ? `${data.siteUrl.replace(/\/+$/, "")}${data.pkg.path}${data.departure ? `?product_id=${data.departure.siteId}` : ""}`
@@ -157,12 +201,18 @@ export function CasePage({ id }: { id: string }) {
   const formFields = Object.entries(data.payload).filter(([key]) => !SHOWN_PAYLOAD_KEYS.has(key));
   // the form's page is what the visitor's browser sent: linked only when it stays on our site
   const sourceHref = siteHref(data.siteUrl, row.sourcePath);
+  const hasCampaign = CAMPAIGN_KEYS.some((key) => !!row.utm[key]);
+  const repName = row.assignedTo ? (reps.find((p) => p.id === row.assignedTo)?.name ?? null) : null;
 
   const save = async (change: CaseChange): Promise<boolean> => {
     setBusy(true);
     const result = await run(() => updateCase(row.id, change));
     setBusy(false);
-    if (result.success) setData((current) => current && { ...current, row: result.data });
+    if (result.success) {
+      setData((current) => current && { ...current, row: result.data });
+      // a deal closed by hand may have put seats on the departure (the toast says so): show them
+      if (change.status) void reload({ quiet: true });
+    }
     return result.success;
   };
 
@@ -203,15 +253,12 @@ export function CasePage({ id }: { id: string }) {
           <TypeBadge type={row.type} />
           <TaskBadge task={task} overridden={isCaseTask(row.taskOverride)} />
           {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-          <div className="ms-auto flex items-center gap-2">
-            {whatsapp && (
-              <Button variant="outline" size="sm" asChild>
-                <a href={whatsapp} target="_blank" rel="noreferrer">
-                  <MessageCircle className="h-4 w-4" />
-                  WhatsApp
-                </a>
-              </Button>
-            )}
+          <div className="ms-auto flex flex-wrap items-center gap-2">
+            <WhatsAppButton phone={row.phone} message={`היי ${row.firstName ?? ""}`.trim()} />
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)} title="One customer with two cases - join them">
+              <GitMerge className="h-4 w-4" />
+              Link to another case
+            </Button>
             <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
               <Trash2 className="h-4 w-4" />
               Delete
@@ -221,7 +268,13 @@ export function CasePage({ id }: { id: string }) {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <label className="grid gap-1 text-sm">
             <span className="text-xs text-muted-foreground">Status</span>
-            <StatusSelect value={row.status} statuses={statuses} disabled={busy} onChange={(status) => void save({ status })} className="w-full justify-start border border-input px-2" />
+            <StatusSelect
+              value={row.status}
+              statuses={statuses}
+              disabled={busy}
+              onChange={(status, closeReason) => void save({ status, closeReason })}
+              className="w-full justify-start border border-input px-2"
+            />
           </label>
           <label className="grid gap-1 text-sm">
             <span className="text-xs text-muted-foreground">Rep</span>
@@ -274,9 +327,32 @@ export function CasePage({ id }: { id: string }) {
             </div>
           </label>
         </div>
+        {row.closeReason && isClosedStatus(row.status, statuses) && (
+          <p dir="auto" className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="text-xs text-muted-foreground">Closed because: </span>
+            {row.closeReason}
+          </p>
+        )}
         {data.payload.matched_by === "contact" && (
           <Notice tone="warning">
             A site booking was attached to this case because its phone or e-mail matches the case. Check the booking&apos;s own customer below before you call.
+          </Notice>
+        )}
+        {data.relatedCase && (
+          <Notice tone="info" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <GitMerge className="h-4 w-4 shrink-0" />
+            <p className="min-w-0 flex-1">
+              Same customer as case{" "}
+              <Link href={`/tours/reservations/${data.relatedCase.id}`} className="font-semibold underline underline-offset-4">
+                #{data.relatedCase.caseNo}
+              </Link>{" "}
+              (same phone or e-mail{repName ? `, given to ${repName}` : ""}). The booking came without the link, so it opened its own case - merge
+              them to keep one customer in one place.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setMergeOpen(true)}>
+              <GitMerge className="h-4 w-4" />
+              Merge the two
+            </Button>
           </Notice>
         )}
       </div>
@@ -292,6 +368,30 @@ export function CasePage({ id }: { id: string }) {
               <CustomerField label="National id (ת״ז)" value={row.idNumber} dir="ltr" onSave={(idNumber) => void save({ idNumber })} />
               <CustomerField label="ACC NUM" value={row.accNum} dir="ltr" onSave={(accNum) => void save({ accNum })} />
             </div>
+            {travelers.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  Travelers ({travelers.reduce((sum, g) => sum + g.passengers.length, 0)})
+                </h3>
+                {travelers.map((group) => (
+                  <div key={group.ref} className="space-y-1">
+                    {travelers.length > 1 && <p className="font-mono text-xs text-muted-foreground">{group.ref}</p>}
+                    <ol className="grid gap-1.5 sm:grid-cols-2">
+                      {group.passengers.map((p, i) => (
+                        <li key={i} className="flex items-baseline gap-2 rounded-md border bg-muted/30 px-3 py-1.5 text-sm">
+                          <span className="tabular text-xs text-muted-foreground">{i + 1}.</span>
+                          <span dir="auto" className="font-medium">
+                            {group.names[i]}
+                          </span>
+                          <span className="ms-auto text-xs text-muted-foreground">{p.type === "child" ? "Child" : "Adult"}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+            )}
             {row.message && (
               <p dir="auto" className="mt-3 whitespace-pre-wrap break-words rounded-md border bg-muted/30 px-3 py-2 text-sm">
                 <span className="text-xs text-muted-foreground">The customer wrote: </span>
@@ -309,11 +409,7 @@ export function CasePage({ id }: { id: string }) {
                 No booking from the site yet.{row.type !== "reservation" ? " Send a booking link and the booking will land here." : ""}
               </p>
             ) : (
-              <div className="space-y-4">
-                {data.bookings.map((b) => (
-                  <BookingCard key={b.id} booking={b} caseName={name} casePhone={row.phone} onChanged={() => void reload({ quiet: true })} />
-                ))}
-              </div>
+              <Orders bookings={data.bookings} caseName={name} casePhone={row.phone} onChanged={() => void reload({ quiet: true })} />
             )}
           </Section>
 
@@ -327,8 +423,8 @@ export function CasePage({ id }: { id: string }) {
                   {gapBooking?.departureCode ? ` (${gapBooking.departureCode})` : ""}
                 </p>
                 <p className="text-xs opacity-90">
-                  The deal is closed, but its seats were never held - the departure still sells these places. Only a card payment adds seats by
-                  itself; a booking closed by phone needs them added here.
+                  The deal is closed, but its seats are not held - the departure still sells these places. Closing a booking or the case by hand holds
+                  them by itself now; this one was closed before that, so hold them here.
                 </p>
               </div>
               <Button
@@ -348,8 +444,8 @@ export function CasePage({ id }: { id: string }) {
             </Notice>
           )}
 
-          {/* closed by default (Dor 15.10): the seats count by themselves - a paid booking adds them - so the
-              ledger is there for whoever needs it, not in every rep's way */}
+          {/* closed by default (Dor 15.10): the seats count by themselves - a paid or closed booking adds them - so
+              the ledger is there for whoever needs it, not in every rep's way */}
           <Collapsible asChild>
             <section className="group rounded-lg border bg-card">
               <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-lg p-4 text-start hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -360,8 +456,8 @@ export function CasePage({ id }: { id: string }) {
               <CollapsibleContent className="space-y-4 px-4 pb-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <p className="text-sm text-muted-foreground">
-                    Travelers this customer holds on a departure - a paid booking adds them by itself, a cancellation gives them back. Add travelers by
-                    hand for a phone or office booking.
+                    Travelers this customer holds on a departure - a paid booking, or one closed as Done, adds them by itself; a cancellation gives them
+                    back. Add travelers by hand for a phone or office booking.
                   </p>
                   <Button size="sm" onClick={() => addTravelers()}>
                     <PlusCircle className="h-4 w-4" />
@@ -417,7 +513,20 @@ export function CasePage({ id }: { id: string }) {
                   </span>
                 )}
               </Fact>
-              <Fact label="Travelers">{row.travelers || EMPTY}</Fact>
+              <Fact label="Travelers">
+                {row.travelers > 0 ? (
+                  <span>
+                    {row.travelers} <span className="text-xs text-muted-foreground">held on the departure</span>
+                  </span>
+                ) : bookedTravelers && bookedTravelers.adults + bookedTravelers.children > 0 ? (
+                  <span className={cn(gap && "text-amber-700 dark:text-amber-300")}>
+                    {bookedTravelers.adults + bookedTravelers.children}{" "}
+                    <span className="text-xs">{gap ? "on the booking - not on the departure yet" : `on booking ${bookedTravelers.ref}`}</span>
+                  </span>
+                ) : (
+                  EMPTY
+                )}
+              </Fact>
             </FactList>
             {siteLink && (
               <a href={siteLink} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline">
@@ -472,6 +581,12 @@ export function CasePage({ id }: { id: string }) {
                     <span dir="auto">{readablePath(row.sourcePath)}</span>
                   ))}
               </Fact>
+              {/* Alon 15.10 "does it bring UTM?": yes - and when the visit carried none, the page says so */}
+              {!hasCampaign && row.kind !== "manual" && (
+                <Fact label="Campaign (UTM)">
+                  <span className="text-muted-foreground">None - the visit came without a campaign (direct, organic search or a typed address)</span>
+                </Fact>
+              )}
               {Object.entries(row.utm).map(([key, value]) => (
                 <Fact key={key} label={UTM_LABELS[key] ?? key}>
                   <span dir="auto" className="break-all">
@@ -502,6 +617,7 @@ export function CasePage({ id }: { id: string }) {
             defaultDepartureId={row.departureId}
             linkSentAt={data.linkSentAt}
             hasSite={!!data.siteUrl}
+            whatsappApi={data.whatsappApi}
             onSent={() => void reload({ quiet: true })}
           />
 
@@ -532,6 +648,14 @@ export function CasePage({ id }: { id: string }) {
         onOpenChange={setTravelersOpen}
         prefill={travelersPrefill ?? undefined}
         onCreated={() => void reload({ quiet: true })}
+      />
+      <MergeDialog
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+        caseId={row.id}
+        caseNo={row.caseNo}
+        statuses={statuses}
+        onMerged={(keptId) => (keptId === row.id ? void reload() : router.push(`/tours/reservations/${keptId}`))}
       />
     </div>
   );

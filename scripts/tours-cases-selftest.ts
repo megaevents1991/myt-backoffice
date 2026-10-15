@@ -31,7 +31,16 @@ import {
   typeOfKind,
   validateStatuses,
   waLink,
+  whatsappAppLink,
   whatsappPhone,
+  needsCloseReason,
+  checkCloseReason,
+  statusAfterLink,
+  bookingPhase,
+  travelerGroups,
+  relatedCaseOf,
+  mergedIntoOf,
+  payloadText,
   type CaseRow,
   type CaseStatus,
   type SeatBooking,
@@ -271,5 +280,72 @@ assert.equal(missingOf(seatGap("paid", S, [bk()], [{ departureId: "dep-a", pax: 
 assert.equal(seatGap("paid", S, [bk()], [{ departureId: "dep-b", pax: 4 }]), null, "seats moved to another departure still count");
 const twoTrips = seatGap("paid", S, [bk({ ref: "T2", departureId: "dep-b", travelers: 2 }), bk()], [{ departureId: "dep-a", pax: 4 }]);
 assert.deepEqual(twoTrips, { ref: "T2", departureId: "dep-b", travelers: 2, missing: 2 }, "two trips: the one short is named");
+
+// ---- Alon's rejects 15.10
+// 5. closing as not relevant asks why; Done and Spam do not
+assert.equal(needsCloseReason("not_relevant", S), true);
+assert.equal(needsCloseReason("cancelled", S), true, "cancelled by hand says why too");
+assert.equal(needsCloseReason("custom_1", closedCustom), true, "a closed status of the company's own");
+assert.equal(needsCloseReason("done", S), false, "a closed deal needs no excuse");
+assert.equal(needsCloseReason("spam", S), false);
+assert.equal(needsCloseReason("in_progress", S), false);
+assert.deepEqual(checkCloseReason("  לא   עונה  "), { ok: true, reason: "לא עונה" });
+assert.equal(checkCloseReason("").ok, false, "empty is no reason");
+assert.equal(checkCloseReason("ab").ok, false, "two letters are not a reason");
+assert.equal(checkCloseReason("x".repeat(501)).ok, false, "too long");
+
+// 4. a link sent = "Offer sent" - but never over a payment or a closed case
+assert.equal(DEFAULT_STATUSES.some((s) => s.key === "offer_sent" && s.isSystem && !s.isClosed), true, "a system status");
+assert.equal(statusAfterLink("new", S), "offer_sent");
+assert.equal(statusAfterLink("follow_up", S), "offer_sent");
+assert.equal(statusAfterLink("offer_sent", S), "offer_sent");
+assert.equal(statusAfterLink("pending_payment", S), "pending_payment", "a payment on its way stays");
+assert.equal(statusAfterLink("paid", S), "paid");
+assert.equal(statusAfterLink("payment_review", S), "payment_review");
+assert.equal(statusAfterLink("not_relevant", S), "offer_sent", "a link reopens a closed lead - the rep is selling again");
+assert.equal(statusAfterLink("done", S), "done", "a closed deal stays closed");
+const noOffer = S.filter((s) => s.key !== "offer_sent");
+assert.equal(statusAfterLink("new", noOffer), "new", "a list without the status (migration not applied) keeps the case");
+const offOffer = S.map((s) => (s.key === "offer_sent" ? { ...s, isActive: false } : s));
+assert.equal(statusAfterLink("new", offOffer), "offer_sent", "a system status is never off - a stale row still counts");
+
+// 9. a customer's orders, each with where it stands
+assert.equal(bookingPhase({ status: "cancelled", departureStart: "2099-01-01" }, "2026-10-15"), "cancelled");
+assert.equal(bookingPhase({ status: "failed", departureStart: "2099-01-01" }, "2026-10-15"), "cancelled", "a failed card payment is not a live order");
+assert.equal(bookingPhase({ status: "paid", departureStart: "2026-10-01" }, "2026-10-15"), "past");
+assert.equal(bookingPhase({ status: "paid", departureStart: "2026-10-15" }, "2026-10-15"), "active", "leaving today is still active");
+assert.equal(bookingPhase({ status: "new", departureStart: null }, "2026-10-15"), "active");
+
+// 2. every traveler's name on the case
+const pax = (first: string, last: string, type: "adult" | "child" = "adult") => ({ first, last, type });
+const groups = travelerGroups([
+  { ref: "T3", status: "cancelled", passengers: [pax("Old", "Trip")] },
+  { ref: "T2", status: "paid", passengers: [pax("tammy", "Aharon"), pax("", ""), pax("Kid", "Aharon", "child")] },
+  { ref: "T1", status: "new", passengers: [] },
+]);
+assert.deepEqual(
+  groups.map((g) => [g.ref, g.names]),
+  [["T2", ["tammy Aharon", "Kid Aharon"]]],
+  "live bookings only, blank rows dropped, a booking with no names left out",
+);
+assert.equal(groups[0].passengers[1].type, "child");
+
+// 6-7. the earlier case a booking points at, and a merged case
+assert.deepEqual(relatedCaseOf({ related_case: { id: "1b4e28ba-2fa1-11d2-883f-0016d3cca427", case_no: 1004 } }), {
+  id: "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+  caseNo: 1004,
+});
+assert.equal(relatedCaseOf({ related_case: { id: "nope", case_no: 1004 } }), null, "a broken id is no link");
+assert.equal(relatedCaseOf({}), null);
+assert.equal(mergedIntoOf({ merged_into: { id: "1b4e28ba-2fa1-11d2-883f-0016d3cca427", case_no: "1007" } })?.caseNo, 1007);
+
+// 1. WhatsApp opens the app itself - no browser tab
+assert.equal(whatsappAppLink("052-896-8912", "היי"), `whatsapp://send?phone=972528968912&text=${encodeURIComponent("היי")}`);
+assert.equal(whatsappAppLink("12", "x"), null);
+
+// the waiting list's date reads as its label, not as JSON
+assert.equal(payloadText({ productId: 31, code: "CBEA1014", label: "14.10 - 20.10" }), "14.10 - 20.10");
+assert.equal(payloadText({ a: 1 }), '{"a":1}');
+assert.equal(payloadText("text"), "text");
 
 console.log("tours-cases selftest: ok");

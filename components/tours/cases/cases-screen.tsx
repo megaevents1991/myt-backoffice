@@ -31,6 +31,7 @@ import {
   followUpDue,
   followUpTone,
   isCaseTask,
+  needsCloseReason,
   sourceLabel,
   waLink,
   type CaseChange,
@@ -38,7 +39,18 @@ import {
   type CasesPage,
   type CaseStatus,
 } from "@/lib/tours/cases";
-import { FollowUpInput, GHOST_FIELD, InRow, NOBODY, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
+import {
+  CloseReasonDialog,
+  FollowUpInput,
+  GHOST_FIELD,
+  InRow,
+  NOBODY,
+  RepSelect,
+  StatusSelect,
+  TaskBadge,
+  TypeBadge,
+  WhatsAppButton,
+} from "@/components/tours/cases/case-ui";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
 
@@ -121,6 +133,8 @@ export function CasesScreen() {
   const [selection, setSelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // a closing status picked in the bulk bar waits here for its reason
+  const [bulkClosing, setBulkClosing] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editingStatuses, setEditingStatuses] = useState(false);
@@ -199,7 +213,7 @@ export function CasesScreen() {
   const shown = useMemo(() => filtered.filter((r) => inView(r, view)), [filtered, inView, view]);
   const selectedIds = Object.keys(selection).filter((id) => selection[id]);
 
-  const bulk = async (change: { status?: string; assignedTo?: string | null }) => {
+  const bulk = async (change: { status?: string; assignedTo?: string | null; closeReason?: string }) => {
     setBulkBusy(true);
     const result = await run(() => bulkUpdateCases(selectedIds, change), (answer) => `${answer.data.updated} updated`);
     setBulkBusy(false);
@@ -229,6 +243,12 @@ export function CasesScreen() {
         cell: ({ row }) => (
           <div dir="auto" className="whitespace-nowrap font-medium">
             {row.original.firstName || EMPTY}
+            {/* a booking that came without the link from a known customer: same rep, offered for a merge */}
+            {row.original.relatedCaseNo && (
+              <Chip tone="info" className="ms-1.5" title={`Same phone or e-mail as case #${row.original.relatedCaseNo} - open the case to merge them`}>
+                ↔ #{row.original.relatedCaseNo}
+              </Chip>
+            )}
           </div>
         ),
       },
@@ -328,7 +348,8 @@ export function CasesScreen() {
               value={row.original.status}
               statuses={statuses}
               disabled={busy === row.original.id}
-              onChange={(status) => void save(row.original, { status })}
+              title={row.original.closeReason ? `Closed because: ${row.original.closeReason}` : undefined}
+              onChange={(status, closeReason) => void save(row.original, { status, closeReason })}
             />
           </InRow>
         ),
@@ -406,19 +427,13 @@ export function CasesScreen() {
         header: () => <span className="sr-only">Actions</span>,
         cell: ({ row }) => {
           const r = row.original;
-          const whatsapp = waLink(r.phone, `היי ${r.firstName ?? ""}`.trim());
+          const hello = `היי ${r.firstName ?? ""}`.trim();
+          // WhatsApp Web stays in the menu; the icon opens the rep's own app (no browser tab - Alon 15.10)
+          const whatsappWeb = waLink(r.phone, hello);
           const label = caseName(r) || `#${r.caseNo}`;
           return (
             <InRow className="flex items-center justify-end gap-0.5">
-              {whatsapp ? (
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-success hover:text-success" asChild>
-                  <a href={whatsapp} target="_blank" rel="noreferrer" aria-label={`WhatsApp ${label}`} title="WhatsApp">
-                    <MessageCircle className="h-4 w-4" />
-                  </a>
-                </Button>
-              ) : (
-                <span className="h-8 w-8" aria-hidden />
-              )}
+              {whatsappWeb ? <WhatsAppButton iconOnly phone={r.phone} message={hello} /> : <span className="h-8 w-8" aria-hidden />}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${label}`} disabled={busy === r.id}>
@@ -435,6 +450,14 @@ export function CasesScreen() {
                       <a href={`tel:${r.phone}`}>
                         <Phone className="h-4 w-4" />
                         Call {r.phone}
+                      </a>
+                    </DropdownMenuItem>
+                  )}
+                  {whatsappWeb && (
+                    <DropdownMenuItem asChild>
+                      <a href={whatsappWeb} target="_blank" rel="noreferrer">
+                        <MessageCircle className="h-4 w-4" />
+                        WhatsApp Web
                       </a>
                     </DropdownMenuItem>
                   )}
@@ -511,7 +534,11 @@ export function CasesScreen() {
           onRowSelectionChange={setSelection}
           bulkActions={
             <>
-              <Select disabled={bulkBusy} onValueChange={(status) => void bulk({ status })}>
+              <Select
+                disabled={bulkBusy}
+                value=""
+                onValueChange={(status) => (needsCloseReason(status, statuses) ? setBulkClosing(status) : void bulk({ status }))}
+              >
                 <SelectTrigger className="h-8 w-40 text-foreground" aria-label="Set status">
                   <SelectValue placeholder="Set status…" />
                 </SelectTrigger>
@@ -590,6 +617,17 @@ export function CasesScreen() {
             onOpenChange={setEditingStatuses}
             statuses={statuses}
             onSaved={(next) => setData((current) => current && { ...current, statuses: next })}
+          />
+          <CloseReasonDialog
+            status={bulkClosing}
+            statuses={statuses}
+            count={selectedIds.length}
+            onCancel={() => setBulkClosing(null)}
+            onConfirm={(closeReason) => {
+              const status = bulkClosing;
+              setBulkClosing(null);
+              if (status) void bulk({ status, closeReason });
+            }}
           />
         </>
       )}

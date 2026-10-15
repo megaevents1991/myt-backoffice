@@ -60,7 +60,7 @@ export function sourceLabel(source: string, utm: Record<string, unknown>): strin
 }
 
 // ---------------------------------------------------------------- statuses
-export const STATUS_COLORS = ["blue", "slate", "amber", "violet", "orange", "red", "rose", "teal", "green", "gray"] as const;
+export const STATUS_COLORS = ["blue", "slate", "amber", "violet", "indigo", "orange", "red", "rose", "teal", "green", "gray"] as const;
 export type StatusColor = (typeof STATUS_COLORS)[number];
 /** The tag of a status on the screens - one class set per colour, light and dark. */
 export const STATUS_COLOR_CLASSES: Record<StatusColor, string> = {
@@ -68,6 +68,7 @@ export const STATUS_COLOR_CLASSES: Record<StatusColor, string> = {
   slate: "border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300",
   amber: "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
   violet: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  indigo: "border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
   orange: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
   red: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
   rose: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
@@ -90,7 +91,7 @@ export interface CaseStatus {
   isActive: boolean;
 }
 
-export const SYSTEM_STATUS_KEYS = ["new", "pending_payment", "payment_failed", "payment_review", "paid", "cancelled", "spam"] as const;
+export const SYSTEM_STATUS_KEYS = ["new", "offer_sent", "pending_payment", "payment_failed", "payment_review", "paid", "cancelled", "spam"] as const;
 const isSystemKey = (key: string): boolean => (SYSTEM_STATUS_KEYS as readonly string[]).includes(key);
 /** Closed when a company has no list of its own (SQL twin: public.lead_status_closed). */
 const DEFAULT_CLOSED_KEYS = new Set(["done", "not_relevant", "cancelled", "spam"]);
@@ -110,6 +111,8 @@ export const DEFAULT_STATUSES: CaseStatus[] = [
   st("no_answer", "אין מענה", "slate"),
   st("in_progress", "בטיפול", "amber"),
   st("follow_up", "פולו אפ", "violet"),
+  // set by the booking link (Alon 15.10), with the follow-up day the rep must pick
+  st("offer_sent", "הצעה נשלחה", "indigo"),
   st("pending_payment", "ממתין לתשלום", "orange"),
   st("payment_failed", "תשלום נכשל", "red"),
   st("payment_review", "בדיקת תשלום", "rose"),
@@ -129,6 +132,52 @@ export const statusOf = (key: string, statuses: readonly CaseStatus[]): CaseStat
 export function isClosedStatus(key: string, statuses: readonly CaseStatus[]): boolean {
   const found = statusOf(key, statuses);
   return found ? found.isClosed : DEFAULT_CLOSED_KEYS.has(key);
+}
+
+// ---------------------------------------------------------------- why a case was closed
+/** Closing statuses that need no reason: a deal closed, junk. */
+const NO_REASON_KEYS = new Set(["done", "spam"]);
+export const CLOSE_REASON_MIN = 3;
+export const CLOSE_REASON_MAX = 500;
+/** One click fills the reason box; the rep may still write their own. */
+export const CLOSE_REASON_PRESETS = [
+  "המחיר גבוה מדי",
+  "התאריכים לא מתאימים",
+  "הזמין אצל מתחרה",
+  "לא עונה / לא זמין",
+  "ביקש לא ליצור קשר",
+  "כפילות / טעות",
+] as const;
+
+/**
+ * Moving a case to a closed status other than Done or Spam asks the rep why (Alon 15.10: "not
+ * relevant" must come with a reason before the window closes) - Not relevant, Cancelled, and any
+ * closed status of the company's own.
+ */
+export function needsCloseReason(key: string, statuses: readonly CaseStatus[]): boolean {
+  return isClosedStatus(key, statuses) && !NO_REASON_KEYS.has(key);
+}
+
+export function checkCloseReason(value: string | null | undefined): { ok: true; reason: string } | { ok: false; error: string } {
+  const reason = (value ?? "").trim().replace(/\s+/g, " ");
+  if (reason.length < CLOSE_REASON_MIN) return { ok: false, error: "Write why the case is closed - a few words." };
+  if (reason.length > CLOSE_REASON_MAX) return { ok: false, error: `The reason can be up to ${CLOSE_REASON_MAX} characters.` };
+  return { ok: true, reason };
+}
+
+/** Statuses a payment owns: a booking link never writes over them. */
+const PAYMENT_KEYS = new Set(["pending_payment", "payment_failed", "payment_review", "paid"]);
+
+/**
+ * The status a case takes when the rep sends it a booking link: "Offer sent" - unless money is on
+ * its way or taken, or the deal is closed as Done. A lead closed as not relevant that gets a link is
+ * being sold to again, so it reopens. A company list without the status (the migration not applied)
+ * keeps the case's own.
+ */
+export function statusAfterLink(current: string, statuses: readonly CaseStatus[]): string {
+  if (!statusOf("offer_sent", statuses)) return current;
+  if (PAYMENT_KEYS.has(current) || current === "done") return current;
+  return "offer_sent";
 }
 
 /** A row of the status editor: `key` null = a status staff just added. */
@@ -360,6 +409,15 @@ export function waLink(phone: string | null | undefined, message: string): strin
   return number ? `https://wa.me/${number}?text=${encodeURIComponent(message)}` : null;
 }
 
+/**
+ * Opens WhatsApp Desktop (or the phone's app) straight on the chat - no browser tab in between
+ * (Alon 15.10: wa.me opened a new window every click). Same number rule as waLink.
+ */
+export function whatsappAppLink(phone: string | null | undefined, message: string): string | null {
+  const number = whatsappPhone(phone);
+  return number ? `whatsapp://send?phone=${number}&text=${encodeURIComponent(message)}` : null;
+}
+
 /** The message that goes with a booking link. */
 export function linkMessage(firstName: string | null | undefined, tourName: string | null | undefined, url: string): string {
   const hello = firstName?.trim() ? `היי ${firstName.trim()},` : "היי,";
@@ -405,6 +463,10 @@ export interface CaseRow {
   travelers: number;
   /** Travelers of a settled booking that hold no seat (seatGap); 0 = nothing owed. */
   seatsMissing: number;
+  /** Why the rep closed it (needsCloseReason); null while open. */
+  closeReason: string | null;
+  /** The customer's earlier case a site booking named (booking_create) - same rep, offered for a merge. */
+  relatedCaseNo: number | null;
 }
 
 export const caseName = (row: Pick<CaseRow, "firstName" | "lastName">): string =>
@@ -446,6 +508,8 @@ export interface CasesPage {
 /** What staff change on a case; a field left out is not touched. */
 export interface CaseChange {
   status?: string;
+  /** Required with a status that needsCloseReason. */
+  closeReason?: string;
   assignedTo?: string | null;
   followUpDate?: string | null;
   notes?: string;
@@ -505,6 +569,25 @@ export interface CaseDetail {
   currentUserId: string;
   siteUrl: string | null;
   linkSentAt: string | null;
+  /** The customer's earlier case (relatedCaseOf), with what the merge dialog shows of it. */
+  relatedCase: CaseCandidate | null;
+  /** The company can send from its own WhatsApp number (Cloud API configured). */
+  whatsappApi: boolean;
+}
+
+/** A case another one may be merged with - what the picker shows. */
+export interface CaseCandidate {
+  id: string;
+  caseNo: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  status: string;
+  type: CaseType;
+  createdAt: string;
+  bookingRefs: string[];
+  /** Why it is offered: same phone / e-mail as this case. */
+  samePerson: boolean;
 }
 
 /** A departure a booking link can point at, with the rooms its price table prices. */
@@ -520,9 +603,14 @@ export interface LinkDeparture {
 
 export interface BookingLinkResult {
   url: string;
+  /** wa.me - WhatsApp Web / the phone. */
   whatsapp: string | null;
+  /** whatsapp:// - the rep's WhatsApp Desktop, no browser tab. */
+  whatsappApp: string | null;
   mailto: string | null;
   message: string;
+  /** The status the case took (statusAfterLink). */
+  status: string;
 }
 
 /**
@@ -564,6 +652,67 @@ export function siteHref(siteUrl: string | null | undefined, path: string | null
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------- a customer's orders
+export type BookingPhase = "active" | "past" | "cancelled";
+export const BOOKING_PHASE_LABELS: Record<BookingPhase, string> = { active: "Active", past: "Past", cancelled: "Cancelled" };
+
+/** Where one order of the customer stands: cancelled (or a card payment that failed), past (the trip left), else active. */
+export function bookingPhase(b: { status: string; departureStart: string | null }, today: string): BookingPhase {
+  if (b.status === "cancelled" || b.status === "failed") return "cancelled";
+  if (b.departureStart && b.departureStart < today) return "past";
+  return "active";
+}
+
+export interface TravelerGroup {
+  ref: string;
+  names: string[];
+  passengers: { first: string; last: string; type: string }[];
+}
+
+/** Every traveler the customer sent, per live order, newest first - rows with no name dropped. */
+export function travelerGroups(
+  bookings: readonly { ref: string; status: string; passengers: readonly { first: string; last: string; type: string }[] }[],
+): TravelerGroup[] {
+  return bookings
+    .filter((b) => b.status !== "cancelled" && b.status !== "failed")
+    .map((b) => {
+      const passengers = b.passengers.filter((p) => `${p.first ?? ""}${p.last ?? ""}`.trim() !== "");
+      return {
+        ref: b.ref,
+        passengers,
+        names: passengers.map((p) => [p.first, p.last].map((s) => (s ?? "").trim()).filter(Boolean).join(" ")),
+      };
+    })
+    .filter((g) => g.passengers.length > 0);
+}
+
+// ---------------------------------------------------------------- cases that belong together
+const CASE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export interface CaseRef {
+  id: string;
+  caseNo: number;
+}
+const caseRefOf = (value: unknown): CaseRef | null => {
+  if (!value || typeof value !== "object") return null;
+  const v = value as { id?: unknown; case_no?: unknown };
+  const caseNo = Number(v.case_no);
+  return typeof v.id === "string" && CASE_ID.test(v.id) && Number.isInteger(caseNo) && caseNo > 0 ? { id: v.id, caseNo } : null;
+};
+/** The customer's earlier case a site booking named when it could not hang on it (booking_create). */
+export const relatedCaseOf = (payload: Record<string, unknown>): CaseRef | null => caseRefOf(payload.related_case);
+/** The case a merged one now lives in (public.merge_lead_cases). */
+export const mergedIntoOf = (payload: Record<string, unknown>): CaseRef | null => caseRefOf(payload.merged_into);
+
+/** A form field as one line: a waiting list's date by its label, anything else as text. */
+export function payloadText(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && !Array.isArray(value) && typeof (value as { label?: unknown }).label === "string") {
+    return (value as { label: string }).label;
+  }
+  return JSON.stringify(value);
 }
 
 /** Booking states that mean money taken or on the way: a case holding one is never deleted (it would vanish with it). */

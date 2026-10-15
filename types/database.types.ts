@@ -3444,6 +3444,7 @@ export type Database = {
           acc_num: string | null
           assigned_to: string | null
           case_no: number
+          close_reason: string | null
           company_id: string
           created_at: string
           departure_id: string | null
@@ -3475,6 +3476,7 @@ export type Database = {
           acc_num?: string | null
           assigned_to?: string | null
           case_no?: number
+          close_reason?: string | null
           company_id: string
           created_at?: string
           departure_id?: string | null
@@ -3506,6 +3508,7 @@ export type Database = {
           acc_num?: string | null
           assigned_to?: string | null
           case_no?: number
+          close_reason?: string | null
           company_id?: string
           created_at?: string
           departure_id?: string | null
@@ -5057,6 +5060,10 @@ export type Database = {
       }
     }
     Functions: {
+      merge_lead_cases: {
+        Args: { p_company: string; p_source: string; p_target: string }
+        Returns: Json
+      }
       partner_clicked_events: {
         Args: { p_limit?: number; p_tracking_code: string }
         Returns: {

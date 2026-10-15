@@ -16,6 +16,7 @@ import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 
 import { logAudit } from "@/lib/audit";
+import { matchesSearch } from "@/lib/search";
 import { requireCompany, type Company } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
@@ -26,6 +27,8 @@ import { actionFail, actionOk, chunk, UserError, UUID, type ActionResult } from 
 import { asObject, companyAudit } from "@/lib/tours/company-kit";
 import { isoToJerusalemLocal } from "@/lib/tours/format";
 import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
+import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
+import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
 import { ROOM_COMPOSITIONS, roomPrice, toPriceMatrix } from "@/lib/tours/pricing";
 import { departureSiteId, LEAD_KIND_LABELS } from "@/types/tours.types";
 import type { Database } from "@/types/database.types";
@@ -34,8 +37,17 @@ import {
   CASE_SOURCE_LABELS,
   CASE_TASK_LABELS,
   CASE_TYPE_LABELS,
-  DEFAULT_STATUSES,
   bookingBlocksDelete,
+  caseName,
+  checkCloseReason,
+  isClosedStatus,
+  needsCloseReason,
+  phoneKey,
+  relatedCaseOf,
+  statusAfterLink,
+  whatsappAppLink,
+  whatsappPhone,
+  type CaseCandidate,
   confirmationPendingOf,
   LINK_ROOMS_MAX,
   bookingLink,
@@ -44,7 +56,6 @@ import {
   isCaseSource,
   isCaseTask,
   isCaseType,
-  isStatusColor,
   linkMessage,
   packagePathOf,
   seatBookingOf,
@@ -83,7 +94,12 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, task_override, link_token, link_sent_at, payload";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, task_override, link_token, link_sent_at, payload, close_reason";
+
+/** The same without close_reason (migration 20261015172708): a deploy that beat its migration still reads. */
+const LEGACY_CASE_COLUMNS = CASE_COLUMNS.replace(", close_reason", "");
+const missingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
+  error?.code === "42703" || error?.code === "PGRST204" || /close_reason.*does not exist/.test(error?.message ?? "");
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 type CaseRecord = Pick<
@@ -115,6 +131,7 @@ type CaseRecord = Pick<
   | "link_token"
   | "link_sent_at"
   | "payload"
+  | "close_reason"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 
@@ -135,24 +152,8 @@ const clean = (value: string | null | undefined, max: number): string | null => 
 };
 
 // ---------------------------------------------------------------- reads shared by the actions
-/** The company's status list, in its order; the default list when it has none of its own. */
-async function statusesOf(company: Company): Promise<CaseStatus[]> {
-  const { data, error } = await supabaseTyped
-    .from("lead_statuses")
-    .select("key, label, color, position, is_closed, is_system, is_active")
-    .eq("company_id", company.id)
-    .order("position", { ascending: true });
-  if (error) throw new Error(`lead_statuses: ${error.message}`);
-  if (!data || data.length === 0) return DEFAULT_STATUSES;
-  return data.map((s) => ({
-    key: s.key,
-    label: s.label,
-    color: isStatusColor(s.color) ? s.color : "gray",
-    isClosed: s.is_closed,
-    isSystem: s.is_system,
-    isActive: s.is_active,
-  }));
-}
+/** The company's status list, in its order (lib/tours/case-seats.ts - the booking actions read it too). */
+const statusesOf = (company: Company): Promise<CaseStatus[]> => readCaseStatuses(company);
 
 /** Staff who can own a case - the people the company's tasks can be given to. */
 async function repsOf(company: Company): Promise<CaseRep[]> {
@@ -284,22 +285,40 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     confirmationPending: booking?.confirmationPending ?? false,
     travelers: x.travelers.get(r.id) ?? 0,
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
+    closeReason: r.close_reason ?? null,
+    relatedCaseNo: relatedCaseOf(asObject(r.payload))?.caseNo ?? null,
   };
 }
 
 /** One case of the company (not deleted), or a UserError. */
 async function caseRecord(company: Company, id: string): Promise<CaseRecord> {
   if (!UUID.test(id)) throw new UserError("The case was not found.");
-  const { data, error } = await supabaseTyped
-    .from("leads")
-    .select(CASE_COLUMNS)
-    .eq("company_id", company.id)
-    .eq("id", id)
-    .is("is_deleted", null)
-    .maybeSingle();
+  const read = (columns: string) =>
+    supabaseTyped.from("leads").select(columns).eq("company_id", company.id).eq("id", id).is("is_deleted", null).maybeSingle();
+  let { data, error } = await read(CASE_COLUMNS);
+  if (missingColumn(error)) ({ data, error } = await read(LEGACY_CASE_COLUMNS));
   if (error) throw new Error(`leads: ${error.message}`);
   if (!data) throw new UserError("The case was not found - it may have been deleted.");
-  return data as CaseRecord;
+  const record = data as unknown as CaseRecord;
+  return { ...record, close_reason: record.close_reason ?? null };
+}
+
+/** Every case of the company (not deleted), newest first - tolerant of the close_reason migration. */
+async function allCaseRecords(company: Company) {
+  const read = (columns: string) =>
+    fetchPaged<CaseRecord>(
+      () =>
+        supabaseTyped
+          .from("leads")
+          .select(columns)
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          // case_no is unique: paging never skips or repeats a row
+          .order("case_no", { ascending: false }),
+      LIST_LIMIT,
+    );
+  const page = await read(CASE_COLUMNS);
+  return missingColumn(page.error) ? read(LEGACY_CASE_COLUMNS) : page;
 }
 
 async function freshRow(company: Company, id: string): Promise<CaseRow> {
@@ -328,21 +347,7 @@ async function companyDeparture(company: Company, id: string): Promise<{ id: str
 export async function listCases(): Promise<ActionResult<CasesPage>> {
   try {
     const { session, company } = await requireCompany("tours");
-    const [page, statuses, reps] = await Promise.all([
-      fetchPaged<CaseRecord>(
-        () =>
-          supabaseTyped
-            .from("leads")
-            .select(CASE_COLUMNS)
-            .eq("company_id", company.id)
-            .is("is_deleted", null)
-            // case_no is unique: paging never skips or repeats a row
-            .order("case_no", { ascending: false }),
-        LIST_LIMIT,
-      ),
-      statusesOf(company),
-      repsOf(company),
-    ]);
+    const [page, statuses, reps] = await Promise.all([allCaseRecords(company), statusesOf(company), repsOf(company)]);
     if (page.error) throw new Error(`leads: ${page.error.message}`);
     const x = await enrich(company.id, page.rows);
     return actionOk({
@@ -364,7 +369,7 @@ export async function listCases(): Promise<ActionResult<CasesPage>> {
  */
 export async function updateCase(id: string, change: CaseChange): Promise<ActionResult<CaseRow>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company, session } = await requireCompany("tours");
     const before = await caseRecord(company, id);
     const patch: LeadUpdate = {};
     const changes: Record<string, { from: unknown; to: unknown }> = {};
@@ -374,10 +379,21 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       changes[column as string] = { from: from ?? null, to: to ?? null };
     };
 
+    let settled = false;
     if (change.status !== undefined && change.status !== before.status) {
-      const status = statusOf(change.status, await statusesOf(company));
+      const statuses = await statusesOf(company);
+      const status = statusOf(change.status, statuses);
       if (!status || !status.isActive) throw new UserError("Unknown status - reload the screen.");
+      // "not relevant" (and any closing but Done / Spam) says why, or it is not saved (Alon 15.10)
+      if (needsCloseReason(status.key, statuses)) {
+        const checked = checkCloseReason(change.closeReason);
+        if (!checked.ok) throw new UserError(checked.error);
+        set("close_reason", before.close_reason, checked.reason);
+      } else if (!isClosedStatus(status.key, statuses)) {
+        set("close_reason", before.close_reason, null);
+      }
       set("status", before.status, status.key);
+      settled = status.key === "paid" || status.key === "done";
     }
     if (change.assignedTo !== undefined && change.assignedTo !== before.assigned_to) {
       if (change.assignedTo !== null && !(await repsOf(company)).some((p) => p.id === change.assignedTo)) {
@@ -449,6 +465,7 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
 
     if (Object.keys(patch).length) {
       const { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", id);
+      if (missingColumn(error)) throw new UserError("A closing reason can be saved after the system update - try again in a few minutes.");
       if (error) throw new Error(`leads: ${error.message}`);
       await logAudit({
         action: "update",
@@ -459,27 +476,41 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       });
       revalidatePath("/tours/reservations");
     }
-    return actionOk(await freshRow(company, id));
+    // a deal closed by hand puts its travelers on the departure, as a card payment does (Dor 15.10)
+    const held = settled ? await holdOwedSeats(company, id, session.sub) : null;
+    return actionOk(await freshRow(company, id), held ? seatsHeldNote(held) : undefined);
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to update the case");
   }
 }
 
+const seatsHeldNote = (held: { ref: string; pax: number; departureCode: string | null }): string =>
+  `${held.pax === 1 ? "1 seat" : `${held.pax} seats`} of booking ${held.ref} now held on the departure${held.departureCode ? ` (${held.departureCode})` : ""}.`;
+
 /** The status or the rep of several cases at once (the screen's bulk bar). */
 export async function bulkUpdateCases(
   ids: string[],
-  change: { status?: string; assignedTo?: string | null },
+  change: { status?: string; assignedTo?: string | null; closeReason?: string },
 ): Promise<ActionResult<{ updated: number }>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company, session } = await requireCompany("tours");
     const unique = [...new Set(ids)];
     if (unique.length === 0 || unique.length > BULK_MAX) throw new UserError(`Select between 1 and ${BULK_MAX} rows.`);
     if (unique.some((id) => !UUID.test(id))) throw new UserError("A selected case was not found - reload the screen.");
     const patch: LeadUpdate = {};
     if (change.status !== undefined) {
-      const status = statusOf(change.status, await statusesOf(company));
+      const statuses = await statusesOf(company);
+      const status = statusOf(change.status, statuses);
       if (!status || !status.isActive) throw new UserError("Unknown status - reload the screen.");
       patch.status = status.key;
+      // the same rule as one case: a closing status says why, one reason for the whole selection
+      if (needsCloseReason(status.key, statuses)) {
+        const checked = checkCloseReason(change.closeReason);
+        if (!checked.ok) throw new UserError(checked.error);
+        patch.close_reason = checked.reason;
+      } else if (!isClosedStatus(status.key, statuses)) {
+        patch.close_reason = null;
+      }
     }
     if (change.assignedTo !== undefined) {
       if (change.assignedTo !== null && !(await repsOf(company)).some((p) => p.id === change.assignedTo)) {
@@ -498,6 +529,7 @@ export async function bulkUpdateCases(
         .is("is_deleted", null)
         .in("id", part)
         .select("id, case_no, status, assigned_to");
+      if (missingColumn(error)) throw new UserError("A closing reason can be saved after the system update - try again in a few minutes.");
       if (error) throw new Error(`leads: ${error.message}`);
       before.push(...(data ?? []));
     }
@@ -510,8 +542,13 @@ export async function bulkUpdateCases(
         metadata: { ...companyAudit(company), case_no: row.case_no, bulk: true },
       });
     }
+    // closed by hand in bulk: the same seats as one case closed by hand
+    let heldSeats = 0;
+    if (patch.status === "paid" || patch.status === "done") {
+      for (const row of before) heldSeats += (await holdOwedSeats(company, row.id, session.sub))?.pax ?? 0;
+    }
     revalidatePath("/tours/reservations");
-    return actionOk({ updated: before.length });
+    return actionOk({ updated: before.length }, heldSeats ? `${heldSeats} seats of closed bookings now held on their departures.` : undefined);
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to update the cases");
   }
@@ -817,6 +854,8 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     });
 
     const payload = asObject(record.payload);
+    const related = relatedCaseOf(payload);
+    const [relatedCase] = related && related.id !== record.id ? await candidatesOf(company, [related.id], record) : [];
     return actionOk({
       row,
       payload,
@@ -847,9 +886,144 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       currentUserId: session.sub,
       siteUrl: company.siteUrl,
       linkSentAt: record.link_sent_at,
+      relatedCase: relatedCase ?? null,
+      whatsappApi: whatsappApiReady(company),
     });
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the case");
+  }
+}
+
+// ---------------------------------------------------------------- one customer, one case
+const CANDIDATES_MAX = 20;
+type CandidateRecord = Pick<LeadRow, "id" | "case_no" | "name" | "first_name" | "last_name" | "phone" | "email" | "status" | "type" | "created_at">;
+
+const samePerson = (a: { phone: string | null; email: string | null }, b: { phone: string | null; email: string | null }): boolean => {
+  const keyA = phoneKey(a.phone);
+  const emailA = a.email?.trim().toLowerCase();
+  return (!!keyA && keyA === phoneKey(b.phone)) || (!!emailA && emailA === b.email?.trim().toLowerCase());
+};
+
+/** Cases (by id) as the merge picker shows them, with their booking refs. */
+async function candidatesOf(company: Company, ids: string[], self: { phone: string | null; email: string | null }): Promise<CaseCandidate[]> {
+  if (ids.length === 0) return [];
+  const [leads, bookings] = await Promise.all([
+    supabaseTyped
+      .from("leads")
+      .select("id, case_no, name, first_name, last_name, phone, email, status, type, created_at")
+      .eq("company_id", company.id)
+      .in("id", ids)
+      .is("is_deleted", null),
+    toursDb().from("bookings").select("lead_id, ref").eq("company_id", company.id).in("lead_id", ids).is("is_deleted", null).order("created_at", { ascending: false }),
+  ]);
+  if (leads.error) throw new Error(`leads: ${leads.error.message}`);
+  if (bookings.error) throw new Error(`bookings: ${bookings.error.message}`);
+  const refs = new Map<string, string[]>();
+  for (const b of bookings.data ?? []) if (b.lead_id) refs.set(b.lead_id, [...(refs.get(b.lead_id) ?? []), b.ref]);
+  const byId = new Map((leads.data ?? []).map((l) => [l.id, l]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((l): l is CandidateRecord => !!l)
+    .map((l) => ({
+      id: l.id,
+      caseNo: l.case_no,
+      name: caseName({ firstName: l.first_name, lastName: l.last_name }) || l.name || "",
+      phone: l.phone,
+      email: l.email,
+      status: l.status,
+      type: isCaseType(l.type) ? l.type : "lead",
+      createdAt: l.created_at,
+      bookingRefs: refs.get(l.id) ?? [],
+      samePerson: samePerson(self, l),
+    }));
+}
+
+/**
+ * Cases this one may be merged with: the same customer first (same phone - last 9 digits - or
+ * e-mail, any time), then what the rep searched (case number, name, phone, e-mail, booking ref).
+ * Alon 15.10: a customer who booked with another phone must still be linkable to their lead.
+ */
+export async function findMergeCandidates(caseId: string, query: string): Promise<ActionResult<CaseCandidate[]>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const self = await caseRecord(company, caseId);
+    const q = (query ?? "").trim().slice(0, 80);
+    const page = await fetchPaged<CandidateRecord>(
+      () =>
+        supabaseTyped
+          .from("leads")
+          .select("id, case_no, name, first_name, last_name, phone, email, status, type, created_at")
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .order("case_no", { ascending: false }),
+      LIST_LIMIT,
+    );
+    if (page.error) throw new Error(`leads: ${page.error.message}`);
+    const others = page.rows.filter((l) => l.id !== self.id);
+    const same = others.filter((l) => samePerson(self, l)).map((l) => l.id);
+    let found: string[] = [];
+    if (q) {
+      const ref = /^t?\d{4,9}$/i.test(q) ? (q.toUpperCase().startsWith("T") ? q.toUpperCase() : `T${q}`) : null;
+      const byRef = ref
+        ? await toursDb().from("bookings").select("lead_id").eq("company_id", company.id).eq("ref", ref).is("is_deleted", null).maybeSingle()
+        : { data: null, error: null };
+      if (byRef.error) throw new Error(`bookings: ${byRef.error.message}`);
+      const digits = q.replace(/\D/g, "");
+      found = others
+        .filter(
+          (l) =>
+            l.id === byRef.data?.lead_id ||
+            String(l.case_no) === q.replace(/^#/, "") ||
+            (digits.length >= 6 && (l.phone ?? "").replace(/\D/g, "").includes(digits)) ||
+            matchesSearch(q, caseName({ firstName: l.first_name, lastName: l.last_name }), l.name, l.email),
+        )
+        .map((l) => l.id);
+    }
+    const ids = [...new Set([...same, ...found])].slice(0, CANDIDATES_MAX);
+    return actionOk(await candidatesOf(company, ids, self));
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to search the cases");
+  }
+}
+
+/**
+ * Merges two cases of one customer: the NEWER case's bookings, seats, notes and anything the older
+ * one lacks move into the older one (the customer's first file - its rep, its campaign), and the
+ * newer one is marked deleted, naming where it went. One database transaction
+ * (public.merge_lead_cases). Answers the case that stays.
+ */
+export async function mergeCases(caseId: string, otherId: string): Promise<ActionResult<{ keptId: string; keptNo: number; mergedNo: number }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const [a, b] = await Promise.all([caseRecord(company, caseId), caseRecord(company, otherId)]);
+    if (a.id === b.id) throw new UserError("A case cannot be merged with itself.");
+    const [target, source] = a.case_no < b.case_no ? [a, b] : [b, a];
+    const { data, error } = await supabaseTyped.rpc("merge_lead_cases", { p_company: company.id, p_source: source.id, p_target: target.id });
+    if (error?.code === "PGRST202") throw new UserError("Merging is available after the system update - try again in a few minutes.");
+    if (error) throw new Error(`merge_lead_cases: ${error.message}`);
+    const answer = asObject(data as never);
+    if (answer.ok !== true) throw new UserError(answer.error === "not_found" ? "One of the cases was deleted meanwhile - reload." : "The cases could not be merged.");
+    const moved = { bookings: Number(answer.bookings) || 0, seats: Number(answer.seats) || 0 };
+    await Promise.all([
+      logAudit({
+        action: "merge",
+        entityType: "tours_case",
+        entityId: target.id,
+        changes: { merged_case: source.case_no, ...moved },
+        metadata: { ...companyAudit(company), case_no: target.case_no },
+      }),
+      logAudit({
+        action: "merge",
+        entityType: "tours_case",
+        entityId: source.id,
+        changes: { merged_into: target.case_no, ...moved },
+        metadata: { ...companyAudit(company), case_no: source.case_no },
+      }),
+    ]);
+    revalidatePath("/tours/reservations");
+    return actionOk({ keptId: target.id, keptNo: target.case_no, mergedNo: source.case_no });
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to merge the cases");
   }
 }
 
@@ -921,14 +1095,22 @@ export async function listLinkDepartures(): Promise<ActionResult<LinkDeparture[]
 /**
  * A booking link for the case: the tour page on the site, the date, the rooms
  * and the case's token (`lr`). A booking sent through it lands on this case.
- * The token is minted once per case and kept.
+ * The token is minted once per case and kept. Sending it is an offer (Alon
+ * 15.10): the case moves to "Offer sent" (statusAfterLink) and the rep must
+ * give the day to call back. `sendWhatsApp` sends it from the company's own
+ * number when the Cloud API is connected; the link is created either way.
  */
-export async function mintBookingLink(caseId: string, input: { departureId: string; rooms: string[] }): Promise<ActionResult<BookingLinkResult>> {
+export async function mintBookingLink(
+  caseId: string,
+  input: { departureId: string; rooms: string[]; followUpDate: string; sendWhatsApp?: boolean },
+): Promise<ActionResult<BookingLinkResult>> {
   try {
     const { company } = await requireCompany("tours");
     if (!company.siteUrl) throw new UserError("The company has no site address - set it in the company settings first.");
     const record = await caseRecord(company, caseId);
     if (!UUID.test(input.departureId)) throw new UserError("Choose a departure.");
+    if (!input.followUpDate || !DAY.test(input.followUpDate)) throw new UserError("Pick the day to follow up with the customer.");
+    if (input.followUpDate < todayIso()) throw new UserError("The follow-up day cannot be in the past.");
     const [departure] = await linkDepartures(company, input.departureId);
     if (!departure) throw new UserError("This departure is not open on the site (unpublished, past, sold out or closed).");
     const rooms = cleanRoomKeys(Array.isArray(input.rooms) ? input.rooms : [], departure.rooms.map((r) => r.key));
@@ -937,8 +1119,15 @@ export async function mintBookingLink(caseId: string, input: { departureId: stri
     if (rooms.length === 0) throw new UserError("Choose at least one room this date sells.");
     if ((input.rooms ?? []).length > LINK_ROOMS_MAX) throw new UserError(`A booking holds up to ${LINK_ROOMS_MAX} rooms.`);
 
+    const statuses = await statusesOf(company);
+    const status = statusAfterLink(record.status, statuses);
     const token = record.link_token ?? randomBytes(24).toString("base64url");
-    const patch: LeadUpdate = { link_token: token, link_sent_at: new Date().toISOString() };
+    const patch: LeadUpdate = { link_token: token, link_sent_at: new Date().toISOString(), follow_up_date: input.followUpDate };
+    if (status !== record.status) {
+      patch.status = status;
+      // an offer reopens a lead closed as not relevant: its reason no longer holds
+      if (!isClosedStatus(status, statuses) && record.close_reason) patch.close_reason = null;
+    }
     if (!record.departure_id) {
       const own = await companyDeparture(company, departure.id);
       patch.departure_id = own.id;
@@ -950,21 +1139,45 @@ export async function mintBookingLink(caseId: string, input: { departureId: stri
     const url = bookingLink({ siteUrl: company.siteUrl, packagePath: departure.packagePath, productId: departure.siteId, rooms, token });
     const first = record.first_name ?? splitName(record.name).first;
     const message = linkMessage(first, departure.tourName, url);
+
+    // from the company's own number, when connected; a refusal never loses the link
+    let warning: string | undefined;
+    let sentVia: "api" | null = null;
+    if (input.sendWhatsApp) {
+      const to = whatsappPhone(record.phone);
+      const sent = to
+        ? await sendTemplate(company, { to, params: [first || "שלום", departure.tourName ?? "הטיול", url] })
+        : ({ ok: false, error: "The case has no phone number WhatsApp can use." } as const);
+      if (sent.ok) sentVia = "api";
+      else warning = `The link was created but not sent on WhatsApp: ${sent.error}`;
+    }
     await logAudit({
       action: "link",
       entityType: "tours_case",
       entityId: caseId,
-      changes: { departure: departure.code, rooms },
+      changes: {
+        departure: departure.code,
+        rooms,
+        follow_up_date: { from: record.follow_up_date, to: input.followUpDate },
+        ...(status !== record.status ? { status: { from: record.status, to: status } } : {}),
+        ...(sentVia ? { sent: "whatsapp_api" } : {}),
+      },
       metadata: { ...companyAudit(company), case_no: record.case_no },
     });
-    return actionOk({
-      url,
-      message,
-      whatsapp: waLink(record.phone, message),
-      mailto: record.email
-        ? `mailto:${record.email}?subject=${encodeURIComponent("קישור להזמנה")}&body=${encodeURIComponent(message)}`
-        : null,
-    });
+    revalidatePath("/tours/reservations");
+    return actionOk(
+      {
+        url,
+        message,
+        status,
+        whatsapp: waLink(record.phone, message),
+        whatsappApp: whatsappAppLink(record.phone, message),
+        mailto: record.email
+          ? `mailto:${record.email}?subject=${encodeURIComponent("קישור להזמנה")}&body=${encodeURIComponent(message)}`
+          : null,
+      },
+      warning ?? (sentVia ? "Sent on WhatsApp from the company number." : undefined),
+    );
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to create the booking link");
   }
@@ -984,14 +1197,7 @@ export async function exportCases(ids: string[]): Promise<ActionResult<{ fileNam
     const { company } = await requireCompany("tours");
     const wanted = new Set(ids.filter((id) => UUID.test(id)));
     if (wanted.size === 0) throw new UserError("Nothing to export.");
-    const [page, statuses, reps] = await Promise.all([
-      fetchPaged<CaseRecord>(
-        () => supabaseTyped.from("leads").select(CASE_COLUMNS).eq("company_id", company.id).is("is_deleted", null).order("case_no", { ascending: false }),
-        LIST_LIMIT,
-      ),
-      statusesOf(company),
-      repsOf(company),
-    ]);
+    const [page, statuses, reps] = await Promise.all([allCaseRecords(company), statusesOf(company), repsOf(company)]);
     if (page.error) throw new Error(`leads: ${page.error.message}`);
     const records = page.rows.filter((r) => wanted.has(r.id));
     const x = await enrich(company.id, records);
