@@ -238,6 +238,20 @@ export function followUpDue(
   return !!c.followUpDate && c.followUpDate <= today && !isClosedStatus(c.status, statuses);
 }
 
+/**
+ * How the table shows a case's follow-up day (the pill, the row tint) - the Mega Events
+ * reservations' three states. Null = nothing to say: no day, a broken one, or a closed case.
+ */
+export function followUpTone(
+  c: { followUpDate: string | null; status: string },
+  statuses: readonly CaseStatus[],
+  today: string,
+): "overdue" | "today" | "upcoming" | null {
+  if (!c.followUpDate || !/^\d{4}-\d{2}-\d{2}$/.test(c.followUpDate) || isClosedStatus(c.status, statuses)) return null;
+  if (c.followUpDate < today) return "overdue";
+  return c.followUpDate === today ? "today" : "upcoming";
+}
+
 /** What has to happen on the case now (spec section 4). First match wins; a rep's override beats them all. */
 export function caseTask(c: TaskFacts, statuses: readonly CaseStatus[], today: string): CaseTask | null {
   if (isCaseTask(c.taskOverride)) return c.taskOverride;

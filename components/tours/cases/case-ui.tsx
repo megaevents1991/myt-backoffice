@@ -115,6 +115,13 @@ export function StatusSelect({
   );
 }
 
+/**
+ * A field inside a table row reads as plain text until the pointer or the keyboard reaches
+ * it - fourteen bordered boxes per row made the table look like a form.
+ */
+export const GHOST_FIELD =
+  "border-transparent bg-transparent shadow-none hover:border-input focus-visible:border-input focus-visible:bg-background data-[state=open]:border-input";
+
 export function RepSelect({
   value,
   reps,
@@ -122,6 +129,7 @@ export function RepSelect({
   disabled,
   onChange,
   className,
+  ghost,
 }: {
   value: string | null;
   reps: readonly CaseRep[];
@@ -129,11 +137,13 @@ export function RepSelect({
   disabled?: boolean;
   onChange: (rep: string | null) => void;
   className?: string;
+  /** In a table row: no box until hovered or focused. */
+  ghost?: boolean;
 }) {
   const name = value ? (reps.find((p) => p.id === value)?.name ?? "Another teammate") : "";
   return (
     <Select value={value ?? NOBODY} disabled={disabled} onValueChange={(id) => onChange(id === NOBODY ? null : id)}>
-      <SelectTrigger aria-label="Rep" className={cn("h-8 w-auto min-w-[8rem] gap-1", className)}>
+      <SelectTrigger aria-label="Rep" className={cn("h-8 w-auto min-w-[8rem] gap-1", ghost && cn(GHOST_FIELD, "px-2"), className)}>
         <SelectValue>
           <span dir="auto" className={cn("truncate", !value && "text-muted-foreground")}>
             {value ? name : "Unassigned"}
@@ -164,11 +174,14 @@ export function FollowUpInput({
   due,
   onSave,
   className,
+  ghost,
 }: {
   value: string | null;
   due: boolean;
   onSave: (next: string | null) => void;
   className?: string;
+  /** In a table row: no box, and an empty day hides the browser's "dd/mm/yyyy" until hovered. */
+  ghost?: boolean;
 }) {
   return (
     <input
@@ -189,6 +202,8 @@ export function FollowUpInput({
       className={cn(
         "h-8 w-36 rounded-md border border-input bg-background px-2 text-sm tabular text-foreground",
         due && "border-destructive font-semibold text-destructive",
+        ghost && GHOST_FIELD,
+        ghost && !value && "text-transparent hover:text-muted-foreground focus:text-foreground",
         className,
       )}
     />

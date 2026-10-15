@@ -14,6 +14,7 @@ import {
   cleanRoomKeys,
   confirmationPendingOf,
   followUpDue,
+  followUpTone,
   htmlToText,
   siteHref,
   isClosedStatus,
@@ -81,6 +82,13 @@ assert.equal(isClosedStatus("spam", []), true, "the default closed keys hold wit
 assert.equal(followUpDue({ followUpDate: TODAY, status: "new" }, S, TODAY), true);
 assert.equal(followUpDue({ followUpDate: TODAY, status: "not_relevant" }, S, TODAY), false);
 assert.equal(followUpDue({ followUpDate: null, status: "new" }, S, TODAY), false);
+// the table's follow-up pill + row tint: only an open case with a day says anything
+assert.equal(followUpTone({ followUpDate: "2026-10-10", status: "new" }, S, TODAY), "overdue");
+assert.equal(followUpTone({ followUpDate: TODAY, status: "in_progress" }, S, TODAY), "today");
+assert.equal(followUpTone({ followUpDate: "2099-01-01", status: "new" }, S, TODAY), "upcoming");
+assert.equal(followUpTone({ followUpDate: "2026-10-10", status: "not_relevant" }, S, TODAY), null, "a closed case is not late");
+assert.equal(followUpTone({ followUpDate: null, status: "new" }, S, TODAY), null, "no day, no pill");
+assert.equal(followUpTone({ followUpDate: "garbage", status: "new" }, S, TODAY), null);
 
 // ---------------------------------------------------------------- phone key: the last 9 digits, whatever the writing
 assert.equal(phoneKey("054-123 4567"), "541234567");

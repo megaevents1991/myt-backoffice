@@ -3,35 +3,42 @@
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Download, ListChecks, Loader2, PlusCircle, RefreshCw } from "lucide-react";
+import { Download, ExternalLink, ListChecks, Loader2, MessageCircle, MoreHorizontal, Phone, PlusCircle, RefreshCw, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/page-header";
 import { DataTable, DataTableSkeleton, SortableHeader } from "@/components/data-table";
 import { SearchInput } from "@/components/search-input";
+import { useConfirm } from "@/components/confirm-provider";
+import { FOLLOW_UP_TONE } from "@/components/follow-up-widget";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { useSessionState, useUrlState } from "@/hooks/use-view-state";
 import { downloadBase64 } from "@/lib/download";
+import { followUpLabel } from "@/lib/reservations/follow-up";
 import { EMPTY, fmtDate, fmtInstant, todayIso } from "@/lib/tours/format";
-import { bulkUpdateCases, exportCases, listCases, updateCase } from "@/lib/actions/tours-cases-actions";
+import { bulkUpdateCases, deleteCase, exportCases, listCases, updateCase } from "@/lib/actions/tours-cases-actions";
 import { LoadError } from "@/components/tours/ui";
 import {
   CASE_TASK_LABELS,
   caseMatches,
+  caseName,
   caseTask,
   followUpDue,
+  followUpTone,
   isCaseTask,
   sourceLabel,
+  waLink,
   type CaseChange,
   type CaseRow,
   type CasesPage,
   type CaseStatus,
 } from "@/lib/tours/cases";
-import { FollowUpInput, InRow, NOBODY, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, GHOST_FIELD, InRow, NOBODY, RepSelect, StatusSelect, TaskBadge, TypeBadge } from "@/components/tours/cases/case-ui";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
 
@@ -48,7 +55,10 @@ const VIEW_LABELS: Record<View, string> = {
 };
 const ALL = "all";
 
-/** A text cell staff type into: saved when it loses focus (Enter too), Esc puts the old value back. */
+/**
+ * A text cell staff type into: saved when it loses focus (Enter too), Esc puts the old value back.
+ * It reads as plain text ("-" when empty) and shows its box and its hint only when reached.
+ */
 function InlineText({
   value,
   placeholder,
@@ -67,10 +77,15 @@ function InlineText({
       key={value ?? ""}
       dir="auto"
       defaultValue={value ?? ""}
-      placeholder={placeholder}
-      title={title}
-      className={cn("h-8", className)}
+      placeholder={EMPTY}
+      aria-label={placeholder}
+      title={title ?? placeholder}
+      className={cn("h-8 px-2", GHOST_FIELD, "placeholder:text-muted-foreground", className)}
+      onFocus={(event) => {
+        event.currentTarget.placeholder = placeholder;
+      }}
       onBlur={(event) => {
+        event.currentTarget.placeholder = EMPTY;
         const next = event.target.value.trim();
         if (next !== (value ?? "")) onSave(next);
       }}
@@ -95,6 +110,7 @@ const taskOf = (row: CaseRow, statuses: readonly CaseStatus[], today: string) =>
 export function CasesScreen() {
   const router = useRouter();
   const run = useActionToast();
+  const confirm = useConfirm();
   const { data, error, loading, reload, setData } = useActionData<CasesPage>(() => listCases(), []);
   const [view, setView] = useUrlState<View>("view", "all", VIEWS);
   const [q, setQ] = useSessionState<string>("cases-q", "");
@@ -123,6 +139,24 @@ export function CasesScreen() {
       if (result.success) setData((current) => current && { ...current, rows: current.rows.map((r) => (r.id === row.id ? result.data : r)) });
     },
     [run, setData],
+  );
+
+  // the same delete as the case page: soft, and the server refuses a case with money on it
+  const remove = useCallback(
+    async (row: CaseRow) => {
+      const agreed = await confirm({
+        title: `Delete case #${row.caseNo}?`,
+        description: "The case is marked deleted and leaves the table; it stays recoverable. Its seats stay on the departure until you cancel them.",
+        confirmLabel: "Delete",
+        destructive: true,
+      });
+      if (!agreed) return;
+      setBusy(row.id);
+      const result = await run(() => deleteCase(row.id), "Case deleted");
+      setBusy(null);
+      if (result.success) setData((current) => current && { ...current, rows: current.rows.filter((r) => r.id !== row.id) });
+    },
+    [confirm, run, setData],
   );
 
   const products = useMemo(() => [...new Set(all.map((r) => r.tourName).filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b, "he")), [all]);
@@ -187,21 +221,35 @@ export function CasesScreen() {
       {
         accessorKey: "caseNo",
         header: ({ column }) => <SortableHeader label="ID" column={column} />,
-        cell: ({ row }) => <span className="font-mono text-xs tabular">{row.original.caseNo}</span>,
+        cell: ({ row }) => <span className="font-mono text-xs tabular text-muted-foreground">{row.original.caseNo}</span>,
       },
-      { accessorKey: "firstName", header: "First Name", cell: ({ row }) => <div dir="auto" className="whitespace-nowrap">{row.original.firstName || EMPTY}</div> },
-      { accessorKey: "lastName", header: "Last Name", cell: ({ row }) => <div dir="auto" className="whitespace-nowrap">{row.original.lastName || EMPTY}</div> },
+      {
+        accessorKey: "firstName",
+        header: "First Name",
+        cell: ({ row }) => (
+          <div dir="auto" className="whitespace-nowrap font-medium">
+            {row.original.firstName || EMPTY}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "lastName",
+        header: "Last Name",
+        cell: ({ row }) => (
+          <div dir="auto" className="whitespace-nowrap font-medium">
+            {row.original.lastName || EMPTY}
+          </div>
+        ),
+      },
       {
         accessorKey: "phone",
         header: "Phone",
-        cell: ({ row }) =>
-          row.original.phone ? (
-            <a href={`tel:${row.original.phone}`} className="whitespace-nowrap text-primary tabular hover:underline">
-              {row.original.phone}
-            </a>
-          ) : (
-            EMPTY
-          ),
+        // one line, left-to-right, no link colour: the row's WhatsApp / call buttons are the actions
+        cell: ({ row }) => (
+          <div dir="ltr" className="whitespace-nowrap text-start tabular">
+            {row.original.phone || EMPTY}
+          </div>
+        ),
       },
       {
         accessorKey: "assignedTo",
@@ -209,6 +257,7 @@ export function CasesScreen() {
         cell: ({ row }) => (
           <InRow>
             <RepSelect
+              ghost
               value={row.original.assignedTo}
               reps={reps}
               currentUserId={currentUserId}
@@ -223,9 +272,16 @@ export function CasesScreen() {
         header: "Email",
         cell: ({ row }) =>
           row.original.email ? (
-            <a href={`mailto:${row.original.email}`} className="text-primary hover:underline">
-              {row.original.email}
-            </a>
+            <InRow>
+              <a
+                href={`mailto:${row.original.email}`}
+                dir="ltr"
+                title={row.original.email}
+                className="block max-w-[14rem] truncate text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                {row.original.email}
+              </a>
+            </InRow>
           ) : (
             EMPTY
           ),
@@ -281,16 +337,23 @@ export function CasesScreen() {
         id: "source",
         accessorFn: (row) => sourceLabel(row.source, row.utm),
         header: "Source",
-        cell: ({ row }) => <div className="whitespace-nowrap">{sourceLabel(row.original.source, row.original.utm)}</div>,
+        cell: ({ row }) => <div className="whitespace-nowrap text-muted-foreground">{sourceLabel(row.original.source, row.original.utm)}</div>,
       },
       {
         accessorKey: "followUpDate",
         header: ({ column }) => <SortableHeader label="Follow-up" column={column} />,
+        // the Mega Events reservations' look: the day, and under it how it stands (late / today / ahead)
         cell: ({ row }) => {
           const due = followUpDue(row.original, statuses, today);
+          const tone = followUpTone(row.original, statuses, today);
           return (
-            <InRow>
-              <FollowUpInput value={row.original.followUpDate} due={due} onSave={(followUpDate) => void save(row.original, { followUpDate })} />
+            <InRow className="flex flex-col items-start gap-0.5">
+              <FollowUpInput ghost value={row.original.followUpDate} due={due} onSave={(followUpDate) => void save(row.original, { followUpDate })} />
+              {tone && (
+                <span className={cn("ms-2 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[11px] font-semibold", FOLLOW_UP_TONE[tone])}>
+                  {followUpLabel(row.original.followUpDate, today, "en")}
+                </span>
+              )}
             </InRow>
           );
         },
@@ -302,7 +365,10 @@ export function CasesScreen() {
           row.original.departureDate ? (
             <div className="whitespace-nowrap tabular">
               {fmtDate(row.original.departureDate)}
-              <span className="block text-xs text-muted-foreground">{row.original.departureCode}</span>
+              <span className="block text-xs text-muted-foreground">
+                {row.original.departureCode}
+                {row.original.travelers > 0 && ` · ${row.original.travelers} seats`}
+              </span>
             </div>
           ) : (
             EMPTY
@@ -323,8 +389,58 @@ export function CasesScreen() {
         header: ({ column }) => <SortableHeader label="Created" column={column} />,
         cell: ({ row }) => <div className="whitespace-nowrap tabular text-muted-foreground">{fmtInstant(row.original.createdAt)}</div>,
       },
+      {
+        // id "actions" = pinned to the table's trailing edge (DataTable), like the Events table
+        id: "actions",
+        enableHiding: false,
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => {
+          const r = row.original;
+          const whatsapp = waLink(r.phone, `היי ${r.firstName ?? ""}`.trim());
+          const label = caseName(r) || `#${r.caseNo}`;
+          return (
+            <InRow className="flex items-center justify-end gap-0.5">
+              {whatsapp ? (
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-success hover:text-success" asChild>
+                  <a href={whatsapp} target="_blank" rel="noreferrer" aria-label={`WhatsApp ${label}`} title="WhatsApp">
+                    <MessageCircle className="h-4 w-4" />
+                  </a>
+                </Button>
+              ) : (
+                <span className="h-8 w-8" aria-hidden />
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${label}`} disabled={busy === r.id}>
+                    {busy === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => router.push(`/tours/reservations/${r.id}`)}>
+                    <ExternalLink className="h-4 w-4" />
+                    Open case
+                  </DropdownMenuItem>
+                  {r.phone && (
+                    <DropdownMenuItem asChild>
+                      <a href={`tel:${r.phone}`}>
+                        <Phone className="h-4 w-4" />
+                        Call {r.phone}
+                      </a>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => void remove(r)}>
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </InRow>
+          );
+        },
+      },
     ],
-    [busy, currentUserId, reps, save, statuses, today],
+    [busy, currentUserId, remove, reps, router, save, statuses, today],
   );
 
   const filterSelect = (value: string, onChange: (v: string) => void, label: string, options: { value: string; label: string }[], width = "w-40") => (
@@ -347,7 +463,7 @@ export function CasesScreen() {
     <div className="space-y-6">
       <PageHeader
         title="Reservations"
-        description="Every lead and every reservation of the company in one table - one row per customer. A site form opens a lead; a booking on the site (or through a link you sent) turns the same row into a reservation. Edit the notes, ACC NUM, rep, status and follow-up day in the row; open a row for the order, the passengers, the source and the booking link."
+        description="Every lead and every reservation in one table - one row per customer. Edit a field in place; open a row for the order, the seats and the booking link."
         actions={
           <>
             <Button variant="outline" onClick={() => void reload()}>
@@ -428,7 +544,11 @@ export function CasesScreen() {
             </>
           }
           onRowClick={(row) => router.push(`/tours/reservations/${row.id}`)}
-          getRowClassName={(row) => (followUpDue(row.original, statuses, today) ? "bg-destructive/5" : "")}
+          // like the Mega Events reservations: a customer waiting for a call today stands out, a late one more
+          getRowClassName={(row) => {
+            const tone = followUpTone(row.original, statuses, today);
+            return tone === "overdue" ? "bg-destructive/5" : tone === "today" ? "bg-warning-muted/50" : "";
+          }}
           stateKey="tours-cases"
           emptyState={{
             title: all.length === 0 ? "No leads or reservations yet" : "Nothing in this view",
