@@ -239,6 +239,21 @@ export function followUpDue(
 }
 
 /**
+ * Is a site booking's customer the case's own? A name differing only in case or spacing is the same
+ * person ("tammy aharon" / "tammy Aharon" raised a false warning); a phone is compared by its key.
+ * Nothing on one side to compare = no warning.
+ */
+export function sameCustomer(a: { name: string | null; phone: string | null }, b: { name: string | null; phone: string | null }): boolean {
+  const norm = (name: string | null) => (name ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  const nameA = norm(a.name);
+  const nameB = norm(b.name);
+  if (nameA && nameB && nameA !== nameB) return false;
+  const phoneA = phoneKey(a.phone);
+  const phoneB = phoneKey(b.phone);
+  return !(phoneA && phoneB && phoneA !== phoneB);
+}
+
+/**
  * How the table shows a case's follow-up day (the pill, the row tint) - the Mega Events
  * reservations' three states. Null = nothing to say: no day, a broken one, or a closed case.
  */

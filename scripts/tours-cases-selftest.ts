@@ -22,6 +22,7 @@ import {
   packagePathOf,
   packageSlugOf,
   phoneKey,
+  sameCustomer,
   productIdOf,
   sourceLabel,
   splitName,
@@ -97,6 +98,13 @@ assert.equal(phoneKey("00972541234567"), "541234567");
 assert.equal(phoneKey("0541234567"), phoneKey("+972-54-1234567"));
 assert.equal(phoneKey("12345"), "", "too short to match anyone");
 assert.equal(phoneKey(null), "");
+
+// the case page's "sent by someone else" warning: a name differing only in case or spacing is the same person
+assert.equal(sameCustomer({ name: "tammy  Aharon ", phone: null }, { name: "Tammy aharon", phone: null }), true);
+assert.equal(sameCustomer({ name: "דנה כהן", phone: "054-1234567" }, { name: "דנה כהן", phone: "+972541234567" }), true);
+assert.equal(sameCustomer({ name: "דנה כהן", phone: null }, { name: "יוסי לוי", phone: null }), false);
+assert.equal(sameCustomer({ name: "דנה", phone: "0541234567" }, { name: "דנה", phone: "0529999999" }), false, "same name, another phone");
+assert.equal(sameCustomer({ name: "", phone: null }, { name: "דנה", phone: null }), true, "nothing to compare is no warning");
 
 // ---------------------------------------------------------------- names
 assert.deepEqual(splitName("  דנה   כהן לוי "), { first: "דנה", last: "כהן לוי" });

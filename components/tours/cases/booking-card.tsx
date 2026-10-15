@@ -13,6 +13,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice } from "@/lib/tours/format";
 import { updateBooking } from "@/lib/actions/tours-bookings-actions";
 import { Fact, FactList, Notice } from "@/components/tours/ui";
+import { sameCustomer } from "@/lib/tours/cases";
 import {
   BOOKING_STATUS_HINTS,
   BOOKING_STATUS_LABELS,
@@ -69,9 +70,7 @@ export function BookingCard({
   const [note, setNote] = useState(booking.staffNote ?? "");
   const money = (value: number | null | undefined) => fmtPrice(value ?? null, booking.currency);
   const estimate = booking.priceBasis === "estimate";
-  const otherCustomer =
-    (booking.customerName && caseName && booking.customerName.trim() !== caseName.trim()) ||
-    (booking.customerPhone && casePhone && booking.customerPhone.replace(/\D/g, "").slice(-9) !== casePhone.replace(/\D/g, "").slice(-9));
+  const otherCustomer = !sameCustomer({ name: booking.customerName, phone: booking.customerPhone }, { name: caseName, phone: casePhone });
 
   const change = async (patch: BookingChange) => {
     setBusy(true);
