@@ -25,6 +25,7 @@ import {
   sameCustomer,
   productIdOf,
   seatBookingOf,
+  owedSeatRefs,
   seatGap,
   sourceLabel,
   splitName,
@@ -315,6 +316,18 @@ assert.equal(missingOf(seatGap("paid", S, [bk()], [{ departureId: "dep-a", pax: 
 assert.equal(seatGap("paid", S, [bk()], [{ departureId: "dep-b", pax: 4 }]), null, "seats moved to another departure still count");
 const twoTrips = seatGap("paid", S, [bk({ ref: "T2", departureId: "dep-b", travelers: 2, createdAt: "2026-10-15T10:00:00Z" }), bk()], [{ departureId: "dep-a", pax: 4 }]);
 assert.deepEqual(head(twoTrips), { ref: "T2", departureId: "dep-b", travelers: 2, missing: 2 }, "two trips: the one short is named");
+
+// prod case #1016 (18.10): "not relevant" over Done bookings - the notice stays quiet, the order chips do not lie
+const case1016 = [
+  bk({ ref: "T10033", travelers: 5, createdAt: "2026-10-18T10:20:00Z", salesEntryId: "s5" }),
+  bk({ ref: "T10034", travelers: 1, createdAt: "2026-10-18T10:30:00Z" }),
+  bk({ ref: "T10035", travelers: 1, createdAt: "2026-10-18T10:34:00Z" }),
+];
+const held1016 = [{ id: "s5", departureId: "dep-a", pax: 5 }];
+assert.equal(seatGap("not_relevant", S, case1016, held1016), null, "a closed case raises no notice");
+assert.deepEqual([...owedSeatRefs(S, case1016, held1016)], ["T10034", "T10035"], "...but its two unseated orders are named");
+assert.deepEqual([...owedSeatRefs(S, case1016.slice(0, 1), held1016)], [], "an order with its own seat row owes nothing");
+assert.deepEqual([...owedSeatRefs(S, [bk({ status: "new" })], [])], [], "an open order owes nothing yet, whatever the case says");
 
 // C1 (Alon 18.10): a case with a live booking is not "not relevant" - cancel the booking first
 assert.equal(closeBlockedBy("not_relevant", S, [{ ref: "T9", status: "new" }]), "T9");

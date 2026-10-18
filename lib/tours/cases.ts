@@ -848,6 +848,16 @@ export function seatGap(
   };
 }
 
+/**
+ * The orders whose travelers hold no seat, read off the bookings alone - what each order's chip says. A closed case
+ * keeps quiet about its gap (seatGap answers null), but its orders still tell the truth: case #1016 was set "not
+ * relevant" over two Done bookings and both read "Seats held" on 7 travelers and 5 seats (18.10). "new" is neither
+ * closed nor settled, so only the bookings' own statuses count.
+ */
+export function owedSeatRefs(statuses: readonly CaseStatus[], bookings: readonly SeatBooking[], sales: readonly SeatHold[]): Set<string> {
+  return new Set(seatGap("new", statuses, bookings, sales)?.owed.map((o) => o.ref) ?? []);
+}
+
 // ---------------------------------------------------------------- closing a case that holds a booking
 /**
  * A case whose booking is live cannot be closed as "not relevant" (or any closed status of the company's

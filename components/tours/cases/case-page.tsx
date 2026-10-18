@@ -58,6 +58,7 @@ import {
   payloadText,
   siteHref,
   isCaseTask,
+  owedSeatRefs,
   seatBookingOf,
   seatGap,
   sourceLabel,
@@ -224,9 +225,11 @@ export function CasePage({ id }: { id: string }) {
   // bookings add, cancellations give back - the net is what the departure counts
   const seatsHeld = data.sales.reduce((sum, s) => sum + s.pax, 0);
   // a settled deal whose travelers hold no seat (closed before closing held them by itself - case #1004)
-  const gap = seatGap(row.status, statuses, data.bookings.map(seatBookingOf), data.sales);
+  const seatBookings = data.bookings.map(seatBookingOf);
+  const gap = seatGap(row.status, statuses, seatBookings, data.sales);
   const gapBooking = gap ? data.bookings.find((b) => b.ref === gap.ref) : undefined;
-  const owedRefs = new Set(gap?.owed.map((o) => o.ref) ?? []);
+  // each order's chip tells its truth even on a closed case, where the notice above stays quiet
+  const owedRefs = owedSeatRefs(statuses, seatBookings, data.sales);
   // every traveler the customer sent, per live order (Alon 15.10: "all the passengers' names")
   const travelers = travelerGroups(data.bookings);
   const bookedTravelers = data.bookings.find((b) => b.status !== "cancelled" && b.status !== "failed");
