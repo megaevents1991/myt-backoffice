@@ -232,6 +232,17 @@ export function CasesScreen() {
 
   const columns = useMemo<ColumnDef<CaseRow>[]>(
     () => [
+      // TYPE and TASK first (Alon 18.10): what the row is and what to do now, before who it is
+      { accessorKey: "type", header: ({ column }) => <SortableHeader label="Type" column={column} />, cell: ({ row }) => <TypeBadge type={row.original.type} /> },
+      {
+        id: "task",
+        accessorFn: (row) => {
+          const task = taskOf(row, statuses, today);
+          return task ? CASE_TASK_LABELS[task] : "";
+        },
+        header: ({ column }) => <SortableHeader label="Task" column={column} />,
+        cell: ({ row }) => <TaskBadge task={taskOf(row.original, statuses, today)} overridden={isCaseTask(row.original.taskOverride)} />,
+      },
       {
         accessorKey: "caseNo",
         header: ({ column }) => <SortableHeader label="ID" column={column} />,
@@ -405,16 +416,6 @@ export function CasesScreen() {
           );
         },
       },
-      { accessorKey: "type", header: ({ column }) => <SortableHeader label="Type" column={column} />, cell: ({ row }) => <TypeBadge type={row.original.type} /> },
-      {
-        id: "task",
-        accessorFn: (row) => {
-          const task = taskOf(row, statuses, today);
-          return task ? CASE_TASK_LABELS[task] : "";
-        },
-        header: ({ column }) => <SortableHeader label="Task" column={column} />,
-        cell: ({ row }) => <TaskBadge task={taskOf(row.original, statuses, today)} overridden={isCaseTask(row.original.taskOverride)} />,
-      },
       {
         accessorKey: "createdAt",
         header: ({ column }) => <SortableHeader label="Created" column={column} />,
@@ -525,6 +526,8 @@ export function CasesScreen() {
           columns={columns}
           data={shown}
           dense
+          // a line between every field, like the tours sheets (Alon 18.10: the plain rows made him dizzy)
+          grid
           defaultPageSize={50}
           pageSizeOptions={[25, 50, 100]}
           getRowId={(row) => row.id}

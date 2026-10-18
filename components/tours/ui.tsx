@@ -6,7 +6,7 @@
  * the look of the shadcn forms the Mega Events screens use.
  */
 import { useId, type ReactNode } from "react";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ALL_CURRENCIES } from "@/lib/tours/format";
 import { Button } from "@/components/ui/button";
@@ -60,20 +60,80 @@ export function Field({
   );
 }
 
-/** One titled card of a screen or an editor tab. */
+export type SectionTone = "info" | "success" | "warning" | "violet" | "teal" | "rose" | "brand" | "neutral";
+
+/** The icon chip of a banded section: one hue per KIND of content, so the eye finds a section by colour. */
+export const SECTION_TONES: Record<SectionTone, string> = {
+  info: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  success: "bg-green-500/10 text-green-700 dark:text-green-300",
+  warning: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+  violet: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  teal: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
+  rose: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  brand: "bg-accent text-accent-foreground",
+  neutral: "bg-muted text-muted-foreground",
+};
+
+/** The header band of a banded section - also drawn by sections that build their own frame (a collapsible). */
+export function SectionBand({
+  icon: Icon,
+  tone = "neutral",
+  title,
+  description,
+  actions,
+  className,
+}: {
+  icon: LucideIcon;
+  tone?: SectionTone;
+  title?: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b bg-muted/40 px-4 py-2.5", className)}>
+      <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-md", SECTION_TONES[tone])} aria-hidden>
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        {title && <h2 className="font-display text-sm font-semibold leading-tight">{title}</h2>}
+        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/**
+ * One titled card of a screen or an editor tab. With an `icon` it is BANDED: the title sits in a tinted
+ * band with a coloured icon chip (`tone`) above the body - for pages of many sections that otherwise all
+ * look alike (the case page, Alon 18.10).
+ */
 export function Section({
   title,
   description,
   actions,
   children,
   className,
+  icon,
+  tone,
 }: {
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  icon?: LucideIcon;
+  tone?: SectionTone;
 }) {
+  if (icon) {
+    return (
+      <section className={cn("overflow-hidden rounded-lg border bg-card", className)}>
+        <SectionBand icon={icon} tone={tone} title={title} description={description} actions={actions} />
+        <div className="space-y-4 p-4">{children}</div>
+      </section>
+    );
+  }
   return (
     <section className={cn("space-y-4 rounded-lg border bg-card p-4", className)}>
       {(title || description || actions) && (

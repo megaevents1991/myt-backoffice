@@ -79,6 +79,8 @@ interface DataTableProps<TData, TValue> {
   ) => string | undefined;
   /** Tighter cell padding so wide tables fit without horizontal scroll. */
   dense?: boolean;
+  /** A spreadsheet grid: a line between every column too, like the tours sheets - for wide rows of many short fields. */
+  grid?: boolean;
   /** Initial sort, e.g. [{ id: "id", desc: true }] for newest-first. */
   defaultSorting?: SortingState;
   /** Segmented control above the toolbar - "All / Prioritized / Deleted". */
@@ -324,6 +326,7 @@ export function DataTable<TData, TValue>({
   pageSizeOptions = [10, 25, 50, 100],
   getRowClassName,
   dense = false,
+  grid = false,
   defaultSorting,
   views,
   activeView,
@@ -564,6 +567,7 @@ export function DataTable<TData, TValue>({
                         "aria-[sort]:text-foreground",
                         HEADER_BUTTON,
                         dense && "px-2",
+                        grid && "border-e border-border last:border-e-0 bg-muted",
                         pinsActions && header.column.id === PINNED_COLUMN_ID && PINNED_HEAD,
                       )}
                     >
@@ -605,6 +609,7 @@ export function DataTable<TData, TValue>({
                           // Coarse pointers get taller rows - 32px icon buttons in
                           // a dense row are under the comfortable touch target.
                           "[@media(pointer:coarse)]:py-3",
+                          grid && "border-e border-border/80 last:border-e-0",
                           pinsActions &&
                             cell.column.id === PINNED_COLUMN_ID && [
                               PINNED_CELL,

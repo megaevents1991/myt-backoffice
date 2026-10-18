@@ -3,7 +3,26 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ExternalLink, Gift, GitMerge, Loader2, PlusCircle, Trash2, TriangleAlert, Users } from "lucide-react";
+import {
+  Armchair,
+  ArrowLeft,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  Gift,
+  GitMerge,
+  History as HistoryIcon,
+  Loader2,
+  MapPinned,
+  Megaphone,
+  PlusCircle,
+  ReceiptText,
+  StickyNote,
+  Trash2,
+  TriangleAlert,
+  UserRound,
+  Users,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,7 +36,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { EMPTY, fmtDate, fmtDateRange, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { deleteCase, getCase, holdCaseSeats, updateCase } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
-import { Fact, FactList, LoadError, Notice, Section } from "@/components/tours/ui";
+import { Fact, FactList, LoadError, Notice, Section, SectionBand } from "@/components/tours/ui";
 import { readablePath } from "@/components/tours/content/shared";
 import { ReservationDialog } from "@/components/tours/reservations/reservation-dialog";
 import { ToursReservationsTable } from "@/components/tours/reservations/reservations-table";
@@ -49,7 +68,7 @@ import {
   type CaseSource,
   type CaseType,
 } from "@/lib/tours/cases";
-import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TaskBadge, TypeBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TaskBadge, TYPE_WASH, TypeBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { BookingCard, SeatsChip } from "@/components/tours/cases/booking-card";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { MergeDialog } from "@/components/tours/cases/merge-dialog";
@@ -261,7 +280,8 @@ export function CasePage({ id }: { id: string }) {
     <div className="space-y-6">
       <BackLink />
 
-      <div className="space-y-4 rounded-lg border bg-card p-4">
+      {/* the header takes the case type's hue: a booked customer, a lead and a future interest read apart at once */}
+      <div className={cn("space-y-4 rounded-lg border bg-card p-4", TYPE_WASH[row.type])}>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight" dir="auto">
             <span className="me-2 font-mono text-lg text-muted-foreground">#{row.caseNo}</span>
@@ -376,7 +396,7 @@ export function CasePage({ id }: { id: string }) {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Section title="Customer">
+          <Section title="Customer" icon={UserRound} tone="info">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <CustomerField label="First name" value={row.firstName} onSave={(firstName) => void save({ firstName })} />
               <CustomerField label="Last name" value={row.lastName} onSave={(lastName) => void save({ lastName })} />
@@ -394,9 +414,9 @@ export function CasePage({ id }: { id: string }) {
                 {travelers.map((group) => (
                   <div key={group.ref} className="space-y-1">
                     {travelers.length > 1 && <p className="font-mono text-xs text-muted-foreground">{group.ref}</p>}
-                    <ol className="grid gap-1.5 sm:grid-cols-2">
+                    <ol className="grid divide-y overflow-hidden rounded-md border sm:grid-cols-2 sm:divide-y-0 sm:[&>li:nth-child(n+3)]:border-t sm:[&>li:nth-child(even)]:border-s">
                       {group.passengers.map((p, i) => (
-                        <li key={i} className="flex items-baseline gap-2 rounded-md border bg-muted/30 px-3 py-1.5 text-sm">
+                        <li key={i} className="flex items-baseline gap-2 px-3 py-1.5 text-sm">
                           <span className="tabular text-xs text-muted-foreground">{i + 1}.</span>
                           <span dir="auto" className="font-medium">
                             {group.names[i]}
@@ -418,6 +438,8 @@ export function CasePage({ id }: { id: string }) {
           </Section>
 
           <Section
+            icon={ReceiptText}
+            tone="success"
             title={`Order${data.bookings.length > 1 ? `s (${data.bookings.length})` : ""}`}
             description={data.bookings.length ? "What the customer sent from the site." : undefined}
           >
@@ -463,13 +485,20 @@ export function CasePage({ id }: { id: string }) {
           {/* closed by default (Dor 15.10): the seats count by themselves - a paid or closed booking adds them - so
               the ledger is there for whoever needs it, not in every rep's way */}
           <Collapsible asChild>
-            <section className="group rounded-lg border bg-card">
-              <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-lg p-4 text-start hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90 rtl:-scale-x-100" />
-                <h2 className="font-display text-base font-semibold">Seats</h2>
-                <span className="text-sm text-muted-foreground">{seatsHeld > 0 ? `${seatsHeld} held on the departure` : "none held"}</span>
+            <section className="group overflow-hidden rounded-lg border bg-card">
+              <CollapsibleTrigger className="w-full text-start hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <SectionBand
+                  icon={Armchair}
+                  tone="teal"
+                  title="Seats"
+                  description={seatsHeld > 0 ? `${seatsHeld} held on the departure` : "none held"}
+                  className="border-b-0 group-data-[state=open]:border-b"
+                  actions={
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90 rtl:-scale-x-100" />
+                  }
+                />
               </CollapsibleTrigger>
-              <CollapsibleContent className="space-y-4 px-4 pb-4">
+              <CollapsibleContent className="space-y-4 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <p className="text-sm text-muted-foreground">
                     Travelers this customer holds on a departure - a paid booking, or one closed as Done, adds them by itself; a cancellation gives them
@@ -486,14 +515,14 @@ export function CasePage({ id }: { id: string }) {
           </Collapsible>
 
           {data.pkg?.cancellationHtml && (
-            <Section title="Cancellation terms" description={`As the tour page shows them (${data.pkg.name}).`}>
+            <Section icon={FileText} tone="neutral" title="Cancellation terms" description={`As the tour page shows them (${data.pkg.name}).`}>
               <p dir="rtl" className="whitespace-pre-line text-sm leading-6">
                 {htmlToText(data.pkg.cancellationHtml)}
               </p>
             </Section>
           )}
 
-          <Section title="History">
+          <Section title="History" icon={HistoryIcon} tone="neutral">
             {data.history.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing changed yet.</p>
             ) : (
@@ -518,7 +547,7 @@ export function CasePage({ id }: { id: string }) {
         </div>
 
         <div className="space-y-6">
-          <Section title="Product">
+          <Section title="Product" icon={MapPinned} tone="violet">
             <FactList>
               <Fact label="Tour">{(data.pkg?.name ?? row.tourName) && <span dir="auto">{data.pkg?.name ?? row.tourName}</span>}</Fact>
               <Fact label="Departure">
@@ -551,7 +580,7 @@ export function CasePage({ id }: { id: string }) {
             )}
           </Section>
 
-          <Section title="Gift">
+          <Section title="Gift" icon={Gift} tone="rose">
             {data.gifts.length === 0 ? (
               <p className="text-sm text-muted-foreground">{data.departure ? "No gift on this departure." : "Choose a departure to see its gift."}</p>
             ) : (
@@ -567,7 +596,7 @@ export function CasePage({ id }: { id: string }) {
             )}
           </Section>
 
-          <Section title="Source">
+          <Section title="Source" icon={Megaphone} tone="neutral">
             <FactList>
               <Fact label="Came through">
                 <div className="flex items-center gap-2">
@@ -640,7 +669,7 @@ export function CasePage({ id }: { id: string }) {
             onChanged={() => void reload({ quiet: true })}
           />
 
-          <Section title="Notes" description="For the team only - the customer never sees them.">
+          <Section title="Notes" description="For the team only - the customer never sees them." icon={StickyNote} tone="warning">
             <Textarea dir="auto" rows={5} maxLength={4000} value={notes} onChange={(e) => setNotesDraft(e.target.value)} placeholder="What was said, what was promised, what to do next." />
             <div className="mt-2 flex justify-end gap-2">
               {notesDraft !== null && notesDraft !== (row.notes ?? "") && (

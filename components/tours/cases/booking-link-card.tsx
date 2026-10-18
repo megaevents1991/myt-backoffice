@@ -347,7 +347,12 @@ export function BookingLinkCard({
   const priceOf = (key: string) => quote?.lines.find((l) => l.key === key);
 
   return (
-    <Section title="Booking link" description="An offer: the site opens on the tour with the customer's rooms; the booking lands on this case.">
+    <Section
+      icon={Link2}
+      tone="brand"
+      title="Booking link"
+      description="An offer: the site opens on the tour with the customer's rooms; the booking lands on this case."
+    >
       {!hasSite ? (
         <p className="text-sm text-muted-foreground">The company has no site address yet - set it in the company settings.</p>
       ) : !building ? (

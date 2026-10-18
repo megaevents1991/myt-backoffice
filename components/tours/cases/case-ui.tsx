@@ -67,15 +67,26 @@ export function StatusTag({ status, statuses, className }: { status: string; sta
   );
 }
 
-const TYPE_CLASSES: Record<CaseType, string> = {
-  reservation: "border-transparent bg-primary text-primary-foreground",
-  lead: "border-transparent bg-secondary text-secondary-foreground",
-  potential: "border-dashed text-muted-foreground",
+/**
+ * TYPE is the first thing a rep reads on a row (Alon 18.10: "start with TYPE and TASK"), so each type owns a
+ * hue: booked = green, a lead = blue, a future interest = violet with a dashed edge (nothing to sell yet).
+ * The word is always printed - the colour only speeds the eye.
+ */
+export const TYPE_CLASSES: Record<CaseType, string> = {
+  reservation: "border-green-600/30 bg-green-500/10 text-green-800 dark:text-green-300",
+  lead: "border-blue-600/30 bg-blue-500/10 text-blue-800 dark:text-blue-300",
+  potential: "border-dashed border-violet-500/50 bg-violet-500/5 text-violet-800 dark:text-violet-300",
+};
+/** The wash a case's header takes from its type (the case page). */
+export const TYPE_WASH: Record<CaseType, string> = {
+  reservation: "border-green-600/25 bg-[linear-gradient(rgb(34_197_94/0.07),rgb(34_197_94/0.02))]",
+  lead: "border-blue-600/25 bg-[linear-gradient(rgb(59_130_246/0.07),rgb(59_130_246/0.02))]",
+  potential: "border-violet-500/25 bg-[linear-gradient(rgb(139_92_246/0.07),rgb(139_92_246/0.02))]",
 };
 
 export function TypeBadge({ type }: { type: CaseType }) {
   return (
-    <span className={cn("inline-flex whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-medium", TYPE_CLASSES[type])}>
+    <span className={cn("inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold", TYPE_CLASSES[type])}>
       {CASE_TYPE_LABELS[type]}
     </span>
   );
