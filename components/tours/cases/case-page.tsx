@@ -15,7 +15,7 @@ import { useConfirm } from "@/components/confirm-provider";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { EMPTY, fmtDate, fmtDateRange, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
-import { deleteCase, getCase, updateCase } from "@/lib/actions/tours-cases-actions";
+import { deleteCase, getCase, holdCaseSeats, updateCase } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
 import { Fact, FactList, LoadError, Notice, Section } from "@/components/tours/ui";
 import { readablePath } from "@/components/tours/content/shared";
@@ -50,7 +50,7 @@ import {
   type CaseType,
 } from "@/lib/tours/cases";
 import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TaskBadge, TypeBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
-import { BookingCard } from "@/components/tours/cases/booking-card";
+import { BookingCard, SeatsChip } from "@/components/tours/cases/booking-card";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { MergeDialog } from "@/components/tours/cases/merge-dialog";
 
@@ -123,9 +123,24 @@ function CustomerField({
  * The customer's orders (Alon 15.10): one booking is shown whole; two or more fold into rows that
  * say where each stands - Active, Past, Cancelled - with the first active one open.
  */
-function Orders({ bookings, caseName: name, casePhone, onChanged }: { bookings: BookingRow[]; caseName: string; casePhone: string | null; onChanged: () => void }) {
+function Orders({
+  bookings,
+  caseName: name,
+  casePhone,
+  owedRefs,
+  onChanged,
+}: {
+  bookings: BookingRow[];
+  caseName: string;
+  casePhone: string | null;
+  /** Closed bookings whose travelers are not on the departure (seatGap). */
+  owedRefs: ReadonlySet<string>;
+  onChanged: () => void;
+}) {
   const today = todayIso();
-  if (bookings.length === 1) return <BookingCard booking={bookings[0]} caseName={name} casePhone={casePhone} onChanged={onChanged} />;
+  // a closed booking says whether its travelers hold seats (Alon 18.10: "I do not know if it takes them off")
+  const seatsOf = (b: BookingRow) => (b.status === "done" || b.status === "paid" ? (owedRefs.has(b.ref) ? "missing" : "held") : null);
+  if (bookings.length === 1) return <BookingCard booking={bookings[0]} caseName={name} casePhone={casePhone} seats={seatsOf(bookings[0])} onChanged={onChanged} />;
   const phases = bookings.map((b) => bookingPhase(b, today));
   const openFirst = Math.max(0, phases.indexOf("active"));
   return (
@@ -141,10 +156,11 @@ function Orders({ bookings, caseName: name, casePhone, onChanged }: { bookings: 
                 {b.departureCode ?? EMPTY} · {fmtDate(b.departureStart)}
               </span>
               <span className="text-muted-foreground">{b.adults + b.children} travelers</span>
+              {seatsOf(b) && <SeatsChip state={seatsOf(b)!} />}
               <span className="ms-auto tabular font-medium">{fmtPrice(b.total, b.currency)}</span>
             </CollapsibleTrigger>
             <CollapsibleContent className="px-3 pb-3">
-              <BookingCard booking={b} caseName={name} casePhone={casePhone} onChanged={onChanged} />
+              <BookingCard booking={b} caseName={name} casePhone={casePhone} seats={seatsOf(b)} onChanged={onChanged} />
             </CollapsibleContent>
           </div>
         </Collapsible>
@@ -191,6 +207,7 @@ export function CasePage({ id }: { id: string }) {
   // a settled deal whose travelers hold no seat (closed before closing held them by itself - case #1004)
   const gap = seatGap(row.status, statuses, data.bookings.map(seatBookingOf), data.sales);
   const gapBooking = gap ? data.bookings.find((b) => b.ref === gap.ref) : undefined;
+  const owedRefs = new Set(gap?.owed.map((o) => o.ref) ?? []);
   // every traveler the customer sent, per live order (Alon 15.10: "all the passengers' names")
   const travelers = travelerGroups(data.bookings);
   const bookedTravelers = data.bookings.find((b) => b.status !== "cancelled" && b.status !== "failed");
@@ -409,7 +426,7 @@ export function CasePage({ id }: { id: string }) {
                 No booking from the site yet.{row.type !== "reservation" ? " Send a booking link and the booking will land here." : ""}
               </p>
             ) : (
-              <Orders bookings={data.bookings} caseName={name} casePhone={row.phone} onChanged={() => void reload({ quiet: true })} />
+              <Orders bookings={data.bookings} caseName={name} casePhone={row.phone} owedRefs={owedRefs} onChanged={() => void reload({ quiet: true })} />
             )}
           </Section>
 
@@ -418,9 +435,9 @@ export function CasePage({ id }: { id: string }) {
               <TriangleAlert className="h-4 w-4 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="font-medium">
-                  {gap.missing === 1 ? "1 traveler" : `${gap.missing} travelers`} of booking {gap.ref}{" "}
-                  {gap.missing === 1 ? "is" : "are"} not on the departure
-                  {gapBooking?.departureCode ? ` (${gapBooking.departureCode})` : ""}
+                  {gap.missing === 1 ? "1 traveler" : `${gap.missing} travelers`} of {gap.owed.length > 1 ? "bookings" : "booking"}{" "}
+                  {gap.owed.map((o) => o.ref).join(", ")} {gap.missing === 1 ? "is" : "are"} not on the departure
+                  {gap.owed.length === 1 && gapBooking?.departureCode ? ` (${gapBooking.departureCode})` : ""}
                 </p>
                 <p className="text-xs opacity-90">
                   The deal is closed, but its seats are not held - the departure still sells these places. Closing a booking or the case by hand holds
@@ -429,14 +446,13 @@ export function CasePage({ id }: { id: string }) {
               </div>
               <Button
                 size="sm"
-                onClick={() =>
-                  addTravelers({
-                    departureId: gap.departureId,
-                    siteId: gapBooking?.siteId ?? null,
-                    travelers: gap.missing,
-                    note: `Online booking ${gap.ref}`,
-                  })
-                }
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  const result = await run(() => holdCaseSeats(row.id));
+                  setBusy(false);
+                  if (result.success) void reload({ quiet: true });
+                }}
               >
                 <PlusCircle className="h-4 w-4" />
                 {gap.missing === 1 ? "Hold 1 seat" : `Hold ${gap.missing} seats`}
@@ -615,10 +631,13 @@ export function CasePage({ id }: { id: string }) {
           <BookingLinkCard
             caseId={row.id}
             defaultDepartureId={row.departureId}
-            linkSentAt={data.linkSentAt}
             hasSite={!!data.siteUrl}
             whatsappApi={data.whatsappApi}
-            onSent={() => void reload({ quiet: true })}
+            offer={data.offer}
+            phone={row.phone}
+            email={row.email}
+            firstName={row.firstName}
+            onChanged={() => void reload({ quiet: true })}
           />
 
           <Section title="Notes" description="For the team only - the customer never sees them.">

@@ -135,6 +135,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > dry run `scripts/tours-cases-rejects-sql-dryrun.mjs`. The case reads tolerate the migration not applied yet
 > (`LEGACY_CASE_COLUMNS`). (11) Site (mega-family): `ShareSelectionLink` copies `?product_id=&rooms=` of the funnel's
 > choice (`selectionLink`, never the visit's `lr` or UTM).
+> **Alon's QA of that round (2026-10-18, migration `20261018110900_tours_cases_offer.sql`).** (a) The site kept the
+> link token for the whole TAB, so every later booking in it joined the same case - now `{ ref, tour }`, handed only
+> to a booking on that tour and dropped once a booking went out (mega-family `lib/link-prefill.ts`). (b) **Seats per
+> booking:** `seatGap` owes EACH closed booking its travelers unless its own seat row is live (`sales_entry_id`) or
+> a paid card booking for the same date, sent after it, holds seats (request then payment = one party); free rows
+> cover the oldest first. `holdOwedSeats` writes a row per owed booking (tied when it is the whole booking);
+> cancelling a booking releases its tied row (`releaseBookingSeats`); orders show "Seats held" / "No seats".
+> (c) `closeBlockedBy`: a case with a live booking cannot be "not relevant" - cancel the booking first (one or bulk).
+> (d) **The booking link is an offer** (`leads.offer`, `CaseOffer` / `parseOffer`): searchable priced dates only,
+> each room's price + the total from `tours.booking_quote` (`quoteLink`), `prepareOffer` keeps it unsent;
+> `markOfferSent` (a click on WhatsApp / e-mail - copying is not sending) moves the case to `offer_sent` with its
+> follow-up day; "Edit and resend" / "Withdraw" (`withdrawOffer` drops the token). (e) `booking_create` sets the
+> case's follow-up day to today (Israel) and marks the offer `bookingRef`.
 >
 > **✅ Homepage layout board (`/homepage`, 2026-09-16).** Spec
 > `docs/superpowers/specs/2026-09-16-homepage-layout-design.md`. One dummy of

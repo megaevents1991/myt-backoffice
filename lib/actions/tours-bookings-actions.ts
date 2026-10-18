@@ -17,7 +17,7 @@ import { logAudit } from "@/lib/audit";
 import { actionFail } from "@/lib/tours/action-kit";
 import { companyAudit } from "@/lib/tours/company-kit";
 import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
-import { holdOwedSeats } from "@/lib/tours/case-seats";
+import { holdOwedSeats, releaseBookingSeats } from "@/lib/tours/case-seats";
 import type { TourBooking } from "@/types/tours.types";
 import {
   STAFF_STATUSES,
@@ -122,14 +122,28 @@ export async function updateBooking(id: string, change: BookingChange): Promise<
     // a request closed by phone (Done) holds its travelers' seats by itself, as a card payment does
     // (Dor 15.10) - seatGap decides how many are still missing, so nothing is ever held twice
     const held = patch.status === "done" && before.lead_id ? await holdOwedSeats(company, before.lead_id, session.sub) : null;
+    // a cancelled booking gives its own seats back (Alon 18.10); seats added by hand for the case stay
+    const released = patch.status === "cancelled" ? await releaseBookingSeats(company, before) : null;
 
     const { data: fresh, error: freshError } = await toursDb().from("bookings").select("*").eq("company_id", company.id).eq("id", id).single();
     if (freshError) throw freshError;
     const deps = await departuresOf(company.id, [fresh.departure_id]);
     const data = bookingRowOf(fresh, deps.get(fresh.departure_id));
-    return held
-      ? { success: true, data, warning: `${held.pax === 1 ? "1 seat" : `${held.pax} seats`} now held on the departure${held.departureCode ? ` (${held.departureCode})` : ""}.` }
-      : { success: true, data };
+    if (held) {
+      return { success: true, data, warning: `${held.pax === 1 ? "1 seat" : `${held.pax} seats`} now held on the departure${held.departureCode ? ` (${held.departureCode})` : ""}.` };
+    }
+    // only a booking that was closed held seats - a cancelled request that never closed has nothing to say
+    if (patch.status === "cancelled" && (released?.released || before.status === "done" || before.status === "paid")) {
+      const freed = released?.released ?? 0;
+      return {
+        success: true,
+        data,
+        warning: freed
+          ? `${freed === 1 ? "1 seat" : `${freed} seats`} of booking ${before.ref} given back to the departure.`
+          : "This booking held no seats of its own. Seats added by hand for the customer stay - remove them under Seats if they should go.",
+      };
+    }
+    return { success: true, data };
   } catch (e) {
     return failure(e, "Failed to update the booking");
   }

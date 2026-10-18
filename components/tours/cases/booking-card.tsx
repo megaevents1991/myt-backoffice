@@ -35,6 +35,19 @@ const STATUS_VARIANT: Record<BookingStatus, "default" | "secondary" | "outline" 
   cancelled: "outline",
 };
 
+/** A closed booking's seats: on the departure, or not yet. */
+export function SeatsChip({ state }: { state: "held" | "missing" }) {
+  return state === "held" ? (
+    <span className="inline-flex items-center whitespace-nowrap rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-semibold text-green-700 dark:text-green-300">
+      Seats held
+    </span>
+  ) : (
+    <span className="inline-flex items-center whitespace-nowrap rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+      No seats
+    </span>
+  );
+}
+
 const kindLabel = (row: BookingRow) => (row.kind === "card" ? "Card payment" : "Request (a rep calls back)");
 const paxLabel = (row: BookingRow) => `${row.adults + row.children} (${row.adults} adults${row.children ? `, ${row.children} children` : ""})`;
 
@@ -56,9 +69,12 @@ export function BookingCard({
   booking,
   caseName,
   casePhone,
+  seats,
   onChanged,
 }: {
   booking: BookingRow;
+  /** Whether this booking's travelers hold seats on the departure (seatGap): only for a closed booking. */
+  seats?: "held" | "missing" | null;
   /** The case's own customer: a booking from someone else (a matched phone) says so. */
   caseName: string;
   casePhone: string | null;
@@ -84,6 +100,7 @@ export function BookingCard({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-semibold">{booking.ref}</span>
         <Badge variant={STATUS_VARIANT[booking.status as BookingStatus] ?? "outline"}>{bookingStatusLabel(booking.status)}</Badge>
+        {seats && <SeatsChip state={seats} />}
         <span className="text-sm text-muted-foreground">
           {kindLabel(booking)} · {fmtInstant(booking.createdAt)} · {booking.departureCode ?? EMPTY} {fmtDate(booking.departureStart)}
         </span>

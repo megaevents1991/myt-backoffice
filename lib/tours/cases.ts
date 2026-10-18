@@ -573,6 +573,8 @@ export interface CaseDetail {
   relatedCase: CaseCandidate | null;
   /** The company can send from its own WhatsApp number (Cloud API configured). */
   whatsappApi: boolean;
+  /** The booking link prepared for the customer (leads.offer), sent or not yet. */
+  offer: CaseOffer | null;
 }
 
 /** A case another one may be merged with - what the picker shows. */
@@ -601,16 +603,26 @@ export interface LinkDeparture {
   rooms: { key: string; title: string }[];
 }
 
+/** A prepared offer and the ways to send it. It counts as sent only through markOfferSent. */
 export interface BookingLinkResult {
-  url: string;
+  offer: CaseOffer;
+  message: string;
   /** wa.me - WhatsApp Web / the phone. */
   whatsapp: string | null;
   /** whatsapp:// - the rep's WhatsApp Desktop, no browser tab. */
   whatsappApp: string | null;
   mailto: string | null;
-  message: string;
-  /** The status the case took (statusAfterLink). */
-  status: string;
+}
+
+/** What the site charges for a choice of rooms on a date (tours.booking_quote), for the link card. */
+export interface LinkQuote {
+  currency: string;
+  lines: { key: string; title: string; price: number; discount: number }[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  /** The site would refuse a booking now: sold out, not enough seats... (null = bookable). */
+  reason: string | null;
 }
 
 /**
@@ -708,47 +720,79 @@ export const confirmationPendingOf = (bookings: readonly { status: string; confi
 
 // ---------------------------------------------------------------- seats a settled deal still owes
 /**
- * Seats are put on the departure by a card payment (or "Check payment" -> Paid) only. A request
- * closed by phone needs "Add travelers" by hand - forget it and the case reads paid while the
- * departure still sells those places (prod case #1004, 15.10). These rules say when that happened.
+ * Seats are put on the departure by a card payment, by "Check payment" -> Paid, and (since 15.10) by a
+ * booking or a case closed by hand (holdOwedSeats). These rules say what a closed deal still owes.
  */
 export interface SeatBooking {
   ref: string;
   status: string;
   departureId: string;
   travelers: number;
+  /** "request" | "card". */
+  kind: string;
+  createdAt: string;
+  /** The seat row that holds this booking's travelers (tours.bookings.sales_entry_id). */
+  salesEntryId: string | null;
 }
-/** One row of the case's seat ledger: +travelers booked, -travelers given back. */
+/** One row of the case's seat ledger: +travelers booked, -travelers given back. `id` ties it to a booking. */
 export interface SeatHold {
+  id?: string;
   departureId: string;
   pax: number;
 }
-/** The booking whose travelers are not all on the departure, and how many are missing. */
+/** One closed booking whose travelers are not all on the departure. */
+export interface SeatOwed {
+  ref: string;
+  departureId: string;
+  travelers: number;
+  missing: number;
+  /** The whole booking is owed: its new seat row is tied to it (sales_entry_id). */
+  link: boolean;
+}
+/** What a closed deal still owes: the booking furthest short is named, `missing` is the total. */
 export interface SeatGap {
   ref: string;
   departureId: string;
   travelers: number;
   missing: number;
+  owed: SeatOwed[];
 }
 
 /** A booking's travelers = adults + children; seniors are adults with a discount (SQL: b.adults + b.children). */
-export const seatBookingOf = (b: { ref: string; status: string; departureId: string; adults: number; children: number }): SeatBooking => ({
+export const seatBookingOf = (b: {
+  ref: string;
+  status: string;
+  departureId: string;
+  adults: number;
+  children: number;
+  kind: string;
+  createdAt: string;
+  salesEntryId: string | null;
+}): SeatBooking => ({
   ref: b.ref,
   status: b.status,
   departureId: b.departureId,
   travelers: b.adults + b.children,
+  kind: b.kind,
+  createdAt: b.createdAt,
+  salesEntryId: b.salesEntryId,
 });
 
 /** The deal is closed: the case says so, or one of its bookings does. */
 const SETTLED = new Set(["paid", "done"]);
+/** A booking that holds no one: cancelled, or a card payment that failed. */
+const DEAD_BOOKING = new Set(["cancelled", "failed"]);
 
 /**
- * The seats a settled deal still owes the departure, or null. Settled = a booking Done or Paid; or
- * the case Paid / Done, which then owes its newest booking. A cancelled booking owes nothing, nor a
- * case in a closed status other than Done (cancelled, not relevant, spam, a closed status of the
- * company's own). Per departure the biggest booking counts - a request and a card payment for the
- * same trip are one party. Seats held on ANY departure count, so a customer moved to another date
- * is not short; the departure furthest short is the one named. `bookings` newest first.
+ * The seats a closed deal still owes the departure, or null. Settled = a booking Done or Paid; or the case
+ * Paid / Done, which then owes its newest booking. A cancelled or failed booking owes nothing, nor a case in
+ * a closed status other than Done (cancelled, not relevant, spam, a closed status of the company's own).
+ * EACH settled booking owes its own travelers (Alon 18.10 - five bookings are five parties), unless:
+ *  - its own seat row is live (`salesEntryId`), or
+ *  - it is a request and a PAID card payment for the same departure, sent after it, holds seats - the
+ *    customer asked, then paid: one party, held once.
+ * Seat rows of no live booking (added by hand, "Hold N seats", a cancellation's minus) cover what is owed,
+ * oldest booking first, on the same departure first and then anywhere (a customer moved to another date).
  */
 export function seatGap(
   status: string,
@@ -757,25 +801,122 @@ export function seatGap(
   sales: readonly SeatHold[],
 ): SeatGap | null {
   if (status !== "done" && isClosedStatus(status, statuses)) return null;
-  const live = bookings.filter((b) => b.status !== "cancelled" && b.travelers > 0);
-  let owed = live.filter((b) => SETTLED.has(b.status));
-  if (owed.length === 0 && SETTLED.has(status)) owed = live.slice(0, 1);
+  const live = bookings.filter((b) => !DEAD_BOOKING.has(b.status) && b.travelers > 0);
+  let settled = live.filter((b) => SETTLED.has(b.status));
+  if (settled.length === 0 && SETTLED.has(status)) settled = live.slice(0, 1);
+  if (settled.length === 0) return null;
+
+  const liveRows = new Set(sales.map((s) => s.id).filter((id): id is string => !!id));
+  const holds = (b: SeatBooking) => !!b.salesEntryId && liveRows.has(b.salesEntryId);
+  const coveredByCard = (b: SeatBooking) =>
+    b.kind !== "card" &&
+    settled.some((c) => c !== b && c.kind === "card" && c.status === "paid" && holds(c) && c.departureId === b.departureId && c.createdAt > b.createdAt);
+  const owed = settled
+    .filter((b) => !holds(b) && !coveredByCard(b))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   if (owed.length === 0) return null;
-  const byDeparture = new Map<string, SeatBooking>();
-  for (const b of owed) {
-    const current = byDeparture.get(b.departureId);
-    if (!current || b.travelers > current.travelers) byDeparture.set(b.departureId, b);
+
+  // rows that belong to no live booking are the case's free seats
+  const bound = new Set(live.map((b) => b.salesEntryId).filter((id): id is string => !!id));
+  const pool = new Map<string, number>();
+  for (const s of sales) {
+    if (s.id && bound.has(s.id)) continue;
+    pool.set(s.departureId, (pool.get(s.departureId) ?? 0) + s.pax);
   }
-  const heldOn = (departureId: string) => sales.reduce((sum, s) => (s.departureId === departureId ? sum + s.pax : sum), 0);
-  const expected = [...byDeparture.values()].reduce((sum, b) => sum + b.travelers, 0);
-  const short = expected - sales.reduce((sum, s) => sum + s.pax, 0);
-  if (short <= 0) return null;
-  let worst: { booking: SeatBooking; gap: number } | null = null;
-  for (const booking of byDeparture.values()) {
-    const gap = booking.travelers - heldOn(booking.departureId);
-    if (!worst || gap > worst.gap) worst = { booking, gap };
+  const rows: SeatOwed[] = owed.map((b) => {
+    const here = Math.max(0, pool.get(b.departureId) ?? 0);
+    const take = Math.min(b.travelers, here);
+    pool.set(b.departureId, (pool.get(b.departureId) ?? 0) - take);
+    return { ref: b.ref, departureId: b.departureId, travelers: b.travelers, missing: b.travelers - take, link: false };
+  });
+  let anywhere = [...pool.values()].reduce((sum, n) => sum + Math.max(0, n), 0);
+  for (const r of rows) {
+    const take = Math.min(r.missing, anywhere);
+    r.missing -= take;
+    anywhere -= take;
+    r.link = r.missing === r.travelers;
   }
-  if (!worst) return null;
-  const { booking, gap } = worst;
-  return { ref: booking.ref, departureId: booking.departureId, travelers: booking.travelers, missing: gap > 0 ? Math.min(short, gap) : short };
+  const short = rows.filter((r) => r.missing > 0);
+  if (short.length === 0) return null;
+  const worst = short.reduce((a, b) => (b.missing > a.missing ? b : a));
+  return {
+    ref: worst.ref,
+    departureId: worst.departureId,
+    travelers: worst.travelers,
+    missing: short.reduce((sum, r) => sum + r.missing, 0),
+    owed: short,
+  };
 }
+
+// ---------------------------------------------------------------- closing a case that holds a booking
+/**
+ * A case whose booking is live cannot be closed as "not relevant" (or any closed status of the company's
+ * own) - the booking is set Cancelled first (Alon 18.10). Done, Cancelled and Spam close it as they are.
+ * Answers the blocking booking's ref, or null.
+ */
+export function closeBlockedBy(status: string, statuses: readonly CaseStatus[], bookings: readonly { ref: string; status: string }[]): string | null {
+  if (!needsCloseReason(status, statuses) || status === "cancelled") return null;
+  return bookings.find((b) => !DEAD_BOOKING.has(b.status))?.ref ?? null;
+}
+
+// ---------------------------------------------------------------- the offer a case was sent (Alon 18.10)
+export const OFFER_CHANNELS = ["whatsapp", "whatsapp_api", "email"] as const;
+export type OfferChannel = (typeof OFFER_CHANNELS)[number];
+export const OFFER_CHANNEL_LABELS: Record<OfferChannel, string> = {
+  whatsapp: "WhatsApp",
+  whatsapp_api: "WhatsApp (company number)",
+  email: "E-mail",
+};
+export const isOfferChannel = (value: unknown): value is OfferChannel => OFFER_CHANNELS.includes(value as OfferChannel);
+
+/**
+ * leads.offer: the booking link the rep prepared for the customer. It counts as sent only once it went out
+ * on WhatsApp or e-mail - copying it is not sending (Alon: "force me to send it").
+ */
+export interface CaseOffer {
+  departureId: string;
+  departureCode: string;
+  startDate: string;
+  tourName: string | null;
+  rooms: string[];
+  roomTitles: string[];
+  /** What the site charges for these rooms on this date (tours.booking_quote), discounts included. */
+  total: number | null;
+  currency: string | null;
+  url: string;
+  followUpDate: string;
+  createdAt: string;
+  sentAt: string | null;
+  sentVia: OfferChannel | null;
+  /** The site booking that came through this offer's link (booking_create). */
+  bookingRef: string | null;
+}
+
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
+
+export function parseOffer(value: unknown): CaseOffer | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const o = value as Record<string, unknown>;
+  const departureId = str(o.departureId);
+  const url = str(o.url);
+  if (!departureId || !url || !Array.isArray(o.rooms) || !o.rooms.every((r) => typeof r === "string")) return null;
+  const sentVia = isOfferChannel(o.sentVia) ? o.sentVia : null;
+  return {
+    departureId,
+    departureCode: str(o.departureCode) ?? "",
+    startDate: str(o.startDate) ?? "",
+    tourName: str(o.tourName),
+    rooms: o.rooms as string[],
+    roomTitles: Array.isArray(o.roomTitles) ? o.roomTitles.filter((t): t is string => typeof t === "string") : [],
+    total: typeof o.total === "number" && Number.isFinite(o.total) ? o.total : null,
+    currency: str(o.currency),
+    url,
+    followUpDate: str(o.followUpDate) ?? "",
+    createdAt: str(o.createdAt) ?? "",
+    sentAt: sentVia ? str(o.sentAt) : null,
+    sentVia,
+    bookingRef: str(o.bookingRef),
+  };
+}
+
+export const offerSent = (offer: CaseOffer | null): boolean => !!offer?.sentAt && !!offer.sentVia;

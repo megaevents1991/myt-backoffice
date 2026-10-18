@@ -3445,6 +3445,7 @@ export type Database = {
           assigned_to: string | null
           case_no: number
           close_reason: string | null
+          offer: Json | null
           related_lead_id: string | null
           company_id: string
           created_at: string
@@ -3478,6 +3479,7 @@ export type Database = {
           assigned_to?: string | null
           case_no?: number
           close_reason?: string | null
+          offer?: Json | null
           related_lead_id?: string | null
           company_id: string
           created_at?: string
@@ -3511,6 +3513,7 @@ export type Database = {
           assigned_to?: string | null
           case_no?: number
           close_reason?: string | null
+          offer?: Json | null
           related_lead_id?: string | null
           company_id?: string
           created_at?: string
@@ -6513,7 +6516,10 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      booking_quote: {
+        Args: { p_company: string; p_args: Json }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

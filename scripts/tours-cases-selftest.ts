@@ -39,6 +39,10 @@ import {
   bookingPhase,
   travelerGroups,
   payloadText,
+  closeBlockedBy,
+  parseOffer,
+  offerSent,
+  isOfferChannel,
   type CaseRow,
   type CaseStatus,
   type SeatBooking,
@@ -245,17 +249,31 @@ assert.equal(confirmationPendingOf([]), false);
 
 // ---------------------------------------------------------------- seats a settled booking still owes the departure
 // a booking's travelers: seniors are adults with a discount, never extra people
-const withSenior = { ref: "T1", status: "done", departureId: "dep-a", adults: 3, children: 2, seniors: 1 };
+const withSenior = { ref: "T1", status: "done", departureId: "dep-a", adults: 3, children: 2, seniors: 1, kind: "request", createdAt: "2026-10-14T10:00:00Z", salesEntryId: null };
 assert.deepEqual(seatBookingOf(withSenior), {
   ref: "T1",
   status: "done",
   departureId: "dep-a",
   travelers: 5,
+  kind: "request",
+  createdAt: "2026-10-14T10:00:00Z",
+  salesEntryId: null,
 });
-const bk = (over: Partial<SeatBooking> = {}): SeatBooking => ({ ref: "T10026", status: "done", departureId: "dep-a", travelers: 4, ...over });
+const bk = (over: Partial<SeatBooking> = {}): SeatBooking => ({
+  ref: "T10026",
+  status: "done",
+  departureId: "dep-a",
+  travelers: 4,
+  kind: "request",
+  createdAt: "2026-10-14T10:00:00Z",
+  salesEntryId: null,
+  ...over,
+});
 const missingOf = (gap: SeatGap | null) => gap?.missing ?? 0;
+const head = (gap: SeatGap | null) => gap && { ref: gap.ref, departureId: gap.departureId, travelers: gap.travelers, missing: gap.missing };
 // prod case #1004: a request closed by phone - booking Done, case paid, nothing on the departure
-assert.deepEqual(seatGap("paid", S, [bk()], []), { ref: "T10026", departureId: "dep-a", travelers: 4, missing: 4 });
+assert.deepEqual(head(seatGap("paid", S, [bk()], [])), { ref: "T10026", departureId: "dep-a", travelers: 4, missing: 4 });
+assert.deepEqual(seatGap("paid", S, [bk()], [])?.owed, [{ ref: "T10026", departureId: "dep-a", travelers: 4, missing: 4, link: true }], "the whole booking: its seat row is tied to it");
 assert.equal(seatGap("paid", S, [bk()], [{ departureId: "dep-a", pax: 4 }]), null, "every traveler holds a seat");
 assert.equal(missingOf(seatGap("in_progress", S, [bk()], [{ departureId: "dep-a", pax: 1 }])), 3, "a Done booking alone is enough");
 assert.equal(missingOf(seatGap("new", S, [bk({ status: "paid" })], [])), 4, "a paid booking whose seats are gone");
@@ -270,14 +288,53 @@ assert.equal(seatGap("custom_1", closedCustom, [bk()], []), null, "any closed st
 assert.equal(seatGap("paid", S, [], []), null, "no booking - nothing to compare with");
 assert.equal(seatGap("paid", S, [bk({ travelers: 0 })], []), null);
 assert.equal(
-  seatGap("paid", S, [bk({ ref: "T2", status: "paid" }), bk({ ref: "T1" })], [{ departureId: "dep-a", pax: 4 }]),
+  seatGap(
+    "paid",
+    S,
+    [bk({ ref: "T2", status: "paid", kind: "card", createdAt: "2026-10-15T10:00:00Z", salesEntryId: "s1" }), bk({ ref: "T1" })],
+    [{ id: "s1", departureId: "dep-a", pax: 4 }],
+  ),
   null,
-  "a request and a card payment for the same trip are one party, not two",
+  "a card payment covers the request for the same date sent before it - one party, not two",
 );
+// Alon 18.10: each closed booking holds its own seats - five bookings, five parties
+const five = ["T1", "T2", "T3"].map((ref, i) => bk({ ref, travelers: 2 + i, createdAt: `2026-10-1${i}T10:00:00Z` }));
+assert.equal(missingOf(seatGap("in_progress", S, five, [])), 9, "2 + 3 + 4 - not the biggest one alone");
+assert.equal(missingOf(seatGap("in_progress", S, five, [{ id: "x", departureId: "dep-a", pax: 2 }])), 7, "a seat row of no booking covers the oldest first");
+const linkedOne = five.map((b) => (b.ref === "T2" ? { ...b, salesEntryId: "s2" } : b));
+assert.equal(missingOf(seatGap("in_progress", S, linkedOne, [{ id: "s2", departureId: "dep-a", pax: 3 }])), 6, "a booking with its own seat row is covered");
+assert.equal(missingOf(seatGap("in_progress", S, linkedOne, [])), 9, "...only while that row is live");
+assert.deepEqual(
+  seatGap("in_progress", S, five, [{ id: "x", departureId: "dep-a", pax: 3 }])?.owed.map((o) => [o.ref, o.missing, o.link]),
+  [["T1", 0, false], ["T2", 2, false], ["T3", 4, true]].filter(([, m]) => m !== 0),
+  "a partly covered booking gets an untied row; only a wholly owed one is tied",
+);
+const twoCards = [bk({ ref: "T2", status: "paid", kind: "card", salesEntryId: "s1" }), bk({ ref: "T1", status: "paid", kind: "card", salesEntryId: "s0", createdAt: "2026-10-13T10:00:00Z" })];
+assert.equal(seatGap("paid", S, twoCards, [{ id: "s1", departureId: "dep-a", pax: 4 }, { id: "s0", departureId: "dep-a", pax: 4 }]), null, "two paid cards, two seat rows");
 assert.equal(missingOf(seatGap("paid", S, [bk()], [{ departureId: "dep-a", pax: 4 }, { departureId: "dep-a", pax: -4 }])), 4, "a cancellation gave them back");
 assert.equal(seatGap("paid", S, [bk()], [{ departureId: "dep-b", pax: 4 }]), null, "seats moved to another departure still count");
-const twoTrips = seatGap("paid", S, [bk({ ref: "T2", departureId: "dep-b", travelers: 2 }), bk()], [{ departureId: "dep-a", pax: 4 }]);
-assert.deepEqual(twoTrips, { ref: "T2", departureId: "dep-b", travelers: 2, missing: 2 }, "two trips: the one short is named");
+const twoTrips = seatGap("paid", S, [bk({ ref: "T2", departureId: "dep-b", travelers: 2, createdAt: "2026-10-15T10:00:00Z" }), bk()], [{ departureId: "dep-a", pax: 4 }]);
+assert.deepEqual(head(twoTrips), { ref: "T2", departureId: "dep-b", travelers: 2, missing: 2 }, "two trips: the one short is named");
+
+// C1 (Alon 18.10): a case with a live booking is not "not relevant" - cancel the booking first
+assert.equal(closeBlockedBy("not_relevant", S, [{ ref: "T9", status: "new" }]), "T9");
+assert.equal(closeBlockedBy("not_relevant", S, [{ ref: "T9", status: "done" }]), "T9", "a closed deal is not irrelevant either");
+assert.equal(closeBlockedBy("not_relevant", S, [{ ref: "T9", status: "cancelled" }, { ref: "T8", status: "failed" }]), null);
+assert.equal(closeBlockedBy("custom_1", closedCustom, [{ ref: "T9", status: "paid" }]), "T9", "a closed status of the company own");
+assert.equal(closeBlockedBy("cancelled", S, [{ ref: "T9", status: "paid" }]), null, "cancelling the case is how it ends");
+assert.equal(closeBlockedBy("spam", S, [{ ref: "T9", status: "new" }]), null);
+assert.equal(closeBlockedBy("done", S, [{ ref: "T9", status: "new" }]), null);
+
+// A2 (Alon 18.10): the offer a case was sent
+const offer = { departureId: "d1", departureCode: "FDUA1204", startDate: "2026-12-04", tourName: "תמרים", rooms: ["double_room"], roomTitles: ["זוגי"], total: 6600, currency: "USD", url: "https://x/y", followUpDate: "2026-10-20", createdAt: "2026-10-18T10:00:00Z", sentAt: null, sentVia: null };
+assert.deepEqual(parseOffer(offer), { ...offer, bookingRef: null });
+assert.equal(parseOffer({ ...offer, rooms: "x" }), null, "a broken offer is no offer");
+assert.equal(parseOffer(null), null);
+assert.equal(parseOffer({ ...offer, sentVia: "fax" })?.sentVia, null, "an unknown channel reads as not sent");
+assert.equal(offerSent(parseOffer(offer)), false);
+assert.equal(offerSent(parseOffer({ ...offer, sentAt: "2026-10-18T10:05:00Z", sentVia: "whatsapp" })), true);
+assert.equal(isOfferChannel("email"), true);
+assert.equal(isOfferChannel("copy"), false, "a copied link is not a sent offer");
 
 // ---- Alon's rejects 15.10
 // 5. closing as not relevant asks why; Done and Spam do not
