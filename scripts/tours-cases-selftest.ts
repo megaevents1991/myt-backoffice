@@ -10,7 +10,21 @@ import {
   bookingBlocksDelete,
   bookingLink,
   caseMatches,
-  caseTask,
+  cardStage,
+  checkFuture,
+  cleanPhones,
+  customerLabel,
+  daysLate,
+  inquiriesOf,
+  isOpenCard,
+  knownFrom,
+  paymentAnswerOf,
+  routeInquiry,
+  sameEmailSuggestion,
+  seasonOptions,
+  statusOnReturn,
+  todayRank,
+  todayReason,
   cleanRoomKeys,
   confirmationPendingOf,
   followUpDue,
@@ -46,9 +60,11 @@ import {
   isOfferChannel,
   type CaseRow,
   type CaseStatus,
+  type RouteCard,
   type SeatBooking,
   type SeatGap,
-  type TaskFacts,
+  type TodayFacts,
+  type TodayReason,
 } from "../lib/tours/cases";
 
 const TODAY = "2026-10-14";
@@ -64,36 +80,37 @@ assert.equal(typeOfKind("lead"), "lead");
 assert.equal(typeOfKind("contact"), "lead");
 assert.equal(typeOfKind("manual"), "lead");
 
-// ---------------------------------------------------------------- TASK
-const facts = (over: Partial<TaskFacts> = {}): TaskFacts => ({
-  type: "lead",
-  kind: "lead",
+// ---------------------------------------------------------------- TODAY: why a card waits for a rep (Nir 19.10)
+const facts = (over: Partial<TodayFacts> = {}): TodayFacts => ({
   status: "new",
   followUpDate: null,
-  taskOverride: null,
+  toFile: false,
+  paymentAnswer: null,
   confirmationPending: false,
   ...over,
 });
-assert.equal(caseTask(facts(), S, TODAY), "new_lead");
-assert.equal(caseTask(facts({ type: "reservation", kind: "advisor" }), S, TODAY), "new_order");
-assert.equal(caseTask(facts({ kind: "contact" }), S, TODAY), "service_call");
-assert.equal(caseTask(facts({ kind: "cancellation" }), S, TODAY), "service_call");
-assert.equal(caseTask(facts({ type: "potential", kind: "notify" }), S, TODAY), null, "a potential waits for its tour");
-assert.equal(
-  caseTask(facts({ status: "payment_review", followUpDate: "2026-10-01" }), S, TODAY),
-  "payment_check",
-  "a charge to check beats a due follow-up",
+assert.equal(todayReason(facts(), S, TODAY), "new");
+assert.equal(todayReason(facts({ status: "returned", followUpDate: "2026-10-01" }), S, TODAY), "returned", "came back beats a late follow-up");
+assert.equal(todayReason(facts({ status: "pending_payment", paymentAnswer: "paid" }), S, TODAY), "payment");
+assert.equal(todayReason(facts({ status: "pending_payment" }), S, TODAY), null, "money on its way, no answer yet: nothing to do");
+assert.equal(todayReason(facts({ toFile: true, status: "new" }), S, TODAY), "file");
+assert.equal(todayReason(facts({ status: "no_answer", followUpDate: "2026-10-10" }), S, TODAY), "late");
+assert.equal(todayReason(facts({ status: "offer_sent", followUpDate: TODAY }), S, TODAY), "today");
+assert.equal(todayReason(facts({ status: "offer_sent", followUpDate: "2026-10-15" }), S, TODAY), null, "a day ahead is not today's");
+assert.equal(todayReason(facts({ status: "paid", confirmationPending: true }), S, TODAY), "confirmation");
+assert.equal(todayReason(facts({ status: "paid" }), S, TODAY), null);
+assert.equal(todayReason(facts({ status: "not_relevant", followUpDate: "2026-10-01" }), S, TODAY), null, "closed = nothing, even a late day");
+assert.equal(todayReason(facts({ status: "future", followUpDate: "2027-03-01" }), S, TODAY), null, "a future lead waits for its season");
+assert.deepEqual(
+  (["today", "returned", "file", "late", "payment", "new"] as TodayReason[]).sort((a, b) => todayRank(a) - todayRank(b)),
+  ["returned", "payment", "file", "new", "late", "today"],
+  "Nir's order",
 );
-assert.equal(caseTask(facts({ status: "in_progress", followUpDate: TODAY }), S, TODAY), "follow_up");
-assert.equal(caseTask(facts({ status: "in_progress", followUpDate: "2026-10-01" }), S, TODAY), "follow_up");
-assert.equal(caseTask(facts({ status: "in_progress", followUpDate: "2026-10-15" }), S, TODAY), null);
-assert.equal(caseTask(facts({ status: "pending_payment" }), S, TODAY), "payment_chase");
-assert.equal(caseTask(facts({ status: "payment_failed" }), S, TODAY), "payment_chase");
-assert.equal(caseTask(facts({ status: "paid", confirmationPending: true }), S, TODAY), "send_confirmation");
-assert.equal(caseTask(facts({ status: "paid", confirmationPending: false }), S, TODAY), null);
-assert.equal(caseTask(facts({ status: "done", followUpDate: "2026-10-01" }), S, TODAY), null, "closed = no task, even a due follow-up");
-assert.equal(caseTask(facts({ status: "done", taskOverride: "follow_up" }), S, TODAY), "follow_up", "an override always wins");
-assert.equal(caseTask(facts({ taskOverride: "nonsense" }), S, TODAY), "new_lead", "an unknown override is ignored");
+assert.equal(daysLate("2026-10-12", TODAY), 2);
+assert.equal(paymentAnswerOf("pending_payment", ["paid", "failed"]), "paid", "the newest booking speaks");
+assert.equal(paymentAnswerOf("pending_payment", ["pending_payment", "failed"]), null, "an older failure is not this payment's answer");
+assert.equal(paymentAnswerOf("paid", ["paid"]), null, "confirmed already");
+assert.equal(paymentAnswerOf("pending_payment", ["review"]), "review");
 assert.equal(isClosedStatus("mystery", S), false, "a status no list knows is open");
 assert.equal(isClosedStatus("spam", []), true, "the default closed keys hold with no list");
 assert.equal(followUpDue({ followUpDate: TODAY, status: "new" }, S, TODAY), true);
@@ -170,7 +187,17 @@ const custom: CaseStatus[] = [...S, { key: "custom_4", label: "x", color: "gray"
 const next = validateStatuses([...drafts(custom), { key: null, label: "y", color: "gray", isClosed: false, isActive: true }], custom);
 assert.ok(next.ok && next.statuses.at(-1)?.key === "custom_5");
 const reordered = validateStatuses([...drafts(S)].reverse(), S);
-assert.ok(reordered.ok && reordered.statuses[0].key === "spam", "the order is the order saved");
+assert.ok(reordered.ok && reordered.statuses[0].key === S.at(-1)?.key, "the order is the order saved");
+// Nir's list (19.10): the ten statuses + spam on, the old ones off but kept
+assert.deepEqual(
+  S.filter((s) => s.isActive).map((s) => s.key),
+  ["new", "no_answer", "returned", "offer_sent", "future", "pending_payment", "deposit_paid", "paid", "not_relevant", "cancelled", "spam"],
+);
+assert.deepEqual(S.filter((s) => !s.isActive).map((s) => s.key), ["in_progress", "follow_up", "done", "payment_failed", "payment_review"]);
+assert.ok(!validateStatuses(drafts(S).map((s) => (s.key === "returned" ? { ...s, isActive: false } : s)), S).ok, "a status the code reads stays on");
+const offRetired = validateStatuses(drafts(S).map((s) => (s.key === "done" ? { ...s, isActive: true } : s)), S);
+assert.ok(offRetired.ok, "a retired status may be switched back on by a company that wants it");
+assert.ok(validateStatuses([...drafts(S), { key: null, label: "cyan one", color: "cyan", isClosed: false, isActive: true }], S).ok, "cyan is a colour");
 
 // ---------------------------------------------------------------- booking link
 assert.deepEqual(cleanRoomKeys(["double_room", "bogus", "couple_kid", "double_room"], ["double_room", "couple_kid"]), [
@@ -406,5 +433,108 @@ assert.equal(whatsappAppLink("12", "x"), null);
 assert.equal(payloadText({ productId: 31, code: "CBEA1014", label: "14.10 - 20.10" }), "14.10 - 20.10");
 assert.equal(payloadText({ a: 1 }), '{"a":1}');
 assert.equal(payloadText("text"), "text");
+
+// ---------------------------------------------------------------- one customer, deal cards (Nir 19.10)
+const card = (over: Partial<RouteCard> = {}): RouteCard => ({
+  id: "k1",
+  packageId: "tour-a",
+  status: "no_answer",
+  toFile: false,
+  departureStart: "2026-12-04",
+  createdAt: "2026-10-10T10:00:00Z",
+  ...over,
+});
+assert.equal(isOpenCard(card(), S, TODAY), true);
+assert.equal(isOpenCard(card({ status: "not_relevant" }), S, TODAY), false, "closed");
+assert.equal(isOpenCard(card({ toFile: true }), S, TODAY), false, "an inquiry waiting to be filed is not a card yet");
+assert.equal(isOpenCard(card({ status: "paid", departureStart: "2026-09-01" }), S, TODAY), false, "a paid trip that left is history");
+assert.equal(isOpenCard(card({ status: "paid", departureStart: "2026-12-01" }), S, TODAY), true, "a paid trip ahead is open");
+assert.equal(isOpenCard(card({ status: "paid", departureStart: null }), S, TODAY), true);
+// the SQL twin (public.leads_fill): same tour -> join, no tour + open cards -> file, else new
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [card()], S, TODAY), { kind: "join", cardId: "k1" });
+assert.deepEqual(
+  routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card(), card({ id: "k2", createdAt: "2026-10-12T10:00:00Z" })], S, TODAY),
+  { kind: "join", cardId: "k2" },
+  "the newest open card of the tour",
+);
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-b" }, [card()], S, TODAY), { kind: "new" }, "another tour = another card");
+assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [card()], S, TODAY), { kind: "file" });
+assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [card({ status: "not_relevant" })], S, TODAY), { kind: "new" }, "only closed cards: a fresh start");
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [card({ status: "paid", departureStart: "2026-01-01" })], S, TODAY), { kind: "new" }, "last year's trip, same tour: a new deal");
+assert.deepEqual(routeInquiry({ kind: "newsletter", packageId: null }, [card()], S, TODAY), { kind: "new" }, "a newsletter is no inquiry");
+assert.deepEqual(routeInquiry({ kind: "booking", packageId: "tour-a" }, [card()], S, TODAY), { kind: "new" }, "a booking routes itself");
+assert.equal(statusOnReturn("no_answer", S), "returned");
+assert.equal(statusOnReturn("offer_sent", S), "returned");
+assert.equal(statusOnReturn("future", S), "returned");
+assert.equal(statusOnReturn("paid", S), "paid", "a paid card keeps its status - the follow-up day calls the rep");
+assert.equal(statusOnReturn("no_answer", S.filter((s) => s.key !== "returned")), "no_answer", "before the migration");
+
+// the card's step: lead -> offer -> order -> paid
+assert.equal(cardStage("new", false, S), 0);
+assert.equal(cardStage("offer_sent", false, S), 1);
+assert.equal(cardStage("new", true, S), 2, "a site request is an order");
+assert.equal(cardStage("pending_payment", false, S), 2);
+assert.equal(cardStage("deposit_paid", true, S), 2.5);
+assert.equal(cardStage("paid", true, S), 3);
+assert.equal(cardStage("not_relevant", true, S), null);
+
+// a deposit counts as paid
+assert.equal(statusAfterLink("deposit_paid", S), "deposit_paid", "a link never writes over money taken");
+assert.equal(missingOf(seatGap("deposit_paid", S, [bk({ status: "new" })], [])), 4, "a deposit holds the seats like paid");
+
+// what a new card knows about the customer's earlier deals
+const earlier = [
+  { id: "k0", caseNo: 1010, status: "not_relevant", closeReason: "מחיר", tourName: "וייטנאם", createdAt: "2026-10-05T09:00:00Z" },
+  { id: "k1", caseNo: 1011, status: "no_answer", closeReason: null, tourName: "תמרים", createdAt: "2026-10-08T09:00:00Z" },
+  { id: "k2", caseNo: 1012, status: "new", closeReason: null, tourName: "לפלנד", createdAt: "2026-10-19T07:55:00Z" },
+];
+assert.equal(knownFrom({ id: "k2", createdAt: "2026-10-19T07:55:00Z" }, earlier, S)?.caseNo, 1010, "the closed one, not the open one");
+assert.equal(knownFrom({ id: "k0", createdAt: "2026-10-05T09:00:00Z" }, earlier, S), null, "a first contact knows nothing");
+assert.equal(knownFrom({ id: "k9", createdAt: "2026-11-01T00:00:00Z" }, [...earlier, { ...earlier[1], id: "k3", status: "paid", caseNo: 1013, createdAt: "2026-10-20T00:00:00Z" }], S)?.caseNo, 1013, "the newest: a paid trip");
+
+// the customer: C-number, phones
+assert.equal(customerLabel(1041), "C-1041");
+assert.equal(customerLabel(null), "");
+assert.deepEqual(cleanPhones([" 052-441-8820 ", "+972524418820", "", "03-555 0192"]), { ok: true, phones: ["052-441-8820", "03-555 0192"] }, "the same phone twice is one");
+assert.equal(cleanPhones(["12"]).ok, false, "not a phone");
+assert.equal(cleanPhones(["0501111111", "0502222222", "0503333333", "0504444444", "0505555555", "0506666666"]).ok, false, "at most five");
+
+// the same e-mail suggests, never joins
+const me = { id: "c1", email: "Dana@Example.com", phones: ["053-318-4471"], notSame: [] as string[] };
+const twin = { id: "c2", email: "dana@example.com ", phones: ["050-612-3380"], notSame: [] as string[] };
+assert.equal(sameEmailSuggestion(me, [twin]), "c2");
+assert.equal(sameEmailSuggestion(me, [{ ...twin, phones: ["0533184471"] }]), null, "a shared phone would have joined them already");
+assert.equal(sameEmailSuggestion({ ...me, notSame: ["c2"] }, [twin]), null, "staff said they are other people");
+assert.equal(sameEmailSuggestion(me, [{ ...twin, notSame: ["c1"] }]), null, "...on either side");
+assert.equal(sameEmailSuggestion({ ...me, email: null }, [twin]), null);
+
+// a future lead: a tour and a season
+assert.deepEqual(
+  seasonOptions(
+    [
+      { season: "פסח", seasonYear: 2027, startDate: "2027-04-04" },
+      { season: "חנוכה", seasonYear: 2026, startDate: "2026-12-20" },
+      { season: "קיץ", seasonYear: 2026, startDate: "2026-07-01" },
+      { season: null, seasonYear: 2027, startDate: "2027-05-01" },
+    ],
+    ["פסח", "סוכות"],
+    TODAY,
+  ),
+  ["חנוכה 2026", "פסח 2027", "פסח 2026", "סוכות 2026", "סוכות 2027"],
+  "coming departures first (a past one left out), then the tour's own seasons for this year and the next",
+);
+assert.equal(checkFuture("tour-a", "פסח 2027"), null);
+assert.ok(checkFuture(null, "פסח 2027"));
+assert.ok(checkFuture("tour-a", "  "));
+
+// forms that joined the card, newest first
+assert.deepEqual(
+  inquiriesOf({ inquiries: [{ case_no: 1006, at: "2026-10-19T09:12:00Z", kind: "waitlist", message: "again", source_path: "/package/x/" }, { at: "2026-10-20T09:00:00Z", kind: "lead", message: " " }, "junk"] }),
+  [
+    { caseNo: null, at: "2026-10-20T09:00:00Z", kind: "lead", message: null, sourcePath: null },
+    { caseNo: 1006, at: "2026-10-19T09:12:00Z", kind: "waitlist", message: "again", sourcePath: "/package/x/" },
+  ],
+);
+assert.deepEqual(inquiriesOf({}), []);
 
 console.log("tours-cases selftest: ok");

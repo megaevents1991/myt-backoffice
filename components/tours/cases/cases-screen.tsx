@@ -24,15 +24,15 @@ import { EMPTY, fmtDate, fmtInstant, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, deleteCase, exportCases, listCases, updateCase } from "@/lib/actions/tours-cases-actions";
 import { Chip, LoadError } from "@/components/tours/ui";
 import {
-  CASE_TASK_LABELS,
+  TODAY_REASON_LABELS,
   caseMatches,
   caseName,
-  caseTask,
+  customerLabel,
   followUpDue,
   followUpTone,
-  isCaseTask,
   needsCloseReason,
   sourceLabel,
+  todayReason,
   waLink,
   type CaseChange,
   type CaseRow,
@@ -47,7 +47,7 @@ import {
   NOBODY,
   RepSelect,
   StatusSelect,
-  TaskBadge,
+  TodayBadge,
   TypeBadge,
   WhatsAppButton,
 } from "@/components/tours/cases/case-ui";
@@ -112,14 +112,14 @@ function InlineText({
   );
 }
 
-const taskOf = (row: CaseRow, statuses: readonly CaseStatus[], today: string) => caseTask(row, statuses, today);
+const reasonOf = (row: CaseRow, statuses: readonly CaseStatus[], today: string) => todayReason(row, statuses, today);
 
 /**
- * /tours/reservations - one table for every lead and every reservation of a
- * tours company: one row per customer, the columns of Alon's road map, edited
- * in the row, opened on its own page.
+ * Every card of a tours company in one table - the ALL tab of /tours/reservations (Nir 19.10): bulk changes, export,
+ * the columns of Alon's road map edited in the row. A row opens its customer with that card open. `embedded` = inside
+ * the board, which owns the page title.
  */
-export function CasesScreen() {
+export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const run = useActionToast();
   const confirm = useConfirm();
@@ -232,21 +232,27 @@ export function CasesScreen() {
 
   const columns = useMemo<ColumnDef<CaseRow>[]>(
     () => [
-      // TYPE and TASK first (Alon 18.10): what the row is and what to do now, before who it is
+      // what the row is and why it waits, before who it is (Alon 18.10; the TASK became TODAY's reason - Nir 19.10)
       { accessorKey: "type", header: ({ column }) => <SortableHeader label="Type" column={column} />, cell: ({ row }) => <TypeBadge type={row.original.type} /> },
       {
-        id: "task",
+        id: "today",
         accessorFn: (row) => {
-          const task = taskOf(row, statuses, today);
-          return task ? CASE_TASK_LABELS[task] : "";
+          const reason = reasonOf(row, statuses, today);
+          return reason ? TODAY_REASON_LABELS[reason] : "";
         },
-        header: ({ column }) => <SortableHeader label="Task" column={column} />,
-        cell: ({ row }) => <TaskBadge task={taskOf(row.original, statuses, today)} overridden={isCaseTask(row.original.taskOverride)} />,
+        header: ({ column }) => <SortableHeader label="Today" column={column} />,
+        cell: ({ row }) => <TodayBadge reason={reasonOf(row.original, statuses, today)} followUpDate={row.original.followUpDate} today={today} />,
       },
       {
         accessorKey: "caseNo",
         header: ({ column }) => <SortableHeader label="ID" column={column} />,
         cell: ({ row }) => <span className="font-mono text-xs tabular text-muted-foreground">{row.original.caseNo}</span>,
+      },
+      {
+        id: "customer",
+        accessorFn: (row) => row.customerNo ?? 0,
+        header: ({ column }) => <SortableHeader label="Customer" column={column} />,
+        cell: ({ row }) => <span className="font-mono text-xs tabular text-muted-foreground">{customerLabel(row.original.customerNo) || EMPTY}</span>,
       },
       {
         accessorKey: "firstName",
@@ -360,7 +366,10 @@ export function CasesScreen() {
               statuses={statuses}
               disabled={busy === row.original.id}
               title={row.original.closeReason ? `Closed because: ${row.original.closeReason}` : undefined}
-              onChange={(status, closeReason) => void save(row.original, { status, closeReason })}
+              future={{ packageId: row.original.packageId, season: row.original.season }}
+              onChange={(status, closeReason, pick) =>
+                void save(row.original, { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}) })
+              }
             />
           </InRow>
         ),
@@ -495,10 +504,8 @@ export function CasesScreen() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Reservations"
-        description="Every lead and every reservation in one table - one row per customer. Edit a field in place; open a row for the order, the seats and the booking link."
-        actions={
+      {(() => {
+        const actions = (
           <>
             <Button variant="outline" onClick={() => void reload()}>
               <RefreshCw className="h-4 w-4" />
@@ -508,17 +515,34 @@ export function CasesScreen() {
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Export
             </Button>
-            <Button variant="outline" onClick={() => setEditingStatuses(true)} disabled={!data}>
-              <ListChecks className="h-4 w-4" />
-              Statuses
-            </Button>
-            <Button onClick={() => setAdding(true)} disabled={!data}>
-              <PlusCircle className="h-4 w-4" />
-              New
-            </Button>
+            {/* inside the board its own header has Statuses and New */}
+            {!embedded && (
+              <>
+                <Button variant="outline" onClick={() => setEditingStatuses(true)} disabled={!data}>
+                  <ListChecks className="h-4 w-4" />
+                  Statuses
+                </Button>
+                <Button onClick={() => setAdding(true)} disabled={!data}>
+                  <PlusCircle className="h-4 w-4" />
+                  New
+                </Button>
+              </>
+            )}
           </>
-        }
-      />
+        );
+        return embedded ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">Every card in one table - change many at once, or export.</p>
+            <div className="flex flex-wrap items-center gap-2">{actions}</div>
+          </div>
+        ) : (
+          <PageHeader
+            title="Reservations"
+            description="Every lead and every reservation in one table. Edit a field in place; open a row for its customer."
+            actions={actions}
+          />
+        );
+      })()}
 
       {error && !loading && <LoadError message={error} onRetry={() => void reload()} />}
       {data ? (

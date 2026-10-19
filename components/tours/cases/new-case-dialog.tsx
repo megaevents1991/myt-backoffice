@@ -23,9 +23,12 @@ import {
   CASE_SOURCE_LABELS,
   CASE_TYPES,
   CASE_TYPE_LABELS,
+  customerLabel,
+  customerName,
   type CaseRep,
   type CaseSource,
   type CaseType,
+  type CustomerInfo,
 } from "@/lib/tours/cases";
 import { RepSelect } from "@/components/tours/cases/case-ui";
 
@@ -38,19 +41,24 @@ const TYPE_HINTS: Record<CaseType, string> = {
   potential: "Wants something that is not on sale yet.",
 };
 
-/** "+ New" on the Reservations screen: a call, a WhatsApp, a walk-in - a case typed in by staff. */
+/**
+ * "+ New" on the Reservations screen: a call, a WhatsApp, a walk-in - a case typed in by staff. With `customer` (the
+ * customer page's "New card"): a new deal of that person - their details come from the customer, not the form.
+ */
 export function NewCaseDialog({
   open,
   onOpenChange,
   reps,
   currentUserId,
   onCreated,
+  customer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reps: readonly CaseRep[];
   currentUserId: string;
   onCreated: (id: string) => void;
+  customer?: CustomerInfo;
 }) {
   const run = useActionToast();
   const { data: departures, loading: departuresLoading } = useActionData<ReservationDeparture[]>(
@@ -95,8 +103,8 @@ export function NewCaseDialog({
 
   const save = async () => {
     setError(null);
-    if (!firstName.trim()) return setError("Enter the customer's first name.");
-    if (!phone.trim() && !email.trim()) return setError("Enter a phone number or an e-mail address.");
+    if (!customer && !firstName.trim()) return setError("Enter the customer's first name.");
+    if (!customer && !phone.trim() && !email.trim()) return setError("Enter a phone number or an e-mail address.");
     if (type === "reservation" && !departureId) return setError("A reservation needs a departure.");
     setSaving(true);
     const result = await run(
@@ -114,8 +122,9 @@ export function NewCaseDialog({
           assignedTo,
           notes,
           followUpDate: followUpDate || null,
+          customerId: customer?.id ?? null,
         }),
-      "Case created",
+      customer ? "Card created" : "Case created",
     );
     setSaving(false);
     if (!result.success) return setError(result.error);
@@ -127,8 +136,20 @@ export function NewCaseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>New case</DialogTitle>
-          <DialogDescription>A customer who called, wrote on WhatsApp or came to the office. Site forms and bookings arrive by themselves.</DialogDescription>
+          <DialogTitle>
+            {customer ? (
+              <>
+                New card for {customerLabel(customer.customerNo)} <span dir="auto">{customerName(customer)}</span>
+              </>
+            ) : (
+              "New case"
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {customer
+              ? "Another deal of this customer - another tour, another date. Their details come from the customer."
+              : "A customer who called, wrote on WhatsApp or came to the office. Site forms and bookings arrive by themselves."}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
@@ -151,6 +172,22 @@ export function NewCaseDialog({
             ))}
           </div>
 
+          {customer ? (
+            <Field label="Came through" htmlFor="case-source">
+              <Select value={source} onValueChange={(v) => setSource(v as CaseSource)}>
+                <SelectTrigger id="case-source">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CASE_SOURCES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {CASE_SOURCE_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="First name" htmlFor="case-first">
               <Input id="case-first" dir="auto" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -182,6 +219,7 @@ export function NewCaseDialog({
               </Select>
             </Field>
           </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
             <Field label={type === "reservation" ? "Departure" : "Departure (optional)"} htmlFor="case-departure">

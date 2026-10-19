@@ -35,28 +35,50 @@ import type { Database, Json } from "@/types/database.types";
 import { MAX_TRAVELERS, TRAVELERS_RULE, type ToursReservationRow } from "@/components/tours/reservations/types";
 import {
   CASE_SOURCE_LABELS,
-  CASE_TASK_LABELS,
   CASE_TYPE_LABELS,
+  PHONES_MAX,
+  SEASON_MAX,
+  TODAY_REASON_LABELS,
   bookingBlocksDelete,
+  bookingPhase,
+  checkFuture,
+  cleanPhones,
   closeBlockedBy,
+  customerLabel,
+  customerName,
+  inquiriesOf,
   isOfferChannel,
+  knownFrom,
+  owedSeatRefs,
   parseOffer,
+  paymentAnswerOf,
   caseName,
   checkCloseReason,
   isClosedStatus,
   needsCloseReason,
   phoneKey,
+  sameEmailSuggestion,
+  seasonOptions,
   statusAfterLink,
+  statusOnReturn,
+  todayRank,
+  todayReason,
   whatsappAppLink,
   whatsappPhone,
+  type BoardOrder,
+  type BoardPage,
   type CaseCandidate,
+  type CustomerCandidate,
+  type CustomerChange,
+  type CustomerInfo,
+  type CustomerPageData,
+  type FutureTour,
+  type KnownFrom,
   confirmationPendingOf,
   LINK_ROOMS_MAX,
   bookingLink,
-  caseTask,
   cleanRoomKeys,
   isCaseSource,
-  isCaseTask,
   isCaseType,
   linkMessage,
   packagePathOf,
@@ -99,12 +121,18 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, task_override, link_token, link_sent_at, payload, close_reason, related_lead_id, offer";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season";
 
-/** The same without offer (migration 20261018110900): a deploy that beat its migration still reads. */
-const LEGACY_CASE_COLUMNS = CASE_COLUMNS.replace(", offer", "");
+/** The same without the customer columns (migration 20261019180000): a deploy that beat its migration still reads. */
+const LEGACY_CASE_COLUMNS = CASE_COLUMNS.replace(", customer_id, to_file, season", "");
 const missingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
-  error?.code === "42703" || error?.code === "PGRST204" || /(close_reason|related_lead_id|offer).*does not exist/.test(error?.message ?? "");
+  error?.code === "42703" ||
+  error?.code === "PGRST204" ||
+  /(close_reason|related_lead_id|offer|customer_id|to_file|season).*does not exist/.test(error?.message ?? "");
+/** public.customers is not there yet (the migration runs on the push to master). */
+const missingTable = (error: { code?: string; message?: string } | null | undefined): boolean =>
+  error?.code === "42P01" || error?.code === "PGRST205" || /relation .*customers.* does not exist/.test(error?.message ?? "");
+const NOT_READY = "Customers are available after the system update - try again in a few minutes.";
 
 type LeadRow = Database["public"]["Tables"]["leads"]["Row"];
 type CaseRecord = Pick<
@@ -132,27 +160,48 @@ type CaseRecord = Pick<
   | "source_path"
   | "departure_id"
   | "package_id"
-  | "task_override"
   | "link_token"
   | "link_sent_at"
   | "payload"
   | "close_reason"
   | "related_lead_id"
   | "offer"
+  | "customer_id"
+  | "to_file"
+  | "season"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
+type CustomerRecord = Database["public"]["Tables"]["customers"]["Row"];
+
+/** An order of the case as the board lists it, before the seats chip is known. */
+interface RawOrder {
+  ref: string;
+  source: "site" | "staff";
+  status: string;
+  departureId: string;
+  travelers: number;
+  total: number | null;
+  currency: string | null;
+  createdAt: string;
+}
 
 /** What a row needs from the departure, the tour, the newest booking and the seats. */
 interface Enrichment {
   departures: Map<string, { code: string; startDate: string; packageId: string | null; tourName: string | null }>;
   packages: Map<string, string>;
   bookings: Map<string, { ref: string; status: string; confirmationPending: boolean }>;
+  /** Every booking's status, newest first - what paymentAnswerOf reads. */
+  bookingStatuses: Map<string, string[]>;
   travelers: Map<string, number>;
   /** Every booking of the case, newest first, and its seat ledger - what seatGap reads. */
   seatBookings: Map<string, SeatBooking[]>;
   seatHolds: Map<string, SeatHold[]>;
   /** The case number of each related case (related_lead_id), live ones only. */
   related: Map<string, number>;
+  /** Each customer's number (customer_id -> customer_no). */
+  customers: Map<string, number>;
+  /** The case's orders: its site bookings and the seat rows a rep typed (each with its T number). */
+  orders: Map<string, RawOrder[]>;
 }
 
 const clean = (value: string | null | undefined, max: number): string | null => {
@@ -180,11 +229,15 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     departures: new Map(),
     packages: new Map(),
     bookings: new Map(),
+    bookingStatuses: new Map(),
     travelers: new Map(),
     seatBookings: new Map(),
     seatHolds: new Map(),
     related: new Map(),
+    customers: new Map(),
+    orders: new Map(),
   };
+  const addOrder = (leadId: string, order: RawOrder) => out.orders.set(leadId, [...(out.orders.get(leadId) ?? []), order]);
 
   const readDepartures = async () => {
     for (const part of chunk(departureIds, IN_CHUNK)) {
@@ -216,7 +269,7 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     for (const part of chunk(caseIds, IN_CHUNK)) {
       const { data, error } = await toursDb()
         .from("bookings")
-        .select("lead_id, ref, status, kind, confirmation_sent_at, created_at, departure_id, adults, children, sales_entry_id")
+        .select("lead_id, ref, status, kind, confirmation_sent_at, created_at, departure_id, adults, children, sales_entry_id, total, currency")
         .eq("company_id", companyId)
         .in("lead_id", part)
         .is("is_deleted", null)
@@ -228,6 +281,17 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
         // newest first: the first one seen per case is the one the row names
         if (!out.bookings.has(b.lead_id)) out.bookings.set(b.lead_id, { ref: b.ref, status: b.status, confirmationPending: false });
         all.set(b.lead_id, [...(all.get(b.lead_id) ?? []), { status: b.status, confirmationSentAt: b.confirmation_sent_at }]);
+        out.bookingStatuses.set(b.lead_id, [...(out.bookingStatuses.get(b.lead_id) ?? []), b.status]);
+        addOrder(b.lead_id, {
+          ref: b.ref,
+          source: "site",
+          status: b.status,
+          departureId: b.departure_id,
+          travelers: b.adults + b.children,
+          total: b.total === null || b.total === undefined ? null : Number(b.total),
+          currency: b.currency ?? null,
+          createdAt: b.created_at,
+        });
         const seat = seatBookingOf({
           ref: b.ref,
           status: b.status,
@@ -249,18 +313,39 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
   };
   const readSeats = async () => {
     for (const part of chunk(caseIds, IN_CHUNK)) {
-      const { data, error } = await toursDb()
-        .from("departure_sales_entries")
-        .select("id, lead_id, pax, departure_id")
-        .eq("company_id", companyId)
-        .in("lead_id", part)
-        .is("is_deleted", null);
+      const read = (columns: string) =>
+        toursDb().from("departure_sales_entries").select(columns).eq("company_id", companyId).in("lead_id", part).is("is_deleted", null);
+      // `ref` arrives with the customers migration; before it a typed order simply has no number
+      let { data, error } = await read("id, lead_id, pax, departure_id, ref, created_at");
+      if (missingColumn(error)) ({ data, error } = await read("id, lead_id, pax, departure_id, created_at"));
       if (error) throw new Error(`departure_sales_entries: ${error.message}`);
-      for (const e of data ?? []) {
+      const rows = (data ?? []) as unknown as { id: string; lead_id: string | null; pax: number; departure_id: string; ref?: string | null; created_at: string }[];
+      for (const e of rows) {
         if (!e.lead_id) continue;
         out.travelers.set(e.lead_id, (out.travelers.get(e.lead_id) ?? 0) + e.pax);
         out.seatHolds.set(e.lead_id, [...(out.seatHolds.get(e.lead_id) ?? []), { id: e.id, departureId: e.departure_id, pax: e.pax }]);
+        if (e.ref) {
+          addOrder(e.lead_id, {
+            ref: e.ref,
+            source: "staff",
+            status: "staff",
+            departureId: e.departure_id,
+            travelers: e.pax,
+            total: null,
+            currency: null,
+            createdAt: e.created_at,
+          });
+        }
       }
+    }
+  };
+  const readCustomers = async () => {
+    const ids = [...new Set(records.map((r) => r.customer_id).filter((v): v is string => !!v))];
+    for (const part of chunk(ids, IN_CHUNK)) {
+      const { data, error } = await supabaseTyped.from("customers").select("id, customer_no").eq("company_id", companyId).in("id", part);
+      if (missingTable(error)) return;
+      if (error) throw new Error(`customers: ${error.message}`);
+      for (const c of data ?? []) out.customers.set(c.id, c.customer_no);
     }
   };
   const readRelated = async () => {
@@ -271,8 +356,48 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
       for (const l of data ?? []) out.related.set(l.id, l.case_no);
     }
   };
-  await Promise.all([readDepartures(), readPackages(), readBookings(), readSeats(), readRelated()]);
+  await Promise.all([readDepartures(), readPackages(), readBookings(), readSeats(), readRelated(), readCustomers()]);
+  // the bookings' own departures (a booking may sit on another date than its case)
+  const bookingDeps = [...out.orders.values()].flat().map((o) => o.departureId).filter((id) => !out.departures.has(id));
+  if (bookingDeps.length) {
+    const deps = await departuresOf(companyId, bookingDeps);
+    for (const [id, d] of deps) out.departures.set(id, { code: d.code, startDate: d.start_date, packageId: null, tourName: null });
+  }
   return out;
+}
+
+/** A case's orders as the board shows them: the seats chip from owedSeatRefs, the phase from the trip's day. */
+function ordersOf(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[], today: string): BoardOrder[] {
+  const raw = x.orders.get(r.id) ?? [];
+  const seatBookings = x.seatBookings.get(r.id) ?? [];
+  const holds = x.seatHolds.get(r.id) ?? [];
+  const owed = owedSeatRefs(statuses, seatBookings, holds);
+  // a typed order is cancelled by a minus row on its date: the seat rows of no booking, netted per departure
+  const bound = new Set(seatBookings.map((b) => b.salesEntryId).filter((v): v is string => !!v));
+  const typedNet = new Map<string, number>();
+  for (const h of holds) if (!h.id || !bound.has(h.id)) typedNet.set(h.departureId, (typedNet.get(h.departureId) ?? 0) + h.pax);
+  return raw
+    .map((o) => {
+      const departure = x.departures.get(o.departureId);
+      const settled = o.status === "done" || o.status === "paid";
+      const typedGone = o.source === "staff" && (typedNet.get(o.departureId) ?? 0) <= 0;
+      return {
+        ref: o.ref,
+        source: o.source,
+        cardId: r.id,
+        status: typedGone ? "cancelled" : o.status,
+        phase: typedGone ? "cancelled" : bookingPhase({ status: o.status, departureStart: departure?.startDate ?? null }, today),
+        departureCode: departure?.code ?? null,
+        departureDate: departure?.startDate ?? null,
+        travelers: o.travelers,
+        total: o.total,
+        currency: o.currency,
+        // a typed order is a seat row itself
+        seats: o.source === "staff" ? (typedGone ? null : "held") : settled ? (owed.has(o.ref) ? "missing" : "held") : null,
+        createdAt: o.createdAt,
+      } satisfies BoardOrder;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]): CaseRow {
@@ -306,9 +431,14 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     departureDate: departure?.startDate ?? null,
     packageId: r.package_id ?? departure?.packageId ?? null,
     tourName: departure?.tourName ?? (r.package_id ? (x.packages.get(r.package_id) ?? null) : null),
-    taskOverride: r.task_override,
+    customerId: r.customer_id ?? null,
+    customerNo: r.customer_id ? (x.customers.get(r.customer_id) ?? null) : null,
+    // an inquiry that got a booking since is a card like any other
+    toFile: !!r.to_file && !booking,
+    season: r.season ?? null,
     bookingRef: booking?.ref ?? null,
     bookingStatus: booking?.status ?? null,
+    paymentAnswer: paymentAnswerOf(r.status, x.bookingStatuses.get(r.id) ?? []),
     confirmationPending: booking?.confirmationPending ?? false,
     travelers: x.travelers.get(r.id) ?? 0,
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
@@ -326,9 +456,19 @@ async function caseRecord(company: Company, id: string): Promise<CaseRecord> {
   if (missingColumn(error)) ({ data, error } = await read(LEGACY_CASE_COLUMNS));
   if (error) throw new Error(`leads: ${error.message}`);
   if (!data) throw new UserError("The case was not found - it may have been deleted.");
-  const record = data as unknown as CaseRecord;
-  return { ...record, close_reason: record.close_reason ?? null, related_lead_id: record.related_lead_id ?? null, offer: record.offer ?? null };
+  return withDefaults(data as unknown as CaseRecord);
 }
+
+/** A row read before a migration lacks its columns: they read as empty. */
+const withDefaults = (record: CaseRecord): CaseRecord => ({
+  ...record,
+  close_reason: record.close_reason ?? null,
+  related_lead_id: record.related_lead_id ?? null,
+  offer: record.offer ?? null,
+  customer_id: record.customer_id ?? null,
+  to_file: record.to_file ?? false,
+  season: record.season ?? null,
+});
 
 /** Every case of the company (not deleted), newest first - tolerant of the close_reason migration. */
 async function allCaseRecords(company: Company) {
@@ -369,6 +509,15 @@ async function liveBookingsOf(company: Company, ids: string[]): Promise<Map<stri
     for (const b of data ?? []) if (b.lead_id) out.set(b.lead_id, [...(out.get(b.lead_id) ?? []), { ref: b.ref, status: b.status }]);
   }
   return out;
+}
+
+/** A tour of the company that a card may name. */
+async function companyPackage(company: Company, id: string): Promise<{ id: string; name: string }> {
+  if (!UUID.test(id)) throw new UserError("Choose a tour.");
+  const { data, error } = await toursDb().from("packages").select("id, name").eq("company_id", company.id).eq("id", id).is("is_deleted", null).maybeSingle();
+  if (error) throw new Error(`packages: ${error.message}`);
+  if (!data) throw new UserError("The tour was not found - it may have been deleted.");
+  return data;
 }
 
 /** A departure of the company that a case may point at. */
@@ -439,8 +588,15 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       } else if (!isClosedStatus(status.key, statuses)) {
         set("close_reason", before.close_reason, null);
       }
+      // a card payment with another amount is checked on the booking first: "paid" here would hold seats for it unseen
+      if (before.status === "pending_payment" && (status.key === "paid" || status.key === "deposit_paid")) {
+        const bookings = (await liveBookingsOf(company, [id])).get(id) ?? [];
+        if (paymentAnswerOf(before.status, bookings.map((b) => b.status)) === "review") {
+          throw new UserError(`Booking ${bookings[0]?.ref ?? ""}'s card charge has another amount - check it in CreditGuard and set the booking "Paid" first.`);
+        }
+      }
       set("status", before.status, status.key);
-      settled = status.key === "paid" || status.key === "done";
+      settled = status.key === "paid" || status.key === "done" || status.key === "deposit_paid";
     }
     if (change.assignedTo !== undefined && change.assignedTo !== before.assigned_to) {
       if (change.assignedTo !== null && !(await repsOf(company)).some((p) => p.id === change.assignedTo)) {
@@ -492,10 +648,6 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       if (!isCaseType(change.type)) throw new UserError("Unknown type.");
       set("type", before.type, change.type);
     }
-    if (change.taskOverride !== undefined) {
-      if (change.taskOverride !== null && !isCaseTask(change.taskOverride)) throw new UserError("Unknown task.");
-      set("task_override", before.task_override, change.taskOverride);
-    }
     if (change.departureId !== undefined) {
       if (change.departureId === null) {
         set("departure_id", before.departure_id, null);
@@ -504,6 +656,24 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
         set("departure_id", before.departure_id, departure.id);
         set("package_id", before.package_id, departure.package_id);
       }
+    }
+    // the tour without a date (a future lead) - a date of another tour no longer holds
+    if (change.packageId !== undefined && change.departureId === undefined) {
+      const packageId = change.packageId === null ? null : (await companyPackage(company, change.packageId)).id;
+      set("package_id", before.package_id, packageId);
+      if (before.departure_id && packageId !== before.package_id) set("departure_id", before.departure_id, null);
+    }
+    if (change.season !== undefined) {
+      const season = clean(change.season, SEASON_MAX);
+      set("season", before.season, season);
+    }
+    // "ליד עתידי" names the tour and the season (Nir 19.10)
+    const nextStatus = (patch.status as string | undefined) ?? before.status;
+    if (nextStatus === "future" && (patch.status !== undefined || change.packageId !== undefined || change.season !== undefined)) {
+      const packageId = patch.package_id !== undefined ? patch.package_id : before.package_id;
+      const season = patch.season !== undefined ? patch.season : before.season;
+      const problem = checkFuture(packageId, season);
+      if (problem) throw new UserError(problem);
     }
     if (change.source !== undefined) {
       if (!isCaseSource(change.source)) throw new UserError("Unknown source.");
@@ -549,6 +719,7 @@ export async function bulkUpdateCases(
       const statuses = await statusesOf(company);
       const status = statusOf(change.status, statuses);
       if (!status || !status.isActive) throw new UserError("Unknown status - reload the screen.");
+      if (status.key === "future") throw new UserError(`"${status.label}" names a tour and a season - set it on each card.`);
       patch.status = status.key;
       // the same rule as one case: a closing status says why, one reason for the whole selection
       if (needsCloseReason(status.key, statuses)) {
@@ -598,7 +769,7 @@ export async function bulkUpdateCases(
     }
     // closed by hand in bulk: the same seats as one case closed by hand
     let heldSeats = 0;
-    if (patch.status === "paid" || patch.status === "done") {
+    if (patch.status === "paid" || patch.status === "done" || patch.status === "deposit_paid") {
       for (const row of before) heldSeats += (await holdOwedSeats(company, row.id, session.sub))?.pax ?? 0;
     }
     revalidatePath("/tours/reservations");
@@ -614,14 +785,16 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
     const { session, company } = await requireCompany("tours");
     if (!isCaseType(input.type)) throw new UserError("Choose a type.");
     if (!isCaseSource(input.source)) throw new UserError("Choose how the customer reached us.");
-    const first = clean(input.firstName, NAME_MAX);
+    // "+ New card" on a customer's page: the contact is the customer's own
+    const customer = input.customerId ? await customerRecord(company, input.customerId) : null;
+    const first = clean(input.firstName, NAME_MAX) ?? customer?.first_name ?? null;
     if (!first) throw new UserError("Enter the customer's first name.");
-    const last = clean(input.lastName, NAME_MAX);
-    const phone = clean(input.phone, 40);
-    const email = clean(input.email, 200)?.toLowerCase() ?? null;
+    const last = clean(input.lastName, NAME_MAX) ?? customer?.last_name ?? null;
+    const phone = clean(input.phone, 40) ?? customer?.phones[0] ?? null;
+    const email = clean(input.email, 200)?.toLowerCase() ?? customer?.email ?? null;
     if (!phone && !email) throw new UserError("Enter a phone number or an e-mail address.");
     if (email && !EMAIL.test(email)) throw new UserError("The e-mail address is not valid.");
-    const idNumber = (input.idNumber ?? "").replace(/\D/g, "") || null;
+    const idNumber = (input.idNumber ?? "").replace(/\D/g, "") || customer?.id_number || null;
     if (idNumber && !NATIONAL_ID.test(idNumber)) throw new UserError("A national id is 5 to 9 digits.");
     if (input.followUpDate && !DAY.test(input.followUpDate)) throw new UserError("The follow-up date is not a valid day.");
     const notes = (input.notes ?? "").trim();
@@ -658,6 +831,7 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
         follow_up_date: input.followUpDate || null,
         departure_id: departure?.id ?? null,
         package_id: departure?.package_id ?? null,
+        ...(customer ? { customer_id: customer.id, acc_num: customer.acc_num } : {}),
       })
       .select("id, case_no")
       .single();
@@ -909,7 +1083,10 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
 
     const payload = asObject(record.payload);
     const related = record.related_lead_id;
-    const [relatedCase] = related && related !== record.id ? await candidatesOf(company, [related], record) : [];
+    const [[relatedCase], known] = await Promise.all([
+      related && related !== record.id ? candidatesOf(company, [related], record) : Promise.resolve([] as CaseCandidate[]),
+      knownOf(company, record, statuses),
+    ]);
     return actionOk({
       row,
       payload,
@@ -943,10 +1120,45 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       relatedCase: relatedCase ?? null,
       whatsappApi: whatsappApiReady(company),
       offer: parseOffer(record.offer),
+      inquiries: inquiriesOf(payload),
+      known,
     });
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the case");
   }
+}
+
+/** The customer's other cards as knownFrom reads them (each with its tour's name). */
+async function customerCards(company: Company, customerId: string): Promise<(KnownFrom & { id: string })[]> {
+  const { data, error } = await supabaseTyped
+    .from("leads")
+    .select("id, case_no, status, close_reason, created_at, package_id")
+    .eq("company_id", company.id)
+    .eq("customer_id", customerId)
+    .is("is_deleted", null);
+  if (missingColumn(error)) return [];
+  if (error) throw new Error(`leads: ${error.message}`);
+  const packageIds = [...new Set((data ?? []).map((l) => l.package_id).filter((v): v is string => !!v))];
+  const names = new Map<string, string>();
+  for (const part of chunk(packageIds, IN_CHUNK)) {
+    const { data: pkgs, error: pkgError } = await toursDb().from("packages").select("id, name").eq("company_id", company.id).in("id", part);
+    if (pkgError) throw new Error(`packages: ${pkgError.message}`);
+    for (const p of pkgs ?? []) names.set(p.id, p.name);
+  }
+  return (data ?? []).map((l) => ({
+    id: l.id,
+    caseNo: l.case_no,
+    status: l.status,
+    closeReason: l.close_reason,
+    tourName: l.package_id ? (names.get(l.package_id) ?? null) : null,
+    createdAt: l.created_at,
+  }));
+}
+
+/** What the card should know about the customer's earlier deals (knownFrom), or null. */
+async function knownOf(company: Company, record: CaseRecord, statuses: readonly CaseStatus[]): Promise<KnownFrom | null> {
+  if (!record.customer_id) return null;
+  return knownFrom({ id: record.id, createdAt: record.created_at }, await customerCards(company, record.customer_id), statuses);
 }
 
 /** "Hold N seats" on the case page: what each closed booking still owes, held now (the same rule as closing by hand). */
@@ -1370,6 +1582,504 @@ export async function withdrawOffer(caseId: string): Promise<ActionResult<CaseRo
   }
 }
 
+// ---------------------------------------------------------------- one customer, deal cards (Nir 19.10)
+const CUSTOMER_COLUMNS = "id, company_id, customer_no, first_name, last_name, phones, phone_keys, email, id_number, acc_num, not_same, merged_into, is_deleted, created_at, updated_at";
+
+/** One customer of the company (not deleted, not merged away), or a UserError. */
+async function customerRecord(company: Company, id: string): Promise<CustomerRecord> {
+  if (!UUID.test(id)) throw new UserError("The customer was not found.");
+  const { data, error } = await supabaseTyped
+    .from("customers")
+    .select(CUSTOMER_COLUMNS)
+    .eq("company_id", company.id)
+    .eq("id", id)
+    .is("is_deleted", null)
+    .maybeSingle();
+  if (missingTable(error)) throw new UserError(NOT_READY);
+  if (error) throw new Error(`customers: ${error.message}`);
+  if (!data) throw new UserError("The customer was not found - they may have been merged into another one.");
+  return data as CustomerRecord;
+}
+
+const customerInfoOf = (c: CustomerRecord): CustomerInfo => ({
+  id: c.id,
+  customerNo: c.customer_no,
+  firstName: c.first_name,
+  lastName: c.last_name,
+  phones: c.phones ?? [],
+  email: c.email,
+  idNumber: c.id_number,
+  accNum: c.acc_num,
+  createdAt: c.created_at,
+});
+
+/**
+ * The Reservations board in one load: every card (TODAY and LEADS read them) and every order (RESERVATIONS - a
+ * site booking or a typed one, each a row). The ALL tab keeps reading listCases.
+ */
+export async function listBoard(): Promise<ActionResult<BoardPage>> {
+  try {
+    const { session, company } = await requireCompany("tours");
+    const [page, statuses, reps] = await Promise.all([allCaseRecords(company), statusesOf(company), repsOf(company)]);
+    if (page.error) throw new Error(`leads: ${page.error.message}`);
+    const records = page.rows.map(withDefaults);
+    const x = await enrich(company.id, records);
+    const today = todayIso();
+    return actionOk({
+      cards: records.map((r) => toCaseRow(r, x, statuses)),
+      orders: records.flatMap((r) => ordersOf(r, x, statuses, today)),
+      truncated: page.truncated,
+      statuses,
+      reps,
+      currentUserId: session.sub,
+    });
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to load the reservations");
+  }
+}
+
+/**
+ * A customer's page in one load: the person, every card of theirs (deleted ones out), their orders, what each card
+ * should know of the earlier ones, and a same-e-mail suggestion. Opened by the customer, or by one of their cards
+ * (`/tours/reservations/<card>` - that card opens).
+ */
+export async function getCustomerPage(input: { customerId?: string; cardId?: string }): Promise<ActionResult<CustomerPageData>> {
+  try {
+    const { session, company } = await requireCompany("tours");
+    let customerId = input.customerId ?? null;
+    if (!customerId && input.cardId) {
+      const card = await caseRecord(company, input.cardId);
+      if (!card.customer_id) throw new UserError(NOT_READY);
+      customerId = card.customer_id;
+    }
+    if (!customerId) throw new UserError("The customer was not found.");
+    const customer = await customerRecord(company, customerId);
+
+    const [cardsAnswer, statuses, reps] = await Promise.all([
+      fetchPaged<CaseRecord>(
+        () =>
+          supabaseTyped
+            .from("leads")
+            .select(CASE_COLUMNS)
+            .eq("company_id", company.id)
+            .eq("customer_id", customer.id)
+            .is("is_deleted", null)
+            .order("case_no", { ascending: false }),
+        LIST_LIMIT,
+      ),
+      statusesOf(company),
+      repsOf(company),
+    ]);
+    if (cardsAnswer.error) throw new Error(`leads: ${cardsAnswer.error.message}`);
+    const records = cardsAnswer.rows.map(withDefaults);
+    const x = await enrich(company.id, records);
+    const today = todayIso();
+    const cards = records.map((r) => toCaseRow(r, x, statuses));
+
+    // what each card should know about the customer's earlier deals
+    const history = cards.map((c) => ({ id: c.id, caseNo: c.caseNo, status: c.status, closeReason: c.closeReason, tourName: c.tourName, createdAt: c.createdAt }));
+    const known: Record<string, KnownFrom> = {};
+    for (const c of cards) {
+      const k = knownFrom(c, history, statuses);
+      if (k) known[c.id] = k;
+    }
+
+    // another customer with the same e-mail and no phone in common (never joined by itself)
+    let suggestion: CustomerPageData["suggestion"] = null;
+    if (customer.email) {
+      const { data: same, error: sameError } = await supabaseTyped
+        .from("customers")
+        .select(CUSTOMER_COLUMNS)
+        .eq("company_id", company.id)
+        .ilike("email", customer.email.replace(/[\\%_]/g, (m) => `\\${m}`))
+        .is("is_deleted", null)
+        .neq("id", customer.id)
+        .limit(10);
+      if (sameError) throw new Error(`customers: ${sameError.message}`);
+      const others = (same ?? []) as CustomerRecord[];
+      const key = (c: CustomerRecord) => ({ id: c.id, email: c.email, phones: c.phones ?? [], notSame: c.not_same ?? [] });
+      const found = sameEmailSuggestion(key(customer), others.map(key));
+      const other = others.find((o) => o.id === found);
+      if (other) {
+        suggestion = { id: other.id, customerNo: other.customer_no, name: customerName({ firstName: other.first_name, lastName: other.last_name }), phones: other.phones ?? [], email: other.email };
+      }
+    }
+
+    // the card to open: the one asked for, else the one most waiting for the rep, else the newest open one
+    const waiting = cards
+      .map((c) => ({ c, reason: todayReason(c, statuses, today) }))
+      .filter((w) => w.reason && !w.c.toFile)
+      .sort((a, b) => todayRank(a.reason!) - todayRank(b.reason!));
+    const openCardId =
+      (input.cardId && cards.some((c) => c.id === input.cardId) ? input.cardId : null) ??
+      waiting[0]?.c.id ??
+      cards.find((c) => !c.toFile && !isClosedStatus(c.status, statuses))?.id ??
+      null;
+
+    return actionOk({
+      customer: customerInfoOf(customer),
+      cards,
+      orders: records.flatMap((r) => ordersOf(r, x, statuses, today)),
+      known,
+      suggestion,
+      openCardId,
+      statuses,
+      reps,
+      currentUserId: session.sub,
+    });
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to load the customer");
+  }
+}
+
+/**
+ * Change the customer. Names, e-mail, national id and ACC NUM are the person's: every card of theirs takes them too
+ * (exports, mails and the link message read the card). Phones: up to five, the main one first; a card keeps the
+ * phone it came with.
+ */
+export async function updateCustomer(id: string, change: CustomerChange): Promise<ActionResult<CustomerInfo>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const before = await customerRecord(company, id);
+    const patch: Database["public"]["Tables"]["customers"]["Update"] = {};
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    const set = <K extends keyof typeof patch>(column: K, from: unknown, to: (typeof patch)[K]) => {
+      if (JSON.stringify(from ?? null) === JSON.stringify(to ?? null)) return;
+      patch[column] = to;
+      changes[column as string] = { from: from ?? null, to: to ?? null };
+    };
+    if (change.firstName !== undefined) {
+      const first = clean(change.firstName, NAME_MAX);
+      if (!first) throw new UserError("The first name cannot be empty.");
+      set("first_name", before.first_name, first);
+    }
+    if (change.lastName !== undefined) set("last_name", before.last_name, clean(change.lastName, NAME_MAX));
+    if (change.email !== undefined) {
+      const email = clean(change.email, 200)?.toLowerCase() ?? null;
+      if (email && !EMAIL.test(email)) throw new UserError("The e-mail address is not valid.");
+      set("email", before.email, email);
+    }
+    if (change.idNumber !== undefined) {
+      const value = (change.idNumber ?? "").replace(/\D/g, "");
+      if (value && !NATIONAL_ID.test(value)) throw new UserError("A national id is 5 to 9 digits.");
+      set("id_number", before.id_number, value || null);
+    }
+    if (change.accNum !== undefined) set("acc_num", before.acc_num, clean(change.accNum, ACC_MAX));
+    if (change.phones !== undefined) {
+      const checked = cleanPhones(Array.isArray(change.phones) ? change.phones : []);
+      if (!checked.ok) throw new UserError(checked.error);
+      const nextEmail = "email" in patch ? patch.email : before.email;
+      if (checked.phones.length === 0 && !nextEmail) throw new UserError("Keep a phone or an e-mail address.");
+      // a phone that is another customer's would make two people one: merge them instead
+      const keys = checked.phones.map(phoneKey).filter(Boolean);
+      if (keys.length) {
+        const { data: taken, error: takenError } = await supabaseTyped
+          .from("customers")
+          .select("customer_no, phone_keys")
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .neq("id", before.id)
+          .overlaps("phone_keys", keys);
+        if (takenError) throw new Error(`customers: ${takenError.message}`);
+        if (taken?.length) throw new UserError(`That phone is customer ${customerLabel(taken[0].customer_no)}'s - merge the two customers instead.`);
+      }
+      set("phones", before.phones, checked.phones);
+    }
+    if (Object.keys(patch).length === 0) return actionOk(customerInfoOf(before));
+
+    const { data: after, error } = await supabaseTyped.from("customers").update(patch).eq("company_id", company.id).eq("id", id).select(CUSTOMER_COLUMNS).single();
+    if (error) throw new Error(`customers: ${error.message}`);
+    // the person's details on every card of theirs
+    const cardPatch: LeadUpdate = {};
+    if (patch.first_name !== undefined) cardPatch.first_name = patch.first_name;
+    if (patch.last_name !== undefined) cardPatch.last_name = patch.last_name;
+    if (patch.first_name !== undefined || patch.last_name !== undefined) {
+      cardPatch.name = [after.first_name, after.last_name].filter(Boolean).join(" ") || null;
+    }
+    if (patch.email !== undefined) cardPatch.email = patch.email;
+    if (patch.id_number !== undefined) cardPatch.id_number = patch.id_number;
+    if (patch.acc_num !== undefined) cardPatch.acc_num = patch.acc_num;
+    if (Object.keys(cardPatch).length) {
+      const { error: cardsError } = await supabaseTyped.from("leads").update(cardPatch).eq("company_id", company.id).eq("customer_id", id).is("is_deleted", null);
+      if (cardsError) throw new Error(`leads: ${cardsError.message}`);
+    }
+    await logAudit({
+      action: "update",
+      entityType: "tours_customer",
+      entityId: id,
+      changes: { ...changes, ...(changes.id_number ? { id_number: { from: "…", to: "…" } } : {}) },
+      metadata: { ...companyAudit(company), customer_no: before.customer_no },
+    });
+    revalidatePath("/tours/reservations");
+    return actionOk(customerInfoOf(after as CustomerRecord));
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to update the customer");
+  }
+}
+
+/** Customers as the merge / move pickers show them: whatever the rep typed - a name, a phone, a C-number, an e-mail. */
+export async function searchCustomers(query: string, excludeId?: string): Promise<ActionResult<CustomerCandidate[]>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const q = (query ?? "").trim().slice(0, 80);
+    if (q.length < 2) return actionOk([]);
+    const page = await fetchPaged<CustomerRecord>(
+      () =>
+        supabaseTyped
+          .from("customers")
+          .select(CUSTOMER_COLUMNS)
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .order("customer_no", { ascending: false }),
+      LIST_LIMIT,
+    );
+    if (missingTable(page.error)) throw new UserError(NOT_READY);
+    if (page.error) throw new Error(`customers: ${page.error.message}`);
+    const digits = q.replace(/\D/g, "");
+    const number = /^c?-?\d{3,9}$/i.test(q) ? Number(digits) : null;
+    const found = page.rows
+      .filter((c) => c.id !== excludeId)
+      .filter(
+        (c) =>
+          c.customer_no === number ||
+          (digits.length >= 6 && (c.phones ?? []).some((p) => p.replace(/\D/g, "").includes(digits))) ||
+          matchesSearch(q, customerName({ firstName: c.first_name, lastName: c.last_name }), c.email),
+      )
+      .slice(0, CANDIDATES_MAX);
+    const counts = new Map<string, number>();
+    for (const part of chunk(found.map((c) => c.id), IN_CHUNK)) {
+      const { data, error } = await supabaseTyped.from("leads").select("customer_id").eq("company_id", company.id).in("customer_id", part).is("is_deleted", null);
+      if (error) throw new Error(`leads: ${error.message}`);
+      for (const l of data ?? []) if (l.customer_id) counts.set(l.customer_id, (counts.get(l.customer_id) ?? 0) + 1);
+    }
+    return actionOk(
+      found.map((c) => ({
+        id: c.id,
+        customerNo: c.customer_no,
+        name: customerName({ firstName: c.first_name, lastName: c.last_name }),
+        phones: c.phones ?? [],
+        email: c.email,
+        cards: counts.get(c.id) ?? 0,
+      })),
+    );
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to search the customers");
+  }
+}
+
+/**
+ * Two customers are one person: every card of `otherId` moves to `keepId`, its phones join (the kept one's main phone
+ * stays first, five at most), an empty field of the kept one takes the other's, and the other is marked merged.
+ */
+export async function mergeCustomers(keepId: string, otherId: string): Promise<ActionResult<{ moved: number }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    if (keepId === otherId) throw new UserError("A customer cannot be merged with themselves.");
+    const [keep, other] = await Promise.all([customerRecord(company, keepId), customerRecord(company, otherId)]);
+    const phones = cleanPhones([...(keep.phones ?? []), ...(other.phones ?? [])]);
+    const { data: moved, error: moveError } = await supabaseTyped
+      .from("leads")
+      .update({ customer_id: keep.id })
+      .eq("company_id", company.id)
+      .eq("customer_id", other.id)
+      .select("id");
+    if (moveError) throw new Error(`leads: ${moveError.message}`);
+    // the other customer's phones would otherwise still find them: it leaves first
+    const { error: otherError } = await supabaseTyped
+      .from("customers")
+      .update({ is_deleted: todayIso(), merged_into: keep.id })
+      .eq("company_id", company.id)
+      .eq("id", other.id);
+    if (otherError) throw new Error(`customers: ${otherError.message}`);
+    const { error: keepError } = await supabaseTyped
+      .from("customers")
+      .update({
+        phones: phones.ok ? phones.phones : [...(keep.phones ?? []), ...(other.phones ?? [])].slice(0, PHONES_MAX),
+        first_name: keep.first_name || other.first_name,
+        last_name: keep.last_name || other.last_name,
+        email: keep.email || other.email,
+        id_number: keep.id_number || other.id_number,
+        acc_num: keep.acc_num || other.acc_num,
+        not_same: (keep.not_same ?? []).filter((x) => x !== other.id),
+      })
+      .eq("company_id", company.id)
+      .eq("id", keep.id);
+    if (keepError) throw new Error(`customers: ${keepError.message}`);
+    const count = moved?.length ?? 0;
+    await Promise.all([
+      logAudit({
+        action: "merge",
+        entityType: "tours_customer",
+        entityId: keep.id,
+        changes: { merged_customer: other.customer_no, cards: count },
+        metadata: { ...companyAudit(company), customer_no: keep.customer_no },
+      }),
+      logAudit({
+        action: "merge",
+        entityType: "tours_customer",
+        entityId: other.id,
+        changes: { merged_into: keep.customer_no, cards: count },
+        metadata: { ...companyAudit(company), customer_no: other.customer_no },
+      }),
+    ]);
+    revalidatePath("/tours/reservations");
+    return actionOk({ moved: count });
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to merge the customers");
+  }
+}
+
+/** "Not the same": the same e-mail is not the same person - neither side suggests the other again. */
+export async function dismissCustomerSuggestion(customerId: string, otherId: string): Promise<ActionResult> {
+  try {
+    const { company } = await requireCompany("tours");
+    const [me, other] = await Promise.all([customerRecord(company, customerId), customerRecord(company, otherId)]);
+    for (const [row, add] of [
+      [me, other.id],
+      [other, me.id],
+    ] as const) {
+      if ((row.not_same ?? []).includes(add)) continue;
+      const { error } = await supabaseTyped
+        .from("customers")
+        .update({ not_same: [...(row.not_same ?? []), add] })
+        .eq("company_id", company.id)
+        .eq("id", row.id);
+      if (error) throw new Error(`customers: ${error.message}`);
+    }
+    await logAudit({
+      action: "not_same",
+      entityType: "tours_customer",
+      entityId: me.id,
+      changes: { other: other.customer_no },
+      metadata: { ...companyAudit(company), customer_no: me.customer_no },
+    });
+    return actionOk(undefined);
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to save");
+  }
+}
+
+/** The card belongs to another customer (a relative booked from their own phone): it moves with all it holds. */
+export async function moveCardToCustomer(cardId: string, customerId: string): Promise<ActionResult<{ customerId: string }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const [card, target] = await Promise.all([caseRecord(company, cardId), customerRecord(company, customerId)]);
+    if (card.customer_id === target.id) throw new UserError("The card is already this customer's.");
+    const { error } = await supabaseTyped.from("leads").update({ customer_id: target.id }).eq("company_id", company.id).eq("id", card.id);
+    if (error) throw new Error(`leads: ${error.message}`);
+    await logAudit({
+      action: "move",
+      entityType: "tours_case",
+      entityId: card.id,
+      changes: { customer_id: { from: card.customer_id, to: target.id }, customer_no: target.customer_no },
+      metadata: { ...companyAudit(company), case_no: card.case_no },
+    });
+    revalidatePath("/tours/reservations");
+    return actionOk({ customerId: target.id });
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to move the card");
+  }
+}
+
+/**
+ * An inquiry with no tour from a customer with open cards: the rep puts it on one of their cards (the customer came
+ * back on it - the same as a form that joins by itself) or keeps it as a card of its own (`cardId` null).
+ */
+export async function fileInquiry(inquiryId: string, cardId: string | null): Promise<ActionResult<{ cardId: string }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const inquiry = await caseRecord(company, inquiryId);
+    if (!inquiry.to_file) throw new UserError("This inquiry was filed already - reload.");
+    if (cardId === null) {
+      const { error } = await supabaseTyped.from("leads").update({ to_file: false }).eq("company_id", company.id).eq("id", inquiry.id);
+      if (error) throw new Error(`leads: ${error.message}`);
+      await logAudit({ action: "file", entityType: "tours_case", entityId: inquiry.id, changes: { to: "own card" }, metadata: { ...companyAudit(company), case_no: inquiry.case_no } });
+      revalidatePath("/tours/reservations");
+      return actionOk({ cardId: inquiry.id });
+    }
+    const target = await caseRecord(company, cardId);
+    if (target.id === inquiry.id || target.customer_id !== inquiry.customer_id) throw new UserError("Choose one of this customer's cards.");
+    const statuses = await statusesOf(company);
+    const today = todayIso();
+    const payload = asObject(target.payload);
+    const inquiries = Array.isArray(payload.inquiries) ? payload.inquiries : [];
+    const entry = {
+      id: inquiry.id,
+      case_no: inquiry.case_no,
+      at: inquiry.created_at,
+      kind: inquiry.kind,
+      message: inquiry.message ? inquiry.message.slice(0, 500) : null,
+      source_path: inquiry.source_path,
+      utm: inquiry.utm,
+      fields: asObject(inquiry.payload),
+    };
+    const nextStatus = statusOnReturn(target.status, statuses);
+    const { error: targetError } = await supabaseTyped
+      .from("leads")
+      .update({ status: nextStatus, follow_up_date: today, payload: { ...payload, inquiries: [...inquiries, entry] } as unknown as Json })
+      .eq("company_id", company.id)
+      .eq("id", target.id);
+    if (targetError) throw new Error(`leads: ${targetError.message}`);
+    const { error: inquiryError } = await supabaseTyped
+      .from("leads")
+      .update({
+        to_file: false,
+        is_deleted: today,
+        payload: { ...asObject(inquiry.payload), joined_into: { id: target.id, case_no: target.case_no } } as unknown as Json,
+      })
+      .eq("company_id", company.id)
+      .eq("id", inquiry.id);
+    if (inquiryError) throw new Error(`leads: ${inquiryError.message}`);
+    await logAudit({
+      action: "file",
+      entityType: "tours_case",
+      entityId: target.id,
+      changes: { inquiry: inquiry.case_no, ...(nextStatus !== target.status ? { status: { from: target.status, to: nextStatus } } : {}) },
+      metadata: { ...companyAudit(company), case_no: target.case_no },
+    });
+    revalidatePath("/tours/reservations");
+    return actionOk({ cardId: target.id });
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to file the inquiry");
+  }
+}
+
+/** The tours a future lead can name, each with its seasons (its coming departures', then its own). */
+export async function listFutureTours(): Promise<ActionResult<FutureTour[]>> {
+  try {
+    const { company } = await requireCompany("tours");
+    const today = todayIso();
+    const [packages, departures, seasons] = await Promise.all([
+      toursDb().from("packages").select("id, name").eq("company_id", company.id).is("is_deleted", null).order("name", { ascending: true }),
+      toursDb()
+        .from("departures")
+        .select("package_id, season, season_year, start_date")
+        .eq("company_id", company.id)
+        .is("is_deleted", null)
+        .gte("start_date", today),
+      toursDb().from("package_seasons").select("package_id, name, position").eq("company_id", company.id).order("position", { ascending: true }),
+    ]);
+    if (packages.error) throw new Error(`packages: ${packages.error.message}`);
+    if (departures.error) throw new Error(`departures: ${departures.error.message}`);
+    if (seasons.error) throw new Error(`package_seasons: ${seasons.error.message}`);
+    return actionOk(
+      (packages.data ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        seasons: seasonOptions(
+          (departures.data ?? [])
+            .filter((d) => d.package_id === p.id)
+            .map((d) => ({ season: d.season ?? null, seasonYear: d.season_year ?? null, startDate: d.start_date })),
+          (seasons.data ?? []).filter((s) => s.package_id === p.id).map((s) => s.name),
+          today,
+        ),
+      })),
+    );
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to load the tours");
+  }
+}
+
 // ---------------------------------------------------------------- export
 /** A spreadsheet cell has no timezone: show the operators' Israel clock. */
 function wallClock(iso: string): Date {
@@ -1407,8 +2117,9 @@ export async function exportCases(ids: string[]): Promise<ActionResult<{ fileNam
       { header: "Source", key: "source", width: 18 },
       { header: "Follow-up", key: "followUp", width: 12 },
       { header: "Departure", key: "departure", width: 12 },
+      { header: "Customer", key: "customerNo", width: 10 },
       { header: "TYPE", key: "type", width: 12 },
-      { header: "TASK", key: "task", width: 20 },
+      { header: "Today", key: "task", width: 20 },
       { header: "Created", key: "created", width: 18 },
       { header: "National id", key: "idNumber", width: 12 },
       { header: "Form", key: "kind", width: 22 },
@@ -1417,8 +2128,9 @@ export async function exportCases(ids: string[]): Promise<ActionResult<{ fileNam
     ];
     for (const record of records) {
       const row = toCaseRow(record, x, statuses);
-      const task = caseTask(row, statuses, today);
+      const reason = todayReason(row, statuses, today);
       sheet.addRow({
+        customerNo: customerLabel(row.customerNo),
         caseNo: row.caseNo,
         first: row.firstName ?? "",
         last: row.lastName ?? "",
@@ -1433,7 +2145,7 @@ export async function exportCases(ids: string[]): Promise<ActionResult<{ fileNam
         followUp: row.followUpDate ?? "",
         departure: row.departureDate ?? "",
         type: CASE_TYPE_LABELS[row.type],
-        task: task ? CASE_TASK_LABELS[task] : "",
+        task: reason ? TODAY_REASON_LABELS[reason] : "",
         created: wallClock(row.createdAt),
         idNumber: row.idNumber ?? "",
         kind: LEAD_KIND_LABELS[row.kind] ?? (row.kind === "manual" ? `Entered by staff (${CASE_SOURCE_LABELS[row.source as keyof typeof CASE_SOURCE_LABELS] ?? row.source})` : row.kind),

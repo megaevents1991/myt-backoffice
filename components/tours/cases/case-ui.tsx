@@ -5,24 +5,32 @@
  * tag, the TYPE and TASK badges, and the status / rep pickers.
  */
 import { useState, type MouseEvent, type ReactNode } from "react";
-import { ChevronDown, ExternalLink, MessageCircle, Pencil } from "lucide-react";
+import { ChevronDown, ExternalLink, Loader2, MessageCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useActionData } from "@/hooks/use-action-data";
 import { isFollowUpDate } from "@/lib/reservations/follow-up";
+import { listFutureTours } from "@/lib/actions/tours-cases-actions";
 import {
   BOOKING_PHASE_LABELS,
-  CASE_TASK_LABELS,
+  CARD_STAGES,
   CASE_TYPE_LABELS,
   CLOSE_REASON_MAX,
   CLOSE_REASON_MIN,
   CLOSE_REASON_PRESETS,
+  SEASON_MAX,
   STATUS_COLOR_CLASSES,
+  TODAY_REASON_LABELS,
+  cardStage,
   checkCloseReason,
+  checkFuture,
+  daysLate,
   needsCloseReason,
   statusOf,
   waLink,
@@ -30,8 +38,9 @@ import {
   type BookingPhase,
   type CaseRep,
   type CaseStatus,
-  type CaseTask,
   type CaseType,
+  type FutureTour,
+  type TodayReason,
 } from "@/lib/tours/cases";
 
 /** Value of the rep picker for "nobody". */
@@ -92,24 +101,179 @@ export function TypeBadge({ type }: { type: CaseType }) {
   );
 }
 
-export function TaskBadge({ task, overridden }: { task: CaseTask | null; overridden?: boolean }) {
-  if (!task) return <span className="text-muted-foreground">-</span>;
+/** Why a card waits for a rep (TODAY): the reason owns a hue, the words are always printed. */
+const REASON_CLASSES: Record<TodayReason, string> = {
+  returned: "border-violet-500/35 bg-violet-500/10 text-violet-800 dark:text-violet-300",
+  payment: "border-orange-500/35 bg-orange-500/10 text-orange-800 dark:text-orange-300",
+  file: "border-amber-500/40 bg-amber-500/15 text-amber-900 dark:text-amber-300",
+  new: "border-blue-500/35 bg-blue-500/10 text-blue-800 dark:text-blue-300",
+  late: "border-red-500/40 bg-red-500/10 text-red-800 dark:text-red-300",
+  today: "border-slate-500/35 bg-slate-500/10 text-slate-800 dark:text-slate-300",
+  confirmation: "border-teal-500/35 bg-teal-500/10 text-teal-800 dark:text-teal-300",
+};
+
+export function TodayBadge({ reason, followUpDate, today }: { reason: TodayReason | null; followUpDate?: string | null; today?: string }) {
+  if (!reason) return <span className="text-muted-foreground">-</span>;
+  const late = reason === "late" && followUpDate && today ? daysLate(followUpDate, today) : 0;
   return (
-    <span
-      dir="rtl"
-      title={overridden ? "Set by hand" : "Automatic - follows the case"}
-      className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300"
-    >
-      {CASE_TASK_LABELS[task]}
-      {overridden && <Pencil className="h-3 w-3" aria-label="set by hand" />}
+    <span className={cn("inline-flex items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-semibold", REASON_CLASSES[reason])}>
+      {late ? `Follow-up ${late} ${late === 1 ? "day" : "days"} late` : TODAY_REASON_LABELS[reason]}
     </span>
+  );
+}
+
+/** Lead -> Offer -> Order -> Paid: four short bars in the status's own colour, the step named after them. */
+export function StageBar({ status, hasOrder, statuses, className }: { status: string; hasOrder: boolean; statuses: readonly CaseStatus[]; className?: string }) {
+  const stage = cardStage(status, hasOrder, statuses);
+  if (stage === null) return null;
+  const color = statusOf(status, statuses)?.color ?? "gray";
+  const fill = STAGE_FILL[color] ?? "bg-foreground/60";
+  const label = stage === 2.5 ? "Deposit" : CARD_STAGES[Math.floor(stage)];
+  return (
+    <span className={cn("inline-flex items-center gap-1", className)} title="Lead → Offer → Order → Paid">
+      {CARD_STAGES.map((name, i) => (
+        <span key={name} className={cn("h-1 w-5 rounded-full bg-border", i <= stage && fill, stage === 2.5 && i === 3 && cn(fill, "opacity-40"))} />
+      ))}
+      <span className="ms-1 text-[11px] font-medium text-muted-foreground">{label}</span>
+    </span>
+  );
+}
+const STAGE_FILL: Record<string, string> = {
+  blue: "bg-blue-500",
+  slate: "bg-slate-500",
+  amber: "bg-amber-500",
+  violet: "bg-violet-500",
+  indigo: "bg-indigo-500",
+  cyan: "bg-cyan-500",
+  orange: "bg-orange-500",
+  red: "bg-red-500",
+  rose: "bg-rose-500",
+  teal: "bg-teal-500",
+  green: "bg-green-600",
+  gray: "bg-muted-foreground",
+};
+
+/** What a future lead names besides its status (Nir 19.10): the tour and the season. */
+export interface FuturePick {
+  packageId: string;
+  season: string;
+}
+
+const OTHER_SEASON = "__other";
+
+/**
+ * "ליד עתידי" asks for the tour and the season before it is saved: the seasons the tour's coming departures carry,
+ * then the tour's own seasons, or one typed by hand.
+ */
+export function FutureDialog({
+  open,
+  initial,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  initial: { packageId: string | null; season: string | null };
+  onCancel: () => void;
+  onConfirm: (pick: FuturePick) => void;
+}) {
+  const { data: tours, loading } = useActionData<FutureTour[]>(
+    () => (open ? listFutureTours() : Promise.resolve({ success: true as const, data: [] as FutureTour[] })),
+    [open],
+  );
+  const [packageId, setPackageId] = useState<string>(initial.packageId ?? "");
+  const [season, setSeason] = useState<string>(initial.season ?? "");
+  const [typed, setTyped] = useState(false);
+  const tour = tours?.find((t) => t.id === packageId);
+  const seasons = tour?.seasons ?? [];
+  const problem = checkFuture(packageId || null, season);
+  const close = () => {
+    setTyped(false);
+    onCancel();
+  };
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && close()}>
+      <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle>
+            Future lead <span dir="rtl">(ליד עתידי)</span>
+          </DialogTitle>
+          <DialogDescription>Which tour, and which season - the card comes back to TODAY on its follow-up day.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Tour</span>
+            <Select
+              value={packageId}
+              disabled={loading}
+              onValueChange={(next) => {
+                setPackageId(next);
+                setSeason("");
+                setTyped(false);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={loading ? "Loading tours…" : "Choose a tour"} />
+              </SelectTrigger>
+              <SelectContent>
+                {(tours ?? []).map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    <span dir="auto">{t.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Season</span>
+            {typed || (packageId && seasons.length === 0) ? (
+              <Input dir="auto" maxLength={SEASON_MAX} value={season} onChange={(e) => setSeason(e.target.value)} placeholder="פסח 2027" autoFocus />
+            ) : (
+              <Select
+                value={season && seasons.includes(season) ? season : ""}
+                disabled={!packageId}
+                onValueChange={(next) => (next === OTHER_SEASON ? (setTyped(true), setSeason("")) : setSeason(next))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={packageId ? "Choose a season" : "Choose the tour first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {seasons.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      <span dir="rtl">{s}</span>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={OTHER_SEASON}>Another season…</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={close}>
+            Keep the status
+          </Button>
+          <Button
+            disabled={!!problem}
+            onClick={() => {
+              if (problem) return;
+              setTyped(false);
+              onConfirm({ packageId, season: season.trim() });
+            }}
+          >
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save as future lead
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 /**
  * The company's active statuses, plus the case's own one when it was switched off since. A status
  * that closes the case without a deal (Not relevant, Cancelled, ...) first asks why - the change is
- * saved only with a reason (Alon 15.10); cancelling the question keeps the old status.
+ * saved only with a reason (Alon 15.10); cancelling the question keeps the old status. "ליד עתידי"
+ * first asks for the tour and the season (Nir 19.10).
  */
 export function StatusSelect({
   value,
@@ -118,20 +282,41 @@ export function StatusSelect({
   onChange,
   className,
   title,
+  future,
 }: {
   value: string;
   statuses: readonly CaseStatus[];
   disabled?: boolean;
-  onChange: (status: string, closeReason?: string) => void;
+  onChange: (status: string, closeReason?: string, pick?: FuturePick) => void;
   className?: string;
   /** Hover text - the close reason of a closed case. */
   title?: string;
+  /** The card's tour and season - what the future-lead question starts from. */
+  future?: { packageId: string | null; season: string | null };
 }) {
   const [asking, setAsking] = useState<string | null>(null);
+  const [askingFuture, setAskingFuture] = useState(false);
   const offered = statuses.filter((s) => s.isActive || s.key === value);
+  const pick = (next: string) => {
+    if (needsCloseReason(next, statuses)) return setAsking(next);
+    if (next === "future") return setAskingFuture(true);
+    onChange(next);
+  };
   return (
     <>
-      <Select value={value} disabled={disabled} onValueChange={(next) => (needsCloseReason(next, statuses) ? setAsking(next) : onChange(next))}>
+      {/* mounted only while asked: it reads the tours then, and starts from the card's own tour and season */}
+      {askingFuture && (
+        <FutureDialog
+          open
+          initial={future ?? { packageId: null, season: null }}
+          onCancel={() => setAskingFuture(false)}
+          onConfirm={(choice) => {
+            setAskingFuture(false);
+            onChange("future", undefined, choice);
+          }}
+        />
+      )}
+      <Select value={value} disabled={disabled} onValueChange={pick}>
         <SelectTrigger aria-label="Status" title={title} className={cn("h-8 w-auto min-w-[8rem] gap-1 border-none bg-transparent px-1 shadow-none", className)}>
           <SelectValue>
             <StatusTag status={value} statuses={statuses} />

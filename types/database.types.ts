@@ -3441,6 +3441,9 @@ export type Database = {
       }
       leads: {
         Row: {
+          customer_id: string | null
+          to_file: boolean
+          season: string | null
           acc_num: string | null
           assigned_to: string | null
           case_no: number
@@ -3475,6 +3478,9 @@ export type Database = {
           utm: Json
         }
         Insert: {
+          customer_id?: string | null
+          to_file?: boolean
+          season?: string | null
           acc_num?: string | null
           assigned_to?: string | null
           case_no?: number
@@ -3509,6 +3515,9 @@ export type Database = {
           utm?: Json
         }
         Update: {
+          customer_id?: string | null
+          to_file?: boolean
+          season?: string | null
           acc_num?: string | null
           assigned_to?: string | null
           case_no?: number
@@ -3551,6 +3560,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      customers: {
+        Row: {
+          id: string
+          company_id: string
+          customer_no: number
+          first_name: string | null
+          last_name: string | null
+          phones: string[]
+          phone_keys: string[]
+          email: string | null
+          id_number: string | null
+          acc_num: string | null
+          not_same: string[]
+          merged_into: string | null
+          is_deleted: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          customer_no?: number
+          first_name?: string | null
+          last_name?: string | null
+          phones?: string[]
+          phone_keys?: string[]
+          email?: string | null
+          id_number?: string | null
+          acc_num?: string | null
+          not_same?: string[]
+          merged_into?: string | null
+          is_deleted?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          customer_no?: number
+          first_name?: string | null
+          last_name?: string | null
+          phones?: string[]
+          phone_keys?: string[]
+          email?: string | null
+          id_number?: string | null
+          acc_num?: string | null
+          not_same?: string[]
+          merged_into?: string | null
+          is_deleted?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       live_events: {
         Row: {
@@ -5648,6 +5711,7 @@ export type Database = {
       }
       departure_sales_entries: {
         Row: {
+          ref: string | null
           company_id: string
           created_at: string
           customer_email: string | null

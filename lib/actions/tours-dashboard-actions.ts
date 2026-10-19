@@ -26,6 +26,8 @@ const DEPARTURES_WINDOW_DAYS = 60;
 const STATS_CHUNK = 100;
 /** Rows a dashboard list or count may read; past it the number is marked as cut. */
 const ROWS_MAX = 20000;
+/** A live case, or a site form that joined the customer's open card (stored deleted, payload.joined_into). */
+const LIVE_OR_JOINED = "is_deleted.is.null,payload->joined_into.not.is.null";
 /** Lines of a top list - the Mega Events dashboard shows three. */
 const TOP_N = 3;
 
@@ -153,8 +155,9 @@ export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>>
             .from("leads")
             .select("id, kind, source_path, created_at")
             .eq("company_id", company.id)
-            // site leads only: not a deleted case, not one staff typed in
-            .is("is_deleted", null)
+            // site leads only: not a deleted case, not one staff typed in. A form that joined the customer's open card
+            // (20261019180000) is stored deleted with payload.joined_into - it is still a lead the site brought.
+            .or(LIVE_OR_JOINED)
             .neq("kind", "manual")
             // a day early: just after midnight in Israel it is still the day before in UTC.
             // The rows are cut to Israel days below.
@@ -266,7 +269,7 @@ export async function getToursLeadsSeries(range: TrendRange): Promise<TrendPoint
         .from("leads")
         .select("id, created_at")
         .eq("company_id", company.id)
-        .is("is_deleted", null)
+        .or(LIVE_OR_JOINED)
         .neq("kind", "manual")
         .gte("created_at", start.toISOString())
         .lt("created_at", end.toISOString())

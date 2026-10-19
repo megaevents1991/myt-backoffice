@@ -60,7 +60,7 @@ export function sourceLabel(source: string, utm: Record<string, unknown>): strin
 }
 
 // ---------------------------------------------------------------- statuses
-export const STATUS_COLORS = ["blue", "slate", "amber", "violet", "indigo", "orange", "red", "rose", "teal", "green", "gray"] as const;
+export const STATUS_COLORS = ["blue", "slate", "amber", "violet", "indigo", "cyan", "orange", "red", "rose", "teal", "green", "gray"] as const;
 export type StatusColor = (typeof STATUS_COLORS)[number];
 /** The tag of a status on the screens - one class set per colour, light and dark. */
 export const STATUS_COLOR_CLASSES: Record<StatusColor, string> = {
@@ -69,6 +69,7 @@ export const STATUS_COLOR_CLASSES: Record<StatusColor, string> = {
   amber: "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300",
   violet: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
   indigo: "border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300",
+  cyan: "border-cyan-500/30 bg-cyan-500/10 text-cyan-800 dark:text-cyan-300",
   orange: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
   red: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
   rose: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
@@ -91,7 +92,23 @@ export interface CaseStatus {
   isActive: boolean;
 }
 
-export const SYSTEM_STATUS_KEYS = ["new", "offer_sent", "pending_payment", "payment_failed", "payment_review", "paid", "cancelled", "spam"] as const;
+/**
+ * Nir's list (19.10): the code reads these keys, so they stay on and keep their closed flag - a company may
+ * rename and recolour them and add statuses of its own.
+ */
+export const SYSTEM_STATUS_KEYS = [
+  "new",
+  "no_answer",
+  "returned",
+  "offer_sent",
+  "future",
+  "pending_payment",
+  "deposit_paid",
+  "paid",
+  "not_relevant",
+  "cancelled",
+  "spam",
+] as const;
 const isSystemKey = (key: string): boolean => (SYSTEM_STATUS_KEYS as readonly string[]).includes(key);
 /** Closed when a company has no list of its own (SQL twin: public.lead_status_closed). */
 const DEFAULT_CLOSED_KEYS = new Set(["done", "not_relevant", "cancelled", "spam"]);
@@ -104,23 +121,31 @@ const st = (key: string, label: string, color: StatusColor, isClosed = false): C
   isSystem: isSystemKey(key),
   isActive: true,
 });
+/** A status of the list before 19.10: switched off, kept because an old card may still carry it. */
+const retired = (key: string, label: string, color: StatusColor, isClosed = false): CaseStatus => ({ ...st(key, label, color, isClosed), isActive: false });
 
-/** The list every tours company starts with - the migration seeds the same rows. */
+/** The list every tours company starts with - the migrations seed the same rows (20261019180000: Nir's order). */
 export const DEFAULT_STATUSES: CaseStatus[] = [
   st("new", "חדש", "blue"),
   st("no_answer", "אין מענה", "slate"),
-  st("in_progress", "בטיפול", "amber"),
-  st("follow_up", "פולו אפ", "violet"),
+  // the customer came back: a site form on the same tour, or the rep marked it (Nir 19.10)
+  st("returned", "חזר", "violet"),
   // set by the booking link (Alon 15.10), with the follow-up day the rep must pick
   st("offer_sent", "הצעה נשלחה", "indigo"),
+  // interested in a tour that is not on sale for them yet - needs the tour and a season
+  st("future", "ליד עתידי", "cyan"),
   st("pending_payment", "ממתין לתשלום", "orange"),
-  st("payment_failed", "תשלום נכשל", "red"),
-  st("payment_review", "בדיקת תשלום", "rose"),
-  st("paid", "שולם", "teal"),
-  st("done", "נסגר", "green", true),
+  // counts as paid: the seats are held
+  st("deposit_paid", "שולם מקדמה", "teal"),
+  st("paid", "שולם", "green"),
   st("not_relevant", "לא רלוונטי", "gray", true),
   st("cancelled", "בוטל", "gray", true),
   st("spam", "ספאם", "gray", true),
+  retired("in_progress", "בטיפול", "amber"),
+  retired("follow_up", "פולו אפ", "violet"),
+  retired("done", "נסגר", "green", true),
+  retired("payment_failed", "תשלום נכשל", "red"),
+  retired("payment_review", "בדיקת תשלום", "rose"),
 ];
 
 export const STATUS_MAX = 30;
@@ -166,7 +191,7 @@ export function checkCloseReason(value: string | null | undefined): { ok: true; 
 }
 
 /** Statuses a payment owns: a booking link never writes over them. */
-const PAYMENT_KEYS = new Set(["pending_payment", "payment_failed", "payment_review", "paid"]);
+const PAYMENT_KEYS = new Set(["pending_payment", "payment_failed", "payment_review", "deposit_paid", "paid"]);
 
 /**
  * The status a case takes when the rep sends it a booking link: "Offer sent" - unless money is on
@@ -242,40 +267,232 @@ export function validateStatuses(
   return { ok: true, statuses: out };
 }
 
-// ---------------------------------------------------------------- TASK
-export const CASE_TASKS = [
-  "payment_check",
-  "follow_up",
-  "payment_chase",
-  "new_order",
-  "service_call",
-  "new_lead",
-  "send_confirmation",
-] as const;
-export type CaseTask = (typeof CASE_TASKS)[number];
-export const CASE_TASK_LABELS: Record<CaseTask, string> = {
-  payment_check: "בדיקת תשלום",
-  follow_up: "פולו אפ",
-  payment_chase: "השלמת תשלום",
-  new_order: "טיפול בהזמנה חדשה",
-  service_call: "שיחת שירות חדשה",
-  new_lead: "טיפול בליד",
-  send_confirmation: "שליחת אישור",
+// ---------------------------------------------------------------- TODAY: why a card waits for a rep (Nir 19.10)
+/**
+ * The status IS the work now - there is no TASK column. TODAY lists every card a rep has to touch, with the
+ * reason, in this order (Nir 19.10).
+ */
+export const TODAY_REASONS = ["returned", "payment", "file", "new", "late", "today", "confirmation"] as const;
+export type TodayReason = (typeof TODAY_REASONS)[number];
+export const TODAY_REASON_LABELS: Record<TodayReason, string> = {
+  returned: "Came back",
+  payment: "Site payment to confirm",
+  file: "Inquiry to file",
+  new: "New",
+  late: "Follow-up late",
+  today: "Follow-up today",
+  confirmation: "Send the confirmation",
 };
-export const isCaseTask = (value: unknown): value is CaseTask => CASE_TASKS.includes(value as CaseTask);
+export const todayRank = (reason: TodayReason): number => TODAY_REASONS.indexOf(reason);
 
-/** Forms that ask for service, not for a trip. */
-const SERVICE_KINDS = new Set(["contact", "cancellation"]);
+/** What a site card payment answered on a card that waits for its money - the rep confirms it (Nir 19.10). */
+export type PaymentAnswer = "paid" | "failed" | "review";
+export const PAYMENT_ANSWER_LABELS: Record<PaymentAnswer, string> = {
+  paid: "Card payment approved",
+  failed: "Card payment failed",
+  review: "Card payment to check",
+};
 
-/** What the TASK is read from. */
-export interface TaskFacts {
-  type: string;
-  kind: string;
+/** The card waits for money and its newest booking's payment has an answer (bookings newest first). */
+export function paymentAnswerOf(status: string, bookingStatuses: readonly string[]): PaymentAnswer | null {
+  if (status !== "pending_payment") return null;
+  const newest = bookingStatuses[0];
+  return newest === "paid" || newest === "failed" || newest === "review" ? newest : null;
+}
+
+/** What TODAY is read from. */
+export interface TodayFacts {
   status: string;
   followUpDate: string | null;
-  taskOverride: string | null;
+  /** An inquiry that names no tour while the customer has open cards - the rep files it. */
+  toFile: boolean;
+  paymentAnswer: PaymentAnswer | null;
   /** A paid site booking whose confirmation was not sent yet. */
   confirmationPending: boolean;
+}
+
+/** Why the card waits for a rep today, or null. First match wins. */
+export function todayReason(c: TodayFacts, statuses: readonly CaseStatus[], today: string): TodayReason | null {
+  if (c.toFile) return "file";
+  if (isClosedStatus(c.status, statuses)) return null;
+  if (c.status === "returned") return "returned";
+  if (c.paymentAnswer) return "payment";
+  if (c.status === "new") return "new";
+  if (c.followUpDate && /^\d{4}-\d{2}-\d{2}$/.test(c.followUpDate)) {
+    if (c.followUpDate < today) return "late";
+    if (c.followUpDate === today) return "today";
+  }
+  if (c.status === "paid" && c.confirmationPending) return "confirmation";
+  return null;
+}
+
+/** Days between a follow-up day and today (both YYYY-MM-DD), for "Follow-up 2 days late". */
+export function daysLate(day: string, today: string): number {
+  return Math.max(0, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86_400_000));
+}
+
+// ---------------------------------------------------------------- the card: where the deal stands
+/** Statuses of a deal that has an order and its money. Deposit counts as paid (the seats are held). */
+const ORDER_KEYS = new Set(["pending_payment", "deposit_paid", "paid"]);
+const PAID_KEYS = new Set(["deposit_paid", "paid"]);
+export const isPaidStatus = (status: string): boolean => PAID_KEYS.has(status);
+
+/** Lead -> Offer -> Order -> Paid: the step the card reached (0..3), 3.5 = a deposit; null = closed. */
+export function cardStage(status: string, hasOrder: boolean, statuses: readonly CaseStatus[]): number | null {
+  if (isClosedStatus(status, statuses)) return null;
+  if (status === "paid") return 3;
+  if (status === "deposit_paid") return 2.5;
+  if (ORDER_KEYS.has(status) || hasOrder) return 2;
+  if (status === "offer_sent") return 1;
+  return 0;
+}
+export const CARD_STAGES = ["Lead", "Offer", "Order", "Paid"] as const;
+
+/** A card a new inquiry may land on: not closed, not waiting to be filed, not a paid trip that already left. */
+export interface RouteCard {
+  id: string;
+  packageId: string | null;
+  status: string;
+  toFile: boolean;
+  /** The card's departure's first day. */
+  departureStart: string | null;
+  createdAt: string;
+}
+export function isOpenCard(card: RouteCard, statuses: readonly CaseStatus[], today: string): boolean {
+  if (card.toFile || isClosedStatus(card.status, statuses)) return false;
+  return !(PAID_KEYS.has(card.status) && !!card.departureStart && card.departureStart < today);
+}
+
+/** Forms that never route: bookings route themselves, staff choose by hand, a newsletter is no inquiry. */
+const UNROUTED_KINDS = new Set(["booking", "advisor", "manual", "newsletter"]);
+export type InquiryRoute = { kind: "join"; cardId: string } | { kind: "file" } | { kind: "new" };
+
+/**
+ * Where a SITE FORM of a known customer goes (SQL twin: public.leads_fill, 20261019180000). Its tour has an open
+ * card -> it joins it (newest first); no tour while open cards exist -> the rep files it; else a new card.
+ */
+export function routeInquiry(
+  form: { kind: string; packageId: string | null },
+  cards: readonly RouteCard[],
+  statuses: readonly CaseStatus[],
+  today: string,
+): InquiryRoute {
+  if (UNROUTED_KINDS.has(form.kind)) return { kind: "new" };
+  const open = cards.filter((c) => isOpenCard(c, statuses, today)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (form.packageId) {
+    const same = open.find((c) => c.packageId === form.packageId);
+    return same ? { kind: "join", cardId: same.id } : { kind: "new" };
+  }
+  return open.length ? { kind: "file" } : { kind: "new" };
+}
+
+/** The status a card takes when the customer comes back on it (a form joined it, or the rep filed one there). */
+export function statusOnReturn(status: string, statuses: readonly CaseStatus[]): string {
+  if (!statusOf("returned", statuses)) return status;
+  return status === "no_answer" || status === "offer_sent" || status === "future" ? "returned" : status;
+}
+
+/**
+ * The customer's history a new card should know about: the newest card of theirs opened before it that is closed
+ * or paid - "was not relevant · price (06.10)", "travelled with us". Null for a first contact.
+ */
+export interface KnownFrom {
+  caseNo: number;
+  status: string;
+  closeReason: string | null;
+  tourName: string | null;
+  createdAt: string;
+}
+export function knownFrom(
+  card: { id: string; createdAt: string },
+  cards: readonly (KnownFrom & { id: string })[],
+  statuses: readonly CaseStatus[],
+): KnownFrom | null {
+  const earlier = cards
+    .filter((c) => c.id !== card.id && c.createdAt < card.createdAt && (isClosedStatus(c.status, statuses) || PAID_KEYS.has(c.status)))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (!earlier) return null;
+  return { caseNo: earlier.caseNo, status: earlier.status, closeReason: earlier.closeReason, tourName: earlier.tourName, createdAt: earlier.createdAt };
+}
+
+// ---------------------------------------------------------------- the customer
+export const customerLabel = (no: number | null | undefined): string => (no ? `C-${no}` : "");
+export const PHONES_MAX = 5;
+
+/** A customer's phones as staff typed them: each 7+ digits, no two with the same key, at most 5, the main one first. */
+export function cleanPhones(list: readonly string[]): { ok: true; phones: string[] } | { ok: false; error: string } {
+  const phones: string[] = [];
+  const keys = new Set<string>();
+  for (const raw of list) {
+    const phone = raw.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (!phone) continue;
+    if (phone.replace(/\D/g, "").length < 7) return { ok: false, error: `"${phone}" is not a phone number.` };
+    const key = phoneKey(phone) || phone.replace(/\D/g, "");
+    if (keys.has(key)) continue;
+    keys.add(key);
+    phones.push(phone);
+  }
+  if (phones.length > PHONES_MAX) return { ok: false, error: `A customer can keep up to ${PHONES_MAX} phones.` };
+  return { ok: true, phones };
+}
+
+/**
+ * "Maybe the same customer": another customer with the same e-mail and no phone in common, that staff did not mark
+ * as someone else. The same e-mail never joins by itself (a family shares one) - the rep merges or dismisses.
+ */
+export interface CustomerKey {
+  id: string;
+  email: string | null;
+  phones: readonly string[];
+  notSame: readonly string[];
+}
+export function sameEmailSuggestion(me: CustomerKey, others: readonly CustomerKey[]): string | null {
+  const email = me.email?.trim().toLowerCase();
+  if (!email) return null;
+  const mine = new Set(me.phones.map(phoneKey).filter(Boolean));
+  const found = others.find(
+    (o) =>
+      o.id !== me.id &&
+      o.email?.trim().toLowerCase() === email &&
+      !o.phones.some((p) => mine.has(phoneKey(p))) &&
+      !me.notSame.includes(o.id) &&
+      !o.notSame.includes(me.id),
+  );
+  return found?.id ?? null;
+}
+
+// ---------------------------------------------------------------- a future lead: a tour and a season
+export const SEASON_MAX = 60;
+
+/**
+ * The seasons a future lead can name for a tour: the seasons its coming departures carry ("פסח 2027"), in date
+ * order, then the tour's own seasons for this year and the next that no departure carries yet.
+ */
+export function seasonOptions(
+  departures: readonly { season: string | null; seasonYear: number | null; startDate: string }[],
+  tourSeasons: readonly string[],
+  today: string,
+): string[] {
+  const out: string[] = [];
+  const add = (label: string) => {
+    if (!out.includes(label)) out.push(label);
+  };
+  [...departures]
+    .filter((d) => d.season?.trim() && d.seasonYear && d.startDate >= today)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))
+    .forEach((d) => add(`${d.season!.trim()} ${d.seasonYear}`));
+  const year = Number(today.slice(0, 4));
+  for (const y of [year, year + 1]) for (const name of tourSeasons) if (name.trim()) add(`${name.trim()} ${y}`);
+  return out;
+}
+
+/** "ליד עתידי" needs the tour and the season (Nir 19.10). Null = fine. */
+export function checkFuture(packageId: string | null | undefined, season: string | null | undefined): string | null {
+  if (!packageId) return "A future lead needs the tour it is for.";
+  const s = (season ?? "").trim();
+  if (!s) return "A future lead needs a season.";
+  if (s.length > SEASON_MAX) return `A season can be up to ${SEASON_MAX} characters.`;
+  return null;
 }
 
 /** The follow-up day has come and the case is still open. */
@@ -314,23 +531,6 @@ export function followUpTone(
   if (!c.followUpDate || !/^\d{4}-\d{2}-\d{2}$/.test(c.followUpDate) || isClosedStatus(c.status, statuses)) return null;
   if (c.followUpDate < today) return "overdue";
   return c.followUpDate === today ? "today" : "upcoming";
-}
-
-/** What has to happen on the case now (spec section 4). First match wins; a rep's override beats them all. */
-export function caseTask(c: TaskFacts, statuses: readonly CaseStatus[], today: string): CaseTask | null {
-  if (isCaseTask(c.taskOverride)) return c.taskOverride;
-  if (isClosedStatus(c.status, statuses)) return null;
-  if (c.status === "payment_review") return "payment_check";
-  if (followUpDue(c, statuses, today)) return "follow_up";
-  if (c.status === "pending_payment" || c.status === "payment_failed") return "payment_chase";
-  if (c.status === "new") {
-    if (c.type === "reservation") return "new_order";
-    if (SERVICE_KINDS.has(c.kind)) return "service_call";
-    if (c.type === "lead") return "new_lead";
-    return null;
-  }
-  if (c.status === "paid" && c.confirmationPending) return "send_confirmation";
-  return null;
 }
 
 // ---------------------------------------------------------------- people and pages
@@ -454,10 +654,18 @@ export interface CaseRow {
   departureDate: string | null;
   packageId: string | null;
   tourName: string | null;
-  taskOverride: string | null;
+  /** The customer the card belongs to (20261019180000) - null before the migration. */
+  customerId: string | null;
+  customerNo: number | null;
+  /** An inquiry with no tour from a customer with open cards: the rep files it. */
+  toFile: boolean;
+  /** A future lead's season ("פסח 2027"). */
+  season: string | null;
   /** The newest site booking of the case. */
   bookingRef: string | null;
   bookingStatus: string | null;
+  /** What the card payment answered while the card waits for its money (the rep confirms). */
+  paymentAnswer: PaymentAnswer | null;
   confirmationPending: boolean;
   /** Travelers on the departure's seats (the sum of the case's sales rows). */
   travelers: number;
@@ -477,6 +685,7 @@ export const caseMatches = (row: CaseRow, q: string): boolean =>
   matchesSearch(
     q,
     row.caseNo,
+    customerLabel(row.customerNo),
     caseName(row),
     row.phone,
     row.email,
@@ -505,6 +714,113 @@ export interface CasesPage {
   currentUserId: string;
 }
 
+/** A customer (public.customers, 20261019180000): the person, with every card under them. */
+export interface CustomerInfo {
+  id: string;
+  customerNo: number;
+  firstName: string | null;
+  lastName: string | null;
+  /** The main phone first. */
+  phones: string[];
+  email: string | null;
+  idNumber: string | null;
+  accNum: string | null;
+  createdAt: string;
+}
+export const customerName = (c: Pick<CustomerInfo, "firstName" | "lastName">): string => [c.firstName, c.lastName].filter(Boolean).join(" ");
+
+/** What a customer changes; a field left out is not touched. Names, e-mail, id and ACC are copied to every card. */
+export interface CustomerChange {
+  firstName?: string | null;
+  lastName?: string | null;
+  phones?: string[];
+  email?: string | null;
+  idNumber?: string | null;
+  accNum?: string | null;
+}
+
+/** A site form that joined a card (leads_fill): the customer came back on it. */
+export interface CardInquiry {
+  caseNo: number | null;
+  at: string;
+  kind: string;
+  message: string | null;
+  sourcePath: string | null;
+}
+export function inquiriesOf(payload: Record<string, unknown>): CardInquiry[] {
+  const list = Array.isArray(payload.inquiries) ? payload.inquiries : [];
+  return list
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x))
+    .map((x) => ({
+      caseNo: typeof x.case_no === "number" ? x.case_no : null,
+      at: typeof x.at === "string" ? x.at : "",
+      kind: typeof x.kind === "string" ? x.kind : "",
+      message: typeof x.message === "string" && x.message.trim() ? x.message : null,
+      sourcePath: typeof x.source_path === "string" ? x.source_path : null,
+    }))
+    .sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/** One order: a site booking (its T number) or an order a rep typed (a seat row with its T number). */
+export interface BoardOrder {
+  ref: string;
+  source: "site" | "staff";
+  cardId: string;
+  /** The booking's own status; "staff" for a typed order. */
+  status: string;
+  phase: BookingPhase;
+  departureCode: string | null;
+  departureDate: string | null;
+  travelers: number;
+  total: number | null;
+  currency: string | null;
+  /** A closed booking's travelers hold their seats, or not (owedSeatRefs); null = nothing settled to hold. */
+  seats: "held" | "missing" | null;
+  createdAt: string;
+}
+
+/** The Reservations board (TODAY / RESERVATIONS / LEADS / ALL) in one load. */
+export interface BoardPage {
+  cards: CaseRow[];
+  orders: BoardOrder[];
+  truncated: boolean;
+  statuses: CaseStatus[];
+  reps: CaseRep[];
+  currentUserId: string;
+}
+
+/** A customer's page in one load: the person and every card, the card to open first. */
+export interface CustomerPageData {
+  customer: CustomerInfo;
+  cards: CaseRow[];
+  orders: BoardOrder[];
+  /** What each card should know about the customer's earlier deals, by card id. */
+  known: Record<string, KnownFrom>;
+  /** Another customer with the same e-mail and no phone in common (sameEmailSuggestion). */
+  suggestion: { id: string; customerNo: number; name: string; phones: string[]; email: string | null } | null;
+  openCardId: string | null;
+  statuses: CaseStatus[];
+  reps: CaseRep[];
+  currentUserId: string;
+}
+
+/** A customer as the merge / move pickers show it. */
+export interface CustomerCandidate {
+  id: string;
+  customerNo: number;
+  name: string;
+  phones: string[];
+  email: string | null;
+  cards: number;
+}
+
+/** A tour a future lead can name, with its seasons (seasonOptions). */
+export interface FutureTour {
+  id: string;
+  name: string;
+  seasons: string[];
+}
+
 /** What staff change on a case; a field left out is not touched. */
 export interface CaseChange {
   status?: string;
@@ -520,8 +836,10 @@ export interface CaseChange {
   phone?: string | null;
   email?: string | null;
   type?: CaseType;
-  taskOverride?: string | null;
   departureId?: string | null;
+  /** The tour without a date (a future lead names the tour and a season). */
+  packageId?: string | null;
+  season?: string | null;
   source?: CaseSource;
 }
 
@@ -539,6 +857,8 @@ export interface NewCaseInput {
   assignedTo?: string | null;
   notes?: string | null;
   followUpDate?: string | null;
+  /** A card for a customer that exists ("+ New card" on the customer page): the contact comes from the customer. */
+  customerId?: string | null;
 }
 
 export interface CaseHistoryItem {
@@ -575,6 +895,10 @@ export interface CaseDetail {
   whatsappApi: boolean;
   /** The booking link prepared for the customer (leads.offer), sent or not yet. */
   offer: CaseOffer | null;
+  /** Site forms that joined this card - the customer came back on it. */
+  inquiries: CardInquiry[];
+  /** The customer's earlier deal (closed or paid) this card should know about. */
+  known: KnownFrom | null;
 }
 
 /** A case another one may be merged with - what the picker shows. */
@@ -778,8 +1102,8 @@ export const seatBookingOf = (b: {
   salesEntryId: b.salesEntryId,
 });
 
-/** The deal is closed: the case says so, or one of its bookings does. */
-const SETTLED = new Set(["paid", "done"]);
+/** The deal is closed: the case says so (a deposit too), or one of its bookings does. */
+const SETTLED = new Set(["paid", "done", "deposit_paid"]);
 /** A booking that holds no one: cancelled, or a card payment that failed. */
 const DEAD_BOOKING = new Set(["cancelled", "failed"]);
 

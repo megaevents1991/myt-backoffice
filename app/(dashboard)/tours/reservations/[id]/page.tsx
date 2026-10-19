@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { CasePage } from "@/components/tours/cases/case-page";
+import { CustomerPage } from "@/components/tours/cases/customer-page";
 
-export const metadata: Metadata = { title: "Reservation" };
+export const metadata: Metadata = { title: "Customer" };
 
-/** /tours/reservations/[id] - one customer's case. Data loads through its server action. */
+/** /tours/reservations/[id] - a card: its customer's page with that card open (Nir 19.10). */
 export default async function TourCasePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <CasePage id={id} />;
+  return (
+    <Suspense>
+      <CustomerPage cardId={id} />
+    </Suspense>
+  );
 }

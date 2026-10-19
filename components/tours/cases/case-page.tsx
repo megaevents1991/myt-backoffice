@@ -45,23 +45,22 @@ import type { BookingRow } from "@/components/tours/bookings/shared";
 import {
   CASE_SOURCES,
   CASE_SOURCE_LABELS,
-  CASE_TASKS,
-  CASE_TASK_LABELS,
   CASE_TYPES,
   CASE_TYPE_LABELS,
+  PAYMENT_ANSWER_LABELS,
   bookingPhase,
   caseName,
-  caseTask,
   followUpDue,
   htmlToText,
   isClosedStatus,
   payloadText,
   siteHref,
-  isCaseTask,
   owedSeatRefs,
   seatBookingOf,
   seatGap,
   sourceLabel,
+  statusOf,
+  todayReason,
   travelerGroups,
   type CaseChange,
   type CaseDetail,
@@ -69,14 +68,16 @@ import {
   type CaseSource,
   type CaseType,
 } from "@/lib/tours/cases";
-import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TaskBadge, TYPE_WASH, TypeBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TodayBadge, TYPE_WASH, TypeBadge, WhatsAppButton, type FuturePick } from "@/components/tours/cases/case-ui";
 import { BookingCard, SeatsChip } from "@/components/tours/cases/booking-card";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { MergeDialog } from "@/components/tours/cases/merge-dialog";
+import { MoveCardDialog } from "@/components/tours/cases/customer-dialogs";
 
-const AUTO = "auto";
 /** Fields of a form that the page already shows in its own place. */
-const SHOWN_PAYLOAD_KEYS = new Set(["name", "phone", "email", "message", "matched_by", "acceptance", "website", "related_case", "merged"]);
+const SHOWN_PAYLOAD_KEYS = new Set(["name", "phone", "email", "message", "matched_by", "acceptance", "website", "related_case", "merged", "inquiries", "joined_into"]);
+/** The day after today (YYYY-MM-DD): "No answer" calls again tomorrow. */
+const tomorrowOf = (today: string): string => new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const UTM_LABELS: Record<string, string> = {
   source: "Source",
   medium: "Medium",
@@ -189,8 +190,12 @@ function Orders({
   );
 }
 
-/** /tours/reservations/[id] - one customer: the case, its bookings, seats, tour, source and booking link. */
-export function CasePage({ id }: { id: string }) {
+/**
+ * One card: its bookings, seats, tour, source, offer and notes. On its own (`/tours/reservations/[id]` before the
+ * customers migration) it also shows the customer; `embedded` = inside the customer page (Nir 19.10), where the
+ * customer's own block is the page's header and this is one deal of theirs.
+ */
+export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: boolean; onChanged?: () => void }) {
   const router = useRouter();
   const run = useActionToast();
   const confirm = useConfirm();
@@ -199,6 +204,7 @@ export function CasePage({ id }: { id: string }) {
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const [travelersOpen, setTravelersOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   // set when the dialog opens, so it keeps one prefill while it is open
   const [travelersPrefill, setTravelersPrefill] = useState<ReservationPrefill | null>(null);
   const today = todayIso();
@@ -206,11 +212,11 @@ export function CasePage({ id }: { id: string }) {
   if (!data) {
     return (
       <div className="space-y-4">
-        <BackLink />
+        {!embedded && <BackLink />}
         {error && !loading && <LoadError message={error} onRetry={() => void reload()} />}
         {loading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading the case…
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading the card…
           </div>
         )}
       </div>
@@ -219,7 +225,7 @@ export function CasePage({ id }: { id: string }) {
 
   const { row, statuses, reps } = data;
   const name = caseName(row) || row.phone || row.email || "Customer";
-  const task = caseTask(row, statuses, today);
+  const reason = todayReason(row, statuses, today);
   const due = followUpDue(row, statuses, today);
   const notes = notesDraft ?? row.notes ?? "";
   // bookings add, cancellations give back - the net is what the departure counts
@@ -251,9 +257,12 @@ export function CasePage({ id }: { id: string }) {
       setData((current) => current && { ...current, row: result.data });
       // a deal closed by hand may have put seats on the departure (the toast says so): show them
       if (change.status) void reload({ quiet: true });
+      onChanged?.();
     }
     return result.success;
   };
+  const saveStatus = (status: string, closeReason?: string, pick?: FuturePick) =>
+    void save({ status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}) });
 
   const addTravelers = (extra: ReservationPrefill = {}) => {
     setTravelersPrefill({
@@ -275,141 +284,31 @@ export function CasePage({ id }: { id: string }) {
       destructive: true,
     });
     if (!agreed) return;
-    const result = await run(() => deleteCase(row.id), "Case deleted");
-    if (result.success) router.push("/tours/reservations");
+    const result = await run(() => deleteCase(row.id), "Card deleted");
+    if (result.success) {
+      if (embedded) onChanged?.();
+      else router.push("/tours/reservations");
+    }
   };
 
-  return (
-    <div className="space-y-6">
-      <BackLink />
-
-      {/* the header takes the case type's hue: a booked customer, a lead and a future interest read apart at once */}
-      <div className={cn("space-y-4 rounded-lg border bg-card p-4", TYPE_WASH[row.type])}>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight" dir="auto">
-            <span className="me-2 font-mono text-lg text-muted-foreground">#{row.caseNo}</span>
-            {name}
-          </h1>
-          <TypeBadge type={row.type} />
-          <TaskBadge task={task} overridden={isCaseTask(row.taskOverride)} />
-          {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-          <div className="ms-auto flex flex-wrap items-center gap-2">
-            <WhatsAppButton phone={row.phone} message={`היי ${row.firstName ?? ""}`.trim()} />
-            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)} title="One customer with two cases - join them">
-              <GitMerge className="h-4 w-4" />
-              Link to another case
-            </Button>
-            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="grid gap-1 text-sm">
-            <span className="text-xs text-muted-foreground">Status</span>
-            <StatusSelect
-              value={row.status}
-              statuses={statuses}
-              disabled={busy}
-              onChange={(status, closeReason) => void save({ status, closeReason })}
-              className="w-full justify-start border border-input px-2"
-            />
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="text-xs text-muted-foreground">Rep</span>
-            <RepSelect value={row.assignedTo} reps={reps} currentUserId={data.currentUserId} disabled={busy} onChange={(assignedTo) => void save({ assignedTo })} className="w-full" />
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="text-xs text-muted-foreground">Type</span>
-            <Select value={row.type} disabled={busy} onValueChange={(type) => void save({ type: type as CaseType })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CASE_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {CASE_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="text-xs text-muted-foreground">Task</span>
-            <Select
-              value={isCaseTask(row.taskOverride) ? row.taskOverride : AUTO}
-              disabled={busy}
-              onValueChange={(value) => void save({ taskOverride: value === AUTO ? null : value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={AUTO}>Automatic{!isCaseTask(row.taskOverride) && task ? ` (${CASE_TASK_LABELS[task]})` : ""}</SelectItem>
-                {CASE_TASKS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {CASE_TASK_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span className="text-xs text-muted-foreground">Follow-up day</span>
-            <div className="flex items-center gap-1">
-              <FollowUpInput value={row.followUpDate} due={due} className="h-9 w-full" onSave={(followUpDate) => void save({ followUpDate })} />
-              {row.followUpDate && (
-                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void save({ followUpDate: null })}>
-                  Clear
-                </Button>
-              )}
-            </div>
-          </label>
-        </div>
-        {row.closeReason && isClosedStatus(row.status, statuses) && (
-          <p dir="auto" className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-            <span className="text-xs text-muted-foreground">Closed because: </span>
-            {row.closeReason}
-          </p>
-        )}
-        {data.payload.matched_by === "contact" && (
-          <Notice tone="warning">
-            A site booking was attached to this case because its phone or e-mail matches the case. Check the booking&apos;s own customer below before you call.
-          </Notice>
-        )}
-        {data.relatedCase && (
-          <Notice tone="info" className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <GitMerge className="h-4 w-4 shrink-0" />
-            <p className="min-w-0 flex-1">
-              Same customer as case{" "}
-              <Link href={`/tours/reservations/${data.relatedCase.id}`} className="font-semibold underline underline-offset-4">
-                #{data.relatedCase.caseNo}
-              </Link>{" "}
-              (same phone or e-mail{repName ? `, given to ${repName}` : ""}). The booking came without the link, so it opened its own case - merge
-              them to keep one customer in one place.
-            </p>
-            <Button size="sm" variant="outline" onClick={() => setMergeOpen(true)}>
-              <GitMerge className="h-4 w-4" />
-              Merge the two
-            </Button>
-          </Notice>
-        )}
-      </div>
-
+  const cardBody = (
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <Section title="Customer" icon={UserRound} tone="info">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <CustomerField label="First name" value={row.firstName} onSave={(firstName) => void save({ firstName })} />
-              <CustomerField label="Last name" value={row.lastName} onSave={(lastName) => void save({ lastName })} />
-              <CustomerField label="Phone" value={row.phone} dir="ltr" onSave={(phone) => void save({ phone })} />
-              <CustomerField label="Email" value={row.email} dir="ltr" onSave={(email) => void save({ email })} />
-              <CustomerField label="National id (ת״ז)" value={row.idNumber} dir="ltr" onSave={(idNumber) => void save({ idNumber })} />
-              <CustomerField label="ACC NUM" value={row.accNum} dir="ltr" onSave={(accNum) => void save({ accNum })} />
-            </div>
+          {(!embedded || travelers.length > 0 || row.message || data.inquiries.length > 0) && (
+          <Section title={embedded ? "Travelers and what they wrote" : "Customer"} icon={embedded ? Users : UserRound} tone="info">
+            {/* inside the customer page the person's fields are the page's header (one customer, many deals) */}
+            {!embedded && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <CustomerField label="First name" value={row.firstName} onSave={(firstName) => void save({ firstName })} />
+                <CustomerField label="Last name" value={row.lastName} onSave={(lastName) => void save({ lastName })} />
+                <CustomerField label="Phone" value={row.phone} dir="ltr" onSave={(phone) => void save({ phone })} />
+                <CustomerField label="Email" value={row.email} dir="ltr" onSave={(email) => void save({ email })} />
+                <CustomerField label="National id (ת״ז)" value={row.idNumber} dir="ltr" onSave={(idNumber) => void save({ idNumber })} />
+                <CustomerField label="ACC NUM" value={row.accNum} dir="ltr" onSave={(accNum) => void save({ accNum })} />
+              </div>
+            )}
             {travelers.length > 0 && (
-              <div className="mt-4 space-y-2">
+              <div className={cn("space-y-2", !embedded && "mt-4")}>
                 <h3 className="flex items-center gap-1.5 text-sm font-semibold">
                   <Users className="h-4 w-4 text-muted-foreground" />
                   Travelers ({travelers.reduce((sum, g) => sum + g.passengers.length, 0)})
@@ -438,7 +337,27 @@ export function CasePage({ id }: { id: string }) {
                 {row.message}
               </p>
             )}
+            {/* site forms that joined this card: the customer came back on it (Nir 19.10) */}
+            {data.inquiries.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                <h3 className="text-sm font-semibold text-violet-800 dark:text-violet-300">Came back on this card ({data.inquiries.length})</h3>
+                <ol className="space-y-1.5">
+                  {data.inquiries.map((q, i) => (
+                    <li key={`${q.at}-${i}`} className="rounded-md border border-violet-500/25 bg-violet-500/5 px-3 py-1.5 text-sm">
+                      <span className="tabular text-xs text-muted-foreground">{fmtInstant(q.at)}</span>
+                      <span className="ms-2 text-xs text-muted-foreground">{LEAD_KIND_LABELS[q.kind] ?? q.kind}</span>
+                      {q.message && (
+                        <p dir="auto" className="whitespace-pre-wrap break-words">
+                          {q.message}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
           </Section>
+          )}
 
           <Section
             icon={ReceiptText}
@@ -561,6 +480,11 @@ export function CasePage({ id }: { id: string }) {
                   </span>
                 )}
               </Fact>
+              {row.season && (
+                <Fact label="Season">
+                  <span dir="rtl">{row.season}</span>
+                </Fact>
+              )}
               <Fact label="Travelers">
                 {row.travelers > 0 ? (
                   <span>
@@ -693,7 +617,9 @@ export function CasePage({ id }: { id: string }) {
           </Section>
         </div>
       </div>
-
+  );
+  const dialogs = (
+    <>
       <ReservationDialog
         open={travelersOpen}
         onOpenChange={setTravelersOpen}
@@ -706,8 +632,255 @@ export function CasePage({ id }: { id: string }) {
         caseId={row.id}
         caseNo={row.caseNo}
         statuses={statuses}
-        onMerged={(keptId) => (keptId === row.id ? void reload() : router.push(`/tours/reservations/${keptId}`))}
+        onMerged={(keptId) => {
+          if (embedded) return onChanged?.();
+          return keptId === row.id ? void reload() : router.push(`/tours/reservations/${keptId}`);
+        }}
       />
+      {moveOpen && (
+        <MoveCardDialog
+          cardId={row.id}
+          caseNo={row.caseNo}
+          currentCustomerId={row.customerId}
+          onCancel={() => setMoveOpen(false)}
+          onMoved={(customerId) => {
+            setMoveOpen(false);
+            router.push(`/tours/customers/${customerId}?card=${row.id}`);
+          }}
+        />
+      )}
+    </>
+  );
+
+  const status = statusOf(row.status, statuses);
+  // one click for what a rep does all day (Nir 19.10): no answer -> call again tomorrow; the customer came back
+  const quickActions = !isClosedStatus(row.status, statuses) && (
+    <>
+      {row.paymentAnswer === "paid" && (
+        <Button size="sm" disabled={busy} onClick={() => void save({ status: "paid" })} title={PAYMENT_ANSWER_LABELS[row.paymentAnswer]}>
+          Confirm → <span dir="rtl">{statusOf("paid", statuses)?.label ?? "Paid"}</span>
+        </Button>
+      )}
+      {["new", "no_answer", "returned", "offer_sent", "future"].includes(row.status) && (
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ status: "no_answer", followUpDate: tomorrowOf(today) })}>
+          No answer · call tomorrow
+        </Button>
+      )}
+      {["no_answer", "offer_sent", "future"].includes(row.status) && statusOf("returned", statuses) && (
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ status: "returned", followUpDate: today })}>
+          The customer came back
+        </Button>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-5">
+        {/* the card's controls: where the deal stands, whose it is, when to call */}
+        <div className="space-y-3 rounded-lg border bg-card p-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs text-muted-foreground">Status</span>
+              <StatusSelect
+                value={row.status}
+                statuses={statuses}
+                disabled={busy}
+                future={{ packageId: row.packageId, season: row.season }}
+                onChange={saveStatus}
+                className="w-full justify-start border border-input px-2"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs text-muted-foreground">Rep</span>
+              <RepSelect value={row.assignedTo} reps={reps} currentUserId={data.currentUserId} disabled={busy} onChange={(assignedTo) => void save({ assignedTo })} className="w-full" />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="text-xs text-muted-foreground">Follow-up day</span>
+              <div className="flex items-center gap-1">
+                <FollowUpInput value={row.followUpDate} due={due} className="h-9 w-full" onSave={(followUpDate) => void save({ followUpDate })} />
+                {row.followUpDate && (
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => void save({ followUpDate: null })}>
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TodayBadge reason={reason} followUpDate={row.followUpDate} today={today} />
+            {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {quickActions}
+            <div className="ms-auto flex flex-wrap items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setMoveOpen(true)} title="This deal is another person's (a relative booked from their own phone)">
+                <UserRound className="h-4 w-4" />
+                Move to another customer
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setMergeOpen(true)} title="Two cards of one deal - join them">
+                <GitMerge className="h-4 w-4" />
+                Merge with another card
+              </Button>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
+          {row.paymentAnswer === "paid" && (
+            <Notice tone="info">
+              {PAYMENT_ANSWER_LABELS.paid} on booking {row.bookingRef} - CreditGuard confirmed the amount and the seats are held. Confirm{" "}
+              <span dir="rtl">&quot;{statusOf("paid", statuses)?.label ?? "Paid"}&quot;</span> when you have seen it.
+            </Notice>
+          )}
+          {row.paymentAnswer === "review" && (
+            <Notice tone="warning">
+              {PAYMENT_ANSWER_LABELS.review} on booking {row.bookingRef}: the charge had another amount. Check it in CreditGuard and set the booking
+              &quot;Paid&quot; below when it is right - that confirms the card too.
+            </Notice>
+          )}
+          {row.paymentAnswer === "failed" && (
+            <Notice tone="warning">
+              {PAYMENT_ANSWER_LABELS.failed} on booking {row.bookingRef}. Call the customer: they may pay again, by phone or with a new link.
+            </Notice>
+          )}
+          {row.closeReason && isClosedStatus(row.status, statuses) && (
+            <p dir="auto" className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <span className="text-xs text-muted-foreground">Closed because: </span>
+              {row.closeReason}
+            </p>
+          )}
+          {data.known && (
+            <Notice tone="info">
+              Known customer: card #{data.known.caseNo}
+              {data.known.tourName && (
+                <>
+                  {" "}
+                  (<span dir="auto">{data.known.tourName}</span>)
+                </>
+              )}{" "}
+              was <span dir="rtl">&quot;{statusOf(data.known.status, statuses)?.label ?? data.known.status}&quot;</span>
+              {data.known.closeReason && (
+                <>
+                  {" "}
+                  - <span dir="auto">{data.known.closeReason}</span>
+                </>
+              )}{" "}
+              ({fmtDate(data.known.createdAt.slice(0, 10))}). It is in the History below.
+            </Notice>
+          )}
+          {data.payload.matched_by === "contact" && (
+            <Notice tone="warning">
+              A site booking was attached to this card because its phone or e-mail matches. Check the booking&apos;s own customer below before you call.
+            </Notice>
+          )}
+        </div>
+        {cardBody}
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <BackLink />
+
+      {/* the header takes the case type's hue: a booked customer, a lead and a future interest read apart at once */}
+      <div className={cn("space-y-4 rounded-lg border bg-card p-4", TYPE_WASH[row.type])}>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight" dir="auto">
+            <span className="me-2 font-mono text-lg text-muted-foreground">#{row.caseNo}</span>
+            {name}
+          </h1>
+          <TypeBadge type={row.type} />
+          <TodayBadge reason={reason} followUpDate={row.followUpDate} today={today} />
+          {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          <div className="ms-auto flex flex-wrap items-center gap-2">
+            <WhatsAppButton phone={row.phone} message={`היי ${row.firstName ?? ""}`.trim()} />
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)} title="One customer with two cases - join them">
+              <GitMerge className="h-4 w-4" />
+              Link to another case
+            </Button>
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Status</span>
+            <StatusSelect
+              value={row.status}
+              statuses={statuses}
+              disabled={busy}
+              future={{ packageId: row.packageId, season: row.season }}
+              onChange={saveStatus}
+              className="w-full justify-start border border-input px-2"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Rep</span>
+            <RepSelect value={row.assignedTo} reps={reps} currentUserId={data.currentUserId} disabled={busy} onChange={(assignedTo) => void save({ assignedTo })} className="w-full" />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Type</span>
+            <Select value={row.type} disabled={busy} onValueChange={(type) => void save({ type: type as CaseType })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CASE_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {CASE_TYPE_LABELS[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Follow-up day</span>
+            <div className="flex items-center gap-1">
+              <FollowUpInput value={row.followUpDate} due={due} className="h-9 w-full" onSave={(followUpDate) => void save({ followUpDate })} />
+              {row.followUpDate && (
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => void save({ followUpDate: null })}>
+                  Clear
+                </Button>
+              )}
+            </div>
+          </label>
+        </div>
+        {row.closeReason && isClosedStatus(row.status, statuses) && (
+          <p dir="auto" className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            <span className="text-xs text-muted-foreground">Closed because: </span>
+            {row.closeReason}
+          </p>
+        )}
+        {data.payload.matched_by === "contact" && (
+          <Notice tone="warning">
+            A site booking was attached to this case because its phone or e-mail matches the case. Check the booking&apos;s own customer below before you call.
+          </Notice>
+        )}
+        {data.relatedCase && (
+          <Notice tone="info" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <GitMerge className="h-4 w-4 shrink-0" />
+            <p className="min-w-0 flex-1">
+              Same customer as case{" "}
+              <Link href={`/tours/reservations/${data.relatedCase.id}`} className="font-semibold underline underline-offset-4">
+                #{data.relatedCase.caseNo}
+              </Link>{" "}
+              (same phone or e-mail{repName ? `, given to ${repName}` : ""}). The booking came without the link, so it opened its own case - merge
+              them to keep one customer in one place.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => setMergeOpen(true)}>
+              <GitMerge className="h-4 w-4" />
+              Merge the two
+            </Button>
+          </Notice>
+        )}
+      </div>
+
+      {cardBody}
+      {dialogs}
     </div>
   );
 }

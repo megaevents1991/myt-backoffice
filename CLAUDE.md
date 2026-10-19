@@ -148,6 +148,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `markOfferSent` (a click on WhatsApp / e-mail - copying is not sending) moves the case to `offer_sent` with its
 > follow-up day; "Edit and resend" / "Withdraw" (`withdrawOffer` drops the token). (e) `booking_create` sets the
 > case's follow-up day to today (Israel) and marks the offer `bookingRef`.
+> **Customers + deal cards (2026-10-19, Nir Azulay - the end user; spec `docs/superpowers/specs/2026-10-19-tours-customer-cards-design.md`,
+> migration `20261019180000_tours_customers.sql`, mockup https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).** `public.customers`
+> = one per phone (`phone_keys` = last 9 digits, kept by a trigger; `customer_no` shown `C-1041`; `not_same`, `merged_into`); every
+> case is now a **card** of a customer (`leads.customer_id`; a lead that becomes an order is the SAME card, another tour = another
+> card). `public.leads_fill` finds or makes the customer on EVERY insert (the backoffice may name one; a form never writes over a known
+> customer), gives a known customer's card to the rep of their newest card, and routes a SITE FORM (not booking / advisor / manual /
+> newsletter): a tour the customer has an OPEN card for -> it joins it (the new row is stored soft-deleted with
+> `payload.joined_into`, the card gets `payload.inquiries[]`, follow-up today, and `returned` from `no_answer` / `offer_sent` /
+> `future`); no tour while open cards exist -> `leads.to_file` ("Inquiry to file", `fileInquiry`). Open card = not closed, not to
+> file, not a paid trip that already left (`isOpenCard` / `routeInquiry` are the TS twins). `booking_create` is unchanged. Statuses =
+> Nir's list (`new, no_answer, returned, offer_sent, future, pending_payment, deposit_paid, paid, not_relevant, cancelled, spam`, all
+> system); `in_progress, follow_up, done, payment_failed, payment_review` switched off and their cases moved. `future` needs a tour + a
+> season (`leads.season`, `seasonOptions`, `FutureDialog`); `deposit_paid` counts as paid (seats). **A site card payment never sets a card
+> paid:** `bookings_status_to_case` leaves it `pending_payment` and `paymentAnswerOf` names the gateway's answer for the rep to confirm;
+> a booking staff move `review -> paid` does set it paid. TASK is gone: `todayReason` (returned · payment · file · new · late · today ·
+> confirmation) drives TODAY. A staff-typed seat row of a case (pax > 0, not "Online booking …") gets a T number
+> (`departure_sales_entries.ref`, trigger `tours.sales_entry_ref`). Screens: `/tours/reservations` = `BoardScreen`
+> (TODAY | RESERVATIONS - one row per order | LEADS | ALL = the old `CasesScreen embedded`), `/tours/customers/[id]` and
+> `/tours/reservations/[cardId]` = `CustomerPage` (header = the person, edited once for every card; inquiries to file; open cards; History;
+> a card opens into `CasePage embedded`); same-e-mail suggestion (`sameEmailSuggestion`, Merge / Not the same), `mergeCustomers`,
+> `moveCardToCustomer`. Before the migration the reads fall back (`LEGACY_CASE_COLUMNS`, `missingTable`) and a card opens as the old
+> case page. The migration was tested on an in-process Postgres (PGlite) over stubs - the local DB password is empty and the access
+> token dead, so no prod dry run.
 >
 > **✅ Homepage layout board (`/homepage`, 2026-09-16).** Spec
 > `docs/superpowers/specs/2026-09-16-homepage-layout-design.md`. One dummy of
