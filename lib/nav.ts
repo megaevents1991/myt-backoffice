@@ -349,6 +349,14 @@ const NAV: NavGroup[] = [
         productType: "tours",
       },
       {
+        // What the company site shows of Mega Events' packages: pins, the automatic rows, hidden, Sync now (19.10.2026)
+        name: "Mega Events Packages",
+        href: "/tours/events",
+        icon: Ticket,
+        keywords: "mega events packages events feed sport music pin hide sync most wanted newest מגה איבנטס חבילות אירועים ספורט מוזיקה הצמדה הסתרה סנכרון המבוקשים החדשים",
+        productType: "tours",
+      },
+      {
         name: "Content Pages",
         href: "/tours/pages",
         icon: FileText,

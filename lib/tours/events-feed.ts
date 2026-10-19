@@ -21,6 +21,11 @@
  * only, for the live search of a company site (typing "סלין" lists every Celine Dion show). It
  * is built from the first pass alone (buildEventsIndex) - never a ticket read for it - and only
  * the events of `items` carry a price, copied from them.
+ *
+ * Since 19.10.2026 each company decides what its list holds (lib/tours/events-control.ts, Website >
+ * Mega Events Packages): its own picks first, then one or both of Mega Events' automatic rows -
+ * "המבוקשים ביותר" or "החדשים" (`row` of the build; `newestPool` rebuilds the latter when the site
+ * cannot be read) - minus what it hid.
  */
 import { defaultPinnable, defaultShowable, mergeRow, refId, refKind, toRef } from "@/lib/homepage/merge";
 import type { RowPin, RowRef, ShowFlags } from "@/lib/homepage/merge";
@@ -42,6 +47,10 @@ export const EVENTS_INDEX_MAX = 400;
 export const EVENTS_FEED_PAGE = 4 * EVENTS_FEED_MAX;
 /** The Mega Events homepage row the list follows. */
 export const HOT_ROW_KEY = "most_wanted";
+/** Mega Events' "החדשים" row - the latest uploads - which a company may follow instead or after (19.10.2026). */
+export const NEWEST_ROW_KEY = "newest";
+/** The Mega Events homepage rows a company list can follow. */
+export type EventsFeedRowKey = typeof HOT_ROW_KEY | typeof NEWEST_ROW_KEY;
 /**
  * An event lists only from this many days ahead - myt-main lib/eventsData.ts
  * AVAILABILITY_WINDOW_DAYS: the order page stops selling 3 days before the event.
@@ -119,6 +128,8 @@ export type EventsFeedDoc = {
   items: EventsFeedItem[];
   /** Every listed event by date, at most EVENTS_INDEX_MAX - for the site's search. */
   index: EventsIndexItem[];
+  /** False = staff took Mega Events' events out of the site's search (the index is then empty on purpose). */
+  search?: boolean;
 };
 
 /** The event columns the builder reads (the cron selects exactly these). */
@@ -136,6 +147,8 @@ export type FeedEventRow = SiteCardPriceEvent & {
   is_test?: boolean | null;
   deactivated_reason?: string | null;
   is_deleted?: string | null;
+  /** When the event was uploaded - the order of "החדשים". */
+  created_at?: string | null;
 };
 
 /**
@@ -151,6 +164,7 @@ export const FEED_ORDER_COLUMNS = [
   "is_test",
   "deactivated_reason",
   "is_deleted",
+  "created_at",
 ] as const;
 export type FeedOrderRow = Pick<FeedEventRow, (typeof FEED_ORDER_COLUMNS)[number]>;
 
@@ -178,6 +192,8 @@ export type EventsFeedInput = {
   site?: SiteHotRow | null;
   now: Date;
   max?: number;
+  /** Mega Events' row to follow; "most_wanted" when not said. */
+  row?: EventsFeedRowKey;
 };
 
 /** "YYYY-MM-DD" from which an event lists - myt-main futureDateISO(AVAILABILITY_WINDOW_DAYS). */
@@ -226,6 +242,18 @@ export function fallbackPool<T extends FeedOrderRow>(listed: T[], soldOut: (e: T
   return [...prioritized, ...fill].map((e) => toRef("event", e.id));
 }
 
+/**
+ * The pool of "החדשים" rebuilt from the rows, for when the site cannot be read: every live event
+ * but the VIP ones, the latest upload first (myt-main lib/homepage/rows.ts buildPools - which also
+ * keeps one card per artist / team page; left out here, as in fallbackPool).
+ */
+export function newestPool<T extends FeedOrderRow>(listed: T[], soldOut: (e: T) => boolean): RowRef[] {
+  return listed
+    .filter((e) => !soldOut(e) && e.tags !== "VIPevent")
+    .sort((a, b) => time(b.created_at ?? "") - time(a.created_at ?? "") || b.id - a.id)
+    .map((e) => toRef("event", e.id));
+}
+
 const SPORTS_TYPES = new Set(["sports_event", "sports_event_dynamic", "sports_live_event_dynamic"]);
 const MUSIC_TYPES = new Set(["music_event", "music_live_event_dynamic"]);
 
@@ -259,6 +287,11 @@ function absoluteUrl(raw: string | null | undefined): string | null {
   if (/^https?:\/\//i.test(value)) return value;
   if (value.startsWith("/")) return `${PUBLIC_SITE_URL}${value}`;
   return null;
+}
+
+/** The event's picture as feedItemOf takes it - the photo, else the cut-out art - absolute, or null. */
+export function eventImageUrl(e: Pick<FeedEventRow, "card_image_url" | "art_image_url">): string | null {
+  return absoluteUrl(e.card_image_url) ?? absoluteUrl(e.art_image_url);
 }
 
 /** "DD/MM/YY" of the stored date (its UTC day - the day staff typed, as main's board prints it). */
@@ -314,12 +347,17 @@ export function feedItemOf(e: FeedEventRow, flags: { pinned: boolean }): EventsF
   };
 }
 
+type LayoutItem = { section: string; kind: string; ref_id: string | number; position: number | null };
+
 /** homepage_items rows of the row → its pins (myt-main lib/homepageLayout.ts getHomepageLayout). */
-export function hotRowPins(
-  items: { section: string; kind: string; ref_id: string | number; position: number | null }[],
-): RowPin[] {
+export function hotRowPins(items: LayoutItem[]): RowPin[] {
+  return rowPins(items, HOT_ROW_KEY);
+}
+
+/** homepage_items rows of one row (`row`) → its pins. */
+export function rowPins(items: LayoutItem[], row: string): RowPin[] {
   return items
-    .filter((it) => it.section === HOT_ROW_KEY)
+    .filter((it) => it.section === row)
     .map((it) => {
       const slot = Number(it.position);
       return { ref: toRef(it.kind, String(it.ref_id)), slot: Number.isFinite(slot) && slot >= 0 ? Math.floor(slot) : 0 };
@@ -363,21 +401,22 @@ function feedRow(rows: FeedOrderRow[], unread: ReadonlySet<number>, input: FeedR
   // every row not in `unread` is a full row (planEventsFeed / buildEventsFeed build them so)
   const soldOut = (e: FeedOrderRow) => (unread.has(e.id) ? e.tags === "Sold" : isFeedEventSoldOut(e as FeedEventRow));
 
+  const rowKey = input.row ?? HOT_ROW_KEY;
   let pool: RowRef[];
   let flags: ReadonlyMap<RowRef, ShowFlags>;
   if (input.site) {
     pool = input.site.pool;
     flags = input.site.flags;
   } else {
-    pool = fallbackPool(listed, soldOut);
+    pool = rowKey === NEWEST_ROW_KEY ? newestPool(listed, soldOut) : fallbackPool(listed, soldOut);
     flags = new Map(listed.map((e) => [toRef("event", e.id), { soldOut: soldOut(e) }]));
   }
 
   const row = mergeRow(pool, input.pins, {
     hidden: input.hidden ?? [],
     max: null,
-    showable: (ref) => defaultShowable(flags.get(ref), HOT_ROW_KEY, ref),
-    pinnable: (ref) => defaultPinnable(flags.get(ref), HOT_ROW_KEY, ref),
+    showable: (ref) => defaultShowable(flags.get(ref), rowKey, ref),
+    pinnable: (ref) => defaultPinnable(flags.get(ref), rowKey, ref),
   });
   return { cards: row.cards, byId, soldOut };
 }

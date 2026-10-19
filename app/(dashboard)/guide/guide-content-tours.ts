@@ -672,6 +672,35 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Header & footer", "הדר ופוטר"), href: "/tours/site" }],
   },
   {
+    id: "tours-events",
+    nav: "/tours/events",
+    productType: "tours",
+    title: t("Mega Events packages on the site", "חבילות מגה איבנטס באתר"),
+    intro: t(
+      "The Mega Events packages the site shows - in the menu under the sport & music world, on its home page tile and on its page - and whether its search lists Mega Events' events. The list updates by itself every 6 hours; here you decide what it holds and update it at once.",
+      "חבילות מגה איבנטס שהאתר מציג - בתפריט תחת עולם הספורט והמוזיקה, באריח שלו בעמוד הבית ובעמוד שלו - והאם החיפוש שלו מציג את האירועים של מגה איבנטס. הרשימה מתעדכנת לבד כל 6 שעות; כאן קובעים מה יש בה ומעדכנים אותה מיד.",
+    ),
+    howTo: [
+      {
+        title: t("Choose which packages the site shows", "לבחור אילו חבילות האתר מציג"),
+        steps: [
+          t("Open [Mega Events Packages](/tours/events). \"On the site now\" is the list the site shows, in its order.", "פותחים את [Mega Events Packages](/tours/events). \"On the site now\" היא הרשימה שהאתר מציג, לפי הסדר."),
+          t("To put an event first: type its name (Hebrew or English) or its number in the search under \"Pinned packages\" and click \"Pin\" - or \"Pin\" it in \"On the site now\". The arrows set the order of the pinned ones.", "כדי לשים אירוע ראשון: מקלידים את השם שלו (עברית או אנגלית) או את המספר שלו בחיפוש תחת \"Pinned packages\" ולוחצים \"Pin\" - או \"Pin\" ב-\"On the site now\". החצים קובעים את הסדר של המוצמדים."),
+          t("\"What fills the list\" decides what comes after them: Mega Events' most wanted, its newest, both, or nothing (only the pinned ones). \"Packages on the site\" says how many.", "\"What fills the list\" קובע מה בא אחריהם: המבוקשים ביותר של מגה איבנטס, החדשים, שניהם, או כלום (רק המוצמדים). \"Packages on the site\" קובע כמה."),
+          t("\"Hide\" takes an event off the site - from the list and from the search. \"Show again\" under \"Hidden packages\" brings it back.", "\"Hide\" מוריד אירוע מהאתר - מהרשימה ומהחיפוש. \"Show again\" תחת \"Hidden packages\" מחזיר אותו."),
+          t("\"Save and update the site\": the list is built at once and the site rebuilds itself (about a minute). The line at the top says what happened.", "\"Save and update the site\": הרשימה נבנית מיד והאתר נבנה מחדש לבד (כדקה). השורה למעלה אומרת מה קרה."),
+        ],
+      },
+      {
+        title: t("Update the list now", "לעדכן את הרשימה עכשיו"),
+        steps: [
+          t("\"Sync now\" builds the list again from Mega Events as it is now - new prices, events that sold out or were added - and rebuilds the site only if something changed.", "\"Sync now\" בונה את הרשימה מחדש ממגה איבנטס כמו שהיא עכשיו - מחירים חדשים, אירועים שאזלו או שנוספו - ובונה את האתר מחדש רק אם משהו השתנה."),
+          t("An event you pinned that Mega Events no longer sells (sold out, taken off, less than 3 days away) is skipped by itself and marked on its line.", "אירוע מוצמד שמגה איבנטס כבר לא מוכרת (אזל, ירד מהאתר, פחות מ-3 ימים לפני) מדולג לבד ומסומן בשורה שלו."),
+        ],
+      },
+    ],
+  },
+  {
     id: "tours-media",
     nav: "/tours/media",
     productType: "tours",
