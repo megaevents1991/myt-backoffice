@@ -739,6 +739,37 @@ export interface CustomerChange {
   accNum?: string | null;
 }
 
+/** What a visitor typed on a site form - the name, phone and e-mail it was sent as. */
+export interface InquirySender {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+/** Name words worth comparing: lower case, no accents or niqqud, no punctuation, two letters or more. */
+const nameWords = (name: string | null | undefined): string[] =>
+  (name ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[̀-֑ͯ-ׇ]/g, "")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length >= 2);
+
+/**
+ * A form joins a card by its PHONE alone, and anyone can type a phone. It was sent by someone else when the name
+ * it carries shares no word with the card's name, or its e-mail is not the card's. Either side empty = nothing to
+ * compare = not flagged (a form without a name is the common case).
+ */
+export function senderDiffers(sender: InquirySender | null, card: { name: string | null; email: string | null }): boolean {
+  if (!sender) return false;
+  const theirs = nameWords(sender.name);
+  const ours = new Set(nameWords(card.name));
+  if (theirs.length > 0 && ours.size > 0 && !theirs.some((w) => ours.has(w))) return true;
+  const a = sender.email?.trim().toLowerCase();
+  const b = card.email?.trim().toLowerCase();
+  return !!a && !!b && a !== b;
+}
+
 /** A site form that joined a card (leads_fill): the customer came back on it. */
 export interface CardInquiry {
   caseNo: number | null;
@@ -746,18 +777,29 @@ export interface CardInquiry {
   kind: string;
   message: string | null;
   sourcePath: string | null;
+  /** What the form was sent as; null when the entry carries none. */
+  sentAs: InquirySender | null;
+  /** sentAs is not the card's person (senderDiffers) - the rep checks before calling. */
+  otherSender: boolean;
 }
-export function inquiriesOf(payload: Record<string, unknown>): CardInquiry[] {
+const textOf = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+export function inquiriesOf(payload: Record<string, unknown>, card?: { name: string | null; email: string | null }): CardInquiry[] {
   const list = Array.isArray(payload.inquiries) ? payload.inquiries : [];
   return list
     .filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x))
-    .map((x) => ({
-      caseNo: typeof x.case_no === "number" ? x.case_no : null,
-      at: typeof x.at === "string" ? x.at : "",
-      kind: typeof x.kind === "string" ? x.kind : "",
-      message: typeof x.message === "string" && x.message.trim() ? x.message : null,
-      sourcePath: typeof x.source_path === "string" ? x.source_path : null,
-    }))
+    .map((x) => {
+      const sender = { name: textOf(x.name), phone: textOf(x.phone), email: textOf(x.email) };
+      const sentAs = sender.name || sender.phone || sender.email ? sender : null;
+      return {
+        caseNo: typeof x.case_no === "number" ? x.case_no : null,
+        at: typeof x.at === "string" ? x.at : "",
+        kind: typeof x.kind === "string" ? x.kind : "",
+        message: typeof x.message === "string" && x.message.trim() ? x.message : null,
+        sourcePath: typeof x.source_path === "string" ? x.source_path : null,
+        sentAs,
+        otherSender: card ? senderDiffers(sentAs, card) : false,
+      };
+    })
     .sort((a, b) => b.at.localeCompare(a.at));
 }
 

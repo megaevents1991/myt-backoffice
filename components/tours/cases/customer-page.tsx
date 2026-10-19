@@ -9,7 +9,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ChevronRight, GitMerge, Inbox, Loader2, Phone, PlusCircle, Star, UserRound, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, GitMerge, Inbox, Loader2, Phone, PlusCircle, Star, TriangleAlert, UserRound, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import {
   customerName,
   isClosedStatus,
   isPaidStatus,
+  senderDiffers,
   statusOf,
   todayReason,
   type BoardOrder,
@@ -389,7 +390,26 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
             <h2 className="font-display text-sm font-semibold">New inquiry to file</h2>
             <span className="tabular text-xs text-muted-foreground">{fmtInstant(inquiry.createdAt)}</span>
             <span className="text-xs text-muted-foreground">{LEAD_KIND_LABELS[inquiry.kind] ?? inquiry.kind}</span>
+            <span className="text-xs text-muted-foreground">
+              Sent as{" "}
+              {[customerName(inquiry), inquiry.phone, inquiry.email].filter(Boolean).map((part, j) => (
+                <span key={j} dir="auto">
+                  {j > 0 && " · "}
+                  {part}
+                </span>
+              ))}
+            </span>
           </div>
+          {/* it reached this customer by the phone alone, which anyone can type (security review 19.10) */}
+          {senderDiffers(
+            { name: customerName(inquiry), phone: inquiry.phone, email: inquiry.email },
+            { name: customerName(customer), email: customer.email },
+          ) && (
+            <p className="flex items-start gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Sent with this customer&apos;s phone but another name or e-mail - check it is them before you file it.
+            </p>
+          )}
           {inquiry.message ? (
             <p dir="auto" className="whitespace-pre-wrap break-words rounded-md border bg-background px-3 py-2 text-sm">
               {inquiry.message}

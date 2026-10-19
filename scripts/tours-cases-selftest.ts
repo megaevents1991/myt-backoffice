@@ -22,6 +22,7 @@ import {
   routeInquiry,
   sameEmailSuggestion,
   seasonOptions,
+  senderDiffers,
   statusOnReturn,
   todayRank,
   todayReason,
@@ -531,10 +532,28 @@ assert.ok(checkFuture("tour-a", "  "));
 assert.deepEqual(
   inquiriesOf({ inquiries: [{ case_no: 1006, at: "2026-10-19T09:12:00Z", kind: "waitlist", message: "again", source_path: "/package/x/" }, { at: "2026-10-20T09:00:00Z", kind: "lead", message: " " }, "junk"] }),
   [
-    { caseNo: null, at: "2026-10-20T09:00:00Z", kind: "lead", message: null, sourcePath: null },
-    { caseNo: 1006, at: "2026-10-19T09:12:00Z", kind: "waitlist", message: "again", sourcePath: "/package/x/" },
+    { caseNo: null, at: "2026-10-20T09:00:00Z", kind: "lead", message: null, sourcePath: null, sentAs: null, otherSender: false },
+    { caseNo: 1006, at: "2026-10-19T09:12:00Z", kind: "waitlist", message: "again", sourcePath: "/package/x/", sentAs: null, otherSender: false },
   ],
 );
 assert.deepEqual(inquiriesOf({}), []);
+
+// a form joins by the phone alone - who it was SENT AS is kept and checked against the card's person
+const sendCard = { name: "דנה כהן", email: "dana@example.com" };
+assert.equal(senderDiffers(null, sendCard), false);
+assert.equal(senderDiffers({ name: "דנה", phone: "0500000000", email: null }, sendCard), false, "first name alone = the same person");
+assert.equal(senderDiffers({ name: "דָּנָה כהן-לוי", phone: null, email: null }, sendCard), false, "niqqud and a double surname still share a word");
+assert.equal(senderDiffers({ name: "יוסי לוי", phone: null, email: null }, sendCard), true, "another name");
+assert.equal(senderDiffers({ name: null, phone: "0500000000", email: "DANA@example.com " }, sendCard), false, "same e-mail, any case");
+assert.equal(senderDiffers({ name: "דנה", phone: null, email: "other@example.com" }, sendCard), true, "same name, another e-mail");
+assert.equal(senderDiffers({ name: "Yossi", phone: null, email: null }, { name: "", email: null }), false, "a card with no name: nothing to compare");
+assert.equal(senderDiffers({ name: "-", phone: null, email: null }, sendCard), false, "no real word typed");
+const joined = inquiriesOf(
+  { inquiries: [{ at: "2026-10-21T08:00:00Z", kind: "lead", name: " יוסי לוי ", phone: "050-000 0000", email: "" }] },
+  sendCard,
+);
+assert.deepEqual(joined[0].sentAs, { name: "יוסי לוי", phone: "050-000 0000", email: null });
+assert.equal(joined[0].otherSender, true);
+assert.equal(inquiriesOf({ inquiries: [{ at: "x", name: "יוסי" }] })[0].otherSender, false, "no card given: never flagged");
 
 console.log("tours-cases selftest: ok");

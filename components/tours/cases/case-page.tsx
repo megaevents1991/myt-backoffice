@@ -343,9 +343,33 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 <h3 className="text-sm font-semibold text-violet-800 dark:text-violet-300">Came back on this card ({data.inquiries.length})</h3>
                 <ol className="space-y-1.5">
                   {data.inquiries.map((q, i) => (
-                    <li key={`${q.at}-${i}`} className="rounded-md border border-violet-500/25 bg-violet-500/5 px-3 py-1.5 text-sm">
+                    <li
+                      key={`${q.at}-${i}`}
+                      className={cn(
+                        "rounded-md border px-3 py-1.5 text-sm",
+                        q.otherSender ? "border-amber-500/50 bg-amber-500/10" : "border-violet-500/25 bg-violet-500/5",
+                      )}
+                    >
                       <span className="tabular text-xs text-muted-foreground">{fmtInstant(q.at)}</span>
                       <span className="ms-2 text-xs text-muted-foreground">{LEAD_KIND_LABELS[q.kind] ?? q.kind}</span>
+                      {q.sentAs && (
+                        <span className="ms-2 text-xs text-muted-foreground">
+                          Sent as{" "}
+                          {[q.sentAs.name, q.sentAs.phone, q.sentAs.email].filter(Boolean).map((part, j) => (
+                            <span key={j} dir="auto">
+                              {j > 0 && " · "}
+                              {part}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      {/* the form joined by the phone alone, which anyone can type (security review 19.10) */}
+                      {q.otherSender && (
+                        <p className="mt-1 flex items-start gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+                          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          Sent with this customer&apos;s phone but another name or e-mail - check it is them before you act on it.
+                        </p>
+                      )}
                       {q.message && (
                         <p dir="auto" className="whitespace-pre-wrap break-words">
                           {q.message}

@@ -1120,7 +1120,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       relatedCase: relatedCase ?? null,
       whatsappApi: whatsappApiReady(company),
       offer: parseOffer(record.offer),
-      inquiries: inquiriesOf(payload),
+      inquiries: inquiriesOf(payload, { name: customerName(row), email: row.email }),
       known,
     });
   } catch (e) {
@@ -2011,6 +2011,10 @@ export async function fileInquiry(inquiryId: string, cardId: string | null): Pro
       message: inquiry.message ? inquiry.message.slice(0, 500) : null,
       source_path: inquiry.source_path,
       utm: inquiry.utm,
+      // what the form was sent as - the card page compares it with the card's person (senderDiffers)
+      name: inquiry.name?.trim() || null,
+      phone: inquiry.phone?.trim() || null,
+      email: inquiry.email?.trim().toLowerCase() || null,
       fields: asObject(inquiry.payload),
     };
     const nextStatus = statusOnReturn(target.status, statuses);

@@ -283,6 +283,11 @@ begin
                  || jsonb_build_array(jsonb_build_object(
                       'id', new.id, 'case_no', new.case_no, 'at', now(), 'kind', new.kind,
                       'message', left(new.message, 500), 'source_path', left(new.source_path, 300), 'utm', new.utm,
+                      -- what the form was SENT AS: it joined by the phone alone, which anyone can type. The card's
+                      -- name / contact are never written from it; the card page warns when these are not the
+                      -- card's person (senderDiffers in lib/tours/cases.ts).
+                      'name', left(nullif(btrim(new.name), ''), 120), 'phone', left(nullif(btrim(new.phone), ''), 40),
+                      'email', left(nullif(lower(btrim(new.email)), ''), 200),
                       -- the form's other fields (a waiting list's date...), unless they are unusually big
                       'fields', case when pg_column_size(new.payload) < 4000 then new.payload - 'joined_into' else '{}'::jsonb end)))
          where l.id = v_target.id;
