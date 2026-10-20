@@ -468,7 +468,8 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
             </Section>
           )}
 
-          <Section title="History" icon={HistoryIcon} tone="neutral">
+          {/* inside the customer page "History" is the closed cards - this card's own log is its activity */}
+          <Section title={embedded ? "Card activity" : "History"} icon={HistoryIcon} tone="neutral">
             {data.history.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing changed yet.</p>
             ) : (

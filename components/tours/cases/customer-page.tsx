@@ -188,7 +188,13 @@ function CardRow({
   const reason = todayReason(card, statuses, today);
   const live = orders.filter((o) => o.phase !== "cancelled");
   const travelers = live.reduce((sum, o) => sum + o.travelers, 0);
-  const priced = live.find((o) => o.total !== null && o.currency);
+  // the card's worth = every live order's total (one currency per company; a mixed card shows none rather than a wrong sum)
+  const pricedOrders = live.filter((o) => o.total !== null && o.currency);
+  const currencies = new Set(pricedOrders.map((o) => o.currency));
+  const priced =
+    pricedOrders.length > 0 && currencies.size === 1
+      ? { total: pricedOrders.reduce((sum, o) => sum + (o.total ?? 0), 0), currency: pricedOrders[0].currency }
+      : null;
   const color = statusOf(card.status, statuses)?.color ?? "gray";
   const closed = isClosedStatus(card.status, statuses);
   return (
