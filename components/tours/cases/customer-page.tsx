@@ -9,7 +9,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ChevronRight, GitMerge, Inbox, Link2, Loader2, Phone, PlusCircle, Star, StickyNote, TriangleAlert, UserRound, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, CalendarClock, ChevronRight, GitMerge, Inbox, Link2, Loader2, Phone, PlusCircle, Star, StickyNote, TriangleAlert, UserRound, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -18,12 +18,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
-import { dismissCustomerSuggestion, fileInquiry, getCustomerPage, updateCustomer } from "@/lib/actions/tours-cases-actions";
+import { dismissCustomerSuggestion, fileInquiry, getCustomerPage, updateCase, updateCustomer } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
 import { Chip, LoadError, Notice } from "@/components/tours/ui";
 import {
   customerLabel,
   customerName,
+  followUpDue,
   isClosedStatus,
   isPaidStatus,
   senderDiffers,
@@ -34,7 +35,7 @@ import {
   type CustomerChange,
   type CustomerPageData,
 } from "@/lib/tours/cases";
-import { StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { CasePage, type CardFocus } from "@/components/tours/cases/case-page";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { MergeCustomerDialog } from "@/components/tours/cases/customer-dialogs";
@@ -201,6 +202,11 @@ function CardRow({
   const offer = offerLine(card);
   const firstNote = card.notes?.trim().split("\n")[0] ?? "";
   const notesLine = firstNote ? (firstNote.length > 48 ? `${firstNote.slice(0, 47)}…` : firstNote) : "Add a note";
+  const run = useActionToast();
+  const saveFollowUp = async (followUpDate: string | null) => {
+    const result = await run(() => updateCase(card.id, { followUpDate }), "Follow-up day saved");
+    if (result.success) onChanged();
+  };
   // a shortcut opens the card at that part of it
   const go = (section: CardFocus["section"]) => {
     setFocus({ section, at: Date.now() });
@@ -240,6 +246,19 @@ function CardRow({
         <div className="flex flex-wrap gap-2 px-4 pb-3 ps-11">
           <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} onClick={() => go("link")} />
           <CardShortcut icon={StickyNote} label="Notes" value={notesLine} tone={card.notes?.trim() ? "default" : "muted"} onClick={() => go("notes")} />
+          {/* the third shortcut (Dor 20.10): the next follow-up, changed right here */}
+          {!closed && (
+            <label
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md border bg-background px-2.5 py-0.5 text-sm",
+                followUpDue(card, statuses, today) && "border-red-500/40 bg-red-500/5",
+              )}
+            >
+              <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="font-medium">Follow-up</span>
+              <FollowUpInput ghost value={card.followUpDate} due={followUpDue(card, statuses, today)} className="h-7 w-[8.5rem] text-xs" onSave={(followUpDate) => void saveFollowUp(followUpDate)} />
+            </label>
+          )}
         </div>
         <CollapsibleContent className="border-t bg-muted/20 p-4">{open && <CasePage id={card.id} embedded focus={focus} onChanged={onChanged} />}</CollapsibleContent>
       </article>

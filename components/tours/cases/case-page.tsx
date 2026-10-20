@@ -71,6 +71,7 @@ import {
 } from "@/lib/tours/cases";
 import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TodayBadge, TYPE_WASH, TypeBadge, WhatsAppButton, type FuturePick } from "@/components/tours/cases/case-ui";
 import { BookingCard, SeatsChip } from "@/components/tours/cases/booking-card";
+import { BalanceChip } from "@/components/tours/cases/order-money";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { MergeDialog } from "@/components/tours/cases/merge-dialog";
 import { MoveCardDialog } from "@/components/tours/cases/customer-dialogs";
@@ -153,6 +154,8 @@ function Orders({
   rows,
   gifts,
   cancellationText,
+  cancellationRules,
+  withMoney,
   onChanged,
 }: {
   bookings: BookingRow[];
@@ -165,13 +168,26 @@ function Orders({
   /** The departure's gift and the tour's cancellation terms, shown inside each order (Alon 20.10). */
   gifts?: CaseDetail["gifts"];
   cancellationText?: string | null;
+  /** The tour's fee rules and the payments log - the customer page (Alon 20.10). */
+  cancellationRules?: CaseDetail["cancellationRules"];
+  withMoney?: boolean;
   onChanged: () => void;
 }) {
   const today = todayIso();
   // a closed booking says whether its travelers hold seats (Alon 18.10: "I do not know if it takes them off")
   const seatsOf = (b: BookingRow) => (b.status === "done" || b.status === "paid" ? (owedRefs.has(b.ref) ? "missing" : "held") : null);
   const card = (b: BookingRow) => (
-    <BookingCard booking={b} caseName={name} casePhone={casePhone} seats={seatsOf(b)} gifts={gifts} cancellationText={cancellationText} onChanged={onChanged} />
+    <BookingCard
+      booking={b}
+      caseName={name}
+      casePhone={casePhone}
+      seats={seatsOf(b)}
+      gifts={gifts}
+      cancellationText={cancellationText}
+      cancellationRules={cancellationRules}
+      withMoney={withMoney}
+      onChanged={onChanged}
+    />
   );
   if (bookings.length === 1 && !rows) return card(bookings[0]);
   const phases = bookings.map((b) => bookingPhase(b, today));
@@ -190,6 +206,8 @@ function Orders({
               </span>
               <span className="text-muted-foreground">{b.adults + b.children} travelers</span>
               {seatsOf(b) && <SeatsChip state={seatsOf(b)!} />}
+              {/* what is still owed on it (Alon 20.10: "Balance | -1,605.74$") */}
+              {withMoney && b.status !== "cancelled" && b.status !== "failed" && <BalanceChip booking={b} />}
               <span className="ms-auto tabular font-medium">{fmtPrice(b.total, b.currency)}</span>
             </CollapsibleTrigger>
             <CollapsibleContent className="px-3 pb-3">{card(b)}</CollapsibleContent>
@@ -768,6 +786,8 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
               owedRefs={owedRefs}
               gifts={data.gifts}
               cancellationText={cancellationText}
+              cancellationRules={data.cancellationRules}
+              withMoney
               onChanged={() => void reload({ quiet: true })}
             />
           )}

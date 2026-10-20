@@ -27,6 +27,7 @@ import { actionFail, actionOk, chunk, UserError, UUID, type ActionResult } from 
 import { asObject, companyAudit } from "@/lib/tours/company-kit";
 import { isoToJerusalemLocal } from "@/lib/tours/format";
 import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
+import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
 import { ROOM_COMPOSITIONS, roomPrice, toPriceMatrix } from "@/lib/tours/pricing";
@@ -1041,7 +1042,9 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     ]);
 
     const packageId = record.package_id ?? departure?.package_id ?? null;
-    const [pkgAnswer, giftsAnswer, seatDepartures] = await Promise.all([
+    const repNames = new Map(reps.map((p) => [p.id, p.name]));
+    // each order's payments and the tour's cancellation fees ride with the card (20261020150000 - empty before it)
+    const [pkgAnswer, giftsAnswer, seatDepartures, paymentLog, cancellationRules] = await Promise.all([
       packageId
         ? toursDb().from("packages").select("id, name, slug, data, cancellation_html").eq("company_id", company.id).eq("id", packageId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -1055,11 +1058,12 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
             .or(`departure_id.eq.${departure.id},series_id.eq.${departure.series_id}`)
         : Promise.resolve({ data: [], error: null }),
       departuresOf(company.id, seats.map((s) => s.departure_id)),
+      readPaymentLog(company.id, bookings.map((b) => b.id), repNames),
+      packageId ? readCancellationRules(company.id, packageId) : Promise.resolve([]),
     ]);
     if (pkgAnswer.error) throw new Error(`packages: ${pkgAnswer.error.message}`);
     if (giftsAnswer.error) throw new Error(`promotions: ${giftsAnswer.error.message}`);
     const pkg = pkgAnswer.data as { id: string; name: string; slug: string; data: unknown; cancellation_html: string | null } | null;
-    const repNames = new Map(reps.map((p) => [p.id, p.name]));
     const row = toCaseRow(record, x, statuses);
 
     const sales: ToursReservationRow[] = seats.map((s) => {
@@ -1091,7 +1095,8 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     return actionOk({
       row,
       payload,
-      bookings,
+      bookings: bookings.map((b) => ({ ...b, paymentLog: paymentLog.get(b.id) ?? [] })),
+      cancellationRules,
       sales,
       departure: departure
         ? {

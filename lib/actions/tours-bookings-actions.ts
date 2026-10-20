@@ -79,6 +79,19 @@ export async function updateBooking(id: string, change: BookingChange): Promise<
         changes.staff_note = { from: before.staff_note, to: value };
       }
     }
+    if (change.giftPassengers !== undefined) {
+      // the passengers the departure's gift went to (Alon 20.10) - indexes into this booking's own passengers
+      const count = Array.isArray(before.passengers) ? before.passengers.length : 0;
+      const picked = [...new Set(change.giftPassengers)].sort((a, b) => a - b);
+      if (picked.some((i) => !Number.isInteger(i) || i < 0 || i >= count)) {
+        return { success: false, error: "Pick passengers of this booking." };
+      }
+      const was = (before.gift_passengers ?? []).slice().sort((a, b) => a - b);
+      if (picked.join(",") !== was.join(",")) {
+        patch.gift_passengers = picked;
+        changes.gift_passengers = { from: was, to: picked };
+      }
+    }
     if (change.confirmationSent !== undefined && change.confirmationSent !== !!before.confirmation_sent_at) {
       patch.confirmation_sent_at = change.confirmationSent ? new Date().toISOString() : null;
       changes.confirmation_sent_at = { from: before.confirmation_sent_at, to: patch.confirmation_sent_at };

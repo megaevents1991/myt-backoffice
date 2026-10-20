@@ -171,6 +171,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `moveCardToCustomer`. Before the migration the reads fall back (`LEGACY_CASE_COLUMNS`, `missingTable`) and a card opens as the old
 > case page. The migration was tested on an in-process Postgres (PGlite) over stubs - the local DB password is empty and the access
 > token dead, so no prod dry run.
+> **Alon's drawing of the customer page (20.10.2026, doc tab `t.kw44n12anc02`; migration `20261020150000_tours_payments_gifts_cancellation.sql`).**
+> A closed card shows shortcuts: Booking link (where `leads.offer` stands, `CaseRow.offer`), Notes (first line) - a click opens the card
+> there (`CardFocus`) - and Follow-up (a date input). An open card (`CasePage embedded`): Status / Rep / Follow-up and Move / Merge / Delete
+> on one row; left = Orders (always rows, each with `BalanceChip`), Seats, Card activity, Source (folded); right = Product, Booking link,
+> Notes. ALL = the board's columns (`CardWho` / `CardWhat` in `case-ui.tsx`). **Payments log:** `tours.booking_payments` (kind deposit /
+> balance / full / refund / other, status paid / scheduled / failed, amount in the booking's currency, invoice_no, soft delete); a site card
+> payment writes itself (trigger `tours.booking_payment_from_card` on status -> paid/done with a `cg_tx_id`; backfilled) and can only get
+> an invoice number / note; balance = total - paid (`orderBalance`, `lib/tours/payments.ts`). Actions `lib/actions/tours-payments-actions.ts`,
+> reads `lib/tours/payment-log.ts` (getCase loads them with the card). **Cancellation fees:** `tours.cancellation_rules` per tour (component
+> hotel / flight / land / other, `until_days_before` or null = the last window, fee per_pax / per_order / percent), edited in the tour
+> editor ("Cancellation fees", `cancellation-rules-editor.tsx`); each order shows the fee as of today (`cancellationFeeToday`,
+> `lib/tours/cancellation.ts`) above the terms text. **Gift:** the departure's gift beside the booking status; `tours.bookings.gift_passengers`
+> (indexes) = who got it, toggled per passenger. Selftest `scripts/tours-payments-selftest.ts`. A phone-joined form keeps what it was sent as
+> (`payload.inquiries[].name/phone/email`) and the card warns when it is not the customer's (`senderDiffers`, security review 19.10).
 >
 > **✅ Homepage layout board (`/homepage`, 2026-09-16).** Spec
 > `docs/superpowers/specs/2026-09-16-homepage-layout-design.md`. One dummy of

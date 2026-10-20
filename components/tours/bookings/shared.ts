@@ -4,6 +4,7 @@
  * a card payment on the CreditGuard page. Shared by the screen and its actions.
  */
 export type { ActionResult } from "@/lib/tours/action-kit";
+import type { OrderPayment } from "@/lib/tours/payments";
 
 export const BOOKING_STATUSES = ["new", "in_progress", "pending_payment", "paid", "review", "failed", "done", "cancelled"] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
@@ -97,6 +98,10 @@ export interface BookingRow {
   receiptNo: string | null;
   confirmationSentAt: string | null;
   staffNote: string | null;
+  /** The passengers (0-based, in `passengers` order) the departure's gift went to - the rep marks them (Alon 20.10). */
+  giftPassengers: number[];
+  /** The order's payments (tours.booking_payments) - filled where the screen shows them, else empty. */
+  paymentLog: OrderPayment[];
 }
 
 export interface BookingChange {
@@ -104,6 +109,7 @@ export interface BookingChange {
   receiptNo?: string | null;
   staffNote?: string | null;
   confirmationSent?: boolean;
+  giftPassengers?: number[];
 }
 
 /** Search across what the operator sees in the row. */

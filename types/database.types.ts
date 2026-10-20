@@ -5259,6 +5259,72 @@ export type Database = {
   }
   tours: {
     Tables: {
+      booking_payments: {
+        Row: {
+          amount: number
+          amount_ils: number | null
+          booking_id: string
+          cg_tx_id: string | null
+          company_id: string
+          created_at: string
+          currency: string
+          due_date: string | null
+          entered_by: string | null
+          id: string
+          invoice_no: string | null
+          is_deleted: string | null
+          kind: string
+          method: string | null
+          note: string | null
+          paid_at: string | null
+          payer_name: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          amount_ils?: number | null
+          booking_id: string
+          cg_tx_id?: string | null
+          company_id: string
+          created_at?: string
+          currency: string
+          due_date?: string | null
+          entered_by?: string | null
+          id?: string
+          invoice_no?: string | null
+          is_deleted?: string | null
+          kind?: string
+          method?: string | null
+          note?: string | null
+          paid_at?: string | null
+          payer_name?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          amount_ils?: number | null
+          booking_id?: string
+          cg_tx_id?: string | null
+          company_id?: string
+          created_at?: string
+          currency?: string
+          due_date?: string | null
+          entered_by?: string | null
+          id?: string
+          invoice_no?: string | null
+          is_deleted?: string | null
+          kind?: string
+          method?: string | null
+          note?: string | null
+          paid_at?: string | null
+          payer_name?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           adults: number
@@ -5278,6 +5344,7 @@ export type Database = {
           customer_phone: string | null
           departure_id: string
           discount: number
+          gift_passengers: number[] | null
           id: string
           is_deleted: string | null
           kind: string
@@ -5321,6 +5388,7 @@ export type Database = {
           customer_phone?: string | null
           departure_id: string
           discount?: number
+          gift_passengers?: number[] | null
           id?: string
           is_deleted?: string | null
           kind: string
@@ -5364,6 +5432,7 @@ export type Database = {
           customer_phone?: string | null
           departure_id?: string
           discount?: number
+          gift_passengers?: number[] | null
           id?: string
           is_deleted?: string | null
           kind?: string
@@ -5387,6 +5456,45 @@ export type Database = {
           subtotal?: number
           total?: number
           total_ils?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cancellation_rules: {
+        Row: {
+          company_id: string
+          component: string
+          created_at: string
+          fee_kind: string
+          fee_value: number
+          id: string
+          package_id: string
+          position: number
+          until_days_before: number | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          component: string
+          created_at?: string
+          fee_kind: string
+          fee_value: number
+          id?: string
+          package_id: string
+          position?: number
+          until_days_before?: number | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          component?: string
+          created_at?: string
+          fee_kind?: string
+          fee_value?: number
+          id?: string
+          package_id?: string
+          position?: number
+          until_days_before?: number | null
           updated_at?: string
         }
         Relationships: []

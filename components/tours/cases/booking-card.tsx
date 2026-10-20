@@ -15,6 +15,8 @@ import { EMPTY, fmtDate, fmtInstant, fmtPrice } from "@/lib/tours/format";
 import { updateBooking } from "@/lib/actions/tours-bookings-actions";
 import { Fact, FactList, Notice } from "@/components/tours/ui";
 import { sameCustomer, type CaseGift } from "@/lib/tours/cases";
+import type { CancellationRule } from "@/lib/tours/cancellation";
+import { CancelFeeToday, OrderPayments } from "@/components/tours/cases/order-money";
 import {
   BOOKING_STATUS_HINTS,
   BOOKING_STATUS_LABELS,
@@ -73,6 +75,8 @@ export function BookingCard({
   seats,
   gifts,
   cancellationText,
+  cancellationRules,
+  withMoney,
   onChanged,
 }: {
   booking: BookingRow;
@@ -85,6 +89,10 @@ export function BookingCard({
   gifts?: CaseGift[];
   /** The tour's cancellation terms as text, folded inside the order (customer page, Alon 20.10). */
   cancellationText?: string | null;
+  /** The tour's cancellation fee rules - the fee as of today reads from them (Alon 20.10). */
+  cancellationRules?: CancellationRule[];
+  /** The payments log and balance instead of the receipt box (the customer page, Alon 20.10). */
+  withMoney?: boolean;
   onChanged: () => void;
 }) {
   const run = useActionToast();
@@ -94,6 +102,10 @@ export function BookingCard({
   const money = (value: number | null | undefined) => fmtPrice(value ?? null, booking.currency);
   const estimate = booking.priceBasis === "estimate";
   const otherCustomer = !sameCustomer({ name: booking.customerName, phone: booking.customerPhone }, { name: caseName, phone: casePhone });
+
+  const giftOn = (gifts?.length ?? 0) > 0 || booking.giftPassengers.length > 0;
+  const toggleGift = (i: number) =>
+    void change({ giftPassengers: booking.giftPassengers.includes(i) ? booking.giftPassengers.filter((x) => x !== i) : [...booking.giftPassengers, i] });
 
   const change = async (patch: BookingChange) => {
     setBusy(true);
@@ -140,7 +152,7 @@ export function BookingCard({
       )}
       {booking.status === "pending_payment" && <Notice tone="warning">The customer reached the payment page and has not paid. Call them - this is a hot lead.</Notice>}
 
-      <div className={cn("grid gap-3", gifts ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
+      <div className={cn("grid gap-3", gifts && !withMoney ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Booking status</Label>
           <Select value={booking.status} disabled={busy} onValueChange={(status) => void change({ status })}>
@@ -173,18 +185,20 @@ export function BookingCard({
             </div>
           </div>
         )}
-        <div className="space-y-1">
-          <Label htmlFor={`receipt-${booking.id}`} className="text-xs text-muted-foreground">
-            Receipt No.
-          </Label>
-          <Input
-            id={`receipt-${booking.id}`}
-            value={receipt}
-            disabled={busy}
-            onChange={(e) => setReceipt(e.target.value)}
-            onBlur={() => receipt !== (booking.receiptNo ?? "") && void change({ receiptNo: receipt })}
-          />
-        </div>
+        {!withMoney && (
+          <div className="space-y-1">
+            <Label htmlFor={`receipt-${booking.id}`} className="text-xs text-muted-foreground">
+              Receipt No.
+            </Label>
+            <Input
+              id={`receipt-${booking.id}`}
+              value={receipt}
+              disabled={busy}
+              onChange={(e) => setReceipt(e.target.value)}
+              onBlur={() => receipt !== (booking.receiptNo ?? "") && void change({ receiptNo: receipt })}
+            />
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -221,9 +235,29 @@ export function BookingCard({
             <FactList className="rounded-md border bg-muted/30 px-3">
               {booking.passengers.map((p, i) => (
                 <Fact key={i} label={`${i + 1}. ${p.type === "child" ? "Child" : "Adult"}`}>
-                  <span dir="auto">
-                    {[p.first, p.last].filter(Boolean).join(" ") || EMPTY}
-                    {p.dob ? <span className="text-muted-foreground"> · {fmtDate(p.dob)}</span> : null}
+                  <span className="flex items-center gap-2">
+                    <span dir="auto">
+                      {[p.first, p.last].filter(Boolean).join(" ") || EMPTY}
+                      {p.dob ? <span className="text-muted-foreground"> · {fmtDate(p.dob)}</span> : null}
+                    </span>
+                    {giftOn && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => toggleGift(i)}
+                        aria-pressed={booking.giftPassengers.includes(i)}
+                        title={booking.giftPassengers.includes(i) ? "Got the gift - click to take it off" : "Mark that this passenger got the gift"}
+                        className={cn(
+                          "ms-auto inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs font-semibold",
+                          booking.giftPassengers.includes(i)
+                            ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                            : "border-dashed text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        <Gift className="h-3 w-3" />
+                        Gift
+                      </button>
+                    )}
                   </span>
                 </Fact>
               ))}
@@ -238,12 +272,18 @@ export function BookingCard({
         </div>
       </div>
 
+      {withMoney && <OrderPayments key={booking.paymentLog.map((p) => p.id).join(",")} booking={booking} onChanged={onChanged} />}
+      {withMoney && booking.receiptNo && !booking.paymentLog.some((p) => p.invoiceNo === booking.receiptNo) && (
+        <p className="text-xs text-muted-foreground">
+          Receipt No. typed on the booking before the payments log: <span className="font-mono">{booking.receiptNo}</span>
+        </p>
+      )}
       {booking.kind === "card" && (
-        <div className="space-y-2">
-          <h4 className="flex items-center gap-2 text-sm font-semibold">
-            <CreditCard className="h-4 w-4" /> Payment
-          </h4>
-          <FactList className="rounded-md border bg-muted/30 px-3">
+        <details className="space-y-2" open={!withMoney}>
+          <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+            <CreditCard className="h-4 w-4" /> {withMoney ? "Card payment details" : "Payment"}
+          </summary>
+          <FactList className="mt-2 rounded-md border bg-muted/30 px-3">
             <Fact label="Charged">{booking.totalIls ? fmtPrice(booking.totalIls, "ILS") : EMPTY}</Fact>
             <Fact label="Rate">
               {booking.rate ? `${booking.rate} (${booking.rateSource === "company" ? "today's rate from the Rates screen" : "automatic rate + margin"})` : EMPTY}
@@ -255,10 +295,11 @@ export function BookingCard({
             <Fact label="Paid at">{booking.paidAt ? fmtInstant(booking.paidAt) : EMPTY}</Fact>
             <Fact label="Seats">{booking.salesEntryId ? "Added to the departure" : "Not added (not paid)"}</Fact>
           </FactList>
-        </div>
+        </details>
       )}
 
-      {/* the tour's terms, folded inside the order (Alon 20.10) - as text; a fee as of today needs rules we do not store yet */}
+      {/* what cancelling costs today by the tour's fee rules, then the terms as the tour page words them (Alon 20.10) */}
+      {cancellationRules && booking.status !== "cancelled" && <CancelFeeToday rules={cancellationRules} booking={booking} />}
       {cancellationText && (
         <details className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
           <summary className="flex cursor-pointer items-center gap-2 font-semibold">

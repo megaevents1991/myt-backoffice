@@ -40,6 +40,7 @@ import { HtmlField } from "@/components/tours/content/html-field";
 import { PointsField } from "@/components/tours/content/points-field";
 import { ItineraryEditor } from "@/components/tours/content/itinerary-editor";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
+import { CancellationRulesEditor } from "@/components/tours/content/cancellation-rules-editor";
 import {
   BackLink,
   CONTENT_SAVED_NOTE,
@@ -527,6 +528,8 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
               rows={8}
             />
           </Section>
+          {/* the fees as rules beside the text: an order reads its fee as of today from them (Alon 20.10) */}
+          <CancellationRulesEditor packageId={saved.id} />
         </TabsContent>
 
         {/* ------------------------------------------------------------ itinerary */}

@@ -14,6 +14,7 @@
 import { matchesSearch } from "@/lib/search";
 import type { BookingRow } from "@/components/tours/bookings/shared";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
+import type { CancellationRule } from "@/lib/tours/cancellation";
 
 // ---------------------------------------------------------------- TYPE
 export const CASE_TYPES = ["reservation", "lead", "potential"] as const;
@@ -943,6 +944,8 @@ export interface CaseDetail {
   inquiries: CardInquiry[];
   /** The customer's earlier deal (closed or paid) this card should know about. */
   known: KnownFrom | null;
+  /** The tour's cancellation fee rules (tours.cancellation_rules) - each order reads its fee as of today from them. */
+  cancellationRules: CancellationRule[];
 }
 
 /** A case another one may be merged with - what the picker shows. */
