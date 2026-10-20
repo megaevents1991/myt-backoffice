@@ -27,9 +27,11 @@ import {
   SEASON_MAX,
   STATUS_COLOR_CLASSES,
   TODAY_REASON_LABELS,
+  caseName,
   cardStage,
   checkCloseReason,
   checkFuture,
+  customerLabel,
   daysLate,
   needsCloseReason,
   statusOf,
@@ -37,14 +39,51 @@ import {
   whatsappAppLink,
   type BookingPhase,
   type CaseRep,
+  type CaseRow,
   type CaseStatus,
   type CaseType,
   type FutureTour,
   type TodayReason,
 } from "@/lib/tours/cases";
+import { fmtDate } from "@/lib/tours/format";
 
 /** Value of the rep picker for "nobody". */
 export const NOBODY = "nobody";
+
+/** Who a row is: the name, then the C-number and the phone (every board table). */
+export function CardWho({ card, children }: { card: CaseRow; children?: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div dir="auto" className="truncate font-medium">
+        {caseName(card) || card.phone || card.email || "Customer"}
+        {children}
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {card.customerNo && <span className="font-mono">{customerLabel(card.customerNo)}</span>}
+        {card.phone && (
+          <span dir="ltr" className="tabular">
+            {card.phone}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** What a deal is for: the tour, then its date or season. */
+export function CardWhat({ card, children }: { card: CaseRow; children?: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div dir="auto" className="truncate">
+        {card.tourName ?? <span className="text-muted-foreground">Tour not chosen</span>}
+      </div>
+      <div dir="auto" className="tabular text-xs text-muted-foreground">
+        {card.departureCode ? `${card.departureCode}${card.departureDate ? ` · ${fmtDate(card.departureDate)}` : ""}` : (card.season ?? "No date yet")}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 /**
  * A control inside a clickable table row. Radix menus render in a portal but

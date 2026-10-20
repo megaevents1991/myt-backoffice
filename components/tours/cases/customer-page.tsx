@@ -9,7 +9,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ChevronRight, GitMerge, Inbox, Loader2, Phone, PlusCircle, Star, TriangleAlert, UserRound, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, GitMerge, Inbox, Link2, Loader2, Phone, PlusCircle, Star, StickyNote, TriangleAlert, UserRound, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import {
   type CustomerPageData,
 } from "@/lib/tours/cases";
 import { StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
-import { CasePage } from "@/components/tours/cases/case-page";
+import { CasePage, type CardFocus } from "@/components/tours/cases/case-page";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { MergeCustomerDialog } from "@/components/tours/cases/customer-dialogs";
 
@@ -197,6 +197,15 @@ function CardRow({
       : null;
   const color = statusOf(card.status, statuses)?.color ?? "gray";
   const closed = isClosedStatus(card.status, statuses);
+  const [focus, setFocus] = useState<CardFocus | null>(null);
+  const offer = offerLine(card);
+  const firstNote = card.notes?.trim().split("\n")[0] ?? "";
+  const notesLine = firstNote ? (firstNote.length > 48 ? `${firstNote.slice(0, 47)}…` : firstNote) : "Add a note";
+  // a shortcut opens the card at that part of it
+  const go = (section: CardFocus["section"]) => {
+    setFocus({ section, at: Date.now() });
+    onOpenChange(true);
+  };
   return (
     <Collapsible open={open} onOpenChange={onOpenChange} asChild>
       <article className={cn("group overflow-hidden rounded-lg border border-s-4 bg-card", CARD_EDGE[color] ?? "border-s-border", closed && "opacity-90")}>
@@ -227,10 +236,49 @@ function CardRow({
           )}
           {priced && <span className="tabular text-sm font-medium">{fmtPrice(priced.total, priced.currency)}</span>}
         </CollapsibleTrigger>
-        <CollapsibleContent className="border-t bg-muted/20 p-4">{open && <CasePage id={card.id} embedded onChanged={onChanged} />}</CollapsibleContent>
+        {/* shortcuts on the card's outside (Alon 20.10): where the offer stands and what the team wrote, one click into it */}
+        <div className="flex flex-wrap gap-2 px-4 pb-3 ps-11">
+          <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} onClick={() => go("link")} />
+          <CardShortcut icon={StickyNote} label="Notes" value={notesLine} tone={card.notes?.trim() ? "default" : "muted"} onClick={() => go("notes")} />
+        </div>
+        <CollapsibleContent className="border-t bg-muted/20 p-4">{open && <CasePage id={card.id} embedded focus={focus} onChanged={onChanged} />}</CollapsibleContent>
       </article>
     </Collapsible>
   );
+}
+
+type ShortcutTone = "default" | "muted" | "warning";
+const SHORTCUT_TONE: Record<ShortcutTone, string> = {
+  default: "text-foreground",
+  muted: "text-muted-foreground",
+  warning: "text-amber-800 dark:text-amber-300",
+};
+
+/** A button on a closed card: a label and what stands behind it. */
+function CardShortcut({ icon: Icon, label, value, tone, onClick }: { icon: LucideIcon; label: string; value: string; tone: ShortcutTone; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex max-w-full items-center gap-2 rounded-md border bg-background px-2.5 py-1 text-start text-sm hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="font-medium">{label}</span>
+      <span dir="auto" className={cn("min-w-0 truncate text-xs", SHORTCUT_TONE[tone])}>
+        {value}
+      </span>
+    </button>
+  );
+}
+
+/** Where a card's booking link stands, in a few words. */
+function offerLine(card: CaseRow): { text: string; tone: ShortcutTone } {
+  const offer = card.offer;
+  if (!offer) return { text: "None yet", tone: "muted" };
+  if (offer.bookingRef) return { text: `Booked · ${offer.bookingRef}`, tone: "default" };
+  const price = offer.total !== null && offer.currency ? ` · ${fmtPrice(offer.total, offer.currency)}` : "";
+  if (offer.sentAt) return { text: `Sent ${fmtDate(offer.sentAt.slice(0, 10))}${price}`, tone: "default" };
+  return { text: `Prepared, not sent${price}`, tone: "warning" };
 }
 
 /**

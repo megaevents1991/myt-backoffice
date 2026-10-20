@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -22,6 +22,7 @@ import {
   TriangleAlert,
   UserRound,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -36,7 +37,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { EMPTY, fmtDate, fmtDateRange, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { deleteCase, getCase, holdCaseSeats, updateCase } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
-import { Fact, FactList, LoadError, Notice, Section, SectionBand } from "@/components/tours/ui";
+import { Fact, FactList, LoadError, Notice, Section, SectionBand, type SectionTone } from "@/components/tours/ui";
 import { readablePath } from "@/components/tours/content/shared";
 import { ReservationDialog } from "@/components/tours/reservations/reservation-dialog";
 import { ToursReservationsTable } from "@/components/tours/reservations/reservations-table";
@@ -149,6 +150,9 @@ function Orders({
   caseName: name,
   casePhone,
   owedRefs,
+  rows,
+  gifts,
+  cancellationText,
   onChanged,
 }: {
   bookings: BookingRow[];
@@ -156,12 +160,20 @@ function Orders({
   casePhone: string | null;
   /** Closed bookings whose travelers are not on the departure (seatGap). */
   owedRefs: ReadonlySet<string>;
+  /** One row per order even when there is one (the customer page, Alon 20.10). */
+  rows?: boolean;
+  /** The departure's gift and the tour's cancellation terms, shown inside each order (Alon 20.10). */
+  gifts?: CaseDetail["gifts"];
+  cancellationText?: string | null;
   onChanged: () => void;
 }) {
   const today = todayIso();
   // a closed booking says whether its travelers hold seats (Alon 18.10: "I do not know if it takes them off")
   const seatsOf = (b: BookingRow) => (b.status === "done" || b.status === "paid" ? (owedRefs.has(b.ref) ? "missing" : "held") : null);
-  if (bookings.length === 1) return <BookingCard booking={bookings[0]} caseName={name} casePhone={casePhone} seats={seatsOf(bookings[0])} onChanged={onChanged} />;
+  const card = (b: BookingRow) => (
+    <BookingCard booking={b} caseName={name} casePhone={casePhone} seats={seatsOf(b)} gifts={gifts} cancellationText={cancellationText} onChanged={onChanged} />
+  );
+  if (bookings.length === 1 && !rows) return card(bookings[0]);
   const phases = bookings.map((b) => bookingPhase(b, today));
   const openFirst = Math.max(0, phases.indexOf("active"));
   return (
@@ -180,13 +192,46 @@ function Orders({
               {seatsOf(b) && <SeatsChip state={seatsOf(b)!} />}
               <span className="ms-auto tabular font-medium">{fmtPrice(b.total, b.currency)}</span>
             </CollapsibleTrigger>
-            <CollapsibleContent className="px-3 pb-3">
-              <BookingCard booking={b} caseName={name} casePhone={casePhone} seats={seatsOf(b)} onChanged={onChanged} />
-            </CollapsibleContent>
+            <CollapsibleContent className="px-3 pb-3">{card(b)}</CollapsibleContent>
           </div>
         </Collapsible>
       ))}
     </div>
+  );
+}
+
+/** A section that opens on a click - what a rep needs now and then, out of the way the rest of the time. */
+function Fold({
+  icon,
+  tone,
+  title,
+  description,
+  defaultOpen,
+  children,
+}: {
+  icon: LucideIcon;
+  tone: SectionTone;
+  title: string;
+  description?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen} asChild>
+      <section className="group overflow-hidden rounded-lg border bg-card">
+        <CollapsibleTrigger className="w-full text-start hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+          <SectionBand
+            icon={icon}
+            tone={tone}
+            title={title}
+            description={description}
+            className="border-b-0 group-data-[state=open]:border-b"
+            actions={<ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90 rtl:-scale-x-100" />}
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-4 p-4">{children}</CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 
@@ -195,7 +240,13 @@ function Orders({
  * customers migration) it also shows the customer; `embedded` = inside the customer page (Nir 19.10), where the
  * customer's own block is the page's header and this is one deal of theirs.
  */
-export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: boolean; onChanged?: () => void }) {
+/** Where a card opens when a shortcut on its closed row was clicked (customer page, Alon 20.10); `at` re-runs it. */
+export interface CardFocus {
+  section: "link" | "notes";
+  at: number;
+}
+
+export function CasePage({ id, embedded, focus, onChanged }: { id: string; embedded?: boolean; focus?: CardFocus | null; onChanged?: () => void }) {
   const router = useRouter();
   const run = useActionToast();
   const confirm = useConfirm();
@@ -208,6 +259,11 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
   // set when the dialog opens, so it keeps one prefill while it is open
   const [travelersPrefill, setTravelersPrefill] = useState<ReservationPrefill | null>(null);
   const today = todayIso();
+  const loaded = !!data;
+  useEffect(() => {
+    if (!loaded || !focus) return;
+    document.getElementById(`card-${id}-${focus.section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loaded, focus, id]);
 
   if (!data) {
     return (
@@ -291,46 +347,9 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
     }
   };
 
-  const cardBody = (
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          {(!embedded || travelers.length > 0 || row.message || data.inquiries.length > 0) && (
-          <Section title={embedded ? "Travelers and what they wrote" : "Customer"} icon={embedded ? Users : UserRound} tone="info">
-            {/* inside the customer page the person's fields are the page's header (one customer, many deals) */}
-            {!embedded && (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <CustomerField label="First name" value={row.firstName} onSave={(firstName) => void save({ firstName })} />
-                <CustomerField label="Last name" value={row.lastName} onSave={(lastName) => void save({ lastName })} />
-                <CustomerField label="Phone" value={row.phone} dir="ltr" onSave={(phone) => void save({ phone })} />
-                <CustomerField label="Email" value={row.email} dir="ltr" onSave={(email) => void save({ email })} />
-                <CustomerField label="National id (ת״ז)" value={row.idNumber} dir="ltr" onSave={(idNumber) => void save({ idNumber })} />
-                <CustomerField label="ACC NUM" value={row.accNum} dir="ltr" onSave={(accNum) => void save({ accNum })} />
-              </div>
-            )}
-            {travelers.length > 0 && (
-              <div className={cn("space-y-2", !embedded && "mt-4")}>
-                <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  Travelers ({travelers.reduce((sum, g) => sum + g.passengers.length, 0)})
-                </h3>
-                {travelers.map((group) => (
-                  <div key={group.ref} className="space-y-1">
-                    {travelers.length > 1 && <p className="font-mono text-xs text-muted-foreground">{group.ref}</p>}
-                    <ol className="grid divide-y overflow-hidden rounded-md border sm:grid-cols-2 sm:divide-y-0 sm:[&>li:nth-child(n+3)]:border-t sm:[&>li:nth-child(even)]:border-s">
-                      {group.passengers.map((p, i) => (
-                        <li key={i} className="flex items-baseline gap-2 px-3 py-1.5 text-sm">
-                          <span className="tabular text-xs text-muted-foreground">{i + 1}.</span>
-                          <span dir="auto" className="font-medium">
-                            {group.names[i]}
-                          </span>
-                          <span className="ms-auto text-xs text-muted-foreground">{p.type === "child" ? "Child" : "Adult"}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                ))}
-              </div>
-            )}
+  // the card's pieces - laid out whole on its own page, and Alon's way inside the customer page (20.10)
+  const customerWrote = (
+    <>
             {row.message && (
               <p dir="auto" className="mt-3 whitespace-pre-wrap break-words rounded-md border bg-muted/30 px-3 py-2 text-sm">
                 <span className="text-xs text-muted-foreground">The customer wrote: </span>
@@ -380,24 +399,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 </ol>
               </div>
             )}
-          </Section>
-          )}
-
-          <Section
-            icon={ReceiptText}
-            tone="success"
-            title={`Order${data.bookings.length > 1 ? `s (${data.bookings.length})` : ""}`}
-            description={data.bookings.length ? "What the customer sent from the site." : undefined}
-          >
-            {data.bookings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No booking from the site yet.{row.type !== "reservation" ? " Send a booking link and the booking will land here." : ""}
-              </p>
-            ) : (
-              <Orders bookings={data.bookings} caseName={name} casePhone={row.phone} owedRefs={owedRefs} onChanged={() => void reload({ quiet: true })} />
-            )}
-          </Section>
-
+    </>
+  );
+  const gapNotice = (
+    <>
           {gap && (
             <Notice tone="warning" className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <TriangleAlert className="h-4 w-4 shrink-0" />
@@ -428,6 +433,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
             </Notice>
           )}
 
+    </>
+  );
+  const seatsSection = (
+    <>
           {/* closed by default (Dor 15.10): the seats count by themselves - a paid or closed booking adds them - so
               the ledger is there for whoever needs it, not in every rep's way */}
           <Collapsible asChild>
@@ -460,16 +469,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
             </section>
           </Collapsible>
 
-          {data.pkg?.cancellationHtml && (
-            <Section icon={FileText} tone="neutral" title="Cancellation terms" description={`As the tour page shows them (${data.pkg.name}).`}>
-              <p dir="rtl" className="whitespace-pre-line text-sm leading-6">
-                {htmlToText(data.pkg.cancellationHtml)}
-              </p>
-            </Section>
-          )}
-
-          {/* inside the customer page "History" is the closed cards - this card's own log is its activity */}
-          <Section title={embedded ? "Card activity" : "History"} icon={HistoryIcon} tone="neutral">
+    </>
+  );
+  const historyList = (
+    <>
             {data.history.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing changed yet.</p>
             ) : (
@@ -490,10 +493,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 ))}
               </ol>
             )}
-          </Section>
-        </div>
-
-        <div className="space-y-6">
+    </>
+  );
+  const productSection = (
+    <>
           <Section title="Product" icon={MapPinned} tone="violet">
             <FactList>
               <Fact label="Tour">{(data.pkg?.name ?? row.tourName) && <span dir="auto">{data.pkg?.name ?? row.tourName}</span>}</Fact>
@@ -532,23 +535,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
             )}
           </Section>
 
-          <Section title="Gift" icon={Gift} tone="rose">
-            {data.gifts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{data.departure ? "No gift on this departure." : "Choose a departure to see its gift."}</p>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {data.gifts.map((g, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <Gift className="h-4 w-4 text-primary" />
-                    <span dir="auto">{g.label}</span>
-                    {g.validUntil && <span className="text-xs text-muted-foreground">until {fmtDate(g.validUntil)}</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section title="Source" icon={Megaphone} tone="neutral">
+    </>
+  );
+  const sourceFacts = (
+    <>
             <FactList>
               <Fact label="Came through">
                 <div className="flex items-center gap-2">
@@ -607,8 +597,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 </FactList>
               </details>
             )}
-          </Section>
-
+    </>
+  );
+  const linkCard = (
+    <>
           <BookingLinkCard
             caseId={row.id}
             defaultDepartureId={row.departureId}
@@ -621,6 +613,10 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
             onChanged={() => void reload({ quiet: true })}
           />
 
+    </>
+  );
+  const notesSection = (
+    <>
           <Section title="Notes" description="For the team only - the customer never sees them." icon={StickyNote} tone="warning">
             <Textarea dir="auto" rows={5} maxLength={4000} value={notes} onChange={(e) => setNotesDraft(e.target.value)} placeholder="What was said, what was promised, what to do next." />
             <div className="mt-2 flex justify-end gap-2">
@@ -640,8 +636,161 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
               </Button>
             </div>
           </Section>
+    </>
+  );
+  const cancellationText = data.pkg?.cancellationHtml ? htmlToText(data.pkg.cancellationHtml) : null;
+
+  const cardBody = (
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <Section title="Customer" icon={UserRound} tone="info">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <CustomerField label="First name" value={row.firstName} onSave={(firstName) => void save({ firstName })} />
+              <CustomerField label="Last name" value={row.lastName} onSave={(lastName) => void save({ lastName })} />
+              <CustomerField label="Phone" value={row.phone} dir="ltr" onSave={(phone) => void save({ phone })} />
+              <CustomerField label="Email" value={row.email} dir="ltr" onSave={(email) => void save({ email })} />
+              <CustomerField label="National id (ת״ז)" value={row.idNumber} dir="ltr" onSave={(idNumber) => void save({ idNumber })} />
+              <CustomerField label="ACC NUM" value={row.accNum} dir="ltr" onSave={(accNum) => void save({ accNum })} />
+            </div>
+            {travelers.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  Travelers ({travelers.reduce((sum, g) => sum + g.passengers.length, 0)})
+                </h3>
+                {travelers.map((group) => (
+                  <div key={group.ref} className="space-y-1">
+                    {travelers.length > 1 && <p className="font-mono text-xs text-muted-foreground">{group.ref}</p>}
+                    <ol className="grid divide-y overflow-hidden rounded-md border sm:grid-cols-2 sm:divide-y-0 sm:[&>li:nth-child(n+3)]:border-t sm:[&>li:nth-child(even)]:border-s">
+                      {group.passengers.map((p, i) => (
+                        <li key={i} className="flex items-baseline gap-2 px-3 py-1.5 text-sm">
+                          <span className="tabular text-xs text-muted-foreground">{i + 1}.</span>
+                          <span dir="auto" className="font-medium">
+                            {group.names[i]}
+                          </span>
+                          <span className="ms-auto text-xs text-muted-foreground">{p.type === "child" ? "Child" : "Adult"}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+            )}
+            {customerWrote}
+          </Section>
+
+          <Section
+            icon={ReceiptText}
+            tone="success"
+            title={`Order${data.bookings.length > 1 ? `s (${data.bookings.length})` : ""}`}
+            description={data.bookings.length ? "What the customer sent from the site." : undefined}
+          >
+            {data.bookings.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No booking from the site yet.{row.type !== "reservation" ? " Send a booking link and the booking will land here." : ""}
+              </p>
+            ) : (
+              <Orders bookings={data.bookings} caseName={name} casePhone={row.phone} owedRefs={owedRefs} onChanged={() => void reload({ quiet: true })} />
+            )}
+          </Section>
+
+          {gapNotice}
+          {seatsSection}
+
+          {data.pkg?.cancellationHtml && (
+            <Section icon={FileText} tone="neutral" title="Cancellation terms" description={`As the tour page shows them (${data.pkg.name}).`}>
+              <p dir="rtl" className="whitespace-pre-line text-sm leading-6">
+                {htmlToText(data.pkg.cancellationHtml)}
+              </p>
+            </Section>
+          )}
+
+          <Section title="History" icon={HistoryIcon} tone="neutral">
+            {historyList}
+          </Section>
+        </div>
+
+        <div className="space-y-6">
+          {productSection}
+          <Section title="Gift" icon={Gift} tone="rose">
+            {data.gifts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{data.departure ? "No gift on this departure." : "Choose a departure to see its gift."}</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {data.gifts.map((g, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <Gift className="h-4 w-4 text-primary" />
+                    <span dir="auto">{g.label}</span>
+                    {g.validUntil && <span className="text-xs text-muted-foreground">until {fmtDate(g.validUntil)}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+
+          <Section title="Source" icon={Megaphone} tone="neutral">
+            {sourceFacts}
+          </Section>
+
+          {linkCard}
+          {notesSection}
         </div>
       </div>
+  );
+
+  // inside the customer page (Alon 20.10): the orders first on the left, then what is opened now and then; the
+  // tour, the booking link and the notes on the right. The person is the page's header, and each order holds its
+  // passengers, the departure's gift and the cancellation terms.
+  const embeddedBody = (
+    <div className="grid gap-5 lg:grid-cols-3">
+      <div className="space-y-4 lg:col-span-2">
+        {(row.message || data.inquiries.length > 0) && (
+          <Section title="What the customer wrote" icon={Users} tone="info">
+            {customerWrote}
+          </Section>
+        )}
+        <Section
+          icon={ReceiptText}
+          tone="success"
+          title={`Orders (${data.bookings.length})`}
+          description={data.bookings.length ? "What the customer sent from the site." : undefined}
+        >
+          {data.bookings.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No booking from the site yet.{row.type !== "reservation" ? " Send a booking link and the booking will land here." : ""}
+            </p>
+          ) : (
+            <Orders
+              rows
+              bookings={data.bookings}
+              caseName={name}
+              casePhone={row.phone}
+              owedRefs={owedRefs}
+              gifts={data.gifts}
+              cancellationText={cancellationText}
+              onChanged={() => void reload({ quiet: true })}
+            />
+          )}
+        </Section>
+        {gapNotice}
+        {seatsSection}
+        <Fold icon={HistoryIcon} tone="neutral" title="Card activity" description={data.history.length ? `${data.history.length} changes` : "Nothing changed yet"}>
+          {historyList}
+        </Fold>
+        <Fold icon={Megaphone} tone="neutral" title="Source" description={sourceLabel(row.source, row.utm)}>
+          {sourceFacts}
+        </Fold>
+      </div>
+      <div className="space-y-4">
+        {productSection}
+        <div id={`card-${row.id}-link`} className="scroll-mt-24">
+          {linkCard}
+        </div>
+        <div id={`card-${row.id}-notes`} className="scroll-mt-24">
+          {notesSection}
+        </div>
+      </div>
+    </div>
   );
   const dialogs = (
     <>
@@ -677,7 +826,6 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
     </>
   );
 
-  const status = statusOf(row.status, statuses);
   // one click for what a rep does all day (Nir 19.10): no answer -> call again tomorrow; the customer came back
   const quickActions = !isClosedStatus(row.status, statuses) && (
     <>
@@ -704,8 +852,8 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
       <div className="space-y-5">
         {/* the card's controls: where the deal stands, whose it is, when to call */}
         <div className="space-y-3 rounded-lg border bg-card p-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">
-            <label className="grid gap-1 text-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid w-full gap-1 text-sm sm:w-48">
               <span className="text-xs text-muted-foreground">Status</span>
               <StatusSelect
                 value={row.status}
@@ -716,11 +864,11 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 className="w-full justify-start border border-input px-2"
               />
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="grid w-full gap-1 text-sm sm:w-40">
               <span className="text-xs text-muted-foreground">Rep</span>
               <RepSelect value={row.assignedTo} reps={reps} currentUserId={data.currentUserId} disabled={busy} onChange={(assignedTo) => void save({ assignedTo })} className="w-full" />
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="grid w-full gap-1 text-sm sm:w-56">
               <span className="text-xs text-muted-foreground">Follow-up day</span>
               <div className="flex items-center gap-1">
                 <FollowUpInput value={row.followUpDate} due={due} className="h-9 w-full" onSave={(followUpDate) => void save({ followUpDate })} />
@@ -731,11 +879,6 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 )}
               </div>
             </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TodayBadge reason={reason} followUpDate={row.followUpDate} today={today} />
-            {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-            {quickActions}
             <div className="ms-auto flex flex-wrap items-center gap-1">
               <Button variant="ghost" size="sm" onClick={() => setMoveOpen(true)} title="This deal is another person's (a relative booked from their own phone)">
                 <UserRound className="h-4 w-4" />
@@ -750,6 +893,11 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
                 Delete
               </Button>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TodayBadge reason={reason} followUpDate={row.followUpDate} today={today} />
+            {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {quickActions}
           </div>
           {row.paymentAnswer === "paid" && (
             <Notice tone="info">
@@ -799,7 +947,7 @@ export function CasePage({ id, embedded, onChanged }: { id: string; embedded?: b
             </Notice>
           )}
         </div>
-        {cardBody}
+        {embeddedBody}
         {dialogs}
       </div>
     );

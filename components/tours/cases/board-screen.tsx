@@ -34,7 +34,6 @@ import {
   PAYMENT_ANSWER_LABELS,
   caseMatches,
   caseName,
-  customerLabel,
   isClosedStatus,
   knownFrom,
   sourceLabel,
@@ -49,7 +48,7 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { InRow, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { CardWhat, CardWho, InRow, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { CasesScreen } from "@/components/tours/cases/cases-screen";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
@@ -71,39 +70,6 @@ interface TodayRow {
 interface OrderRow {
   order: BoardOrder;
   card: CaseRow;
-}
-
-/** Who the row is: the name, then the C-number and the phone. */
-function Who({ card }: { card: CaseRow }) {
-  return (
-    <div className="min-w-0">
-      <div dir="auto" className="truncate font-medium">
-        {caseName(card) || card.phone || card.email || "Customer"}
-      </div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {card.customerNo && <span className="font-mono">{customerLabel(card.customerNo)}</span>}
-        {card.phone && (
-          <span dir="ltr" className="tabular">
-            {card.phone}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** What the deal is for: the tour, then its date or season. */
-function What({ card }: { card: CaseRow }) {
-  return (
-    <div className="min-w-0">
-      <div dir="auto" className="truncate">
-        {card.tourName ?? <span className="text-muted-foreground">Tour not chosen</span>}
-      </div>
-      <div dir="auto" className="tabular text-xs text-muted-foreground">
-        {card.departureCode ? `${card.departureCode}${card.departureDate ? ` · ${fmtDate(card.departureDate)}` : ""}` : (card.season ?? "No date yet")}
-      </div>
-    </div>
-  );
 }
 
 export function BoardScreen() {
@@ -212,7 +178,7 @@ export function BoardScreen() {
           </div>
         ),
       },
-      { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <Who card={row.original.card} /> },
+      { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <CardWho card={row.original.card} /> },
       {
         id: "what",
         accessorFn: (r) => r.card.tourName ?? "",
@@ -226,7 +192,7 @@ export function BoardScreen() {
               </div>
             </div>
           ) : (
-            <What card={row.original.card} />
+            <CardWhat card={row.original.card} />
           ),
       },
       {
@@ -311,7 +277,7 @@ export function BoardScreen() {
           </div>
         ),
       },
-      { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <Who card={row.original.card} /> },
+      { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <CardWho card={row.original.card} /> },
       { id: "tour", accessorFn: (r) => r.card.tourName ?? "", header: "Tour", cell: ({ row }) => <span dir="auto">{row.original.card.tourName ?? EMPTY}</span> },
       {
         id: "departure",
@@ -369,8 +335,8 @@ export function BoardScreen() {
 
   const leadColumns = useMemo<ColumnDef<CaseRow>[]>(
     () => [
-      { id: "who", accessorFn: (c) => caseName(c), header: "Customer", cell: ({ row }) => <Who card={row.original} /> },
-      { id: "what", accessorFn: (c) => c.tourName ?? "", header: "Tour", cell: ({ row }) => <What card={row.original} /> },
+      { id: "who", accessorFn: (c) => caseName(c), header: "Customer", cell: ({ row }) => <CardWho card={row.original} /> },
+      { id: "what", accessorFn: (c) => c.tourName ?? "", header: "Tour", cell: ({ row }) => <CardWhat card={row.original} /> },
       {
         id: "status",
         accessorFn: (c) => c.status,

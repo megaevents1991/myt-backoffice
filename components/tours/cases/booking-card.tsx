@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { CreditCard, Loader2 } from "lucide-react";
+import { CreditCard, FileText, Gift, Loader2 } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice } from "@/lib/tours/format";
 import { updateBooking } from "@/lib/actions/tours-bookings-actions";
 import { Fact, FactList, Notice } from "@/components/tours/ui";
-import { sameCustomer } from "@/lib/tours/cases";
+import { sameCustomer, type CaseGift } from "@/lib/tours/cases";
 import {
   BOOKING_STATUS_HINTS,
   BOOKING_STATUS_LABELS,
@@ -70,6 +71,8 @@ export function BookingCard({
   caseName,
   casePhone,
   seats,
+  gifts,
+  cancellationText,
   onChanged,
 }: {
   booking: BookingRow;
@@ -78,6 +81,10 @@ export function BookingCard({
   /** The case's own customer: a booking from someone else (a matched phone) says so. */
   caseName: string;
   casePhone: string | null;
+  /** The departure's gift, shown beside the booking status (customer page, Alon 20.10). */
+  gifts?: CaseGift[];
+  /** The tour's cancellation terms as text, folded inside the order (customer page, Alon 20.10). */
+  cancellationText?: string | null;
   onChanged: () => void;
 }) {
   const run = useActionToast();
@@ -104,6 +111,19 @@ export function BookingCard({
         <span className="text-sm text-muted-foreground">
           {kindLabel(booking)} · {fmtInstant(booking.createdAt)} · {booking.departureCode ?? EMPTY} {fmtDate(booking.departureStart)}
         </span>
+        {/* at the end of the order's line (Alon 20.10) */}
+        <div className="ms-auto flex items-center gap-3 rounded-md border px-3 py-1.5">
+          <Label htmlFor={`confirmation-${booking.id}`} className="text-sm">
+            Confirmation sent to the customer
+            {booking.confirmationSentAt && <span className="block text-xs text-muted-foreground">{fmtInstant(booking.confirmationSentAt)}</span>}
+          </Label>
+          <Switch
+            id={`confirmation-${booking.id}`}
+            checked={!!booking.confirmationSentAt}
+            disabled={busy}
+            onCheckedChange={(checked) => void change({ confirmationSent: checked })}
+          />
+        </div>
       </div>
 
       {otherCustomer && (
@@ -120,7 +140,7 @@ export function BookingCard({
       )}
       {booking.status === "pending_payment" && <Notice tone="warning">The customer reached the payment page and has not paid. Call them - this is a hot lead.</Notice>}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className={cn("grid gap-3", gifts ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">Booking status</Label>
           <Select value={booking.status} disabled={busy} onValueChange={(status) => void change({ status })}>
@@ -136,6 +156,23 @@ export function BookingCard({
             </SelectContent>
           </Select>
         </div>
+        {/* the departure's gift beside the status (Alon 20.10) */}
+        {gifts && (
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground">Gift</span>
+            <div className="flex min-h-9 items-center gap-2 rounded-md border border-rose-500/25 bg-rose-500/5 px-3 py-1.5 text-sm">
+              <Gift className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-300" />
+              {gifts.length === 0 ? (
+                <span className="text-muted-foreground">No gift on this departure</span>
+              ) : (
+                <span dir="auto" className="min-w-0">
+                  {gifts.map((g) => g.label).join(" · ")}
+                  {gifts[0].validUntil && <span className="text-xs text-muted-foreground"> · until {fmtDate(gifts[0].validUntil)}</span>}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         <div className="space-y-1">
           <Label htmlFor={`receipt-${booking.id}`} className="text-xs text-muted-foreground">
             Receipt No.
@@ -148,18 +185,6 @@ export function BookingCard({
             onBlur={() => receipt !== (booking.receiptNo ?? "") && void change({ receiptNo: receipt })}
           />
         </div>
-      </div>
-      <div className="flex items-center justify-between rounded-md border px-3 py-2">
-        <Label htmlFor={`confirmation-${booking.id}`} className="text-sm">
-          Confirmation sent to the customer
-          {booking.confirmationSentAt && <span className="block text-xs text-muted-foreground">{fmtInstant(booking.confirmationSentAt)}</span>}
-        </Label>
-        <Switch
-          id={`confirmation-${booking.id}`}
-          checked={!!booking.confirmationSentAt}
-          disabled={busy}
-          onCheckedChange={(checked) => void change({ confirmationSent: checked })}
-        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -231,6 +256,19 @@ export function BookingCard({
             <Fact label="Seats">{booking.salesEntryId ? "Added to the departure" : "Not added (not paid)"}</Fact>
           </FactList>
         </div>
+      )}
+
+      {/* the tour's terms, folded inside the order (Alon 20.10) - as text; a fee as of today needs rules we do not store yet */}
+      {cancellationText && (
+        <details className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <summary className="flex cursor-pointer items-center gap-2 font-semibold">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            Cancellation terms <span className="font-normal text-muted-foreground">(as the tour page shows them)</span>
+          </summary>
+          <p dir="rtl" className="mt-2 whitespace-pre-line leading-6">
+            {cancellationText}
+          </p>
+        </details>
       )}
 
       <div className="space-y-1">

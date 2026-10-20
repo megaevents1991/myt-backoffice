@@ -7,7 +7,6 @@ import { Download, ExternalLink, ListChecks, Loader2, MessageCircle, MoreHorizon
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/page-header";
@@ -20,14 +19,13 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { useSessionState, useUrlState } from "@/hooks/use-view-state";
 import { downloadBase64 } from "@/lib/download";
 import { followUpLabel } from "@/lib/reservations/follow-up";
-import { EMPTY, fmtDate, fmtInstant, todayIso } from "@/lib/tours/format";
+import { fmtInstant, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, deleteCase, exportCases, listCases, updateCase } from "@/lib/actions/tours-cases-actions";
 import { Chip, LoadError } from "@/components/tours/ui";
 import {
   TODAY_REASON_LABELS,
   caseMatches,
   caseName,
-  customerLabel,
   followUpDue,
   followUpTone,
   needsCloseReason,
@@ -40,12 +38,14 @@ import {
   type CaseStatus,
 } from "@/lib/tours/cases";
 import {
+  CardWhat,
+  CardWho,
   CloseReasonDialog,
   FollowUpInput,
-  GHOST_FIELD,
   InRow,
   NOBODY,
   RepSelect,
+  StageBar,
   StatusSelect,
   TodayBadge,
   TypeBadge,
@@ -66,51 +66,6 @@ const VIEW_LABELS: Record<View, string> = {
   unassigned: "Unassigned",
 };
 const ALL = "all";
-
-/**
- * A text cell staff type into: saved when it loses focus (Enter too), Esc puts the old value back.
- * It reads as plain text ("-" when empty) and shows its box and its hint only when reached.
- */
-function InlineText({
-  value,
-  placeholder,
-  title,
-  className,
-  onSave,
-}: {
-  value: string | null;
-  placeholder: string;
-  title?: string;
-  className?: string;
-  onSave: (next: string) => void;
-}) {
-  return (
-    <Input
-      key={value ?? ""}
-      dir="auto"
-      defaultValue={value ?? ""}
-      placeholder={EMPTY}
-      aria-label={placeholder}
-      title={title ?? placeholder}
-      className={cn("h-8 px-2", GHOST_FIELD, "placeholder:text-muted-foreground", className)}
-      onFocus={(event) => {
-        event.currentTarget.placeholder = placeholder;
-      }}
-      onBlur={(event) => {
-        event.currentTarget.placeholder = EMPTY;
-        const next = event.target.value.trim();
-        if (next !== (value ?? "")) onSave(next);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-        if (event.key === "Escape") {
-          event.currentTarget.value = value ?? "";
-          event.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
 
 const reasonOf = (row: CaseRow, statuses: readonly CaseStatus[], today: string) => todayReason(row, statuses, today);
 
@@ -232,8 +187,63 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
 
   const columns = useMemo<ColumnDef<CaseRow>[]>(
     () => [
-      // what the row is and why it waits, before who it is (Alon 18.10; the TASK became TODAY's reason - Nir 19.10)
+      // the board's format (Alon 20.10: "ALL is still the old format"): who, what, where it stands - the person's own
+      // fields live on the customer page now; the export still carries every column
       { accessorKey: "type", header: ({ column }) => <SortableHeader label="Type" column={column} />, cell: ({ row }) => <TypeBadge type={row.original.type} /> },
+      {
+        id: "who",
+        accessorFn: (row) => caseName(row),
+        header: ({ column }) => <SortableHeader label="Customer" column={column} />,
+        cell: ({ row }) => (
+          <CardWho card={row.original}>
+            {/* a booking that came without the link from a known customer: same rep, offered for a merge */}
+            {row.original.relatedCaseNo && (
+              <Chip tone="info" className="ms-1.5" title={`Same phone or e-mail as case #${row.original.relatedCaseNo} - open the case to merge them`}>
+                ↔ #{row.original.relatedCaseNo}
+              </Chip>
+            )}
+          </CardWho>
+        ),
+      },
+      {
+        id: "what",
+        accessorFn: (row) => row.departureDate ?? row.tourName ?? "",
+        header: ({ column }) => <SortableHeader label="Tour" column={column} />,
+        cell: ({ row }) => {
+          const { travelers, seatsMissing } = row.original;
+          return (
+            <CardWhat card={row.original}>
+              {/* a closed booking whose travelers hold no seat (seatGap) - the departure still sells them */}
+              {seatsMissing > 0 ? (
+                <Chip tone="warning" className="mt-0.5" title="A closed booking's travelers hold no seat on the departure - open the card and hold them.">
+                  {travelers > 0 ? `${seatsMissing} without a seat` : "No seats"}
+                </Chip>
+              ) : travelers > 0 ? (
+                <span className="text-xs text-muted-foreground">{travelers} seats</span>
+              ) : null}
+            </CardWhat>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: ({ column }) => <SortableHeader label="Status" column={column} />,
+        cell: ({ row }) => (
+          <InRow className="space-y-1">
+            <StatusSelect
+              value={row.original.status}
+              statuses={statuses}
+              disabled={busy === row.original.id}
+              title={row.original.closeReason ? `Closed because: ${row.original.closeReason}` : undefined}
+              future={{ packageId: row.original.packageId, season: row.original.season }}
+              onChange={(status, closeReason, pick) =>
+                void save(row.original, { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}) })
+              }
+            />
+            <StageBar status={row.original.status} hasOrder={!!row.original.bookingRef || row.original.travelers > 0} statuses={statuses} className="flex" />
+          </InRow>
+        ),
+      },
       {
         id: "today",
         accessorFn: (row) => {
@@ -244,49 +254,23 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
         cell: ({ row }) => <TodayBadge reason={reasonOf(row.original, statuses, today)} followUpDate={row.original.followUpDate} today={today} />,
       },
       {
-        accessorKey: "caseNo",
-        header: ({ column }) => <SortableHeader label="ID" column={column} />,
-        cell: ({ row }) => <span className="font-mono text-xs tabular text-muted-foreground">{row.original.caseNo}</span>,
-      },
-      {
-        id: "customer",
-        accessorFn: (row) => row.customerNo ?? 0,
-        header: ({ column }) => <SortableHeader label="Customer" column={column} />,
-        cell: ({ row }) => <span className="font-mono text-xs tabular text-muted-foreground">{customerLabel(row.original.customerNo) || EMPTY}</span>,
-      },
-      {
-        accessorKey: "firstName",
-        header: "First Name",
-        cell: ({ row }) => (
-          <div dir="auto" className="whitespace-nowrap font-medium">
-            {row.original.firstName || EMPTY}
-            {/* a booking that came without the link from a known customer: same rep, offered for a merge */}
-            {row.original.relatedCaseNo && (
-              <Chip tone="info" className="ms-1.5" title={`Same phone or e-mail as case #${row.original.relatedCaseNo} - open the case to merge them`}>
-                ↔ #{row.original.relatedCaseNo}
-              </Chip>
-            )}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "lastName",
-        header: "Last Name",
-        cell: ({ row }) => (
-          <div dir="auto" className="whitespace-nowrap font-medium">
-            {row.original.lastName || EMPTY}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "phone",
-        header: "Phone",
-        // one line, left-to-right, no link colour: the row's WhatsApp / call buttons are the actions
-        cell: ({ row }) => (
-          <div dir="ltr" className="whitespace-nowrap text-start tabular">
-            {row.original.phone || EMPTY}
-          </div>
-        ),
+        accessorKey: "followUpDate",
+        header: ({ column }) => <SortableHeader label="Follow-up" column={column} />,
+        // the day, and under it how it stands (late / today / ahead)
+        cell: ({ row }) => {
+          const due = followUpDue(row.original, statuses, today);
+          const tone = followUpTone(row.original, statuses, today);
+          return (
+            <InRow className="flex flex-col items-start gap-0.5">
+              <FollowUpInput ghost value={row.original.followUpDate} due={due} onSave={(followUpDate) => void save(row.original, { followUpDate })} />
+              {tone && (
+                <span className={cn("ms-2 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[11px] font-semibold", FOLLOW_UP_TONE[tone])}>
+                  {followUpLabel(row.original.followUpDate, today, "en")}
+                </span>
+              )}
+            </InRow>
+          );
+        },
       },
       {
         accessorKey: "assignedTo",
@@ -305,129 +289,14 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
         ),
       },
       {
-        accessorKey: "email",
-        header: "Email",
-        cell: ({ row }) =>
-          row.original.email ? (
-            <InRow>
-              <a
-                href={`mailto:${row.original.email}`}
-                dir="ltr"
-                title={row.original.email}
-                className="block max-w-[14rem] truncate text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-              >
-                {row.original.email}
-              </a>
-            </InRow>
-          ) : (
-            EMPTY
-          ),
-      },
-      {
-        accessorKey: "accNum",
-        header: "ACC NUM",
-        cell: ({ row }) => (
-          <InRow>
-            <InlineText value={row.original.accNum} placeholder="TBD" className="min-w-[9ch]" onSave={(accNum) => void save(row.original, { accNum })} />
-          </InRow>
-        ),
-      },
-      {
-        accessorKey: "notes",
-        header: "Notes",
-        cell: ({ row }) => (
-          <InRow>
-            <InlineText
-              value={row.original.notes}
-              placeholder="Add a note"
-              title={row.original.notes ?? undefined}
-              className="min-w-[16ch]"
-              onSave={(notes) => void save(row.original, { notes })}
-            />
-          </InRow>
-        ),
-      },
-      {
-        accessorKey: "tourName",
-        header: ({ column }) => <SortableHeader label="Product" column={column} />,
-        cell: ({ row }) => (
-          <div dir="auto" className="max-w-[14rem] truncate" title={row.original.tourName ?? undefined}>
-            {row.original.tourName || EMPTY}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: ({ column }) => <SortableHeader label="Status" column={column} />,
-        cell: ({ row }) => (
-          <InRow>
-            <StatusSelect
-              value={row.original.status}
-              statuses={statuses}
-              disabled={busy === row.original.id}
-              title={row.original.closeReason ? `Closed because: ${row.original.closeReason}` : undefined}
-              future={{ packageId: row.original.packageId, season: row.original.season }}
-              onChange={(status, closeReason, pick) =>
-                void save(row.original, { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}) })
-              }
-            />
-          </InRow>
-        ),
-      },
-      {
         id: "source",
         accessorFn: (row) => sourceLabel(row.source, row.utm),
         header: "Source",
         cell: ({ row }) => <div className="whitespace-nowrap text-muted-foreground">{sourceLabel(row.original.source, row.original.utm)}</div>,
       },
       {
-        accessorKey: "followUpDate",
-        header: ({ column }) => <SortableHeader label="Follow-up" column={column} />,
-        // the Mega Events reservations' look: the day, and under it how it stands (late / today / ahead)
-        cell: ({ row }) => {
-          const due = followUpDue(row.original, statuses, today);
-          const tone = followUpTone(row.original, statuses, today);
-          return (
-            <InRow className="flex flex-col items-start gap-0.5">
-              <FollowUpInput ghost value={row.original.followUpDate} due={due} onSave={(followUpDate) => void save(row.original, { followUpDate })} />
-              {tone && (
-                <span className={cn("ms-2 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[11px] font-semibold", FOLLOW_UP_TONE[tone])}>
-                  {followUpLabel(row.original.followUpDate, today, "en")}
-                </span>
-              )}
-            </InRow>
-          );
-        },
-      },
-      {
-        accessorKey: "departureDate",
-        header: ({ column }) => <SortableHeader label="Departure" column={column} />,
-        cell: ({ row }) => {
-          const { departureDate, departureCode, travelers, seatsMissing } = row.original;
-          // a closed booking whose travelers hold no seat (seatGap) - the departure still sells them
-          const short =
-            seatsMissing > 0 ? (
-              <Chip tone="warning" className="mt-0.5" title="A closed booking's travelers hold no seat on the departure - open the case and hold them.">
-                {travelers > 0 ? `${seatsMissing} without a seat` : "No seats"}
-              </Chip>
-            ) : null;
-          return departureDate ? (
-            <div className="whitespace-nowrap tabular">
-              {fmtDate(departureDate)}
-              <span className="block text-xs text-muted-foreground">
-                {departureCode}
-                {travelers > 0 && ` · ${travelers} seats`}
-              </span>
-              {short}
-            </div>
-          ) : (
-            (short ?? EMPTY)
-          );
-        },
-      },
-      {
         accessorKey: "createdAt",
-        header: ({ column }) => <SortableHeader label="Created" column={column} />,
+        header: ({ column }) => <SortableHeader label="Since" column={column} />,
         cell: ({ row }) => <div className="whitespace-nowrap tabular text-muted-foreground">{fmtInstant(row.original.createdAt)}</div>,
       },
       {
@@ -555,7 +424,7 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
           defaultPageSize={50}
           pageSizeOptions={[25, 50, 100]}
           getRowId={(row) => row.id}
-          defaultSorting={[{ id: "caseNo", desc: true }]}
+          defaultSorting={[{ id: "createdAt", desc: true }]}
           enableRowSelection
           rowSelection={selection}
           onRowSelectionChange={setSelection}

@@ -675,6 +675,8 @@ export interface CaseRow {
   closeReason: string | null;
   /** The customer's earlier case a site booking named (booking_create) - same rep, offered for a merge. */
   relatedCaseNo: number | null;
+  /** The booking link prepared on the card (leads.offer) - the card's outside shortcut says where it stands. */
+  offer?: CaseOffer | null;
 }
 
 export const caseName = (row: Pick<CaseRow, "firstName" | "lastName">): string =>

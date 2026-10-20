@@ -444,6 +444,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
     closeReason: r.close_reason ?? null,
     relatedCaseNo: r.related_lead_id ? (x.related.get(r.related_lead_id) ?? null) : null,
+    offer: parseOffer(r.offer),
   };
 }
 
