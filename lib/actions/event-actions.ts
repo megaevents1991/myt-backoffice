@@ -96,8 +96,8 @@ export async function createEvent(event: Omit<Event, "id">) {
   // `judge: null` - RULE ONLY here, deliberately. This runs inside the user's save request and
   // has no run-wide budget to share (every other AI call site gets one), so leaving the judge on
   // would mean up to one 12s AI call per competitor per scope added to a single save - and the
-  // factory's bulk-approve, which calls createEvent once per draft, could fire hundreds of
-  // unbudgeted calls from one click. An ambiguous new event simply waits for tonight's pass,
+  // uploader's build loop, which calls createEvent once per show, could fire hundreds of
+  // unbudgeted calls from one brief. An ambiguous new event simply waits for tonight's pass,
   // where both the ceiling and the timing are accounted for.
   try {
     const { matchAllForEvent } = await import("@/lib/services/price-light-match");

@@ -13,8 +13,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { liveRowToEvent } from "@/lib/provider-batch";
-import { createDraftBatch } from "@/lib/actions/factory-actions";
 import { Input } from "@/components/ui/input";
 import {
   Loader2,
@@ -27,8 +25,6 @@ import {
   Search,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/auth-context";
-import { ADMIN_ROLES } from "@/types/auth.types";
 import {
   getLiveTickets,
   getLiveSyncStatus,
@@ -63,9 +59,6 @@ interface LiveSyncStatus {
 export function LiveEventsContent() {
   const { toast } = useToast();
   const router = useRouter();
-  // The factory's intake is admin-only (createDraftBatch -> requireAdmin).
-  const { user } = useAuth();
-  const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
 
   // State management
   // No UI sets these - the filter/sort controls for them were never built, so
@@ -91,21 +84,6 @@ export function LiveEventsContent() {
       else next.set(id, row);
       return next;
     });
-  const sendToFactory = async () => {
-    const rows = Array.from(selectedRows.values());
-    if (rows.length === 0) return;
-    const result = await createDraftBatch({
-      source: "live",
-      scope: { manual: true, count: rows.length },
-      payloads: rows.map(liveRowToEvent),
-    });
-    if (!result.ok) {
-      toast({ variant: "destructive", title: "Factory intake failed" });
-      return;
-    }
-    setSelectedRows(new Map());
-    window.open("/factory", "_blank");
-  };
   const openBatchCreate = () => {
     const rows = Array.from(selectedRows.values());
     if (rows.length === 0) return;
@@ -1130,11 +1108,6 @@ export function LiveEventsContent() {
                       <Button size="sm" onClick={openBatchCreate}>
                         Create {selectedRows.size} events
                       </Button>
-                      {isAdmin && (
-                        <Button size="sm" variant="secondary" onClick={sendToFactory}>
-                          Send to factory
-                        </Button>
-                      )}
                     </div>
                   </div>
                 )}

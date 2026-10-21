@@ -1,22 +1,6 @@
-import { Suspense } from "react";
-import { PageHeader } from "@/components/page-header";
-import { Skeleton } from "@/components/ui/skeleton";
-import { FactoryClient } from "./factory-client";
+import { redirect } from "next/navigation";
 
-// The events factory (spec docs/superpowers/specs/2026-09-02, section 8):
-// provider tables send selections here as drafts, the build loop fills them
-// through the shared blocks, and the grid is where a human approves in bulk.
-export default function FactoryPage() {
-  return (
-    <div className="container mx-auto space-y-6 py-10">
-      <PageHeader
-        title="מפעל האירועים"
-        description="טיוטות נבנות אוטומטית — כרטיסים מזיכרון האצטדיון, מחירים חיים, iata — ואתה מאשר בבת אחת. שולחים לכאן מכל טבלת ספק (Send to factory)."
-      />
-      {/* The client keeps its view in the URL (useSearchParams) - that needs a boundary. */}
-      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-        <FactoryClient />
-      </Suspense>
-    </div>
-  );
+// The Events Factory was replaced by the AI Uploader (2026-10-21): old links and bookmarks land there.
+export default function FactoryRedirect() {
+  redirect("/uploader");
 }

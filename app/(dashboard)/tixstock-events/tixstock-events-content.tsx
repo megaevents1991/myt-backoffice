@@ -26,15 +26,12 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/auth-context";
-import { ADMIN_ROLES } from "@/types/auth.types";
 import { getTixStockEvents, getTixStockTickets, triggerTixStockSync } from "@/lib/actions/tixstock-actions";
 import { matchesSearch } from "@/lib/search";
 import { TixStockEventDB, TixStockListing } from "@/types/tixstock.types";
 import { Checkbox } from "@/components/ui/checkbox";
 import { tixstockToEvent } from "./batch/tixstock-to-event";
 import { batchGroupOf, homeTeamOf, isHomeGame } from "@/lib/tixstock-home";
-import { createDraftBatch } from "@/lib/actions/factory-actions";
 import {
   FilterSortControls,
   PaginationControls,
@@ -69,9 +66,6 @@ const isKnownEmpty = (event: TixStockEventDB): boolean => {
 
 export function TixStockEventsContent() {
   const { toast } = useToast();
-  // The factory's intake is admin-only (createDraftBatch -> requireAdmin).
-  const { user } = useAuth();
-  const isAdmin = !!user && ADMIN_ROLES.includes(user.role);
 
   // Data states
   const [events, setEvents] = useState<TixStockEventDB[]>([]);
@@ -95,25 +89,6 @@ export function TixStockEventsContent() {
 
   // Batch multi-select state (scoped to the performer-filtered events list)
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
-
-  const sendToFactory = async () => {
-    if (selectedEvents.length === 0) return;
-    const result = await createDraftBatch({
-      source: "tixstock",
-      scope: { manual: true, count: selectedEvents.length },
-      // The TixStock id rides the draft so stadium memory stamps it on the copies.
-      payloads: selectedEvents.map((row) => ({
-        ...tixstockToEvent(row),
-        source_event_id: row.event_id,
-      })),
-    });
-    if (!result.ok) {
-      toast({ variant: "destructive", title: "Factory intake failed" });
-      return;
-    }
-    setSelectedEventIds(new Set());
-    window.open("/factory", "_blank");
-  };
 
   // Stash the selected events and open the shared create form (real /events/new in
   // batch mode). One Save there creates one event per selected TixStock event.
@@ -761,11 +736,6 @@ export function TixStockEventsContent() {
                     <Button size="sm" onClick={openBatchCreate}>
                       Create {selectedEventIds.size} events
                     </Button>
-                    {isAdmin && (
-                      <Button size="sm" variant="secondary" onClick={sendToFactory}>
-                        Send to factory
-                      </Button>
-                    )}
                   </div>
                 </div>
               )}

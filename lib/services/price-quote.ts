@@ -1,5 +1,5 @@
 // One pricing brain. Form buttons, creation auto-fill, the nightly sync and
-// the factory all quote through here - the number is the same everywhere.
+// the tour uploader all quote through here - the number is the same everywhere.
 //
 // Dor's rules (spec docs/superpowers/specs/2026-09-02-events-factory-design.md,
 // units fixed 2026-09-07):

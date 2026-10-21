@@ -38,7 +38,7 @@ export const NAV_LABELS: Record<string, L> = {
   "/reservations": l("Reservations", "הזמנות"),
   "/tasks": l("Tasks", "משימות"),
   "/events": l("Events", "אירועים"),
-  "/factory": l("Events Factory", "מפעל האירועים"),
+  "/uploader": l("AI Uploader", "העלאה חכמה"),
   "/price-changes": l("Price Changes", "שינויי מחיר"),
   "/price-light": l("Price Light", "רמזור מחירים"),
   "/offline-flights": l("Offline Flights", "טיסות אופליין"),

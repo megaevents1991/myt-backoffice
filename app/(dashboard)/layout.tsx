@@ -10,8 +10,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { Topbar } from "@/components/topbar";
 import { DeepLinkScroll } from "@/components/deep-link-scroll";
+import { UploaderWaitingToast } from "@/components/uploader-waiting-toast";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useToast } from "@/hooks/use-toast";
+import { ADMIN_ROLES } from "@/types/auth.types";
 
 export default function DashboardLayout({
   children,
@@ -128,6 +130,8 @@ export default function DashboardLayout({
         </SidebarInset>
         <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
         <DeepLinkScroll />
+        {/* "The AI is waiting for an answer" - the tour uploader's signal, admins only. */}
+        {ADMIN_ROLES.includes(user.role) && <UploaderWaitingToast />}
       </SidebarProvider>
     </CompanyProvider>
   );

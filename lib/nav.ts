@@ -32,7 +32,6 @@ import {
   UserCog,
   Users,
   TrendingUp,
-  Factory,
   BookOpen,
   Table2,
 } from "lucide-react";
@@ -173,11 +172,13 @@ const NAV: NavGroup[] = [
         productType: "tours",
       },
       {
-        name: "Events Factory",
-        href: "/factory",
-        icon: Factory,
+        // Replaced the Events Factory (2026-10-21): the uploader reads a brief, builds the
+        // tour's hidden events and waits for an approval. /factory redirects here.
+        name: "AI Uploader",
+        href: "/uploader",
+        icon: Bot,
         productType: "events",
-        keywords: "drafts batch \u05de\u05e4\u05e2\u05dc \u05d8\u05d9\u05d5\u05d8\u05d5\u05ea",
+        keywords: "uploader agent tour upload \u05e1\u05d5\u05db\u05df \u05d4\u05e2\u05dc\u05d0\u05d4 \u05d8\u05d5\u05e8 \u05d0\u05de\u05df \u05e7\u05d1\u05d5\u05e6\u05d4",
         roles: ADMIN_ROLES,
       },
       {
@@ -597,7 +598,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   "price-changes": "Price Changes",
   "price-light": "Price Light",
   "ai-factory": "AI Factory",
-  factory: "Events Factory",
+  uploader: "AI Uploader",
   guide: "Guide",
   "event-tags": "Tags & Rules",
   homepage: "Homepage",
