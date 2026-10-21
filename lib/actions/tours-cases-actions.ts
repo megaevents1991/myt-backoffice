@@ -32,6 +32,8 @@ import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
 import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
+import { countUnseen } from "@/lib/services/whatsapp-db";
+import { threadOf } from "@/lib/services/whatsapp-thread";
 import { ROOM_COMPOSITIONS, roomPrice, toPriceMatrix } from "@/lib/tours/pricing";
 import { departureSiteId, LEAD_KIND_LABELS } from "@/types/tours.types";
 import type { Database, Json } from "@/types/database.types";
@@ -69,7 +71,6 @@ import {
   todayReason,
   whatsappAppLink,
   whatsappPhone,
-  emptyWaThread,
   type BoardOrder,
   type BoardPage,
   type CaseCandidate,
@@ -126,12 +127,13 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at, wa_seen_at";
 
-/** The same without notes_at (migration 20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
-const CASE_COLUMNS_NO_NOTES_AT = CASE_COLUMNS.replace(", notes_at", "");
+/** The same without wa_seen_at (20261021172647), without notes_at (20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
+const CASE_COLUMNS_NO_WA = CASE_COLUMNS.replace(", wa_seen_at", "");
+const CASE_COLUMNS_NO_NOTES_AT = CASE_COLUMNS_NO_WA.replace(", notes_at", "");
 const LEGACY_CASE_COLUMNS = CASE_COLUMNS_NO_NOTES_AT.replace(", customer_id, to_file, season", "");
-const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
+const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_WA, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
 /** Reads with the full column list, then without each column set a missing migration would lack. */
 async function readCaseColumns<T extends { error: { code?: string; message?: string } | null | undefined }>(read: (columns: string) => PromiseLike<T>): Promise<T> {
   let answer = await read(CASE_COLUMN_SETS[0]);
@@ -141,7 +143,7 @@ async function readCaseColumns<T extends { error: { code?: string; message?: str
 const missingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
   error?.code === "42703" ||
   error?.code === "PGRST204" ||
-  /(close_reason|related_lead_id|offer|customer_id|to_file|season|notes_at).*does not exist/.test(error?.message ?? "");
+  /(close_reason|related_lead_id|offer|customer_id|to_file|season|notes_at|wa_seen_at).*does not exist/.test(error?.message ?? "");
 /** public.customers is not there yet (the migration runs on the push to master). */
 const missingTable = (error: { code?: string; message?: string } | null | undefined): boolean =>
   error?.code === "42P01" || error?.code === "PGRST205" || /relation .*customers.* does not exist/.test(error?.message ?? "");
@@ -183,6 +185,7 @@ type CaseRecord = Pick<
   | "to_file"
   | "season"
   | "notes_at"
+  | "wa_seen_at"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 type CustomerRecord = Database["public"]["Tables"]["customers"]["Row"];
@@ -216,6 +219,8 @@ interface Enrichment {
   customers: Map<string, number>;
   /** The case's orders: its site bookings and the seat rows a rep typed (each with its T number). */
   orders: Map<string, RawOrder[]>;
+  /** Inbound WhatsApp messages after each card's wa_seen_at (empty before the migration or on a failed read). */
+  waUnseen: Map<string, number>;
 }
 
 const clean = (value: string | null | undefined, max: number): string | null => {
@@ -250,6 +255,7 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     related: new Map(),
     customers: new Map(),
     orders: new Map(),
+    waUnseen: new Map(),
   };
   const addOrder = (leadId: string, order: RawOrder) => out.orders.set(leadId, [...(out.orders.get(leadId) ?? []), order]);
 
@@ -370,7 +376,15 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
       for (const l of data ?? []) out.related.set(l.id, l.case_no);
     }
   };
-  await Promise.all([readDepartures(), readPackages(), readBookings(), readSeats(), readRelated(), readCustomers()]);
+  // a failed WhatsApp count never fails the board - the chip reads 0 and the thread on the card says why
+  const readWaUnseen = async () => {
+    try {
+      out.waUnseen = await countUnseen(records.map((r) => ({ id: r.id, waSeenAt: r.wa_seen_at ?? null })));
+    } catch (e) {
+      console.error("cases: wa unseen count failed:", e instanceof Error ? e.message : e);
+    }
+  };
+  await Promise.all([readDepartures(), readPackages(), readBookings(), readSeats(), readRelated(), readCustomers(), readWaUnseen()]);
   // the bookings' own departures (a booking may sit on another date than its case)
   const bookingDeps = [...out.orders.values()].flat().map((o) => o.departureId).filter((id) => !out.departures.has(id));
   if (bookingDeps.length) {
@@ -457,8 +471,8 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     paymentAnswer: paymentAnswerOf(r.status, x.bookingStatuses.get(r.id) ?? []),
     confirmationPending: booking?.confirmationPending ?? false,
     // filled by the thread read (Task 7 of the WhatsApp plan); 0 / null until then and before the migration
-    waUnseen: 0,
-    waSeenAt: null,
+    waUnseen: x.waUnseen.get(r.id) ?? 0,
+    waSeenAt: r.wa_seen_at ?? null,
     travelers: x.travelers.get(r.id) ?? 0,
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
     closeReason: r.close_reason ?? null,
@@ -495,6 +509,7 @@ const withDefaults = (record: CaseRecord): CaseRecord => ({
   to_file: record.to_file ?? false,
   season: record.season ?? null,
   notes_at: record.notes_at ?? null,
+  wa_seen_at: record.wa_seen_at ?? null,
 });
 
 /** Every case of the company (not deleted), newest first - tolerant of the close_reason migration. */
@@ -1085,7 +1100,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       return data ?? [];
     };
 
-    const [statuses, reps, x, departure, bookings, seats, history] = await Promise.all([
+    const [statuses, reps, x, departure, bookings, seats, history, whatsapp] = await Promise.all([
       statusesOf(company),
       repsOf(company),
       enrich(company.id, [record]),
@@ -1093,6 +1108,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       readBookings(),
       readSeats(),
       historyOf(id),
+      threadOf(company, record.customer_id ?? null, record.phone ? [record.phone] : []),
     ]);
 
     const packageId = record.package_id ?? departure?.package_id ?? null;
@@ -1151,7 +1167,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       payload,
       bookings: bookings.map((b) => ({ ...b, paymentLog: paymentLog.get(b.id) ?? [] })),
       cancellationRules,
-      whatsapp: emptyWaThread(),
+      whatsapp,
       sales,
       departure: departure
         ? {
@@ -1807,7 +1823,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
     ]);
     if (cardsAnswer.error) throw new Error(`leads: ${cardsAnswer.error.message}`);
     const records = cardsAnswer.rows.map(withDefaults);
-    const x = await enrich(company.id, records);
+    const [x, whatsapp] = await Promise.all([enrich(company.id, records), threadOf(company, customer.id, customer.phones ?? [])]);
     const today = todayIso();
     // the viewer's cards; the others are counted, never listed (21.10) - what a card knows is still read over all of them
     const all = records.map((r) => toCaseRow(r, x, statuses));
@@ -1861,7 +1877,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
       viewer,
       hiddenCards: all.length - cards.length,
       travelled,
-      whatsapp: emptyWaThread(),
+      whatsapp,
     });
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the customer");

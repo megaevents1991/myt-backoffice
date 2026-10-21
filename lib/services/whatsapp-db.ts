@@ -424,6 +424,28 @@ export async function findCustomers(companyId: string, phoneKey: string): Promis
   }));
 }
 
+export interface WaCustomerConsent {
+  phoneKeys: string[];
+  waConsent: string;
+  waConsentSource: string | null;
+  waConsentAt: string | null;
+  waLastInAt: string | null;
+}
+
+/** The customer's keys and consent, scoped to the company; null when not theirs. Missing wa_* columns read as "none". */
+export async function customerWa(companyId: string, customerId: string): Promise<WaCustomerConsent | null> {
+  const read = (columns: string) => supabaseTyped.from("customers").select(columns).eq("company_id", companyId).eq("id", customerId).is("is_deleted", null).maybeSingle();
+  let answer = await read("id, phone_keys, wa_consent, wa_consent_source, wa_consent_at, wa_last_in_at");
+  if (answer.error && missingColumn(answer.error)) {
+    warnOnce("customers.wa", "customers.wa_* columns are missing (migration not applied)");
+    answer = await read("id, phone_keys");
+  }
+  if (answer.error) throw new Error(`customers: ${answer.error.message}`);
+  const r = answer.data as unknown as { phone_keys?: string[] | null; wa_consent?: string; wa_consent_source?: string | null; wa_consent_at?: string | null; wa_last_in_at?: string | null } | null;
+  if (!r) return null;
+  return { phoneKeys: r.phone_keys ?? [], waConsent: r.wa_consent ?? "none", waConsentSource: r.wa_consent_source ?? null, waConsentAt: r.wa_consent_at ?? null, waLastInAt: r.wa_last_in_at ?? null };
+}
+
 export async function setCustomerFields(customerId: string, patch: WaCustomerPatch): Promise<void> {
   const row: Record<string, unknown> = {};
   if (patch.waLastInAt !== undefined) row.wa_last_in_at = patch.waLastInAt;

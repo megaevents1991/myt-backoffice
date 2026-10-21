@@ -16,7 +16,7 @@ import type { BoardViewer } from "@/lib/tours/board";
 import type { BookingRow } from "@/components/tours/bookings/shared";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
 import type { CancellationRule } from "@/lib/tours/cancellation";
-import type { WaMessageType } from "@/lib/whatsapp/rules";
+import { canSendText, type WaMessageType } from "@/lib/whatsapp/rules";
 
 // ---------------------------------------------------------------- TYPE
 export const CASE_TYPES = ["reservation", "lead", "potential"] as const;
@@ -1045,6 +1045,58 @@ export const emptyWaThread = (): WaThread => ({
   windowOpen: false,
   connected: false,
 });
+
+/**
+ * The thread for the card: oldest first; the 24-hour window from the customer's own stamp (wa_last_in_at), else
+ * from the newest LIVE inbound message on the page (a history row opens no window); no customer row = no consent.
+ */
+export function assembleThread(input: {
+  newestFirst: readonly WaThreadMessage[];
+  hasMore: boolean;
+  consent: WaThread["consent"] | null;
+  lastInAt: string | null;
+  connected: boolean;
+  now: string;
+}): WaThread {
+  const newestInbound = input.newestFirst.find((m) => m.direction === "in" && m.origin === "customer")?.sentAt ?? null;
+  const lastInAt = input.lastInAt ?? newestInbound;
+  return {
+    messages: [...input.newestFirst].reverse(),
+    hasMore: input.hasMore,
+    consent: input.consent ?? { state: "none", source: null, at: null },
+    lastInAt,
+    windowOpen: canSendText(lastInAt, input.now),
+    connected: input.connected,
+  };
+}
+
+/** The phone keys a thread is read over: the customer's stored keys plus the keys of the phones at hand, deduped, blanks out. */
+export function threadKeys(phoneKeys: readonly string[] | null | undefined, phones: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const key of [...(phoneKeys ?? []), ...phones.map((p) => phoneKey(p))]) if (key && !out.includes(key)) out.push(key);
+  return out;
+}
+
+/** The delivery ticks of an outbound message; nothing for an inbound one. */
+export function deliveryMark(status: string, error: string | null): string {
+  switch (status) {
+    case "accepted":
+    case "sent":
+      return "✓";
+    case "delivered":
+      return "✓✓";
+    case "read":
+      return "✓✓ נקרא";
+    case "failed":
+      return `✗ ${error ?? "לא נשלח"}`;
+    default:
+      return "";
+  }
+}
+
+const ORIGIN_LABELS: Record<string, string> = { app: "מהאפליקציה", automation: "אוטומציה", broadcast: "דיוור", history: "היסטוריה" };
+/** The tag on a bubble that came neither from the customer nor from this screen. */
+export const originLabel = (origin: string): string => ORIGIN_LABELS[origin] ?? "";
 
 /** A case another one may be merged with - what the picker shows. */
 export interface CaseCandidate {

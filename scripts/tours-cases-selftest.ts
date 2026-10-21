@@ -6,6 +6,11 @@
 // never disappear, a rename keeps the key), and the booking link with its composition.
 import assert from "node:assert/strict";
 import {
+  assembleThread,
+  deliveryMark,
+  originLabel,
+  threadKeys,
+  type WaThreadMessage,
   DEFAULT_STATUSES,
   bookingBlocksDelete,
   bookingLink,
@@ -669,4 +674,39 @@ assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).cards[0].a
   assert.ok(todayRank("whatsapp") < todayRank("payment"));
 }
 
+// ---- WhatsApp on the card (phase 1): the thread as the card reads it
+{
+  const msg = (id: string, direction: "in" | "out", sentAt: string, origin = direction === "in" ? "customer" : "api"): WaThreadMessage => ({
+    id, waMessageId: `wamid.${id}`, direction, origin, type: "text", text: id, mediaUrl: null, mediaMime: null, template: null, status: direction === "in" ? "received" : "sent", error: null, sentAt, sentBy: null, caseId: null,
+  });
+  const newestFirst = [msg("c", "out", "2026-10-21T09:30:00Z"), msg("b", "in", "2026-10-21T09:00:00Z"), msg("a", "in", "2026-10-20T08:00:00Z")];
+  const thread = assembleThread({ newestFirst, hasMore: true, consent: { state: "form", source: "site_form:x", at: "2026-10-01T00:00:00Z" }, lastInAt: null, connected: true, now: "2026-10-21T10:00:00Z" });
+  assert.deepEqual(thread.messages.map((m) => m.id), ["a", "b", "c"], "oldest first on the card");
+  assert.equal(thread.hasMore, true);
+  assert.equal(thread.lastInAt, "2026-10-21T09:00:00Z", "no stamp on the customer: the newest inbound message");
+  assert.equal(thread.windowOpen, true);
+  assert.equal(thread.connected, true);
+  assert.deepEqual(thread.consent, { state: "form", source: "site_form:x", at: "2026-10-01T00:00:00Z" });
+  const stamped = assembleThread({ newestFirst, hasMore: false, consent: null, lastInAt: "2026-10-19T09:00:00Z", connected: false, now: "2026-10-21T10:00:00Z" });
+  assert.equal(stamped.lastInAt, "2026-10-19T09:00:00Z", "the customer stamp wins over the page");
+  assert.equal(stamped.windowOpen, false);
+  assert.deepEqual(stamped.consent, { state: "none", source: null, at: null }, "no customer row = no consent");
+  assert.equal(assembleThread({ newestFirst: [], hasMore: false, consent: null, lastInAt: null, connected: true, now: "2026-10-21T10:00:00Z" }).lastInAt, null);
+  assert.equal(assembleThread({ newestFirst: [msg("h", "in", "2026-10-21T09:00:00Z", "history")], hasMore: false, consent: null, lastInAt: null, connected: true, now: "2026-10-21T10:00:00Z" }).lastInAt, null, "a history row opens no window");
+  assert.deepEqual(threadKeys(["527654321", ""], ["+972 52-765-4321", "054-1234567", ""]), ["527654321", "541234567"], "the customer keys plus the card phones, deduped");
+  assert.deepEqual(threadKeys(null, ["0541234567"]), ["541234567"]);
+  assert.equal(deliveryMark("accepted", null), "✓");
+  assert.equal(deliveryMark("sent", null), "✓");
+  assert.equal(deliveryMark("delivered", null), "✓✓");
+  assert.equal(deliveryMark("read", null), "✓✓ נקרא");
+  assert.equal(deliveryMark("failed", "131026: no WhatsApp"), "✗ 131026: no WhatsApp");
+  assert.equal(deliveryMark("failed", null), "✗ לא נשלח");
+  assert.equal(deliveryMark("received", null), "", "an inbound message carries no ticks");
+  assert.equal(originLabel("app"), "מהאפליקציה");
+  assert.equal(originLabel("automation"), "אוטומציה");
+  assert.equal(originLabel("broadcast"), "דיוור");
+  assert.equal(originLabel("history"), "היסטוריה");
+  assert.equal(originLabel("customer"), "");
+  assert.equal(originLabel("api"), "");
+}
 console.log("tours-cases selftest: ok");

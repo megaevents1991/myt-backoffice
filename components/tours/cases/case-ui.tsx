@@ -145,6 +145,14 @@ export function CardWhat({ card, children }: { card: CaseRow; children?: ReactNo
       <div dir="auto" className="tabular text-xs text-muted-foreground">
         {card.departureCode ? `${card.departureCode}${card.departureDate ? ` · ${fmtDate(card.departureDate)}` : ""}` : (card.season ?? "No date yet")}
       </div>
+      {card.waUnseen > 0 && (
+        <span
+          className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+          title="הודעות חדשות בוואטסאפ"
+        >
+          💬 {card.waUnseen}
+        </span>
+      )}
       {children}
     </div>
   );

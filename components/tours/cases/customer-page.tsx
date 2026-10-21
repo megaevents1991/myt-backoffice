@@ -40,6 +40,7 @@ import { FollowUpInput, MailButton, StageBar, StatusTag, TodayBadge, WhatsAppBut
 import { CasePage, type CardFocus } from "@/components/tours/cases/case-page";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { MergeCustomerDialog } from "@/components/tours/cases/customer-dialogs";
+import { WhatsappThread } from "@/components/tours/cases/whatsapp-thread";
 
 /** A field of the customer header: saved when it loses focus (Enter too), Esc puts the old value back. */
 function HeaderField({
@@ -531,6 +532,12 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
           </div>
         </section>
       ))}
+
+      {/* the person's WhatsApp thread - one conversation over every card (21.10) */}
+      <section className="space-y-3 rounded-lg border bg-card p-4" aria-label="WhatsApp">
+        <h2 className="font-display text-base font-semibold">WhatsApp</h2>
+        <WhatsappThread thread={data.whatsapp} customerId={customer.id} caseId={null} phone={customer.phones[0] ?? null} firstName={customer.firstName} />
+      </section>
 
       <section className="space-y-3" aria-label="Cards">
         <div className="flex flex-wrap items-baseline gap-2">

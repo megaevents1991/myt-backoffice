@@ -15,6 +15,7 @@ import {
   Loader2,
   MapPinned,
   Megaphone,
+  MessageCircle,
   PlusCircle,
   ReceiptText,
   StickyNote,
@@ -77,6 +78,7 @@ import { BalanceChip } from "@/components/tours/cases/order-money";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { MergeDialog } from "@/components/tours/cases/merge-dialog";
 import { MoveCardDialog } from "@/components/tours/cases/customer-dialogs";
+import { WhatsappThread } from "@/components/tours/cases/whatsapp-thread";
 
 /** Fields of a form that the page already shows in its own place. */
 const SHOWN_PAYLOAD_KEYS = new Set(["name", "phone", "email", "message", "matched_by", "acceptance", "website", "related_case", "merged", "inquiries", "joined_into"]);
@@ -804,6 +806,22 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
         </Section>
         {gapNotice}
         {seatsSection}
+        <Fold
+          icon={MessageCircle}
+          tone="neutral"
+          title="WhatsApp"
+          description={row.waUnseen ? `${row.waUnseen} חדשות` : data.whatsapp.messages.length ? `${data.whatsapp.messages.length} הודעות` : "אין הודעות"}
+          defaultOpen={row.waUnseen > 0}
+        >
+          <WhatsappThread
+            thread={data.whatsapp}
+            customerId={row.customerId}
+            caseId={row.id}
+            phone={row.phone}
+            firstName={row.firstName}
+            onSeen={() => setData((d) => (d ? { ...d, row: { ...d.row, waUnseen: 0 } } : d))}
+          />
+        </Fold>
         <Fold icon={HistoryIcon} tone="neutral" title="Card activity" description={data.history.length ? `${data.history.length} changes` : "Nothing changed yet"}>
           {historyList}
         </Fold>
