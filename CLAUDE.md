@@ -427,6 +427,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > source. Missing env -> the tab says so. Measured 14.10: 30 days = 723 + 3,757 rows, 1.3 s. (g) Instagram and Alerts
 > follow the period. Selftests: `marketing-range`, `marketing-funnel`, `marketing-google`, `marketing-traffic`
 > (+ `marketing-pnl` updated).
+>
+> **Time to purchase tab (2026-10-21, Tom: "דוח הזמן מהכניסה לאתר ועד לרכישה"; Dor picked the bases).** `?tab=timelag`,
+> ONE action `getTimeToPurchase` (`lib/actions/marketing-time-lag-actions.ts`), rules pure in
+> `lib/marketing/time-to-purchase.ts` (selftest `marketing-time-lag`). Two bases side by side, never summed: **OURS in
+> hours** = a Paid order's `created_at` minus the EARLIEST `utm_touches.visited_at` of the order (`readTouches` selects it
+> now; a touch exists only for a visit that carried a UTM / gclid / fbclid, main's cookie keeps 5 for 90 days), by the
+> Executive funnel's source rule and under the bar's source filter - an order with no dated touch is "not measured"
+> (direct, organic, agent-typed; "No UTM" by definition), counted never guessed; **GA4 in days** = purchase events by
+> `date` minus the user's `firstSessionDate` (one report, every buyer, no filter, "(not set)" = unmeasured). Buckets
+> <1 h / 1-24 h / 1-3 d / 3-7 d / 7-30 d / 30+ d and same day / 1 / 2-3 / 4-7 / 8-30 / 30+ d. The two halves are cached
+> apart, 10 min, tag `marketing-timelag` (the sync's end-of-run invalidation covers it), so a GA4 failure prints under
+> our half and is never cached. A "How this is measured" card on the tab spells both bases out (Tom's "same basis" ask).
+> Measured 21.10 on Paid orders since 23.07: 139 of 212 measured, median 26 h, 39 under an hour, 19 over 30 days.
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.

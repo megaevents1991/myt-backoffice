@@ -35,7 +35,7 @@ function chunks<T>(arr: T[], size: number): T[][] { const out: T[][] = []; for (
 export async function readTouches(ids: number[]): Promise<Map<number, UtmTouchLike[]>> {
   const touches = new Map<number, UtmTouchLike[]>();
   for (const chunk of chunks(ids, TOUCH_CHUNK)) {
-    const { data, error } = await mdb.from("utm_touches").select("reservation_id, position, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, is_influencer").in("reservation_id", chunk);
+    const { data, error } = await mdb.from("utm_touches").select("reservation_id, position, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, is_influencer, visited_at").in("reservation_id", chunk);
     if (error) throw new Error(`utm_touches read: ${error.message}`);
     for (const t of (data ?? []) as (UtmTouchLike & { reservation_id: number })[]) { const list = touches.get(t.reservation_id) ?? []; list.push(t); touches.set(t.reservation_id, list); }
   }

@@ -1218,6 +1218,23 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Read the time-to-purchase tab", "לקרוא את לשונית הזמן עד רכישה"),
+        steps: [
+          t(
+            "Open \"Time to purchase\" ([Marketing → Time to purchase](/marketing?tab=timelag)). The cards marked \"ours\" count the Paid orders of the period and how long their buyers took from the first tracked visit to the order (the median, the share within 24 hours); the cards marked GA4 count Google Analytics' purchase events and the days from the buyer's first session to the purchase.",
+            "פותחים את \"Time to purchase\" ([Marketing ← Time to purchase](/marketing?tab=timelag)). הכרטיסים שמסומנים \"ours\" סופרים את ההזמנות ששולמו בתקופה וכמה זמן לקח לרוכשים מהביקור הראשון שנרשם ועד ההזמנה (חציון, חלק שהזמין תוך 24 שעות); הכרטיסים שמסומנים GA4 סופרים את אירועי הרכישה ב-Google Analytics ואת הימים מהביקור הראשון של הרוכש ועד הרכישה.",
+          ),
+          t(
+            "\"Ours\" measures an order only when the site stamped a tracked visit for it - a visit that came with a UTM, a gclid or an fbclid (the cookie keeps the newest five visits for 90 days). Direct, organic and agent-typed orders are counted as \"not measured\", never guessed, and a \"No UTM\" order is never measured. The source filter in the bar applies to this half only; the table under the charts splits it by source.",
+            "\"Ours\" מודד הזמנה רק כשהאתר רשם לה ביקור - ביקור שהגיע עם UTM, gclid או fbclid (העוגייה שומרת את חמשת הביקורים האחרונים ל-90 יום). הזמנות ישירות, אורגניות או שסוכן הקליד נספרות כ\"לא נמדדו\", לעולם לא מנחשים, והזמנת \"No UTM\" אף פעם לא נמדדת. מסנן המקור בסרגל חל רק על החצי הזה; הטבלה מתחת לגרפים מפצלת אותו לפי מקור.",
+          ),
+          t(
+            "The GA4 half covers every buyer, in days (same day, 1 day, 2-3 days...), by GA4's own user - a new device or cleared cookies counts as a new user - and ignores the source filter. The two halves measure different things and never add up to one number: compare each with itself over time.",
+            "חצי ה-GA4 מכסה כל רוכש, בימים (אותו יום, יום, 2-3 ימים...), לפי המשתמש של GA4 - מכשיר חדש או עוגיות שנמחקו נחשבים למשתמש חדש - ומתעלם ממסנן המקור. שני החצאים מודדים דברים שונים ולעולם לא מסתכמים למספר אחד: משווים כל אחד לעצמו לאורך זמן.",
+          ),
+        ],
+      },
+      {
         title: t("Tag a campaign's brand / change a threshold", "לתייג קמפיין למותג / לשנות סף"),
         steps: [
           t("Open the \"Settings\" tab ([Marketing → Settings](/marketing?tab=settings)). Under \"Campaign brands\" search the campaign by name.", "פותחים את לשונית \"Settings\" ([Marketing ← Settings](/marketing?tab=settings)). תחת \"Campaign brands\" מחפשים את הקמפיין לפי שם."),

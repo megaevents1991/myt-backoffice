@@ -14,6 +14,8 @@ export interface UtmTouchLike {
   gclid: string | null;
   fbclid: string | null;
   is_influencer: boolean;
+  /** When the visit happened (main stamps it on capture); read by the time-to-purchase report, absent on older rows. */
+  visited_at?: string | null;
 }
 
 export interface PaidTouch {
