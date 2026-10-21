@@ -9,7 +9,7 @@
 /** A show within this many km of a `locations` row with an IATA code gets a package (flight + hotel). */
 export const NEAR_LOCATION_KM = 50;
 
-/** A venue this far from its nearest location is built, but warned about (`far_venue`) - the package would be a long transfer. */
+/** A venue whose nearest location is between `NEAR_LOCATION_KM` and this many km gets the two-city offer (`far_venue`); beyond it, nothing is offered. */
 export const FAR_VENUE_KM = 300;
 
 /** Days before a show the site stops selling it - main's `AVAILABILITY_WINDOW_DAYS`, so the uploader does not find what the site would hide. */

@@ -30,6 +30,7 @@ export interface SubjectRows {
   } | null;
   team: {
     id: number;
+    /** The crest search name: name_english || name, as the gaps radar searches. */
     name: string;
     logo_url: string | null;
     /** The crest is in the assets library (`/assets`) even though the team row has no logo. */
@@ -53,7 +54,11 @@ export interface BuildFacts {
   /** The suppliers that did not answer (after the retry). */
   unreachable: ("tixstock" | "livetickets")[];
   hebrewName: boolean;
-  /** The nearest location when it is further than `FAR_VENUE_KM`: the card offers a two-city build. */
+  /**
+   * The nearest location when it is BEYOND `NEAR_LOCATION_KM` (no package was built) but WITHIN
+   * `FAR_VENUE_KM` (a two-city package through that city is still sensible): the card offers that
+   * build. Null when a location is near enough, or when none is within `FAR_VENUE_KM`.
+   */
   farVenue: { city: string; km: number } | null;
 }
 

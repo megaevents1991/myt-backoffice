@@ -1589,6 +1589,16 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     'דו-עירוני לפי בחירת צוות: הופעה ב-Manchester, טיסה ל-London (262 ק"מ), פיצול מלון',
     "two_city_chosen: show city, flight city and the distance staff accepted",
   );
+  same(
+    decision("two_city_chosen", { show_city: "Örebro", flight_city: "İstanbul", km: 261.6789 }).text,
+    'דו-עירוני לפי בחירת צוות: הופעה ב-Örebro, טיסה ל-İstanbul (262 ק"מ), פיצול מלון',
+    "an accented Latin initial still takes the hyphen, and a float km prints rounded",
+  );
+  same(
+    decision("location_found", { city: "London", iata: "LON", km: 12.3456 }).text,
+    'מיקום: London (LON), 12 ק"מ מהאולם',
+    "location_found prints the km rounded",
+  );
   const samples: Record<keyof typeof DECISION_TEXT, Record<string, string | number>> = {
     location_found: { city: "London", iata: "LON", km: 12 },
     location_missing_ticket_only: {},

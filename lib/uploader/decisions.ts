@@ -27,9 +27,15 @@ function categories(p: DecisionParams): string {
   return Number(p.count) === 1 ? "קטגוריה אחת" : `${str(p, "count")} קטגוריות`;
 }
 
-/** A Hebrew one-letter prefix on a name: glued to a Hebrew name ("בלונדון"), hyphenated to a Latin one ("ב-London"). */
+/** A distance in whole km; a haversine float never prints as "12.3456", a missing param prints as nothing. */
+function km(p: DecisionParams): string {
+  const n = Number(p.km);
+  return p.km === undefined || Number.isNaN(n) ? "" : String(Math.round(n));
+}
+
+/** A Hebrew one-letter prefix on a name: glued to a Hebrew name ("בלונדון"), hyphenated to a Latin one - accented initials too ("ב-Örebro"). */
 function withPrefix(prefix: string, name: string): string {
-  return /^[A-Za-z]/.test(name) ? `${prefix}-${name}` : `${prefix}${name}`;
+  return /^\p{Script=Latin}/u.test(name) ? `${prefix}-${name}` : `${prefix}${name}`;
 }
 
 /**
@@ -42,7 +48,7 @@ function withPrefix(prefix: string, name: string): string {
  *  rejected_before {run, by, reason}
  */
 export const DECISION_TEXT = {
-  location_found: (p) => `מיקום: ${str(p, "city")} (${str(p, "iata")}), ${str(p, "km")} ק"מ מהאולם`,
+  location_found: (p) => `מיקום: ${str(p, "city")} (${str(p, "iata")}), ${km(p)} ק"מ מהאולם`,
   location_missing_ticket_only: () => `אין מיקום עם טיסות בטווח ${NEAR_LOCATION_KM} ק"מ מהאולם - נבנה ככרטיס בלבד`,
   tickets_tixstock: (p) => `${categories(p)} מ-TixStock`,
   tickets_livetickets: (p) => `${categories(p)} מ-LiveTickets (ניתנות למכירה בלבד)`,
@@ -58,7 +64,7 @@ export const DECISION_TEXT = {
   two_city_from_memory: (p) =>
     `דו-עירוני כמו ${str(p, "event")}: הופעה ${withPrefix("ב", str(p, "show_city"))}, טיסה ${withPrefix("ל", str(p, "flight_city"))}, ${str(p, "lodging") || "פיצול מלון"}`,
   two_city_chosen: (p) =>
-    `דו-עירוני לפי בחירת צוות: הופעה ${withPrefix("ב", str(p, "show_city"))}, טיסה ${withPrefix("ל", str(p, "flight_city"))} (${str(p, "km")} ק"מ), פיצול מלון`,
+    `דו-עירוני לפי בחירת צוות: הופעה ${withPrefix("ב", str(p, "show_city"))}, טיסה ${withPrefix("ל", str(p, "flight_city"))} (${km(p)} ק"מ), פיצול מלון`,
   rejected_before: (p) => `נדחתה בריצה #${str(p, "run")} על ידי ${str(p, "by")}${str(p, "reason") === "" ? "" : `: ${str(p, "reason")}`}`,
 } satisfies Record<string, DecisionText>;
 
