@@ -31,6 +31,15 @@ export const canSeeCard = (card: { assignedTo: string | null }, viewer: BoardVie
 export const visibleCards = <T extends { assignedTo: string | null }>(cards: readonly T[], viewer: BoardViewer): T[] =>
   cards.filter((c) => canSeeCard(c, viewer));
 
+/**
+ * The row an action answered, back on the viewer's list: kept in place - or, when the viewer may not see it any more (a
+ * rep handed it to another rep), dropped, with the new owner named so the screen can say "handed to X".
+ */
+export function afterSave<T extends { id: string; assignedTo: string | null }>(cards: readonly T[], saved: T, viewer: BoardViewer): { cards: T[]; handedTo: string | null } {
+  if (canSeeCard(saved, viewer)) return { cards: cards.map((c) => (c.id === saved.id ? saved : c)), handedTo: null };
+  return { cards: cards.filter((c) => c.id !== saved.id), handedTo: saved.assignedTo };
+}
+
 // ---------------------------------------------------------------- the rep's own order
 /** The most ids one saved order holds. */
 export const BOARD_ORDER_MAX = 500;

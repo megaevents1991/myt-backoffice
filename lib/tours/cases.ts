@@ -863,6 +863,7 @@ export interface CustomerPageData {
   statuses: CaseStatus[];
   reps: CaseRep[];
   currentUserId: string;
+  viewer: BoardViewer;
   /** Cards of other reps the viewer does not see (counted, never listed - 21.10). */
   hiddenCards: number;
   /** The customer travelled with us on ANY card, hidden ones too. */
@@ -941,6 +942,8 @@ export interface CaseGift {
 /** The case page in one load. */
 export interface CaseDetail {
   row: CaseRow;
+  /** Who is looking (21.10): a rep who hands the card away leaves it. */
+  viewer: BoardViewer;
   /** The form's other fields. */
   payload: Record<string, unknown>;
   bookings: BookingRow[];

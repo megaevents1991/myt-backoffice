@@ -22,6 +22,7 @@ import { downloadBase64 } from "@/lib/download";
 import { followUpLabel } from "@/lib/reservations/follow-up";
 import { fmtInstant, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, deleteCase, exportCases, listCases, updateCase } from "@/lib/actions/tours-cases-actions";
+import { afterSave } from "@/lib/tours/board";
 import { Chip, LoadError } from "@/components/tours/ui";
 import {
   TODAY_REASON_LABELS,
@@ -109,9 +110,13 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
       setBusy(row.id);
       const result = await run(() => updateCase(row.id, change));
       setBusy(null);
-      if (result.success) setData((current) => current && { ...current, rows: current.rows.map((r) => (r.id === row.id ? result.data : r)) });
+      if (!result.success || !data) return;
+      // a card handed to another rep leaves a rep's list (review 21.10)
+      const next = afterSave(data.rows, result.data, data.viewer);
+      setData((current) => current && { ...current, rows: next.cards });
+      if (next.handedTo) toast({ title: `Card handed to ${reps.find((p) => p.id === next.handedTo)?.name ?? "another rep"}` });
     },
-    [run, setData],
+    [data, reps, run, setData, toast],
   );
 
   // the same delete as the case page: soft, and the server refuses a case with money on it

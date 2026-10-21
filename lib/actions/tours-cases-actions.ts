@@ -1171,6 +1171,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       statuses,
       reps,
       currentUserId: session.sub,
+      viewer,
       siteUrl: company.siteUrl,
       linkSentAt: record.link_sent_at,
       relatedCase: relatedCase ?? null,
@@ -1705,6 +1706,8 @@ async function boardOrderOf(company: Company, userId: string): Promise<string[]>
 export async function saveBoardOrder(ids: string[]): Promise<ActionResult<{ saved: number }>> {
   try {
     const { session, company } = await requireCompany("tours");
+    // a superadmin looking as a rep must not rewrite that rep's own list (the task_reads precedent)
+    if (session.impersonator) return actionOk({ saved: 0 }, "Not saved while impersonating - the order is the rep's own.");
     const lead_ids = cleanOrderIds(Array.isArray(ids) ? ids : []);
     const { error } = await supabaseTyped
       .from("lead_board_orders")
@@ -1843,6 +1846,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
       statuses,
       reps,
       currentUserId: session.sub,
+      viewer,
       hiddenCards: all.length - cards.length,
       travelled,
     });

@@ -12,6 +12,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireCompany } from "@/lib/company";
+import { assertCardVisible } from "@/lib/services/tours-board-viewer";
 import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
 import { actionFail } from "@/lib/tours/action-kit";
@@ -48,6 +49,8 @@ export async function updateBooking(id: string, change: BookingChange): Promise<
       .maybeSingle();
     if (error) throw error;
     if (!before) return { success: false, error: "The booking was not found." };
+    // a rep moves only the bookings of cards they can see (21.10)
+    await assertCardVisible(session, company, before.lead_id);
 
     const patch: Partial<TourBooking> = {};
     const changes: Record<string, { from: unknown; to: unknown }> = {};

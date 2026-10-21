@@ -70,6 +70,7 @@ import {
 import {
   BOARD_ORDER_MAX,
   NOTE_LINE_MAX,
+  afterSave,
   arrivalOf,
   boardViewerOf,
   canSeeCard,
@@ -641,5 +642,12 @@ assert.equal(writtenToday("2026-10-20T22:30:00Z", "2026-10-21"), true, "22:30Z i
 assert.equal(writtenToday("2026-10-20T12:00:00Z", "2026-10-21"), false);
 assert.equal(writtenToday(null, "2026-10-21"), false);
 assert.equal(writtenToday("not a date", "2026-10-21"), false);
+
+// the row an action answered: kept, or - handed to another rep - dropped with the new owner named (review fix, 21.10)
+const seenA = [{ id: "a", assignedTo: "u2" }, { id: "b", assignedTo: null }];
+assert.deepEqual(afterSave(seenA, { id: "a", assignedTo: null }, rep), { cards: [{ id: "a", assignedTo: null }, { id: "b", assignedTo: null }], handedTo: null }, "unassigning keeps the row for a rep");
+assert.deepEqual(afterSave(seenA, { id: "a", assignedTo: "u9" }, rep), { cards: [{ id: "b", assignedTo: null }], handedTo: "u9" }, "handed to another rep: the row leaves, the new owner is named");
+assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).handedTo, null, "a manager keeps every row");
+assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).cards[0].assignedTo, "u9");
 
 console.log("tours-cases selftest: ok");

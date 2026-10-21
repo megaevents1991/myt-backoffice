@@ -53,7 +53,7 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { moveInOrder, noteLine, orderBoard, placeInOrder, writtenToday, type BoardViewer } from "@/lib/tours/board";
+import { afterSave, moveInOrder, noteLine, orderBoard, placeInOrder, writtenToday, type BoardViewer } from "@/lib/tours/board";
 import {
   BulkAssignSelect,
   CardWhat,
@@ -167,9 +167,13 @@ export function BoardScreen() {
       setBusy(card.id);
       const result = await run(() => updateCase(card.id, change), done);
       setBusy(null);
-      if (result.success) setData((current) => current && { ...current, cards: current.cards.map((c) => (c.id === card.id ? result.data : c)) });
+      if (!result.success) return;
+      // a card handed to another rep leaves a rep's list - the next click on it would be refused (review 21.10)
+      const next = afterSave(data?.cards ?? [], result.data, viewer);
+      setData((current) => current && { ...current, cards: next.cards });
+      if (next.handedTo) toast({ title: `Card handed to ${repName(next.handedTo)}` });
     },
-    [run, setData],
+    [data, repName, run, setData, toast, viewer],
   );
 
   // the viewer's own order: shown at once, saved behind it (a failed save toasts and the screen keeps the order)

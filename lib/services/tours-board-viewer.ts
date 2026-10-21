@@ -7,7 +7,8 @@
 import { supabaseTyped } from "@/lib/supabase-server";
 import type { Company } from "@/lib/company";
 import type { SessionPayload } from "@/lib/auth/session";
-import { boardViewerOf, type BoardViewer } from "@/lib/tours/board";
+import { boardViewerOf, canSeeCard, type BoardViewer } from "@/lib/tours/board";
+import { UserError } from "@/lib/tours/action-kit";
 
 /** A failed read answers a REP, never a manager - the safe direction. */
 export async function boardViewerFor(session: SessionPayload, company: Company): Promise<BoardViewer> {
@@ -25,4 +26,17 @@ export async function boardViewerFor(session: SessionPayload, company: Company):
     console.error("tours-board-viewer:", e);
   }
   return boardViewerOf(session.sub, session.role, membershipRole);
+}
+
+/**
+ * The same door as caseRecord(viewer), for an action that reaches a card through its BOOKING (a status move, a
+ * payment): a rep touches only a card they can see; a manager any. No card (a booking with no lead) = open.
+ */
+export async function assertCardVisible(session: SessionPayload, company: Company, leadId: string | null | undefined): Promise<void> {
+  if (!leadId) return;
+  const viewer = await boardViewerFor(session, company);
+  if (viewer.manager) return;
+  const { data, error } = await supabaseTyped.from("leads").select("assigned_to").eq("company_id", company.id).eq("id", leadId).maybeSingle();
+  if (error) throw new Error(`leads: ${error.message}`);
+  if (data && !canSeeCard({ assignedTo: (data as { assigned_to: string | null }).assigned_to }, viewer)) throw new UserError("This card belongs to another rep");
 }

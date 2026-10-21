@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { dismissCustomerSuggestion, fileInquiry, getCustomerPage, updateCase, updateCustomer } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
@@ -319,6 +320,7 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
   const router = useRouter();
   const params = useSearchParams();
   const run = useActionToast();
+  const { toast } = useToast();
   const wanted = cardId ?? params.get("card") ?? undefined;
   const { data, error, loading, reload, setData } = useActionData<CustomerPageData>(() => getCustomerPage({ customerId, cardId }), [customerId, cardId]);
   const [opened, setOpened] = useState<Set<string> | null>(null);
@@ -567,8 +569,10 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
         reps={data.reps}
         currentUserId={data.currentUserId}
         customer={customer}
-        onCreated={(id) => {
-          setOpened(new Set([id]));
+        onCreated={(id, handedTo) => {
+          // a rep who opened the card for someone else will not see it: say so (review 21.10)
+          if (handedTo && !data.viewer.manager) toast({ title: `Card opened and handed to ${data.reps.find((p) => p.id === handedTo)?.name ?? "another rep"}` });
+          else setOpened(new Set([id]));
           void reload({ quiet: true });
         }}
       />

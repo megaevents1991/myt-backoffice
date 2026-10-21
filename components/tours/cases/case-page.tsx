@@ -34,6 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useConfirm } from "@/components/confirm-provider";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
+import { canSeeCard } from "@/lib/tours/board";
 import { EMPTY, fmtDate, fmtDateRange, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { deleteCase, getCase, holdCaseSeats, updateCase } from "@/lib/actions/tours-cases-actions";
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
@@ -267,6 +269,7 @@ export interface CardFocus {
 export function CasePage({ id, embedded, focus, onChanged }: { id: string; embedded?: boolean; focus?: CardFocus | null; onChanged?: () => void }) {
   const router = useRouter();
   const run = useActionToast();
+  const { toast } = useToast();
   const confirm = useConfirm();
   const { data, error, loading, reload, setData } = useActionData<CaseDetail>(() => getCase(id), [id]);
   const [busy, setBusy] = useState(false);
@@ -328,6 +331,13 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
     const result = await run(() => updateCase(row.id, change));
     setBusy(false);
     if (result.success) {
+      // handed to another rep: a rep cannot see the card any more - say so and leave it (review 21.10)
+      if (!canSeeCard(result.data, data.viewer)) {
+        toast({ title: `Card handed to ${reps.find((p) => p.id === result.data.assignedTo)?.name ?? "another rep"}` });
+        if (embedded) onChanged?.();
+        else router.push("/tours/reservations");
+        return true;
+      }
       setData((current) => current && { ...current, row: result.data });
       // a deal closed by hand may have put seats on the departure (the toast says so): show them
       if (change.status) void reload({ quiet: true });

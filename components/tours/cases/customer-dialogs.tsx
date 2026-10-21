@@ -67,7 +67,7 @@ function CustomerPicker({
           dir="auto"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Name, phone, C-number or e-mail"
+          placeholder="Name, phone, customer number or e-mail"
           className="ps-8"
           aria-label="Search customers"
         />
