@@ -57,6 +57,7 @@ export function realInboundDeps(): InboundDeps {
     },
     upsertTemplate,
     log: {
+      info: (message) => console.info(message),
       warn: (message) => console.warn(`[whatsapp] ${message}`),
       error: (message) => console.error(`[whatsapp] ${message}`),
     },

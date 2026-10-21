@@ -33,7 +33,7 @@ export interface InboundDeps {
   /** A free-text service message inside the window (the opt-out confirmation). */
   sendServiceText(account: WaAccount, to: string, text: string): Promise<{ ok: boolean; error?: string }>;
   upsertTemplate(companyId: string, t: Omit<WaTemplate, "syncedAt">): Promise<void>;
-  log: { warn(message: string): void; error(message: string): void };
+  log: { warn(message: string): void; error(message: string): void; info?(message: string): void };
 }
 
 export interface InboundSummary {
