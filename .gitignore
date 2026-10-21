@@ -54,3 +54,6 @@ yarn-error.log*
 
 # Git Bash crash dumps
 *.stackdump
+
+# brainstorming visual companion (throwaway mockups)
+.superpowers/
