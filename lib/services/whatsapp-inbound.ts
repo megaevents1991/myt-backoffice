@@ -1,0 +1,183 @@
+/**
+ * What the webhook does with Meta's events (spec 2026-10-21 section 6). Every dependency is injected
+ * (`InboundDeps`) so the whole flow runs in scripts/whatsapp-inbound-selftest.ts over stubs; the real wiring
+ * is `lib/services/whatsapp-inbound-deps.ts` (the DB boundary + the sender).
+ *
+ * Per inbound customer message: store it (Meta re-deliveries are ignored by wa_message_id), stamp the
+ * customer's window, an opt-out word closes marketing and gets ONE free reply, otherwise a message after
+ * WA_INQUIRY_GAP_HOURS of silence inserts a `whatsapp` lead that leads_fill routes (joins the customer's
+ * newest open card or opens a case) - messages inside the gap hang on the same case. An echo (a rep wrote
+ * from the app) is stored on the conversation's case; history rows are stored and nothing else. Nothing
+ * here throws past the function: a failed event lands in `errors`, the rest of the batch goes on.
+ */
+import { OPT_OUT_REPLY, isOptOut, shouldOpenInquiry, standInText, type WaEvent } from "@/lib/whatsapp/rules";
+import { phoneKey } from "@/lib/tours/cases";
+import type { WaAccount, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaLeadResult, WaMessageInsert, WaTemplate } from "@/lib/services/whatsapp-db";
+
+export interface InboundDeps {
+  now(): string;
+  accountByPhoneId(phoneNumberId: string): Promise<WaAccount | null>;
+  accountByWabaId(wabaId: string): Promise<WaAccount | null>;
+  patchAccount(id: string, patch: { qualityRating?: string | null; messagingLimit?: string | null }): Promise<void>;
+  insertMessage(row: WaMessageInsert): Promise<{ inserted: boolean; id: string | null }>;
+  linkMessage(id: string, caseId: string | null, customerId: string | null): Promise<void>;
+  updateStatus(waMessageId: string, status: string, at: string, error: string | null): Promise<boolean>;
+  lastInbound(companyId: string, phoneKey: string): Promise<{ at: string; caseId: string | null } | null>;
+  findCustomers(companyId: string, phoneKey: string): Promise<WaCustomerLite[]>;
+  setCustomerFields(customerId: string, patch: WaCustomerPatch): Promise<void>;
+  insertLead(row: WaLeadInsert): Promise<WaLeadResult>;
+  attachOrphans(companyId: string, phoneKey: string, customerId: string): Promise<number>;
+  /** Downloads Meta's media into the private bucket; the storage path, or null when it could not be fetched. */
+  storeMedia(account: WaAccount, mediaId: string, mime: string): Promise<string | null>;
+  /** A free-text service message inside the window (the opt-out confirmation). */
+  sendServiceText(account: WaAccount, to: string, text: string): Promise<{ ok: boolean; error?: string }>;
+  upsertTemplate(companyId: string, t: Omit<WaTemplate, "syncedAt">): Promise<void>;
+  log: { warn(message: string): void; error(message: string): void };
+}
+
+export interface InboundSummary {
+  stored: number;
+  skipped: number;
+  inquiries: number;
+  optOuts: number;
+  statuses: number;
+  errors: string[];
+}
+
+/** The customer leads_fill would pick: the lowest customer number among the live rows holding the key. */
+export function pickCustomer(candidates: readonly WaCustomerLite[]): WaCustomerLite | null {
+  if (candidates.length === 0) return null;
+  return [...candidates].sort((a, b) => a.customerNo - b.customerNo)[0];
+}
+
+type MessageEvent = Extract<WaEvent, { kind: "message" }>;
+
+async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSummary): Promise<void> {
+  const account = await deps.accountByPhoneId(ev.phoneNumberId);
+  if (!account) {
+    deps.log.warn(`message ${ev.waMessageId} for an unknown phone number id ${ev.phoneNumberId} - skipped`);
+    out.skipped += 1;
+    return;
+  }
+  // the CUSTOMER's number keys the thread: the sender of an inbound message, the recipient of an outbound one
+  const phone = ev.direction === "in" ? ev.from : ev.to;
+  if (!phone) {
+    deps.log.warn(`message ${ev.waMessageId} names no customer number - skipped`);
+    out.skipped += 1;
+    return;
+  }
+  const key = phoneKey(phone);
+  const companyId = account.companyId;
+  const live = ev.origin !== "history";
+  const inboundFromCustomer = ev.direction === "in" && ev.origin === "customer";
+
+  const customer = pickCustomer(await deps.findCustomers(companyId, key));
+  // read BEFORE this message is stored: the gap is measured against the previous inbound one
+  const previous = await deps.lastInbound(companyId, key);
+  const media = ev.media
+    ? { ...ev.media, storage_path: live && ev.media.id ? await deps.storeMedia(account, ev.media.id, ev.media.mime) : null }
+    : null;
+
+  const stored = await deps.insertMessage({
+    companyId,
+    waMessageId: ev.waMessageId,
+    phone,
+    phoneKey: key,
+    customerId: customer?.id ?? null,
+    caseId: previous?.caseId ?? null,
+    direction: ev.direction,
+    origin: ev.origin,
+    type: ev.type,
+    text: ev.text,
+    media,
+    template: null,
+    status: ev.direction === "in" ? "received" : "sent",
+    sentBy: null,
+    sentAt: ev.sentAt,
+  });
+  if (!stored.inserted || !stored.id) {
+    out.skipped += 1;
+    return;
+  }
+  out.stored += 1;
+  if (!inboundFromCustomer) return;
+
+  if (customer) {
+    const patch: WaCustomerPatch = { waLastInAt: ev.sentAt };
+    if (!customer.waProfileName && ev.profileName) patch.waProfileName = ev.profileName;
+    await deps.setCustomerFields(customer.id, patch);
+  }
+
+  if (isOptOut(ev.text)) {
+    if (customer) await deps.setCustomerFields(customer.id, { waConsent: "opted_out", waConsentSource: "reply", waConsentAt: ev.sentAt });
+    const answer = await deps.sendServiceText(account, phone, OPT_OUT_REPLY);
+    if (!answer.ok) deps.log.warn(`opt-out reply to ${key} not sent: ${answer.error ?? "unknown"}`);
+    out.optOuts += 1;
+    return;
+  }
+
+  if (!shouldOpenInquiry(previous?.at ?? null, ev.sentAt)) return;
+
+  const lead = await deps.insertLead({
+    companyId,
+    kind: "whatsapp",
+    source: "whatsapp",
+    name: ev.profileName,
+    phone,
+    phoneKey: key,
+    message: ev.text ?? standInText(ev.type),
+    payload: { wa_message_id: ev.waMessageId },
+  });
+  out.inquiries += 1;
+  const caseId = lead.joinedIntoId ?? lead.id;
+  const customerId = lead.customerId ?? customer?.id ?? null;
+  await deps.linkMessage(stored.id, caseId, customerId);
+  if (lead.customerId) {
+    // the lead found or created the customer: messages of this phone stored before it get the customer too
+    await deps.attachOrphans(companyId, key, lead.customerId);
+    if (!customer) await deps.setCustomerFields(lead.customerId, { waLastInAt: ev.sentAt, ...(ev.profileName ? { waProfileName: ev.profileName } : {}) });
+  }
+}
+
+async function handleTemplate(ev: Extract<WaEvent, { kind: "template" }>, deps: InboundDeps, out: InboundSummary): Promise<void> {
+  const account = await deps.accountByWabaId(ev.wabaId);
+  if (!account) {
+    deps.log.warn(`template update for an unknown WABA ${ev.wabaId} - skipped`);
+    out.skipped += 1;
+    return;
+  }
+  await deps.upsertTemplate(account.companyId, { name: ev.name, language: ev.language, category: null, status: ev.status, body: null, paramCount: null });
+}
+
+async function handleAccount(ev: Extract<WaEvent, { kind: "account" }>, deps: InboundDeps, out: InboundSummary): Promise<void> {
+  const account = await deps.accountByWabaId(ev.wabaId);
+  if (!account) {
+    out.skipped += 1;
+    return;
+  }
+  const payload = (ev.payload ?? {}) as { current_limit?: unknown; event?: unknown };
+  const patch: { qualityRating?: string | null; messagingLimit?: string | null } = {};
+  if (typeof payload.current_limit === "string") patch.messagingLimit = payload.current_limit;
+  if (ev.field === "phone_number_quality_update" && typeof payload.event === "string") patch.qualityRating = payload.event;
+  if (Object.keys(patch).length) await deps.patchAccount(account.id, patch);
+}
+
+/** Every event of one webhook batch, each on its own: a failure is counted and named, never thrown. */
+export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps): Promise<InboundSummary> {
+  const out: InboundSummary = { stored: 0, skipped: 0, inquiries: 0, optOuts: 0, statuses: 0, errors: [] };
+  for (const ev of events) {
+    try {
+      if (ev.kind === "message") await handleMessage(ev, deps, out);
+      else if (ev.kind === "status") {
+        await deps.updateStatus(ev.waMessageId, ev.status, ev.at, ev.error);
+        out.statuses += 1;
+      } else if (ev.kind === "template") await handleTemplate(ev, deps, out);
+      else if (ev.kind === "account") await handleAccount(ev, deps, out);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      deps.log.error(`${ev.kind} ${"waMessageId" in ev ? ev.waMessageId : ""}: ${message}`);
+      out.errors.push(`${ev.kind}: ${message}`);
+    }
+  }
+  return out;
+}
