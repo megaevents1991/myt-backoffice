@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowUpDown, Edit, Eye, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
@@ -26,6 +27,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { FOLLOW_UP_TONE } from "@/components/follow-up-widget";
 import { cn } from "@/lib/utils";
 import { israelDate } from "@/lib/tasks/reminders";
+import { itineraryChipLabel } from "@/lib/itinerary/reservation-group";
 import {
   FOLLOW_UP_STATUS,
   compareFollowUps,
@@ -397,6 +399,25 @@ export function ReservationsTable() {
     {
       accessorKey: "id",
       header: "ID",
+      cell: ({ row }) => {
+        const reservation = row.original;
+        // A Euro Trip (several events, one reservation each) is flagged on every one of its rows.
+        const chip = itineraryChipLabel(reservation.itinerary_seq, reservation.itinerary_of);
+        if (!chip) return <>{reservation.id}</>;
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <span>{reservation.id}</span>
+            <Badge
+              variant="outline"
+              dir="rtl"
+              className="whitespace-nowrap px-1.5 py-0 text-[11px]"
+              title="הזמנה אחת מתוך טיול מרובה אירועים - הפרטים בעמוד ההזמנה"
+            >
+              {chip}
+            </Badge>
+          </div>
+        );
+      },
     },
     {
       accessorKey: "main_contact_first_name",

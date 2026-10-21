@@ -113,6 +113,16 @@ export type Reservation = {
   // the computed cost applies. Main never writes either column.
   actual_cost_usd?: number | string | null;
   actual_cost_note?: string | null;
+  // Build Your Euro Trip (migration 20261021193309): a multi-event trip is one row per event,
+  // all sharing `itinerary_group`; `itinerary_seq` is the row's place in date order (1..of) and
+  // `itinerary_of` how many events the trip has (2 or 3). The whole multi-city flight sits on
+  // seq 1's flight_order_info (an ItineraryFlight), the other rows hold `{}`; each stay's hotel
+  // sits on the stay's first event. A single-event reservation keeps all three NULL. Written by
+  // myt-main POST /api/itinerary/confirm. OPTIONAL on purpose: a deploy can beat the migration,
+  // and the list reads them in a separate best-effort query (lib/itinerary/reservation-group.ts).
+  itinerary_group?: string | null;
+  itinerary_seq?: number | null;
+  itinerary_of?: number | null;
 };
 
 /**
@@ -141,6 +151,9 @@ export type ReservationListRow = Pick<
   | "partner_settlement_method"
   | "is_deleted"
   | "follow_up_date"
+  | "itinerary_group"
+  | "itinerary_seq"
+  | "itinerary_of"
 > & {
   has_payment_info: boolean;
   /** Which office agent the booking is credited to (utm_touches, resolved

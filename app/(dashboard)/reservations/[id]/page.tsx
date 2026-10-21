@@ -39,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Reservation } from "@/types/reservation.types";
 import type { UtmTouch } from "@/types/utm.types";
 import {
+  getItineraryGroup,
   getReservation,
   getReservationAgentLabel,
   getReservationUtmTouches,
@@ -53,6 +54,8 @@ import {
 import { getRoomsByReservationId } from "@/lib/actions/offline-hotel-room-actions";
 import type { OfflineHotelRoom } from "@/types/offline-hotel.types";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
+import type { ItineraryGroup } from "@/lib/itinerary/reservation-group";
+import { ItineraryPanel } from "./itinerary-panel";
 import { israelDate } from "@/lib/tasks/reminders";
 import { followUpLabel, isFollowUpStatus } from "@/lib/reservations/follow-up";
 import {
@@ -104,6 +107,10 @@ export default function ReservationDetailsPage({
   // Which office agent this booking is credited to (resolved across every
   // office by slug) - null when unattributed, so the line just stays hidden.
   const [agentLabel, setAgentLabel] = useState<string | null>(null);
+  // The Euro Trip this reservation belongs to (one reservation per event, tied by
+  // itinerary_group). null for an ordinary reservation, and also when the group cannot be
+  // read (itinerary columns not migrated yet, a failed read) - the panel just stays hidden.
+  const [itineraryGroup, setItineraryGroup] = useState<ItineraryGroup | null>(null);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -164,6 +171,21 @@ export default function ReservationDetailsPage({
         setOfflineRooms([]);
       });
   }, [reservation]);
+
+  const itineraryGroupId = reservation?.itinerary_group ?? null;
+  useEffect(() => {
+    setItineraryGroup(null);
+    if (!itineraryGroupId) return;
+    let live = true;
+    getItineraryGroup(itineraryGroupId)
+      .then((g) => {
+        if (live) setItineraryGroup(g);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [itineraryGroupId]);
 
   if (loading) {
     return <div>Loading reservation details...</div>;
@@ -526,6 +548,10 @@ export default function ReservationDetailsPage({
           </CardContent>
         </Card>
       </div>
+
+      {itineraryGroup && (
+        <ItineraryPanel group={itineraryGroup} currentId={reservation.id} />
+      )}
 
       <Card>
         <CardHeader>
@@ -907,6 +933,12 @@ export default function ReservationDetailsPage({
               <div className="text-center py-8 text-muted-foreground">
                 <p className="text-lg font-medium">No Flight Included</p>
                 <p className="text-sm mt-2">This reservation does not include a flight.</p>
+                {reservation.itinerary_group && (
+                  <p className="text-sm mt-1">
+                    Part of a Euro Trip - the trip&apos;s flights are on its first reservation
+                    (see the Euro Trip panel).
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
@@ -1057,6 +1089,12 @@ export default function ReservationDetailsPage({
               <div className="text-center py-8 text-muted-foreground">
                 <p className="text-lg font-medium">No Hotel Included</p>
                 <p className="text-sm mt-2">This reservation does not include hotel accommodation.</p>
+                {reservation.itinerary_group && (
+                  <p className="text-sm mt-1">
+                    Part of a Euro Trip - a stay&apos;s hotel is kept on the first reservation of
+                    that stay (see the Euro Trip panel).
+                  </p>
+                )}
               </div>
             )}
             {offlineRooms.length > 0 && (

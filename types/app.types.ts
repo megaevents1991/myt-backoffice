@@ -232,6 +232,19 @@ export type FlightSegment = {
   cabinBagKg?: number | null;
 };
 
+/**
+ * A multi-event itinerary's flight ("Build Your Euro Trip"): the ordinary Flight
+ * (outbound = TLV -> first stay, inbound = last stay -> TLV, so everything that
+ * reads a Flight keeps working) plus every leg of the trip in order, and the moves
+ * between stays that are made by train instead of a flight.
+ * Mirrors main lib/app.types.ts - keep in sync. Stored on seq 1's
+ * reservations.flight_order_info (the other rows of the trip hold `{}`).
+ */
+export type ItineraryFlight = Flight & {
+  legs: FlightSegment[];
+  trainLegs: { from: string; to: string; date: string }[];
+};
+
 export type OrderHotel = {
   // Full WorldOTA rate object saved by the main app. Meal info lives here,
   // NOT at the top level (kept in sync with main app lib/app.types.ts).

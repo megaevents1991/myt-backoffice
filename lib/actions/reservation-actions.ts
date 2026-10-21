@@ -8,6 +8,11 @@ import { israelDate } from "@/lib/tasks/reminders";
 import { megaEventsFlights } from "@/lib/flights-scope";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { getAgentLabelsForReservations } from "@/lib/portal-attribution";
+import {
+  loadItineraryGroup,
+  loadItineraryMarks,
+} from "@/lib/itinerary/reservation-group-db";
+import type { ItineraryGroup } from "@/lib/itinerary/reservation-group";
 import type {
   Reservation,
   ReservationListRow,
@@ -71,15 +76,33 @@ export async function getReservations(): Promise<ReservationListRow[]> {
 
   // Staff-facing "סוכן" column - which office agent the booking is credited
   // to, resolved across every office by slug (see getAgentLabelsForReservations).
-  const agentLabels = await getAgentLabelsForReservations(
-    rows.map((r) => r.id),
-  );
+  // The Euro Trip chips ride the same wait: the three itinerary columns are NOT in the
+  // list select above (a deploy that beat its migration must still list everything), they
+  // come from a separate best-effort read that answers an empty map on any failure.
+  const [agentLabels, itineraryMarks] = await Promise.all([
+    getAgentLabelsForReservations(rows.map((r) => r.id)),
+    loadItineraryMarks(supabase),
+  ]);
 
   return rows.map(({ payment_info, ...row }) => ({
     ...row,
+    // Only a trip's rows carry the three fields; every other row's payload is unchanged.
+    ...itineraryMarks.get(row.id),
     has_payment_info: payment_info != null,
     agent_label: agentLabels.get(row.id) ?? null,
   }));
+}
+
+/**
+ * The reservations of one Euro Trip (the detail page's panel): the siblings in trip order, the
+ * trip total and the flight's legs. Null - never a throw - when the group is unknown or the
+ * itinerary columns are not migrated yet; the detail page then just has no panel.
+ */
+export async function getItineraryGroup(
+  group: string,
+): Promise<ItineraryGroup | null> {
+  await requireStaff();
+  return loadItineraryGroup(supabase, group);
 }
 
 /** Row count only (head request, no payload) - for the new-reservations poll. */
