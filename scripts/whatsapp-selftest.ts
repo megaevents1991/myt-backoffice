@@ -18,7 +18,7 @@ import {
   type WaEvent,
 } from "../lib/whatsapp/rules";
 import { envKey, phoneIdFor, tokenFor } from "../lib/whatsapp/env";
-import { WA_TEXT_MAX } from "../lib/whatsapp/rules";
+import { WA_TEXT_MAX, parseSignupInput } from "../lib/whatsapp/rules";
 import {
   RateGate,
   createMetaProvider,
@@ -197,6 +197,16 @@ assert.equal(envKey("mega-events"), "NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_EVENTS")
 assert.equal(phoneIdFor("mega-family", { NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY: "123456789012" }), "123456789012");
 assert.equal(phoneIdFor("mega-family", { NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY: "abc" }), null, "a phone id is digits");
 
+// ---- the Embedded Signup answer (Task 8): the code and the two ids, checked before any Meta call
+assert.deepEqual(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: "111222333", wabaId: "222333444", sharedHistory: true }), { ok: true, code: "AQBx-signup-code_123.456", phoneNumberId: "111222333", wabaId: "222333444", sharedHistory: true });
+assert.deepEqual(parseSignupInput({ code: " AQBx-signup-code_123.456 ", phoneNumberId: "111222333", wabaId: "222333444" }), { ok: true, code: "AQBx-signup-code_123.456", phoneNumberId: "111222333", wabaId: "222333444", sharedHistory: false }, "trimmed; history defaults to not shared");
+assert.equal(parseSignupInput({ code: "", phoneNumberId: "111222333", wabaId: "222333444" }).ok, false, "no code");
+assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: "x", wabaId: "222333444" }).ok, false, "a phone id is digits");
+assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: "111222333", wabaId: "" }).ok, false, "no waba");
+assert.equal(parseSignupInput({ code: "AQBx signup", phoneNumberId: "111222333", wabaId: "222333444" }).ok, false, "a code has no spaces inside");
+assert.equal(parseSignupInput({ code: "x".repeat(5000), phoneNumberId: "111222333", wabaId: "222333444" }).ok, false, "too long");
+assert.equal(parseSignupInput(null).ok, false);
+assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: 111222333, wabaId: "222333444" }).ok, false, "a number is not an id string");
 // ---- one line for chips
 assert.equal(previewText("שלום\nמה המחיר?", 10), "שלום מה ה…");
 assert.equal(previewText("קצר", 10), "קצר");

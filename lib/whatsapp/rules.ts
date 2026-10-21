@@ -284,3 +284,23 @@ export function previewText(text: string | null | undefined, max = 80): string {
   const one = (text ?? "").replace(/\s+/g, " ").trim();
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;
 }
+
+// ---------------------------------------------------------------- Embedded Signup
+
+export type SignupInput = { code: string; phoneNumberId: string; wabaId: string; sharedHistory: boolean };
+/** Meta's signup code: one token, no whitespace, a sane length. */
+const SIGNUP_CODE = /^[A-Za-z0-9_\-#.]{10,4096}$/;
+const META_ID = /^\d{6,20}$/;
+
+/** What the browser hands back from Meta's Embedded Signup, checked before any Meta call is made with it. */
+export function parseSignupInput(raw: unknown): ({ ok: true } & SignupInput) | { ok: false; error: string } {
+  const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+  if (!o) return { ok: false, error: "The signup answer is missing." };
+  const code = typeof o.code === "string" ? o.code.trim() : "";
+  if (!SIGNUP_CODE.test(code)) return { ok: false, error: "The signup code is missing or malformed." };
+  const phoneNumberId = typeof o.phoneNumberId === "string" ? o.phoneNumberId.trim() : "";
+  if (!META_ID.test(phoneNumberId)) return { ok: false, error: "The phone number id is missing - the signup did not finish." };
+  const wabaId = typeof o.wabaId === "string" ? o.wabaId.trim() : "";
+  if (!META_ID.test(wabaId)) return { ok: false, error: "The WhatsApp Business Account id is missing - the signup did not finish." };
+  return { ok: true, code, phoneNumberId, wabaId, sharedHistory: o.sharedHistory === true };
+}
