@@ -117,6 +117,7 @@ declare
   v_rep uuid;
   v_target record;
   v_joined boolean := false;
+  v_new_customer boolean := false;
   v_today date := (now() at time zone 'Asia/Jerusalem')::date;
 begin
   new.payload := coalesce(new.payload, '{}'::jsonb) - 'matched_by' - 'related_case' - 'merged' - 'merged_into' - 'joined_into' - 'inquiries';
@@ -179,14 +180,17 @@ begin
             case when coalesce(btrim(new.phone), '') <> '' then array[btrim(new.phone)] else '{}'::text[] end,
             nullif(lower(btrim(new.email)), ''), nullif(btrim(new.id_number), ''), nullif(btrim(new.acc_num), ''))
     returning id into v_cust;
+    v_new_customer := true;
   end if;
   new.customer_id := v_cust;
 
   -- (b) marketing consent from the site (2026-10-21, spec section 9): the contact form's checkbox or a newsletter
-  -- signup marks the customer opted in - never over a customer who asked to be removed (only 'none' moves).
-  if new.kind = 'newsletter' or coalesce(new.payload->>'acceptance', '') in ('on', 'true', '1') then
+  -- signup marks the customer opted in - ONLY a customer this very form created. A form is unauthenticated and
+  -- keyed by a phone anyone can type, so it never flips a known customer's consent (security review 21.10); the
+  -- lead's id is kept as the evidence. 'opted_out' is never touched.
+  if v_new_customer and (new.kind = 'newsletter' or coalesce(new.payload->>'acceptance', '') in ('on', 'true', '1')) then
     update public.customers c
-       set wa_consent = 'opted_in', wa_consent_source = 'site_form', wa_consent_at = now()
+       set wa_consent = 'opted_in', wa_consent_source = 'site_form:' || new.id::text, wa_consent_at = now()
      where c.id = v_cust and c.wa_consent = 'none';
   end if;
 

@@ -133,11 +133,16 @@ assert.equal(wa2.to_file, false);
 assert.equal(wa2.customer_id, b.customer_id, "the same customer");
 assert.equal(wa2.payload?.joined_into, undefined);
 
-// consent: the site form's checkbox marks the customer opted in; opted_out is never overwritten
+// consent: the site form's checkbox marks a NEW customer opted in (the form created the row), with the lead as evidence
 const c = await lead({ company_id: C, kind: "contact", name: "רונית", phone: "0501112233", payload: { acceptance: "on", message: "x" } });
 const [cust] = await q(`select wa_consent, wa_consent_source from public.customers where id = $1`, [c.customer_id]);
 assert.equal(cust.wa_consent, "opted_in");
-assert.equal(cust.wa_consent_source, "site_form");
+assert.equal(cust.wa_consent_source, `site_form:${c.id}`);
+// a form keyed by a KNOWN customer's phone never flips that customer (anyone can type a phone - security review 21.10)
+const known = await lead({ company_id: C, kind: "contact", name: "מישהו", phone: "0541234567", payload: { acceptance: "on", message: "x" } });
+assert.equal(known.customer_id, a.customer_id);
+assert.equal((await q(`select wa_consent from public.customers where id = $1`, [a.customer_id]))[0].wa_consent, "none", "an existing customer's consent is not set by a form");
+// opted_out is never overwritten
 await q(`update public.customers set wa_consent = 'opted_out' where id = $1`, [c.customer_id]);
 await lead({ company_id: C, kind: "newsletter", name: "רונית", phone: "0501112233" });
 assert.equal((await q(`select wa_consent from public.customers where id = $1`, [c.customer_id]))[0].wa_consent, "opted_out", "opted_out is never overwritten");
