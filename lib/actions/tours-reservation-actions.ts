@@ -20,6 +20,8 @@ import { toursDb } from "@/lib/tours/db";
 import { addDays, todayIso } from "@/lib/tours/deadlines";
 import { actionFail, actionOk, chunk, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
 import { companyAudit } from "@/lib/tours/company-kit";
+import { canSeeCard } from "@/lib/tours/board";
+import { boardViewerFor } from "@/lib/services/tours-board-viewer";
 import { departureSiteId } from "@/types/tours.types";
 import {
   MAX_TRAVELERS,
@@ -197,13 +199,15 @@ export async function createToursReservation(input: ReservationInput): Promise<A
       if (!UUID.test(input.leadId)) throw new UserError("The lead was not found.");
       const { data: lead, error: leadError } = await supabaseTyped
         .from("leads")
-        .select("id, status")
+        .select("id, status, assigned_to")
         .eq("company_id", company.id)
         .eq("id", input.leadId)
         .is("is_deleted", null)
         .maybeSingle();
       if (leadError) throw new Error(`leads: ${leadError.message}`);
       if (!lead) throw new UserError("The lead was not found.");
+      // the same door as the case page: a rep books on their own and the unassigned cards, a manager on any (21.10)
+      if (!canSeeCard({ assignedTo: lead.assigned_to }, await boardViewerFor(session, company))) throw new UserError("This card belongs to another rep");
       leadId = lead.id;
     }
 
