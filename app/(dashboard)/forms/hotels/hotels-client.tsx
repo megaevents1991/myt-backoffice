@@ -26,6 +26,15 @@ const PERIOD_LABEL: Record<Period, string> = {
   all: "All time",
 };
 
+/** Whose answers: everyone, the travellers only, or the escorts only (escort feedback forms). */
+const BY = ["all", "clients", "escorts"] as const;
+type By = (typeof BY)[number];
+const BY_LABEL: Record<By, string> = {
+  all: "Travellers + escorts",
+  clients: "Travellers only",
+  escorts: "Escorts only",
+};
+
 /** Under 3 needs a call, under 4 needs a look. */
 function scoreClass(avg: number): string {
   if (avg < 3) return "bg-red-500/15 text-red-700 dark:text-red-300";
@@ -42,6 +51,7 @@ type Row = HotelRow & { seriesText: string };
 export function HotelsClient({ report }: { report: HotelsReport }) {
   const [period, setPeriod] = useUrlState<Period>("period", "365", PERIODS);
   const [series, setSeries] = useUrlState<string>("series", "all");
+  const [by, setBy] = useUrlState<By>("by", "all", BY);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const seriesCodes = useMemo(
@@ -54,9 +64,12 @@ export function HotelsClient({ report }: { report: HotelsReport }) {
     const since =
       period === "all" ? null : new Date(Date.now() - Number(period) * 24 * 60 * 60 * 1000).toISOString();
     return report.answers.filter(
-      (a) => (!since || a.submittedAt >= since) && (series === "all" || a.series === series),
+      (a) =>
+        (!since || a.submittedAt >= since) &&
+        (series === "all" || a.series === series) &&
+        (by === "all" || a.audience === by),
     );
-  }, [report.answers, period, series]);
+  }, [report.answers, period, series, by]);
 
   const rows: Row[] = useMemo(
     () => buildHotelRows(answers).map((row) => ({ ...row, seriesText: row.series.join(" ") })),
@@ -195,6 +208,18 @@ export function HotelsClient({ report }: { report: HotelsReport }) {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={by} onValueChange={(next) => setBy(next as By)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BY.map((b) => (
+                  <SelectItem key={b} value={b}>
+                    {BY_LABEL[b]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={series} onValueChange={setSeries}>
               <SelectTrigger className="w-[150px]">
                 <SelectValue />
@@ -279,6 +304,11 @@ function HotelAnswers({
             <Star className="h-3 w-3 fill-current" />
             {a.value}/{a.max}
           </span>
+          {a.audience === "escorts" && (
+            <Badge variant="secondary" className="text-[10px]">
+              Escort
+            </Badge>
+          )}
           <span className="font-mono text-xs">{a.tripCode ?? "no trip link"}</span>
           <span className="text-xs text-muted-foreground">{dmy(a.submittedAt)}</span>
           <Link

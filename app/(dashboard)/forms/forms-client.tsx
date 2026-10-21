@@ -59,7 +59,7 @@ export function FormsClient({
   seriesOptions = [],
 }: {
   initialForms: FormSummary[];
-  /** forms_operator view: run forms (links/report/duplicate), never edit. */
+  /** forms_operator view: builds and runs the forms opened to operators; no blank form, no delete. */
   isOperator?: boolean;
   /** Tours series a new series form can be made for (staff only). */
   seriesOptions?: FormSeries[];
@@ -86,11 +86,8 @@ export function FormsClient({
     startTransition(async () => {
       try {
         const copy = await duplicateForm(form.id);
-        // The copy is a draft; an operator can't open the builder, so land
-        // them on the copy's invites page instead.
-        router.push(
-          isOperator ? `/forms/${copy.id}/invites` : `/forms/${copy.id}/edit`,
-        );
+        // The copy is a draft - staff and operators both finish it in the builder.
+        router.push(`/forms/${copy.id}/edit`);
       } catch {
         toast({ title: "Could not duplicate the form", variant: "destructive" });
       }
@@ -128,7 +125,7 @@ export function FormsClient({
             Hotels report
           </Link>
         </Button>
-        {!isOperator && seriesOptions.length > 0 && (
+        {seriesOptions.length > 0 && forms.length > 0 && (
           <Button variant="outline" onClick={() => setNewSeries(true)} disabled={pending}>
             <Layers className="mr-2 h-4 w-4" />
             New series form
@@ -176,14 +173,7 @@ export function FormsClient({
             {forms.map((form) => (
               <TableRow key={form.id}>
                 <TableCell>
-                  <Link
-                    href={
-                      isOperator
-                        ? `/forms/${form.id}/invites`
-                        : `/forms/${form.id}/edit`
-                    }
-                    className="font-medium hover:underline"
-                  >
+                  <Link href={`/forms/${form.id}/edit`} className="font-medium hover:underline">
                     {adminLabel(form.title_en, form.title_he) || "Untitled form"}
                   </Link>
                   {form.title_en && form.title_he && (
@@ -205,6 +195,11 @@ export function FormsClient({
                     </div>
                   ) : (
                     <span className="text-xs text-muted-foreground">General</span>
+                  )}
+                  {form.audience === "escorts" && (
+                    <Badge variant="secondary" className="mt-1 text-[10px]">
+                      Escort feedback
+                    </Badge>
                   )}
                 </TableCell>
                 <TableCell>
@@ -239,11 +234,9 @@ export function FormsClient({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      {!isOperator && (
-                        <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/edit`)}>
-                          <Pencil className="mr-2 h-4 w-4" /> Edit
-                        </DropdownMenuItem>
-                      )}
+                      <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/edit`)}>
+                        <Pencil className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => router.push(`/forms/${form.id}/report`)}>
                         <Map className="mr-2 h-4 w-4" /> Trips report
                       </DropdownMenuItem>

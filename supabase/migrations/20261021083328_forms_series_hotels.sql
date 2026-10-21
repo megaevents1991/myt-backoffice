@@ -1,12 +1,17 @@
 -- Feedback forms per series + a question per hotel (Alon, 21.10.2026).
 -- Spec: docs/superpowers/specs/2026-10-21-forms-series-hotels-design.md
--- Backoffice-only tables (main never reads forms) - three nullable columns, nothing rewritten:
+-- Backoffice-only tables (main never reads forms) - four nullable columns, nothing rewritten:
 -- every existing form, trip link and answer reads exactly as before.
 
 -- The series a feedback form belongs to (BBC / FPAR ... - the codes the trip links already carry).
 -- null = a general form, like #5 today.
 alter table public.forms
   add column if not exists series_id uuid references tours.series(id) on delete set null;
+
+-- Who answers the form: 'escorts' = the trip escort's own feedback (stage 2 of Alon's tab);
+-- null = the travellers, as every form so far. No CHECK - validated in the backoffice.
+alter table public.forms
+  add column if not exists audience text;
 
 -- The departure a trip link was made for, when it was picked from the list (typing by hand
 -- leaves it null).

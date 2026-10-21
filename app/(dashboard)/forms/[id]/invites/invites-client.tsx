@@ -117,7 +117,13 @@ export function InvitesClient({
           departureId: departure?.id ?? null,
         });
         await navigator.clipboard.writeText(url);
-        toast({ title: "Trip link copied - share it with the group", description: url });
+        toast({
+          title:
+            tripOptions.audience === "escorts"
+              ? "Trip link copied - send it to the escort"
+              : "Trip link copied - share it with the group",
+          description: url,
+        });
         setCodePrefix("");
         setCodeNum("");
         setTotalTravelers("");
@@ -230,8 +236,9 @@ export function InvitesClient({
               Trip link
             </h2>
             <p className="text-sm text-muted-foreground">
-              Fill in the escort details once, get one link the whole group can
-              use. Every answer that comes back carries these details.
+              {tripOptions.audience === "escorts"
+                ? "An escort feedback form: fill in the trip details, get the link and send it to the escort - their answers come back with these details."
+                : "Fill in the escort details once, get one link the whole group can use. Every answer that comes back carries these details."}
             </p>
           </div>
 

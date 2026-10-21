@@ -17,13 +17,14 @@ import { departureTripCode, orderDepartures, type SeriesDeparture } from "@/lib/
 import { escortKey } from "@/lib/forms/report";
 import { readDeparture, readGuideNames, readOneSeries, readSeriesDepartures } from "@/lib/services/form-series";
 import { fetchPaged } from "@/lib/supabase-paged";
-import { resolveLang } from "@/types/form.types";
+import { audienceOf, resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
   AnswerValue,
   FormField,
   FormInvite,
   FormLang,
+  FormAudience,
   FormSeries,
 } from "@/types/form.types";
 
@@ -154,6 +155,8 @@ export type TripLinkOptions = {
   escorts: string[];
   /** Set when the departures could not be read - the card still works by hand. */
   error: string | null;
+  /** "escorts": the link goes to the escort, not to the group. */
+  audience: FormAudience;
 };
 
 const ESCORTS_MAX = 500;
@@ -167,9 +170,10 @@ export async function getTripLinkOptions(formId: number): Promise<TripLinkOption
   await requireFormVisible(actor, formId);
 
   const { data: form } = await liveRowsQuery((withSeries) =>
-    formsTable().select(withSeries ? "id,series_id" : "id").eq("id", formId).maybeSingle(),
+    formsTable().select(withSeries ? "id,series_id,audience" : "id").eq("id", formId).maybeSingle(),
   );
   const seriesId: string | null = form?.series_id ?? null;
+  const audience = audienceOf(form ?? {});
 
   const [seriesRes, departuresRes, linksRes, escorts] = await Promise.all([
     seriesId ? readOneSeries(seriesId).catch(() => null) : Promise.resolve(null),
@@ -219,7 +223,7 @@ export async function getTripLinkOptions(formId: number): Promise<TripLinkOption
     });
   }
 
-  return { series: seriesRes, departures, escorts, error: departuresRes.error };
+  return { series: seriesRes, departures, escorts, error: departuresRes.error, audience };
 }
 
 /**

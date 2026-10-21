@@ -35,6 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   saveFormFields,
+  setFormAudience,
   setFormSeries,
   setFormStatus,
   updateFormMeta,
@@ -44,6 +45,7 @@ import {
   CHOICE_TYPES,
   FIELD_TYPE_LABELS,
   FORM_FIELD_TYPES,
+  audienceOf,
   enabledLangs,
 } from "@/types/form.types";
 import { adminLabel, hasAnyLang } from "@/lib/forms/i18n";
@@ -53,6 +55,7 @@ import { GOOGLE_REVIEW_LINKS } from "@/lib/forms/review-links";
 import { StorageImageBrowser } from "@/components/storage-image-browser";
 import type {
   Form,
+  FormAudience,
   FormField,
   FormFieldDraft,
   FormFieldType,
@@ -191,13 +194,50 @@ type Props = {
   seriesOptions: FormSeries[];
   /** The other forms: copy targets for a question, and which series already has a form. */
   otherForms: (CopyTarget & { seriesId: string | null })[];
+  /**
+   * A forms operator builds the forms opened to operators (Dor 21.10); opening a form to
+   * operators and the Storage image picker stay staff tools.
+   */
+  isOperator?: boolean;
 };
 
-export function FormBuilder({ form, initialFields, seriesOptions, otherForms }: Props) {
+export function FormBuilder({
+  form,
+  initialFields,
+  seriesOptions,
+  otherForms,
+  isOperator = false,
+}: Props) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
   const [seriesPending, startSeries] = useTransition();
   const [seriesId, setSeriesId] = useState<string>(form.series_id ?? NO_SERIES);
+  const [audience, setAudience] = useState<FormAudience>(audienceOf(form));
+
+  /** Saved at once, like the series. */
+  function handleAudience(next: FormAudience) {
+    const previous = audience;
+    setAudience(next);
+    startSeries(async () => {
+      try {
+        await setFormAudience(form.id, next);
+        toast({
+          title: next === "escorts" ? "Escort feedback form" : "Travellers' feedback form",
+          description:
+            next === "escorts"
+              ? "Its answers count as the escort's in the hotels report."
+              : undefined,
+        });
+      } catch (error) {
+        setAudience(previous);
+        toast({
+          title: "Could not change who answers",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
+      }
+    });
+  }
 
   /** Saved at once - a series is not a draft edit, it changes what the trip links offer. */
   function handleSeries(next: string) {
@@ -576,6 +616,22 @@ export function FormBuilder({ form, initialFields, seriesOptions, otherForms }: 
                 trip links pick that series&apos; departures. Saved at once.
               </p>
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Who answers</Label>
+              <Select
+                value={audience}
+                onValueChange={(next) => handleAudience(next as FormAudience)}
+                disabled={seriesPending}
+              >
+                <SelectTrigger className="sm:w-[360px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="clients">The travellers - one link for the whole group</SelectItem>
+                  <SelectItem value="escorts">The escort - their own feedback on the trip</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <BilingualInput
               label="Form title"
               required
@@ -671,16 +727,18 @@ export function FormBuilder({ form, initialFields, seriesOptions, otherForms }: 
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Switch
-                id="operator-visible"
-                checked={operatorVisible}
-                onCheckedChange={touch(setOperatorVisible)}
-              />
-              <Label htmlFor="operator-visible" className="text-sm font-normal">
-                Visible to forms operators (trip links, responses, report)
-              </Label>
-            </div>
+            {!isOperator && (
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="operator-visible"
+                  checked={operatorVisible}
+                  onCheckedChange={touch(setOperatorVisible)}
+                />
+                <Label htmlFor="operator-visible" className="text-sm font-normal">
+                  Visible to forms operators (build, trip links, responses, report)
+                </Label>
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -820,20 +878,27 @@ export function FormBuilder({ form, initialFields, seriesOptions, otherForms }: 
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ImageSlot
-                label="Logo"
-                hint="Shown top-left. PNG/SVG with transparency works best."
-                url={logoUrl}
-                onChange={touch(setLogoUrl)}
-              />
-              <ImageSlot
-                label="Cover image"
-                hint="Sits behind the title, dimmed so text stays readable."
-                url={coverUrl}
-                onChange={touch(setCoverUrl)}
-              />
-            </div>
+            {isOperator ? (
+              <p className="text-xs text-muted-foreground">
+                The logo and the cover image come with the form you copied - Mega staff change
+                them.
+              </p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ImageSlot
+                  label="Logo"
+                  hint="Shown top-left. PNG/SVG with transparency works best."
+                  url={logoUrl}
+                  onChange={touch(setLogoUrl)}
+                />
+                <ImageSlot
+                  label="Cover image"
+                  hint="Sits behind the title, dimmed so text stays readable."
+                  url={coverUrl}
+                  onChange={touch(setCoverUrl)}
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">

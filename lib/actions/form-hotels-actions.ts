@@ -15,7 +15,8 @@ import { adminLabel } from "@/lib/forms/i18n";
 import { hotelOf, snapshotsOf, type HotelAnswer } from "@/lib/forms/series";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { readSeries } from "@/lib/services/form-series";
-import type { AnswerMap, FormField } from "@/types/form.types";
+import { audienceOf } from "@/types/form.types";
+import type { AnswerMap, FormAudience, FormField } from "@/types/form.types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const table = (name: string) => (supabase as any).from(name);
@@ -26,6 +27,8 @@ export type HotelReportAnswer = HotelAnswer & {
   responseId: number;
   /** The free-text answers of the same response (long text), for "why the low score". */
   note: string | null;
+  /** Whose answer: a traveller's, or the escort's (an escort feedback form). */
+  audience: FormAudience;
 };
 
 export type HotelsReport = {
@@ -66,7 +69,7 @@ export async function getHotelsReport(): Promise<HotelsReport> {
 
   const { data: formsData, error: formsError } = await liveRowsQuery((withSeries) => {
     let query = table("forms")
-      .select(withSeries ? "id,title_en,title_he,series_id" : "id,title_en,title_he")
+      .select(withSeries ? "id,title_en,title_he,series_id,audience" : "id,title_en,title_he")
       .is("is_deleted", null);
     // Operators read only the forms opened to them - same rule as the forms list.
     if (actor.role === "forms_operator") query = query.eq("operator_visible", true);
@@ -81,7 +84,9 @@ export async function getHotelsReport(): Promise<HotelsReport> {
     title_en: string | null;
     title_he: string | null;
     series_id?: string | null;
+    audience?: string | null;
   }[];
+  const formAudience = new Map(forms.map((f) => [f.id, audienceOf(f)]));
   if (forms.length === 0) return { answers: [], forms: [], truncated: false };
 
   const { data: fieldsData, error: fieldsError } = await table("form_fields")
@@ -178,6 +183,7 @@ export async function getHotelsReport(): Promise<HotelsReport> {
         series: trip?.series ?? formSeries.get(response.form_id) ?? null,
         submittedAt: response.submitted_at,
         note,
+        audience: formAudience.get(response.form_id) ?? "clients",
       });
     }
   }

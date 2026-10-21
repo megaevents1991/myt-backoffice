@@ -996,8 +996,16 @@ these tables.
   it) and suggests escort names (past links + `tours.instructors`). Every star row prints "1 = גרוע / max =
   מצוין". Pure rules in `lib/forms/series.ts` (`scripts/forms-series-selftest.ts`); every read/write of a new
   column falls back on 42703 / PGRST204 (`liveRowsQuery` doubles as the generic optional-column helper).
-  Form #5 and its answers are untouched. Not built: stage 2 (escort feedback per series - needs "who answers"
-  so the hotels report does not mix clients and escorts), a cross-series escorts view.
+  Form #5 and its answers are untouched. **Stage 2 - escort feedback (same day):** `forms.audience` (`escorts`,
+  null = travellers; `audienceOf`, no CHECK) - "Who answers" in the builder (`setFormAudience`) and in "New
+  series form" (`createSeriesForm(base, series, { audience, questions: "copy" | "trip_details" })`: trip details
+  only = the base's staff questions, seeded when it has none; an escort form drops the Google prompt); the trip-link
+  card says "send it to the escort"; `/forms/hotels` filters "Travellers only / Escorts only" (`?by=`).
+  **Forms operators BUILD (Dor 21.10, for Daniel @megatr):** `requireFormEditor` = `requireFormsAccess` +
+  `requireFormVisible` on updateFormMeta / saveFormFields / setFormStatus / setFormSeries / setFormAudience /
+  copyFieldToForms (targets limited to operator forms) and createSeriesForm (the copy stays operator-visible); an
+  operator's save keeps `operator_visible` true; the builder hides that switch and the Storage image picker for
+  them. Staff only still: a blank "New form", delete, personal invite mails. Not built: a cross-series escorts view.
 
 ### Reservation Follow-up (2026-10-04)
 

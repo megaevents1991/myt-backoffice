@@ -48,10 +48,17 @@ name and he knows whom to call or what to change.
    another form's question). My answer to "add one question to all 56 series".
 7. **1 = poor, 5 = excellent** under every star rating on the public form.
 
+8. **Stage 2 - escort feedback** (Dor: "do all before push"): `forms.audience` (`escorts` | null =
+   travellers). "New series form" asks who answers and whether to start from all the base's
+   questions or only its trip details; an escort form drops the Google review prompt; its trip
+   link goes to the escort. The hotels report splits travellers / escorts. Hotels stay per series
+   (the same rule as the travellers' form), not per trip.
+9. **Forms operators build their own forms** (Dor 21.10, for Daniel): edit, publish, series forms,
+   copy-question - on forms opened to operators only. Still staff: blank form, delete, opening a
+   form to operators, the Storage image picker, personal invite mails.
+
 ## Not built (next)
 
-- Stage 2 - escort feedback per series with per-trip hotels: the same pieces, plus "who
-  answers" (clients / escorts) so the hotels report does not mix the two.
 - A cross-series escorts view (today escorts compare inside one form).
 - Pre-filling the trip size from the departure's bookings.
 

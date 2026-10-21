@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getForm, getForms, listFormSeries } from "@/lib/actions/form-actions";
 import { adminLabel } from "@/lib/forms/i18n";
 import { getSession } from "@/lib/auth/guards";
@@ -15,12 +15,10 @@ export default async function EditFormPage({
   const formId = Number(id);
   if (!Number.isFinite(formId)) notFound();
 
-  // The builder edits and publishes - staff only. An operator landing here
-  // (old link, the copy-redirect) goes to the form's invites page instead.
+  // Staff build every form; a forms operator builds the forms opened to operators
+  // (Dor 21.10) - getForm returns null for any other, and every save re-checks it.
   const session = await getSession();
-  if (session?.role === "forms_operator") {
-    redirect(`/forms/${formId}/invites`);
-  }
+  const isOperator = session?.role === "forms_operator";
 
   const [loaded, forms, seriesOptions] = await Promise.all([
     getForm(formId),
@@ -35,6 +33,7 @@ export default async function EditFormPage({
       form={loaded.form}
       initialFields={loaded.fields}
       seriesOptions={seriesOptions}
+      isOperator={isOperator}
       otherForms={forms
         .filter((f) => f.id !== formId)
         .map((f) => ({

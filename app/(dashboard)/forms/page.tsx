@@ -9,8 +9,8 @@ export default async function FormsPage() {
   const isOperator = session?.role === "forms_operator";
   const [forms, seriesOptions] = await Promise.all([
     getForms(),
-    // Only staff make series forms; a failed tours read only hides the button.
-    isOperator ? Promise.resolve([]) : listFormSeries().catch(() => []),
+    // Staff and forms operators make series forms; a failed tours read only hides the button.
+    listFormSeries().catch(() => []),
   ]);
 
   return (

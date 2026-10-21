@@ -119,6 +119,15 @@ export type FormFieldConfig = {
   hotel?: { city_he: string; city_en?: string | null; name: string };
 };
 
+/** Who answers a form: the travellers (every form so far) or the trip's escort. */
+export const FORM_AUDIENCES = ["clients", "escorts"] as const;
+export type FormAudience = (typeof FORM_AUDIENCES)[number];
+
+/** A form's audience as stored - anything but "escorts" is the travellers. */
+export function audienceOf(form: { audience?: string | null }): FormAudience {
+  return form.audience === "escorts" ? "escorts" : "clients";
+}
+
 /** What a hotel question named when one answer came in (`form_responses.field_context`). */
 export type HotelSnapshot = { city: string; name: string };
 
@@ -177,6 +186,8 @@ export type Form = {
    * series' departures. null = a general form. Optional: absent before the migration.
    */
   series_id?: string | null;
+  /** Who answers it: "escorts" = the trip escort's feedback; null/absent = the travellers. */
+  audience?: FormAudience | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

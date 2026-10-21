@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import { requireFormsAccess, requireStaff } from "@/lib/auth/guards";
+import { requireFormVisible, requireFormsAccess, requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import type {
   Form,
+  FormAudience,
   FormField,
   FormFieldDraft,
   FormFieldType,
@@ -16,7 +17,7 @@ import type {
   FormSummary,
   FormTheme,
 } from "@/types/form.types";
-import { FORM_FIELD_TYPES } from "@/types/form.types";
+import { FORM_FIELD_TYPES, audienceOf } from "@/types/form.types";
 import { DEFAULT_ACCENT } from "@/lib/forms/brand";
 import { liveRowsQuery } from "@/lib/forms/soft-delete";
 import { normalizeHotelConfig } from "@/lib/forms/series";
@@ -81,7 +82,20 @@ async function uniqueSlug(base: string, ignoreId?: number): Promise<string> {
  * not break in between (same rule as `liveRowsQuery`).
  */
 const formColumns = (withSeries: boolean) =>
-  withSeries ? `${FORM_COLUMNS},series_id` : FORM_COLUMNS;
+  withSeries ? `${FORM_COLUMNS},series_id,audience` : FORM_COLUMNS;
+
+/**
+ * Who may BUILD a form (questions, design, status, series): staff, or a forms_operator on a
+ * form opened to operators (Dor 21.10 - Daniel sets up his own series forms). Deleting a form
+ * and opening it to operators stay staff-only.
+ */
+async function requireFormEditor(formId: number) {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+  return actor;
+}
+
+const isOperator = (actor: { role: string }) => actor.role === "forms_operator";
 
 /** Series code + tour name per series id; a failed tours read only drops the labels. */
 async function seriesById(ids: (string | null | undefined)[]): Promise<Map<string, FormSeries>> {
@@ -226,7 +240,7 @@ export async function updateFormMeta(
   id: number,
   input: FormMetaInput,
 ): Promise<Form> {
-  await requireStaff();
+  const actor = await requireFormEditor(id);
 
   // A form may be authored in Hebrew only - require one language, not English.
   const titleEn = input.title_en?.trim() ?? "";
@@ -269,7 +283,8 @@ export async function updateFormMeta(
       input.review_min_avg <= 5
         ? input.review_min_avg
         : null,
-    operator_visible: Boolean(input.operator_visible),
+    // An operator never closes a form to operators - they would lock themselves out of it.
+    operator_visible: isOperator(actor) ? true : Boolean(input.operator_visible),
     slug,
     languages,
     default_lang: defaultLang,
@@ -310,7 +325,7 @@ export async function setFormStatus(
   id: number,
   status: FormStatus,
 ): Promise<Form> {
-  await requireStaff();
+  await requireFormEditor(id);
   if (!["draft", "live", "closed"].includes(status)) {
     throw new Error("Invalid status");
   }
@@ -399,7 +414,7 @@ export async function saveFormFields(
   formId: number,
   fields: FormFieldDraft[],
 ): Promise<FormField[]> {
-  await requireStaff();
+  await requireFormEditor(formId);
 
   const { data: existing, error: existingError } = await fieldsTable()
     .select("id")
@@ -480,33 +495,92 @@ export async function duplicateForm(id: number): Promise<Form> {
     slugBase: `${loaded.form.title_en} copy`,
     title_en: `${loaded.form.title_en} (copy)`,
     title_he: loaded.form.title_he,
+    // An escort form copies as an escort form; the series is picked anew.
+    audience: audienceOf(loaded.form),
     createdBy: actor.email ?? null,
     audit: { duplicated_from: id },
   });
 }
 
+/** The trip details a form needs for trip links when it starts without the base's questions. */
+const TRIP_DETAIL_FIELDS: FormFieldDraft[] = [
+  { type: "section", label_en: "Trip details", label_he: "פרטי הטיול", required: false },
+  { type: "short_text", label_en: "Escort name", label_he: "שם המלווה", required: true },
+  { type: "date", label_en: "Departure date", label_he: "מועד יציאה", required: true },
+].map((field, index) => ({
+  ...field,
+  id: -(index + 1),
+  type: field.type as FormFieldType,
+  position: index,
+  help_en: null,
+  help_he: null,
+  placeholder_en: null,
+  placeholder_he: null,
+  staff_only: true,
+  options: [],
+  config: {},
+}));
+
 /**
- * A new draft form for one tours series, copied from a base form (its questions, design,
- * Google gate and operator access) and tied to the series - every trip link of it then
- * picks that series' departures. Staff only: the copy is meant to be edited.
+ * A new draft form for one tours series, tied to the series - every trip link of it then
+ * picks that series' departures. It starts from a base form: its design always, and either
+ * all its questions (`questions: "copy"`) or only its trip details (`"trip_details"` - the
+ * staff questions: escort, departure date; seeded when the base has none). An escort form
+ * (`audience: "escorts"`, stage 2) never inherits the base's Google review prompt.
+ * Staff, or a forms operator from a form open to operators - the copy stays open to them.
  */
-export async function createSeriesForm(baseFormId: number, seriesId: string): Promise<Form> {
-  const actor = await requireStaff();
+export async function createSeriesForm(
+  baseFormId: number,
+  seriesId: string,
+  opts: { audience?: FormAudience; questions?: "copy" | "trip_details" } = {},
+): Promise<Form> {
+  const actor = await requireFormsAccess();
   const loaded = await getForm(baseFormId);
   if (!loaded) throw new Error("Base form not found");
   const series = await readOneSeries(String(seriesId ?? ""));
   if (!series) throw new Error("Series not found");
+  const audience: FormAudience = opts.audience === "escorts" ? "escorts" : "clients";
+  const escorts = audience === "escorts";
+
+  const staffFields = loaded.fields.filter((field) => field.staff_only);
+  const fields =
+    opts.questions === "trip_details"
+      ? staffFields.length > 0
+        ? staffFields
+        : (TRIP_DETAIL_FIELDS as unknown as FormField[])
+      : loaded.fields;
 
   const label = series.name ? `${series.code} ${series.name}` : series.code;
-  const titleHe = loaded.form.title_he ? `${loaded.form.title_he} · ${series.name ?? series.code}` : null;
-  return copyForm(loaded, {
-    slugBase: `${series.code} ${loaded.form.title_en || "feedback"}`,
-    title_en: `${loaded.form.title_en || "Feedback"} · ${series.code}`,
-    title_he: titleHe,
-    series_id: series.id,
-    createdBy: actor.email ?? null,
-    audit: { duplicated_from: baseFormId, series: label },
-  });
+  const place = series.name ?? series.code;
+  return copyForm(
+    {
+      form: escorts
+        ? {
+            ...loaded.form,
+            review_link_url: null,
+            review_min_avg: null,
+            description_he: null,
+            description_en: null,
+          }
+        : loaded.form,
+      fields,
+    },
+    {
+      slugBase: `${series.code} ${escorts ? "escort feedback" : loaded.form.title_en || "feedback"}`,
+      title_en: escorts ? `Escort feedback · ${series.code}` : `${loaded.form.title_en || "Feedback"} · ${series.code}`,
+      title_he: escorts
+        ? `משוב מלווה · ${place}`
+        : loaded.form.title_he
+          ? `${loaded.form.title_he} · ${place}`
+          : null,
+      series_id: series.id,
+      audience,
+      // A form an operator made must stay theirs to open.
+      operatorVisible: isOperator(actor) ? true : loaded.form.operator_visible,
+      createdBy: actor.email ?? null,
+      audit: { duplicated_from: baseFormId, series: label, audience, questions: opts.questions ?? "copy" },
+    },
+  );
 }
 
 async function copyForm(
@@ -517,6 +591,8 @@ async function copyForm(
     title_he: string | null;
     /** Only a series form writes the column - a plain duplicate works before the migration. */
     series_id?: string;
+    audience?: FormAudience;
+    operatorVisible?: boolean;
     createdBy: string | null;
     audit: Record<string, unknown>;
   },
@@ -528,13 +604,14 @@ async function copyForm(
       title_en: opts.title_en,
       title_he: opts.title_he,
       ...(opts.series_id ? { series_id: opts.series_id } : {}),
+      ...(opts.audience === "escorts" ? { audience: "escorts" } : {}),
       description_en: loaded.form.description_en,
       description_he: loaded.form.description_he,
       thank_you_en: loaded.form.thank_you_en,
       thank_you_he: loaded.form.thank_you_he,
       review_link_url: loaded.form.review_link_url,
       review_min_avg: loaded.form.review_min_avg,
-      operator_visible: loaded.form.operator_visible,
+      operator_visible: opts.operatorVisible ?? loaded.form.operator_visible,
       status: "draft",
       languages: loaded.form.languages,
       default_lang: loaded.form.default_lang,
@@ -549,7 +626,7 @@ async function copyForm(
 
   if (error) {
     console.error("duplicateForm failed:", JSON.stringify(error));
-    if (opts.series_id && (error.code === "42703" || error.code === "PGRST204")) {
+    if ((opts.series_id || opts.audience === "escorts") && (error.code === "42703" || error.code === "PGRST204")) {
       throw new Error("Series forms arrive with the next system update - try again in a few minutes");
     }
     throw error;
@@ -642,12 +719,12 @@ export async function getFormResponseCount(formId: number): Promise<number> {
 }
 
 /**
- * Every tours series a form can belong to, by code, with its tour's name. Staff only:
- * tying a form to a series is a builder action, and an operator's trip-link card reads its
- * own form's series through getTripLinkOptions.
+ * Every tours series a form can belong to, by code, with its tour's name - for "New series
+ * form" and the builder's Series box. Forms operators build their own series forms (Dor
+ * 21.10), so they read it too; it holds codes and tour names the site already shows.
  */
 export async function listFormSeries(): Promise<FormSeries[]> {
-  await requireStaff();
+  await requireFormsAccess();
   return readSeries();
 }
 
@@ -656,7 +733,7 @@ export async function listFormSeries(): Promise<FormSeries[]> {
  * departures; nothing already collected changes.
  */
 export async function setFormSeries(formId: number, seriesId: string | null): Promise<FormSeries | null> {
-  await requireStaff();
+  await requireFormEditor(formId);
   const series = seriesId ? await readOneSeries(String(seriesId)) : null;
   if (seriesId && !series) throw new Error("Series not found");
 
@@ -684,6 +761,27 @@ export async function setFormSeries(formId: number, seriesId: string | null): Pr
   return series;
 }
 
+/** Who answers the form - its travellers, or the trip escort (stage 2). Saved at once. */
+export async function setFormAudience(formId: number, audience: FormAudience): Promise<FormAudience> {
+  await requireFormEditor(formId);
+  const next: FormAudience = audience === "escorts" ? "escorts" : "clients";
+  const { error } = await formsTable()
+    .update({ audience: next === "escorts" ? "escorts" : null, updated_at: new Date().toISOString() })
+    .eq("id", formId)
+    .is("is_deleted", null);
+  if (error) {
+    console.error("setFormAudience failed:", JSON.stringify(error));
+    if (error.code === "42703" || error.code === "PGRST204") {
+      throw new Error("Escort forms arrive with the next system update - try again in a few minutes");
+    }
+    throw error;
+  }
+  await logAudit({ action: "update", entityType: "form", entityId: formId, changes: { audience: next } });
+  revalidatePath("/forms");
+  revalidatePath(`/forms/${formId}/edit`);
+  return next;
+}
+
 const COPY_TARGETS_MAX = 100;
 
 /**
@@ -696,7 +794,7 @@ export async function copyFieldToForms(
   fieldId: number,
   targetFormIds: number[],
 ): Promise<{ copied: number[] }> {
-  await requireStaff();
+  const actor = await requireFormsAccess();
   const targets = [...new Set((targetFormIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
   if (targets.length === 0) throw new Error("Pick at least one form");
   if (targets.length > COPY_TARGETS_MAX) throw new Error(`At most ${COPY_TARGETS_MAX} forms at once`);
@@ -710,11 +808,12 @@ export async function copyFieldToForms(
     throw sourceError;
   }
   if (!source) throw new Error("Save the form first - this question is not saved yet");
+  await requireFormVisible(actor, (source as FormField).form_id);
 
-  const { data: forms, error: formsError } = await formsTable()
-    .select("id")
-    .in("id", targets)
-    .is("is_deleted", null);
+  let formsQuery = formsTable().select("id").in("id", targets).is("is_deleted", null);
+  // An operator copies only into the forms opened to them.
+  if (isOperator(actor)) formsQuery = formsQuery.eq("operator_visible", true);
+  const { data: forms, error: formsError } = await formsQuery;
   if (formsError) {
     console.error("copyFieldToForms forms failed:", JSON.stringify(formsError));
     throw formsError;

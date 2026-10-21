@@ -263,9 +263,11 @@ export async function requireStaffOfAnyCompany(): Promise<SessionPayload> {
 }
 
 /**
- * Staff or forms_operator - the READ/RUN side of the forms area: list, view,
- * duplicate, trip links, responses, trips report. Anything that edits or
- * publishes a questionnaire stays behind requireStaff.
+ * Staff or forms_operator - the forms area: list, view, duplicate, trip links,
+ * responses, reports, and (since 21.10, Dor) building and publishing the forms
+ * opened to operators - every per-form action adds `requireFormVisible`. A blank
+ * new form, deleting a form, opening it to operators and personal invite mails
+ * stay behind requireStaff.
  */
 export async function requireFormsAccess(): Promise<SessionPayload> {
   const session = await requireRole(

@@ -22,7 +22,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { createSeriesForm } from "@/lib/actions/form-actions";
 import { adminLabel } from "@/lib/forms/i18n";
-import type { FormSeries, FormSummary } from "@/types/form.types";
+import { audienceOf } from "@/types/form.types";
+import type { FormAudience, FormSeries, FormSummary } from "@/types/form.types";
 
 /**
  * "New series form": copy a base form's questions into a draft tied to one series. The
@@ -50,13 +51,22 @@ export function NewSeriesFormDialog({
   );
   const [baseId, setBaseId] = useState<string>(defaultBase ? String(defaultBase.id) : "");
   const [seriesId, setSeriesId] = useState<string>("");
+  const [audience, setAudience] = useState<FormAudience>("clients");
+  const [questions, setQuestions] = useState<"copy" | "trip_details">("copy");
 
-  const formsOfSeries = (id: string) => forms.filter((f) => f.series_id === id);
+  const formsOfSeries = (id: string) =>
+    forms.filter((f) => f.series_id === id && audienceOf(f) === audience);
+
+  function pickAudience(next: FormAudience) {
+    setAudience(next);
+    // An escort form rarely wants the travellers' questions - start it from the trip details.
+    setQuestions(next === "escorts" ? "trip_details" : "copy");
+  }
 
   function handleCreate() {
     startTransition(async () => {
       try {
-        const created = await createSeriesForm(Number(baseId), seriesId);
+        const created = await createSeriesForm(Number(baseId), seriesId, { audience, questions });
         toast({ title: "Series form created as a draft - add its hotels, then set it Live" });
         router.push(`/forms/${created.id}/edit`);
       } catch (error) {
@@ -84,6 +94,19 @@ export function NewSeriesFormDialog({
 
         <div className="space-y-4">
           <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Who answers</Label>
+            <Select value={audience} onValueChange={(next) => pickAudience(next as FormAudience)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="clients">The travellers (trip feedback)</SelectItem>
+                <SelectItem value="escorts">The escort (escort feedback)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
             <Label className="text-xs font-medium text-muted-foreground">Series</Label>
             <Select value={seriesId} onValueChange={setSeriesId}>
               <SelectTrigger>
@@ -105,14 +128,31 @@ export function NewSeriesFormDialog({
             </Select>
             {taken.length > 0 && (
               <p className="text-xs text-amber-600">
-                This series already has a form. A second one is allowed (a new season, a new
-                version) - its trip links keep their own report.
+                This series already has a{audience === "escorts" ? "n escort" : ""} form. A second
+                one is allowed (a new season, a new version) - its trip links keep their own report.
               </p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-muted-foreground">Copy the questions of</Label>
+            <Label className="text-xs font-medium text-muted-foreground">Start with</Label>
+            <Select value={questions} onValueChange={(next) => setQuestions(next as "copy" | "trip_details")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="copy">All the questions of the form below</SelectItem>
+                <SelectItem value="trip_details">
+                  Only the trip details (escort, departure date) - I add the questions
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
+              {questions === "copy" ? "Copy the questions and design of" : "Copy the design of"}
+            </Label>
             <Select value={baseId} onValueChange={setBaseId}>
               <SelectTrigger>
                 <SelectValue placeholder="Pick a form…" />
