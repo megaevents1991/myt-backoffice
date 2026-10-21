@@ -17,6 +17,12 @@ const TEMPLATE_TYPES: {
   { segment: "artists", title: "Artists", description: "Artist pages.", enabled: true },
   { segment: "football", title: "Football Teams", description: "Team pages.", enabled: true },
   { segment: "blog", title: "Blog", description: "Blog posts.", enabled: true },
+  {
+    segment: "euro-trip/settings",
+    title: "Euro Trip",
+    description: "Build Your Euro Trip - the on/off switch, payments, discounts and route rules.",
+    enabled: true,
+  },
 ];
 
 export default function TemplatesHubPage() {

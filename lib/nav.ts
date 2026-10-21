@@ -607,6 +607,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   artists: "Artists",
   football: "Football Teams",
   blog: "Blog",
+  "euro-trip": "Euro Trip",
+  settings: "Settings",
   assets: "Assets",
   storage: "Storage",
   locations: "Locations",
