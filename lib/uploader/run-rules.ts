@@ -9,6 +9,7 @@
  */
 import { clubKey, normalizeName } from "@/lib/on-tour";
 import { decision } from "@/lib/uploader/decisions";
+import { applyPriorDefaults, planDiff } from "@/lib/uploader/plan";
 import { WARNING_TEXT } from "@/lib/uploader/warnings";
 import {
   existingEventFor,
@@ -328,6 +329,32 @@ export function planPreview(found: {
  */
 export const EDIT_EVENT_COLUMNS =
   "id,name,name_english,date,def_date_depart,def_date_return,base_flight_price,base_hotel_price,event_additional_markup,ticket_only_markup,package_mode,location,event_location,lodging_mode,lodging_default,split_default_nights,tickets_and_rates" as const;
+
+// ---- what staff changed on the plan card ----------------------------------------------------------
+
+type PriorMarkups = { ticket_only: number | null; additional: number | null } | null;
+
+/**
+ * The `uploader.plan_edited` lessons of a run: what staff changed on the plan card, measured from
+ * what the card SHOWED them - the model's plan with the last run's markups filled in exactly as
+ * `parseBrief` did it (`applyPriorDefaults`) - not from the model's bare plan, or a markup the
+ * server filled ("מהפעם הקודמת") and nobody touched would read as a staff correction (null -> 75),
+ * a false lesson for the parser. No model plan (the manual form) = no lessons.
+ * `prior` = the last run's markups, or "unknown" when that read failed: then a markup the model
+ * left empty may have been filled by the server or typed by staff - it cannot be told, so it
+ * teaches nothing (a lost lesson rather than a false one).
+ */
+export function planEdits(
+  planAi: UploaderPlan | null,
+  plan: UploaderPlan,
+  prior: PriorMarkups | "unknown",
+): { field: string; from: unknown; to: unknown }[] {
+  if (planAi === null) return [];
+  if (prior === "unknown") {
+    return planDiff(planAi, plan).filter((c) => !(c.field.startsWith("markups.") && c.from === null));
+  }
+  return planDiff(applyPriorDefaults(planAi, prior).plan, plan);
+}
 
 // ---- a run's counts and status --------------------------------------------------------------------
 

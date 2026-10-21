@@ -77,7 +77,7 @@ import {
 } from "@/lib/services/uploader-store";
 import { REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { editDiff } from "@/lib/uploader/decisions";
-import { applyPriorDefaults, emptyPlan, parsePlanInput, planDiff } from "@/lib/uploader/plan";
+import { applyPriorDefaults, emptyPlan, parsePlanInput } from "@/lib/uploader/plan";
 import {
   answerEffect,
   BRIEF_MAX,
@@ -90,6 +90,7 @@ import {
   isStaleBuild,
   isUuid,
   liveBlockers,
+  planEdits,
   planRunItems,
   REJECT_REASON_MAX,
   REJECTABLE_STATUSES,
@@ -207,6 +208,18 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   if (busy === null) return fail("db_error");
   if (busy) return fail("run_in_progress");
 
+  // The card showed the model's plan WITH the last run's markups (parseBrief's applyPriorDefaults):
+  // the edit lessons are measured from that, read again here - nothing about it comes from the client.
+  let lastMarkups: Awaited<ReturnType<typeof priorMarkups>> | "unknown" = null;
+  if (planAi !== null) {
+    try {
+      lastMarkups = await priorMarkups(planAi.subject.kind);
+    } catch (e) {
+      console.error("uploader-actions: prior markups read failed", errorText(e));
+      lastMarkups = "unknown";
+    }
+  }
+
   // Search first: a failed search leaves no half-made run behind.
   let subject;
   try {
@@ -265,15 +278,13 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
     }
   }
 
-  if (planAi !== null) {
-    for (const change of planDiff(planAi, plan)) {
-      await logAudit({
-        action: "uploader.plan_edited",
-        entityType: "uploader_run",
-        entityId: run.id,
-        metadata: { agent: AGENT, run_id: run.id, field: change.field, from: change.from, to: change.to, brief_excerpt: brief.slice(0, BRIEF_EXCERPT) },
-      });
-    }
+  for (const change of planEdits(planAi, plan, lastMarkups)) {
+    await logAudit({
+      action: "uploader.plan_edited",
+      entityType: "uploader_run",
+      entityId: run.id,
+      metadata: { agent: AGENT, run_id: run.id, field: change.field, from: change.from, to: change.to, brief_excerpt: brief.slice(0, BRIEF_EXCERPT) },
+    });
   }
   await logAudit({
     action: "uploader.run_created",

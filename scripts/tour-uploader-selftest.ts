@@ -2387,6 +2387,36 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(R.planRunItems({ shows: [], questions: [], existing, priors: [], fallback: new Map(), subject_en: CLAPTON, at: AT }), [], "planRunItems: nothing found -> no items");
   same(B.fallback, [], "planRunItems: input shows are not mutated");
 
+  // planEdits: what staff changed, measured from the card they saw (the model's plan + prior markups)
+  const aiPlan = (): UploaderPlan => ({ ...emptyPlan(), subject: { kind: "artist", name_he: null, name_en: CLAPTON } });
+  const confirmed = (additional: number | null, ticketOnly: number | null, nameEn = CLAPTON): UploaderPlan => ({
+    ...aiPlan(),
+    subject: { kind: "artist", name_he: null, name_en: nameEn },
+    markups: { ticket_only: ticketOnly, additional },
+  });
+  const lastRun = { ticket_only: 200, additional: 75 };
+  same(R.planEdits(aiPlan(), confirmed(75, 200), lastRun), [], "planEdits: markups the server filled from the last run and nobody touched are no edit");
+  same(
+    R.planEdits(aiPlan(), confirmed(90, 200), lastRun),
+    [{ field: "markups.additional", from: 75, to: 90 }],
+    "planEdits: a prior-filled markup staff changed is an edit FROM the value they saw",
+  );
+  same(
+    R.planEdits(aiPlan(), confirmed(75, 200, "Eric Clapton Band"), lastRun),
+    [{ field: "subject.name_en", from: CLAPTON, to: "Eric Clapton Band" }],
+    "planEdits: other fields still diff as before",
+  );
+  same(R.planEdits(aiPlan(), confirmed(75, 200), null), [
+    { field: "markups.ticket_only", from: null, to: 200 },
+    { field: "markups.additional", from: null, to: 75 },
+  ], "planEdits: no earlier run -> a markup staff typed is an edit");
+  same(R.planEdits(null, confirmed(75, 200), lastRun), [], "planEdits: no model plan (manual form) -> no lessons");
+  same(
+    R.planEdits({ ...aiPlan(), markups: { ticket_only: 150, additional: null } }, confirmed(75, 180), "unknown"),
+    [{ field: "markups.ticket_only", from: 150, to: 180 }],
+    "planEdits: prior unreadable -> a markup the model left empty teaches nothing; one it set still does",
+  );
+
   // runCounts / nextRunStatus
   same(
     R.runCounts(["found", "found", "ready", "made-up"]),
