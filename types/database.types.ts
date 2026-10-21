@@ -3466,6 +3466,7 @@ export type Database = {
           message: string | null
           name: string | null
           notes: string | null
+          notes_at: string | null
           package_id: string | null
           payload: Json
           phone: string | null
@@ -3503,6 +3504,7 @@ export type Database = {
           message?: string | null
           name?: string | null
           notes?: string | null
+          notes_at?: string | null
           package_id?: string | null
           payload?: Json
           phone?: string | null
@@ -3540,6 +3542,7 @@ export type Database = {
           message?: string | null
           name?: string | null
           notes?: string | null
+          notes_at?: string | null
           package_id?: string | null
           payload?: Json
           phone?: string | null
@@ -3560,6 +3563,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      lead_board_orders: {
+        Row: {
+          company_id: string
+          user_id: string
+          lead_ids: string[]
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          user_id: string
+          lead_ids?: string[]
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          user_id?: string
+          lead_ids?: string[]
+          updated_at?: string
+        }
+        Relationships: []
       }
       customers: {
         Row: {

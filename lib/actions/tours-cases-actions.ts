@@ -23,6 +23,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { taskPeopleOf } from "@/lib/services/task-people";
 import { toursDb } from "@/lib/tours/db";
 import { todayIso } from "@/lib/tours/deadlines";
+import { arrivalOf } from "@/lib/tours/board";
 import { actionFail, actionOk, chunk, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
 import { asObject, companyAudit } from "@/lib/tours/company-kit";
 import { isoToJerusalemLocal } from "@/lib/tours/format";
@@ -122,14 +123,22 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at";
 
-/** The same without the customer columns (migration 20261019180000): a deploy that beat its migration still reads. */
-const LEGACY_CASE_COLUMNS = CASE_COLUMNS.replace(", customer_id, to_file, season", "");
+/** The same without notes_at (migration 20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
+const CASE_COLUMNS_NO_NOTES_AT = CASE_COLUMNS.replace(", notes_at", "");
+const LEGACY_CASE_COLUMNS = CASE_COLUMNS_NO_NOTES_AT.replace(", customer_id, to_file, season", "");
+const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
+/** Reads with the full column list, then without each column set a missing migration would lack. */
+async function readCaseColumns<T extends { error: { code?: string; message?: string } | null | undefined }>(read: (columns: string) => PromiseLike<T>): Promise<T> {
+  let answer = await read(CASE_COLUMN_SETS[0]);
+  for (let i = 1; i < CASE_COLUMN_SETS.length && missingColumn(answer.error); i++) answer = await read(CASE_COLUMN_SETS[i]);
+  return answer;
+}
 const missingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
   error?.code === "42703" ||
   error?.code === "PGRST204" ||
-  /(close_reason|related_lead_id|offer|customer_id|to_file|season).*does not exist/.test(error?.message ?? "");
+  /(close_reason|related_lead_id|offer|customer_id|to_file|season|notes_at).*does not exist/.test(error?.message ?? "");
 /** public.customers is not there yet (the migration runs on the push to master). */
 const missingTable = (error: { code?: string; message?: string } | null | undefined): boolean =>
   error?.code === "42P01" || error?.code === "PGRST205" || /relation .*customers.* does not exist/.test(error?.message ?? "");
@@ -170,6 +179,7 @@ type CaseRecord = Pick<
   | "customer_id"
   | "to_file"
   | "season"
+  | "notes_at"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 type CustomerRecord = Database["public"]["Tables"]["customers"]["Row"];
@@ -411,6 +421,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     caseNo: r.case_no,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    arrivedAt: arrivalOf(r.created_at, inquiriesOf(asObject(r.payload)).map((i) => i.at)),
     type: isCaseType(r.type) ? r.type : "lead",
     kind: r.kind,
     status: r.status,
@@ -421,6 +432,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     idNumber: r.id_number,
     accNum: r.acc_num,
     notes: r.notes,
+    notesAt: r.notes_at ?? null,
     message: r.message,
     assignedTo: r.assigned_to,
     followUpDate: r.follow_up_date,
@@ -454,8 +466,7 @@ async function caseRecord(company: Company, id: string): Promise<CaseRecord> {
   if (!UUID.test(id)) throw new UserError("The case was not found.");
   const read = (columns: string) =>
     supabaseTyped.from("leads").select(columns).eq("company_id", company.id).eq("id", id).is("is_deleted", null).maybeSingle();
-  let { data, error } = await read(CASE_COLUMNS);
-  if (missingColumn(error)) ({ data, error } = await read(LEGACY_CASE_COLUMNS));
+  const { data, error } = await readCaseColumns(read);
   if (error) throw new Error(`leads: ${error.message}`);
   if (!data) throw new UserError("The case was not found - it may have been deleted.");
   return withDefaults(data as unknown as CaseRecord);
@@ -470,6 +481,7 @@ const withDefaults = (record: CaseRecord): CaseRecord => ({
   customer_id: record.customer_id ?? null,
   to_file: record.to_file ?? false,
   season: record.season ?? null,
+  notes_at: record.notes_at ?? null,
 });
 
 /** Every case of the company (not deleted), newest first - tolerant of the close_reason migration. */
@@ -486,8 +498,7 @@ async function allCaseRecords(company: Company) {
           .order("case_no", { ascending: false }),
       LIST_LIMIT,
     );
-  const page = await read(CASE_COLUMNS);
-  return missingColumn(page.error) ? read(LEGACY_CASE_COLUMNS) : page;
+  return readCaseColumns(read);
 }
 
 async function freshRow(company: Company, id: string): Promise<CaseRow> {
@@ -615,6 +626,8 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       if (notes.length > NOTES_MAX) throw new UserError(`Notes can be up to ${NOTES_MAX} characters.`);
       if (notes !== (before.notes ?? "")) {
         patch.notes = notes || null;
+        // TODAY highlights a note written today (Alon 21.10)
+        if (notes) patch.notes_at = new Date().toISOString();
         changes.notes = { from: before.notes ? `${before.notes.length} chars` : null, to: notes ? `${notes.length} chars` : null };
       }
     }
@@ -683,7 +696,13 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
     }
 
     if (Object.keys(patch).length) {
-      const { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", id);
+      let { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", id);
+      if (missingColumn(error) && patch.notes_at !== undefined) {
+        // a deploy that beat the notes_at migration: the note saves, the stamp waits
+        const rest = { ...patch };
+        delete rest.notes_at;
+        ({ error } = await supabaseTyped.from("leads").update(rest).eq("company_id", company.id).eq("id", id));
+      }
       if (missingColumn(error)) throw new UserError("A closing reason can be saved after the system update - try again in a few minutes.");
       if (error) throw new Error(`leads: ${error.message}`);
       await logAudit({
@@ -814,9 +833,7 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
     let assignedTo = input.assignedTo !== undefined ? input.assignedTo : reps.some((p) => p.id === session.sub) ? session.sub : null;
     if (assignedTo && !reps.some((p) => p.id === assignedTo)) assignedTo = null;
 
-    const { data: created, error } = await supabaseTyped
-      .from("leads")
-      .insert({
+    const values = {
         company_id: company.id,
         kind: "manual",
         type: input.type,
@@ -830,14 +847,21 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
         source: input.source,
         assigned_to: assignedTo,
         notes: notes || null,
+        notes_at: notes ? new Date().toISOString() : null,
         follow_up_date: input.followUpDate || null,
         departure_id: departure?.id ?? null,
         package_id: departure?.package_id ?? null,
         ...(customer ? { customer_id: customer.id, acc_num: customer.acc_num } : {}),
-      })
-      .select("id, case_no")
-      .single();
-    if (error) throw new Error(`leads: ${error.message}`);
+    };
+    const insert = (row: typeof values | Omit<typeof values, "notes_at">) => supabaseTyped.from("leads").insert(row).select("id, case_no").single();
+    let { data: created, error } = await insert(values);
+    if (missingColumn(error)) {
+      // a deploy that beat the notes_at migration: the card is created, the stamp waits
+      const { notes_at: _stamp, ...rest } = values;
+      void _stamp;
+      ({ data: created, error } = await insert(rest));
+    }
+    if (error || !created) throw new Error(`leads: ${error?.message ?? "no row"}`);
     await logAudit({
       action: "create",
       entityType: "tours_case",
@@ -1662,16 +1686,18 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
     const customer = await customerRecord(company, customerId);
 
     const [cardsAnswer, statuses, reps] = await Promise.all([
-      fetchPaged<CaseRecord>(
-        () =>
-          supabaseTyped
-            .from("leads")
-            .select(CASE_COLUMNS)
-            .eq("company_id", company.id)
-            .eq("customer_id", customer.id)
-            .is("is_deleted", null)
-            .order("case_no", { ascending: false }),
-        LIST_LIMIT,
+      readCaseColumns((columns) =>
+        fetchPaged<CaseRecord>(
+          () =>
+            supabaseTyped
+              .from("leads")
+              .select(columns)
+              .eq("company_id", company.id)
+              .eq("customer_id", customer.id)
+              .is("is_deleted", null)
+              .order("case_no", { ascending: false }),
+          LIST_LIMIT,
+        ),
       ),
       statusesOf(company),
       repsOf(company),
