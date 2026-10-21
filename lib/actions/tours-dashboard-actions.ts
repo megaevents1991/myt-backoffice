@@ -10,6 +10,7 @@
  * -pax gives seats back and is not counted as a reservation.
  */
 import { requireCompany } from "@/lib/company";
+import { boardViewerFor } from "@/lib/services/tours-board-viewer";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { toursDb } from "@/lib/tours/db";
@@ -98,7 +99,9 @@ function packageSlugOf(sourcePath: string | null): string | null {
 
 export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { session, company } = await requireCompany("tours");
+    // "New Leads" counts what the viewer would see on the LEADS tab: a rep their own and the unassigned ones (21.10)
+    const viewer = await boardViewerFor(session, company);
     const today = todayIso();
     const windowEnd = addDays(today, DEPARTURES_WINDOW_DAYS);
     const thisMonth = monthStart(today);
@@ -166,14 +169,17 @@ export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>>
             .order("id", { ascending: false }),
         ROWS_MAX,
       ),
-      supabaseTyped
-        .from("leads")
-        .select("id", { count: "exact", head: true })
-        .eq("company_id", company.id)
+      (() => {
         // the leads waiting for a first reply (the card opens the Leads view of Reservations)
-        .is("is_deleted", null)
-        .eq("type", "lead")
-        .eq("status", "new"),
+        const waiting = supabaseTyped
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .eq("type", "lead")
+          .eq("status", "new");
+        return viewer.manager ? waiting : waiting.or(`assigned_to.eq.${session.sub},assigned_to.is.null`);
+      })(),
     ]);
     for (const [where, res] of [
       ["departures", published],

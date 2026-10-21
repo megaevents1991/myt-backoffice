@@ -12,6 +12,7 @@
  * public.lead_status_closed) - change both together.
  */
 import { matchesSearch } from "@/lib/search";
+import type { BoardViewer } from "@/lib/tours/board";
 import type { BookingRow } from "@/components/tours/bookings/shared";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
 import type { CancellationRule } from "@/lib/tours/cancellation";
@@ -722,6 +723,8 @@ export interface CasesPage {
   statuses: CaseStatus[];
   reps: CaseRep[];
   currentUserId: string;
+  /** Who is looking: a manager (every card, bulk assign) or a rep (own + unassigned) - 21.10. */
+  viewer: BoardViewer;
 }
 
 /** A customer (public.customers, 20261019180000): the person, with every card under them. */
@@ -833,12 +836,18 @@ export interface BoardOrder {
 
 /** The Reservations board (TODAY / RESERVATIONS / LEADS / ALL) in one load. */
 export interface BoardPage {
+  /** The cards the viewer may see (lib/tours/board.ts visibleCards). */
   cards: CaseRow[];
   orders: BoardOrder[];
   truncated: boolean;
   statuses: CaseStatus[];
   reps: CaseRep[];
   currentUserId: string;
+  viewer: BoardViewer;
+  /** The viewer's own TODAY order (lead_board_orders.lead_ids; [] before the migration or before a first drag). */
+  order: string[];
+  /** What each card should know about its customer's earlier deals - computed over EVERY card of the customer, hidden ones too. */
+  known: Record<string, KnownFrom>;
 }
 
 /** A customer's page in one load: the person and every card, the card to open first. */
@@ -854,6 +863,10 @@ export interface CustomerPageData {
   statuses: CaseStatus[];
   reps: CaseRep[];
   currentUserId: string;
+  /** Cards of other reps the viewer does not see (counted, never listed - 21.10). */
+  hiddenCards: number;
+  /** The customer travelled with us on ANY card, hidden ones too. */
+  travelled: boolean;
 }
 
 /** A customer as the merge / move pickers show it. */
