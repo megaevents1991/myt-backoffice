@@ -9,6 +9,7 @@
  */
 import { clubKey, normalizeName } from "@/lib/on-tour";
 import { decision } from "@/lib/uploader/decisions";
+import { WARNING_TEXT } from "@/lib/uploader/warnings";
 import {
   existingEventFor,
   priorAnswerFor,
@@ -457,6 +458,7 @@ export function pickArtRow(
 
 /** The `events` columns a blocker is re-judged on (a row of EDIT_EVENT_COLUMNS carries all four). */
 export type BlockerRow = {
+  id?: number;
   package_mode?: string | null;
   base_flight_price?: number | null;
   base_hotel_price?: number | null;
@@ -466,22 +468,32 @@ export type BlockerRow = {
 const positive = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
 
 /**
- * The item's blockers as they stand NOW (approve time): a blocker was written at build time and
- * its text sends staff to the editor to fix it, so the live row decides -
- * - `no_base_price` (flight or hotel) clears once the event is a package with BOTH bases above 0;
- * - `no_ticket_only_markup` clears once the event is ticket-only with a ticket-only markup (0 counts);
- * - any other code stays as stored.
- * A package is any `package_mode` but "ticket_only" (main's `isTicketOnlyEvent`).
+ * The item's blockers as they stand NOW (approve time), judged by the event row's CURRENT
+ * `package_mode` - not the mode the build gave it, since staff may have switched it in the editor
+ * (a package is any `package_mode` but "ticket_only", main's `isTicketOnlyEvent`):
+ * - a ticket-only row: `no_base_price` (both variants) clears; `no_ticket_only_markup` applies iff
+ *   the row has no ticket-only markup (0 is a markup) - added when the stored list lacks it;
+ * - a package row: `no_ticket_only_markup` clears; `no_base_price` applies per base that is not
+ *   above 0 (the flight variant, the hotel variant) - added when the stored list lacks it.
+ * A stored blocker is kept as it was (its text and link); an added one takes the stored price
+ * blockers' link, else `/events/<id>#fix-price`. Any other code stays as stored, ahead of these.
  */
 export function liveBlockers(stored: Warning[] | null | undefined, row: BlockerRow): Warning[] {
-  const ticketOnly = row.package_mode === "ticket_only";
-  return (stored ?? []).filter((b) => {
-    if (b.code === "no_base_price") return !(!ticketOnly && positive(row.base_flight_price) && positive(row.base_hotel_price));
-    if (b.code === "no_ticket_only_markup") {
-      return !(ticketOnly && typeof row.ticket_only_markup === "number" && Number.isFinite(row.ticket_only_markup));
-    }
-    return true;
-  });
+  const list = stored ?? [];
+  const priced = (b: Warning): boolean => b.code === "no_base_price" || b.code === "no_ticket_only_markup";
+  const fixUrl = list.find((b) => priced(b) && !!b.fix_url)?.fix_url ?? (typeof row.id === "number" ? `/events/${row.id}#fix-price` : undefined);
+  const blocker = (code: "no_base_price" | "no_ticket_only_markup", text: string): Warning =>
+    list.find((b) => b.code === code && b.text === text) ?? (fixUrl ? { code, text, fix_url: fixUrl } : { code, text });
+
+  const out = list.filter((b) => !priced(b));
+  if (row.package_mode === "ticket_only") {
+    const markup = row.ticket_only_markup;
+    if (!(typeof markup === "number" && Number.isFinite(markup))) out.push(blocker("no_ticket_only_markup", WARNING_TEXT.no_ticket_only_markup));
+    return out;
+  }
+  if (!positive(row.base_flight_price)) out.push(blocker("no_base_price", WARNING_TEXT.no_base_price));
+  if (!positive(row.base_hotel_price)) out.push(blocker("no_base_price", WARNING_TEXT.no_base_price_hotel));
+  return out;
 }
 
 /** A `ready` item that points at its built (hidden) event - the board's edit diff and live blockers read those events. */

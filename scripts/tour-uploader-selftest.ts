@@ -2464,22 +2464,41 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(R.pickArtRow("artist", ericRows, { name_en: "Eric Idle", name_he: null }), null, "pickArtRow: no artist match -> null");
   same(R.pickArtRow("competition", liverpoolRows, { name_en: "Liverpool", name_he: null }), null, "pickArtRow: a competition -> null");
 
-  // liveBlockers: approve-time blockers against the live row
-  const flightBlock = { code: "no_base_price", text: "flight" };
-  const hotelBlock = { code: "no_base_price", text: "hotel" };
-  const markupBlock = { code: "no_ticket_only_markup", text: "markup" };
+  // liveBlockers: approve-time blockers, judged by the event row's CURRENT package_mode
+  const FIX = "/events/812#fix-price";
+  const flightBlock = { code: "no_base_price", text: WARNING_TEXT.no_base_price, fix_url: FIX };
+  const hotelBlock = { code: "no_base_price", text: WARNING_TEXT.no_base_price_hotel, fix_url: FIX };
+  const markupBlock = { code: "no_ticket_only_markup", text: WARNING_TEXT.no_ticket_only_markup, fix_url: FIX };
   const otherBlock = { code: "something_else", text: "?" };
-  same(R.liveBlockers([flightBlock, hotelBlock], { package_mode: "package", base_flight_price: 310, base_hotel_price: 290 }), [], "liveBlockers: both bases filled in the editor -> both no_base_price clear");
-  same(R.liveBlockers([flightBlock, hotelBlock], { package_mode: "package", base_flight_price: 310, base_hotel_price: 0 }), [flightBlock, hotelBlock], "liveBlockers: one base still 0 -> no_base_price stays (both lines)");
-  same(R.liveBlockers([flightBlock], { package_mode: null, base_flight_price: 310, base_hotel_price: 290 }), [], "liveBlockers: an unset package_mode is a package");
-  same(R.liveBlockers([flightBlock], { package_mode: "ticket_only", base_flight_price: 310, base_hotel_price: 290 }), [flightBlock], "liveBlockers: no_base_price does not clear on a ticket-only row");
-  same(R.liveBlockers([flightBlock], { package_mode: "package", base_flight_price: null, base_hotel_price: 290 }), [flightBlock], "liveBlockers: a null base is not filled");
-  same(R.liveBlockers([markupBlock], { package_mode: "ticket_only", ticket_only_markup: 0 }), [], "liveBlockers: a ticket-only markup of 0 is a markup -> clears");
-  same(R.liveBlockers([markupBlock], { package_mode: "ticket_only", ticket_only_markup: 120 }), [], "liveBlockers: a ticket-only markup -> clears");
-  same(R.liveBlockers([markupBlock], { package_mode: "ticket_only", ticket_only_markup: null }), [markupBlock], "liveBlockers: still no markup -> stays");
-  same(R.liveBlockers([markupBlock], { package_mode: "package", ticket_only_markup: 120 }), [markupBlock], "liveBlockers: no_ticket_only_markup clears only on a ticket-only row");
-  same(R.liveBlockers([otherBlock, flightBlock], { package_mode: "package", base_flight_price: 1, base_hotel_price: 1 }), [otherBlock], "liveBlockers: any other code stays as stored");
-  same([R.liveBlockers([], {}), R.liveBlockers(null, {}), R.liveBlockers(undefined, {})], [[], [], []], "liveBlockers: nothing stored -> nothing");
+  const pkg = (flight: number | null, hotel: number | null) => ({ id: 812, package_mode: "package", base_flight_price: flight, base_hotel_price: hotel, ticket_only_markup: null });
+  const tkt = (markup: number | null) => ({ id: 812, package_mode: "ticket_only", base_flight_price: 0, base_hotel_price: 0, ticket_only_markup: markup });
+  same(R.liveBlockers([flightBlock, hotelBlock], pkg(310, 290)), [], "liveBlockers: both bases filled in the editor -> both no_base_price clear");
+  same(R.liveBlockers([flightBlock, hotelBlock], pkg(310, 0)), [hotelBlock], "liveBlockers: only the base still 0 keeps its blocker");
+  same(R.liveBlockers([flightBlock], pkg(310, 0)), [hotelBlock], "liveBlockers: a base that is still 0 adds its blocker when the stored list lacks it (same link)");
+  same(R.liveBlockers([flightBlock], { ...pkg(310, 290), package_mode: null }), [], "liveBlockers: an unset package_mode is a package");
+  same(R.liveBlockers([flightBlock], pkg(null, 290)), [flightBlock], "liveBlockers: a null base is not filled");
+  same(R.liveBlockers([markupBlock], tkt(0)), [], "liveBlockers: a ticket-only markup of 0 is a markup -> clears");
+  same(R.liveBlockers([markupBlock], tkt(120)), [], "liveBlockers: a ticket-only markup -> clears");
+  same(R.liveBlockers([markupBlock], tkt(null)), [markupBlock], "liveBlockers: still no markup -> stays");
+  same(R.liveBlockers([otherBlock, flightBlock], pkg(1, 1)), [otherBlock], "liveBlockers: any other code stays as stored");
+  same([R.liveBlockers([], pkg(310, 290)), R.liveBlockers(null, tkt(5)), R.liveBlockers(undefined, pkg(310, 290))], [[], [], []], "liveBlockers: nothing stored and nothing missing -> nothing");
+  // The mode staff switched to in the editor decides.
+  same(R.liveBlockers([flightBlock, hotelBlock], tkt(150)), [], "liveBlockers: package -> ticket_only with a markup set: no blockers (no_base_price clears)");
+  same(R.liveBlockers([flightBlock, hotelBlock], tkt(null)), [markupBlock], "liveBlockers: package -> ticket_only with no markup: no_ticket_only_markup added");
+  same(
+    R.liveBlockers([markupBlock], pkg(0, 0)),
+    [
+      { code: "no_base_price", text: WARNING_TEXT.no_base_price, fix_url: FIX },
+      { code: "no_base_price", text: WARNING_TEXT.no_base_price_hotel, fix_url: FIX },
+    ],
+    "liveBlockers: ticket_only -> package with bases 0: no_ticket_only_markup clears, no_base_price (both) added",
+  );
+  same(R.liveBlockers([markupBlock], pkg(310, 290)), [], "liveBlockers: ticket_only -> package with bases filled: no blockers");
+  same(
+    R.liveBlockers([], { package_mode: "ticket_only", ticket_only_markup: null, id: 9 }),
+    [{ code: "no_ticket_only_markup", text: WARNING_TEXT.no_ticket_only_markup, fix_url: "/events/9#fix-price" }],
+    "liveBlockers: an added blocker with no stored link links to the event's price section",
+  );
 
   // canRebuildTwoCity: only a show with no package
   same(R.canRebuildTwoCity({ status: "ready", mode: "ticket_only", skip_reason: null }), true, "two-city rebuild: a built ticket-only event");
