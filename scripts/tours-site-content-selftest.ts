@@ -54,6 +54,10 @@ const finder = home.sections[1] as Extract<HomeSection, { type: "tours" }>;
 check("its single featured row becomes a row of the tile", finder.tabs[0].rows, [{ id: "row_all", title: "הנמכרים", source: "manual", term: "", tours: ["a", "b"], limit: 12 }]);
 check("a tile without a featured row has no rows", finder.tabs[1].rows, []);
 check("a tile starts with no banner of its own and automatic pills", [finder.tabs[0].banner.slides.length, finder.tabs[0].pillTags, finder.tabs[0].term], [0, [], ""]);
+// 21.10: a pill can stay on without tours; the section's own sale pills left the editor
+check("an old tile keeps no pill on without tours", finder.tabs[0].pillsAlways, []);
+const noSalePills = readSiteDoc("home", { sections: [{ ...oldHome.sections[1], salePills: undefined }] });
+check("a finder saved without sale pills opens with none", (noSalePills.sections[0] as Extract<HomeSection, { type: "tours" }>).salePills, []);
 const dest = home.sections[2] as Extract<HomeSection, { type: "destinations" }>;
 check("tiles stay picked by hand until staff choose automatic", [dest.mode, dest.items.length], ["manual", 1]);
 const reviews = home.sections[4] as Extract<HomeSection, { type: "reviews" }>;

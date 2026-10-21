@@ -258,6 +258,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
           color: "",
           search: "filters" as const,
           pillTags: [],
+          pillsAlways: [],
           banner: { titleBold: "", titleRest: "", text: "", slides: [] },
           rows: [],
           searchLabel: "",
@@ -365,16 +366,37 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
 
               <Fold title="Trip-type pills" summary={tab.pillTags.length ? `${tab.pillTags.length} picked` : "Automatic"}>
                 <p className="text-sm text-muted-foreground">
-                  Empty = the tile builds its pills by itself, from the tags of its tours. Pick tags to show only those, in this order.
+                  Empty = the tile builds its pills by itself, from the tags of its tours. Pick tags to show only those, in this order. A pill that none of
+                  the tile&apos;s tours carries hides by itself and comes back with the first tour; tick &quot;Show without tours&quot; to keep it, and the
+                  site offers a &quot;tell me when tours open&quot; form under it. A tile with no tour at all shows only that form - no search, no pills.
                 </p>
                 <ItemList
-                  items={tab.pillTags.map((slug) => ({ slug }))}
-                  onChange={(items) => patch({ pillTags: items.map((item) => item.slug) })}
-                  create={() => ({ slug: "" })}
+                  items={tab.pillTags.map((slug) => ({ slug, always: (tab.pillsAlways ?? []).includes(slug) }))}
+                  onChange={(items) =>
+                    patch({ pillTags: items.map((item) => item.slug), pillsAlways: items.flatMap((item) => (item.always && item.slug ? [item.slug] : [])) })
+                  }
+                  create={() => ({ slug: "", always: false })}
                   addLabel="Add Pill"
                   empty="Automatic: the tags of the tile's tours."
                   max={24}
-                  render={(item, patchItem) => <TermSelect kind="tags" value={item.slug} onChange={(slug) => patchItem({ slug })} options={options} ariaLabel="Tag" />}
+                  render={(item, patchItem, index) => (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="min-w-[220px] flex-1">
+                        <TermSelect kind="tags" value={item.slug} onChange={(slug) => patchItem({ slug })} options={options} ariaLabel="Tag" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`${tab.key}-pill-${index}-always`}
+                          checked={item.always}
+                          disabled={!item.slug}
+                          onCheckedChange={(always) => patchItem({ always })}
+                        />
+                        <label htmlFor={`${tab.key}-pill-${index}-always`} className="text-sm">
+                          Show without tours
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 />
               </Fold>
 
@@ -403,21 +425,6 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
             </div>
           );
         }}
-      />
-      <ItemList
-        label="Trip-type pills of a sale tile"
-        items={section.salePills}
-        onChange={(salePills) => onChange({ ...section, salePills })}
-        create={() => ({ label: "", tag: "" })}
-        addLabel="Add Pill"
-        empty="No pills. The other tiles build their pills from the tags of their tours."
-        max={16}
-        render={(pill, patch) => (
-          <Grid>
-            <Input dir="auto" aria-label="Pill name" placeholder="Pill name" value={pill.label} onChange={(e) => patch({ label: e.target.value })} />
-            <TermSelect kind="tags" value={pill.tag} onChange={(tag) => patch({ tag })} options={options} placeholder="All (no tag)" ariaLabel="Tag" />
-          </Grid>
-        )}
       />
     </div>
   );

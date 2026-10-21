@@ -575,7 +575,10 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
           t("In \"What the tile shows\" choose its tours: a world, a tag, a destination, a category, tours on sale, all tours, or \"Tours I pick\".", "ב-\"What the tile shows\" בוחרים את הטיולים שלו: עולם, תגית, יעד, קטגוריה, טיולים במבצע, כל הטיולים, או \"Tours I pick\"."),
           t("Open \"Banner of this tile\" and add banners: while a customer has this tile chosen, they replace the banners at the top of the page. Its three texts replace the title card on their own, even with no banner here.", "פותחים \"Banner of this tile\" ומוסיפים באנרים: כל עוד הלקוח על הכפתור הזה, הם מחליפים את הבאנרים שבראש העמוד. שלושת הטקסטים שלו מחליפים את כרטיס הכותרת בפני עצמם, גם בלי באנר."),
           t("Open \"Rows of this tile\" and \"Add Row\": a row of tours of this tile only (best sellers, a holiday). Rows step aside once the customer searches.", "פותחים \"Rows of this tile\" ולוחצים \"Add Row\": שורת טיולים של הכפתור הזה בלבד (הנמכרים ביותר, חג). השורות נעלמות ברגע שהלקוח מחפש."),
-          t("\"Trip-type pills\" stays automatic unless you pick tags there.", "\"Trip-type pills\" נשאר אוטומטי, אלא אם בוחרים שם תגיות."),
+          t(
+            "\"Trip-type pills\" stays automatic unless you pick tags there. A pill none of the tile's tours carries hides by itself; tick \"Show without tours\" to keep it with a \"tell me when tours open\" form. A tile with no tour shows only that form.",
+            "\"Trip-type pills\" נשאר אוטומטי, אלא אם בוחרים שם תגיות. פיל שאף טיול של הכפתור לא נושא נעלם מעצמו; מסמנים \"Show without tours\" כדי להשאיר אותו עם טופס \"עדכנו אותי כשיעלו טיולים\". כפתור בלי טיולים בכלל מציג רק את הטופס הזה.",
+          ),
         ],
       },
       {

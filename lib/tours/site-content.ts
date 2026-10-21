@@ -295,6 +295,11 @@ const toursTab = z
     /** The trip-type pills of the tile, as tag slugs in order; empty = built from the tags of its tours. */
     pillTags: z.array(slug).max(24).default([]),
     /**
+     * The picked pills that show even while none of the tile's tours carries the tag (the site offers a "tell me" form
+     * there); every other pill hides while it has no tour (Alon, 21.10).
+     */
+    pillsAlways: z.array(slug).max(24).default([]),
+    /**
      * The top banner while this tile is chosen: its pictures and the words of the title card, each on its own.
      * No pictures = the site shows the hero pictures of the tile's world, else of its first 3 tours.
      */
@@ -334,7 +339,9 @@ const toursSection = z.object({
   type: z.literal("tours"),
   gridTitle: text(120),
   tabs: z.array(toursTab).max(8, "Up to 8 category tiles"),
-  salePills: z.array(z.object({ label: label("A trip type", 60), tag: slug })).max(16),
+  // The pills of a sale tile in the first version of the editor (21.10: every tile picks its own); kept as saved, the
+  // site still reads them for a sale tile that picked none.
+  salePills: z.array(z.object({ label: label("A trip type", 60), tag: slug })).max(16).default([]),
 });
 
 const leadSection = z.object({ ...base, type: z.literal("lead_form"), title: text(300) });
