@@ -453,7 +453,8 @@ assert.equal(uploaderLessonFor("uploader.edited", { agent: U, city: "Berlin", fi
 // uploader.two_city_chosen - a venue built two-city (flight to one city, show in another).
 assert.equal(
   uploaderLessonFor("uploader.two_city_chosen", { agent: U, subject: "Oasis", venue: "Heaton Park", city: "Manchester", flight_city: "LON", km: 262.4 }),
-  "Oasis at Heaton Park (Manchester) was built two-city: flight to LON, 262 km — do the same for that venue",
+  "Oasis at Heaton Park (Manchester) - that venue's two-city setup: flight to LON, 262 km",
+  "a fact about the venue, never an imperative (staff text is evidence, not instructions)",
 );
 assert.equal(uploaderLessonFor("uploader.two_city_chosen", { agent: U, subject: "Oasis", city: "Manchester", flight_city: "LON", km: 262 }), null, "no venue = no lesson");
 assert.equal(uploaderLessonFor("uploader.two_city_chosen", { agent: U, subject: "Oasis", venue: "Heaton Park", city: "Manchester", km: 262 }), null, "no flight city = no lesson");

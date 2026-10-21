@@ -63,8 +63,11 @@ const PREVIEW_DEBOUNCE_MS = 600;
 /** Cities printed under the preview line before "ועוד N". */
 const CITIES_SHOWN = 14;
 
-/** The fields that decide which shows the plan finds - a markup edit does not search again. */
-const searchKeyOf = (p: UploaderPlan): string => JSON.stringify({ subject: p.subject, scope: p.scope, rules: p.rules });
+/**
+ * The fields that decide which shows the plan finds - a markup edit does not search again. The test
+ * switch is in it: a test run's preview counts test events as existing (previewPlan's `isTest`).
+ */
+const searchKeyOf = (p: UploaderPlan, isTest: boolean): string => JSON.stringify({ subject: p.subject, scope: p.scope, rules: p.rules, isTest });
 
 /** "" = no markup (null); a whole number 0..MARKUP_MAX; anything else = undefined (not valid). */
 function markupValue(raw: string): number | null | undefined {
@@ -110,6 +113,8 @@ export function PlanCard({
   const [isTest, setIsTest] = useState(false);
   const [preview, setPreview] = useState<PlanPreview>(seed.preview ?? EMPTY_PREVIEW);
   const [check, setCheck] = useState<Check>(IDLE);
+  /** The counts on screen belong to the plan as it stands: false after a failed check, until a new one lands ("—", B9). */
+  const [known, setKnown] = useState(seed.preview !== null);
   const [creating, setCreating] = useState(false);
   /** "בדוק שוב" bumps it - the same plan is searched again, at once. */
   const [retry, setRetry] = useState(0);
@@ -118,11 +123,13 @@ export function PlanCard({
 
   const busy = creating || navigating;
   const shapeOk = useMemo(() => parsePlanInput(plan).ok, [plan]);
-  const searchKey = searchKeyOf(plan);
+  const searchKey = searchKeyOf(plan, isTest);
   const needsName = plan.subject.name_en.trim() === "";
   const invalidMarkup = (key: MarkupKey): boolean => markupValue(markupDraft[key]) === undefined;
   const anyInvalidMarkup = invalidMarkup("ticket_only") || invalidMarkup("additional");
   const failed = check.error !== null;
+  /** The counts are not the plan's (a failed check, or the re-check after one still loading): "—", never a 0. */
+  const unknown = failed || !known;
   /** Every show the run would start with - the ready ones and the ones waiting on a question. */
   const total = preview.shows + preview.questions;
 
@@ -134,7 +141,12 @@ export function PlanCard({
   // The search key whose answer is on screen - the parse's own preview, at first. Only a SUCCESS (or
   // the blank-name state) sets it: after a failure nothing valid is on screen, so any key - the same
   // one, or an edit back to an older one - searches again. Only the newest search may write (`seq`).
-  const shownKey = useRef<string | null>(seed.preview ? searchKeyOf(seed.plan) : null);
+  // The parse's own preview was taken with the switch off.
+  const shownKey = useRef<string | null>(seed.preview ? searchKeyOf(seed.plan, false) : null);
+  const isTestRef = useRef(isTest);
+  useEffect(() => {
+    isTestRef.current = isTest;
+  }, [isTest]);
   const seq = useRef(0);
   const lastRetry = useRef(retry);
 
@@ -151,6 +163,7 @@ export function PlanCard({
     if (needsName) {
       shownKey.current = searchKey;
       setPreview(EMPTY_PREVIEW);
+      setKnown(true);
       setCheck(IDLE);
       return;
     }
@@ -159,6 +172,7 @@ export function PlanCard({
       if (mine !== seq.current) return;
       shownKey.current = null;
       setPreview(EMPTY_PREVIEW);
+      setKnown(false);
       setCheck({ loading: false, error, problems });
     };
     setCheck({ loading: true, error: null, problems: [] });
@@ -169,7 +183,7 @@ export function PlanCard({
           fail(actionErrorText("bad_plan"), shape.problems);
           return;
         }
-        previewPlan(shape.plan)
+        previewPlan(shape.plan, { isTest: isTestRef.current })
           .then((res) => {
             if (!res.ok) {
               fail(actionErrorText(res.kind), res.problems ?? []);
@@ -178,6 +192,7 @@ export function PlanCard({
             if (mine !== seq.current) return;
             shownKey.current = searchKey;
             setPreview(res.preview);
+            setKnown(true);
             setCheck(IDLE);
           })
           .catch(() => fail(actionErrorText(""), []));
@@ -199,7 +214,7 @@ export function PlanCard({
   }
 
   const canBuild =
-    !busy && !check.loading && !failed && !needsName && shapeOk && !anyInvalidMarkup && total > 0;
+    !busy && !check.loading && !unknown && !needsName && shapeOk && !anyInvalidMarkup && total > 0;
 
   // Anything changed since the card opened - "ערוך את הבריף" then asks before throwing it away.
   const seedJson = useMemo(() => JSON.stringify(seed.plan), [seed.plan]);
@@ -475,9 +490,20 @@ export function PlanCard({
             <p className="text-sm">הקלידו את שם הנושא באנגלית - החיפוש אצל הספקים רץ עליו</p>
           ) : (
             <p className={cn("text-sm transition-opacity", check.loading && "opacity-60")}>
-              נמצאו <Num value={preview.shows} unknown={failed} /> הופעות · <Num value={preview.existing} unknown={failed} />{" "}
-              קיימות · <Num value={preview.questions} unknown={failed} /> שאלות
+              נמצאו <Num value={preview.shows} unknown={unknown} /> הופעות · <Num value={preview.existing} unknown={unknown} />{" "}
+              קיימות · <Num value={preview.questions} unknown={unknown} /> שאלות
               {check.loading && <span className="ms-2 text-xs">בודק…</span>}
+              {!unknown && !check.loading && typeof preview.hasPage === "boolean" && (
+                <span
+                  className={cn(
+                    "ms-2 rounded-full border px-2 py-0.5 align-middle text-[11px] font-medium",
+                    preview.hasPage ? "border-sidebar-foreground/30" : "border-brand-gold/60 text-brand-gold",
+                  )}
+                  title={preview.hasPage ? "לנושא יש עמוד באתר" : "לנושא אין עמוד באתר - האירועים ייבנו עם אזהרה; צרו עמוד ב-Templates"}
+                >
+                  {preview.hasPage ? "עמוד ✓" : "אין עמוד"}
+                </span>
+              )}
             </p>
           )}
           {!needsName && !failed && preview.cities.length > 0 && (
@@ -531,7 +557,7 @@ export function PlanCard({
               ? "פותח את הלוח…"
               : creating
                 ? "יוצר את הריצה…"
-                : `בנה את האירועים (${failed ? "—" : total})`}
+                : `בנה את האירועים (${unknown ? "—" : total})`}
           </Button>
           <Button
             type="button"

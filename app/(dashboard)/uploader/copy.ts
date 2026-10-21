@@ -1,6 +1,7 @@
 // The words more than one /uploader component prints - one copy, so the composer, the plan card
 // and the runs list can never word the same thing two ways. Plain module (no "use client"): strings
 // and a lookup only.
+import { FAR_VENUE_KM } from "@/lib/uploader/constants";
 import type { SubjectKind } from "@/types/uploader.types";
 
 /** The agent switch is off (or the parse came back "off"): the plan is filled by hand. */
@@ -14,7 +15,8 @@ export const SUBJECT_KIND_HE: Record<SubjectKind, string> = {
 
 /** Every `kind` a server action of this screen can answer with, in the screen's words. */
 const ACTION_ERROR_HE: Record<string, string> = {
-  bad_input: "הבקשה לא תקינה - בדקו שהבריף לא ריק",
+  // The composer's only `bad_input` is an empty brief (it says so itself - BRIEF_INPUT_TEXT); the board's are a malformed call.
+  bad_input: "הבקשה לא תקינה",
   brief_too_long: "הבריף ארוך מהמותר - קצרו אותו",
   bad_plan: "יש בתוכנית שדות לא תקינים",
   roster_read_failed: "לא הצלחנו לקרוא את רשימת האמנים והקבוצות - נסו שוב",
@@ -43,7 +45,17 @@ const ACTION_ERROR_HE: Record<string, string> = {
   not_running: "הריצה כבר לא בבנייה",
   not_resumable: "אין מה להמשיך בריצה הזו",
   stopped: "הריצה נעצרה",
+  // The fix wave (21.10): createRun / resumeRun's one-run-per-subject rule, the parse cap, the conditional
+  // soft delete, the two-city distance rule, approveAll's skipped re-check, a ready item whose event is gone.
+  run_in_progress: "כבר רצה העלאה על הנושא הזה - חכו שתסתיים או עצרו אותה",
+  rate_limited: "יותר מדי פענוחים בזמן קצר - נסו שוב בעוד כמה דקות, או מלאו את התוכנית ידנית",
+  event_live: "האירוע כבר באתר - לא נמחק",
+  too_far: `העיר הזו רחוקה מדי מהאולם (מעל ${FAR_VENUE_KM} ק"מ) - בחרו עיר קרובה יותר`,
+  recheck_skipped: "כל האישורים נשמרו; בדיקת הזמינות לא הספיקה ותרוץ בסנכרון המחירים הבא",
 };
+
+/** The composer's words for its `bad_input` (the brief is empty) - the generic line belongs to the board. */
+export const BRIEF_INPUT_TEXT = "הבקשה לא תקינה - בדקו שהבריף לא ריק";
 
 /** A server action's `kind` in the screen's words; anything unknown (or a throw, "") gets the generic line. */
 export function actionErrorText(kind: string): string {

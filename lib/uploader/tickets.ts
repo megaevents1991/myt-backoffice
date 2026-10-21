@@ -156,6 +156,9 @@ export function ticketsFromTixStockFeed(
   return { tickets, dropped, categoriesSeen: byCategory.size };
 }
 
+/** A LiveTickets category dropped for having no usable cost (the build names it in a decision line). */
+export const NO_PRICE_REASON = "no price";
+
 /**
  * The LiveTickets tickets of one of their events. `stock` is what `fetchLiveTicketsStock` answers:
  * the stock, "SOLD_OUT" (they have the event, no categories on sale) or null (no answer and no
@@ -186,6 +189,13 @@ export function ticketsFromLiveStock(
       dropped.push({ title, reason: category.blockedReason || "Not sellable" });
       continue;
     }
+    // The TixStock side's rule: a category with no usable cost (0, negative, NaN) never becomes a
+    // ticket at the markup alone - and neither does one the price function cannot price.
+    const price = Number.isFinite(category.cost) && category.cost > 0 ? priceUsd(category.cost, stock.currency) : NaN;
+    if (!Number.isFinite(price) || price <= 0) {
+      dropped.push({ title, reason: NO_PRICE_REASON });
+      continue;
+    }
     tickets.push({
       id: category.id,
       eid,
@@ -194,7 +204,7 @@ export function ticketsFromLiveStock(
       category: title,
       supplierCategory: title,
       description: category.description,
-      price: priceUsd(category.cost, stock.currency),
+      price,
       colorOnTheMap: SUPPLIER_TICKET_COLOR,
       available: true,
     });

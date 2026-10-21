@@ -1207,8 +1207,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "אף פעם לא התאמה מנוחשת. כשהספקים לא מסכימים או שאי אפשר לשבץ אולם, ההופעה מחכה לתשובה שלכם; היא לא מנחשת הופעת ספק, תאריך או עיר טיסה.",
       ),
       t(
-        "Rehearse with the test-run switch. \"ריצת בדיקה\" at the bottom of the plan card also marks every event of the run as a test event - the marking the site and the feeds already skip - so a rehearsal stays out of customers' sight even if something about the hidden flag is off. Use it for the first run of a new kind of brief, then reject the test events.",
-        "מתאמנים עם מתג ריצת הבדיקה. \"ריצת בדיקה\" בתחתית כרטיס התוכנית מסמן את כל אירועי הריצה גם כאירועי בדיקה - סימון שהאתר והפידים כבר מדלגים עליו - כך שהתנסות נשארת רחוקה מעיני הלקוחות גם אם משהו בדגל ההסתרה לא תקין. משתמשים בו בריצה הראשונה של סוג חדש של בריף, ואחר כך דוחים את אירועי הבדיקה.",
+        "Rehearse with the test-run switch. \"ריצת בדיקה\" at the bottom of the plan card also marks every event of the run as a test event - the marking the site and the feeds already skip - so a rehearsal stays out of customers' sight even if something about the hidden flag is off. Use it for the first run of a new kind of brief, then reject the test events - on a test run the \"אל תציע את ההופעה הזו שוב\" switch starts OFF, and a test run's answers and rejections never carry into a real run.",
+        "מתאמנים עם מתג ריצת הבדיקה. \"ריצת בדיקה\" בתחתית כרטיס התוכנית מסמן את כל אירועי הריצה גם כאירועי בדיקה - סימון שהאתר והפידים כבר מדלגים עליו - כך שהתנסות נשארת רחוקה מעיני הלקוחות גם אם משהו בדגל ההסתרה לא תקין. משתמשים בו בריצה הראשונה של סוג חדש של בריף, ואחר כך דוחים את אירועי הבדיקה - בריצת בדיקה המתג \"אל תציע את ההופעה הזו שוב\" מתחיל כבוי, ותשובות ודחיות של ריצת בדיקה לא עוברות אף פעם לריצה אמיתית.",
       ),
     ],
     links: [

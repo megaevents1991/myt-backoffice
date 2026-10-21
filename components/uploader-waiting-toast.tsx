@@ -4,12 +4,15 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ToastAction } from "@/components/ui/toast";
+import { useCompany } from "@/contexts/company-context";
 // `@/hooks/use-toast`, not `@/components/ui/use-toast`: the mounted <Toaster /> reads this store.
 import { toast } from "@/hooks/use-toast";
 import { countOpenQuestionsFor } from "@/lib/actions/uploader-actions";
 import { TOAST_POLL_MS } from "@/lib/uploader/constants";
 
 const DESCRIPTION_MAX = 160;
+/** The first poll waits this long after the dashboard mounts - the page's own reads go first. */
+const FIRST_POLL_DELAY_MS = 3_000;
 
 const clip = (text: string) =>
   text.length > DESCRIPTION_MAX ? `${text.slice(0, DESCRIPTION_MAX - 1)}…` : text;
@@ -27,9 +30,14 @@ const clip = (text: string) =>
  *   seen, so leaving the board does not pop a toast for a question the admin just read.
  * - A failed poll (an error, or `failed` = the count could not be read) changes nothing and shows
  *   nothing: a poll must never toast an error, nor a false zero.
+ * - Only while the active company sells events (the uploader is a Mega Events screen): a tours-only
+ *   company - or the company context still loading - polls nothing. The first poll waits
+ *   FIRST_POLL_DELAY_MS; leaving (unmount, or a switch to a tours company) takes a shown toast down.
  */
 export function UploaderWaitingToast() {
   const pathname = usePathname();
+  const { productTypes, isLoading } = useCompany();
+  const enabled = !isLoading && productTypes.includes("events");
   // Read inside the interval, so navigating never restarts the poll.
   const pathRef = useRef(pathname);
   useEffect(() => {
@@ -39,6 +47,7 @@ export function UploaderWaitingToast() {
   const shown = useRef<{ dismiss: () => void } | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -78,7 +87,7 @@ export function UploaderWaitingToast() {
       }
     };
 
-    void poll();
+    const first = setTimeout(() => void poll(), FIRST_POLL_DELAY_MS);
     const timer = setInterval(() => void poll(), TOAST_POLL_MS);
     const onVisible = () => {
       if (!document.hidden) void poll();
@@ -86,10 +95,14 @@ export function UploaderWaitingToast() {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      clearTimeout(first);
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      // A toast this component raised does not outlive it (unmount, or the company no longer sells events).
+      shown.current?.dismiss();
+      shown.current = null;
     };
-  }, []);
+  }, [enabled]);
 
   return null;
 }

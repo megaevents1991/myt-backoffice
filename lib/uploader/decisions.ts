@@ -74,9 +74,16 @@ export const DECISION_TEXT = {
 
 export type DecisionCode = keyof typeof DECISION_TEXT;
 
-/** A decision line: the code and its filled-in Hebrew text. */
+/**
+ * A decision line: the code and its filled-in Hebrew text. `duplicate_dropped` also keeps its
+ * `event_id` (a positive whole number) as a field, so the board links `/events/<id>` from structured
+ * data - never from the text.
+ */
 export function decision(code: DecisionCode, p: DecisionParams = {}): Decision {
-  return { code, text: DECISION_TEXT[code](p) };
+  const line: Decision = { code, text: DECISION_TEXT[code](p) };
+  const id = p.event_id;
+  if (code === "duplicate_dropped" && typeof id === "number" && Number.isSafeInteger(id) && id > 0) line.event_id = id;
+  return line;
 }
 
 /**

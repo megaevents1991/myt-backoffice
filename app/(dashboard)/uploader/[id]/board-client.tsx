@@ -33,6 +33,9 @@ import { RejectDialog } from "./reject-dialog";
 import { ShowCard } from "./show-card";
 import { rtl, useRunBoard } from "./use-run-board";
 
+/** The toast's line for a show put back in the queue of a STOPPED run. */
+const STOPPED_REQUEUE_TEXT = "חוזר לתור - לחצו המשך.";
+
 // The review board of one run (spec §5.3, §11, §13; mockup B): the header, the filter pills, a card
 // per show, and the sticky bar - and the handlers behind every card's buttons. Reading the run and
 // driving the build loop is `useRunBoard`. Every action refetches the run before its card stops
@@ -102,13 +105,21 @@ export function BoardClient({
       if (r.ok) {
         say(
           `${showLabel(item)} עלה לאתר`,
-          r.edited ? "השינויים שנעשו בעורך נרשמו כלקח לסוכן. הקריאייטיב לפיד ייווצר בשעה הקרובה." : "הקריאייטיב לפיד ייווצר בשעה הקרובה.",
+          r.note === "moved"
+            ? "האירוע כבר אושר בלחיצה אחרת - הוא באתר."
+            : r.edited
+              ? "השינויים שנעשו בעורך נרשמו כלקח לסוכן. הקריאייטיב לפיד ייווצר בשעה הקרובה."
+              : "הקריאייטיב לפיד ייווצר בשעה הקרובה.",
         );
       }
       else say(`${showLabel(item)} לא אושר`, actionErrorText(r.kind), true);
     },
     [act, say],
   );
+
+  /** A stopped run builds nothing until "המשך": a requeued show waits in the queue - the toast says so. */
+  const runStopped = board?.run.status === "stopped";
+  const backToBuild = runStopped ? STOPPED_REQUEUE_TEXT : "ההופעה חוזרת לבנייה.";
 
   const answer = useCallback(
     async (item: UploaderItem, a: { key: string | null; text: string | null }): Promise<boolean> => {
@@ -117,14 +128,14 @@ export function BoardClient({
       // `task_not_closed` = the answer IS saved, only the task did not close. Anything else (split_failed
       // included - it is returned before a write) means nothing changed: the card keeps the pick.
       if (r.ok || r.kind === "task_not_closed") {
-        say("התשובה נשמרה", r.ok ? (a.key === "skip" ? "ההופעה דולגה. המשימה נסגרה." : "ההופעה חוזרת לבנייה. המשימה נסגרה.") : actionErrorText(r.kind));
+        say("התשובה נשמרה", r.ok ? (a.key === "skip" ? "ההופעה דולגה. המשימה נסגרה." : `${backToBuild} המשימה נסגרה.`) : actionErrorText(r.kind));
         wake();
         return true;
       }
       say("התשובה לא נשמרה", actionErrorText(r.kind), true);
       return false;
     },
-    [act, say, wake],
+    [act, say, wake, backToBuild],
   );
 
   const reject = useCallback(
@@ -161,11 +172,14 @@ export function BoardClient({
       const r = await act(item, "rebuild", () => rebuildTwoCity(item.id, target.id), "הבנייה מחדש לא התחילה");
       if (r === null) return;
       if (r.ok) {
-        say(`${showLabel(item)} ייבנה מחדש כחבילה דו-עירונית`, "הבחירה נרשמה - הפעם הבאה באולם הזה תיבנה כך מעצמה.");
+        say(
+          `${showLabel(item)} ייבנה מחדש כחבילה דו-עירונית`,
+          runStopped ? `${STOPPED_REQUEUE_TEXT} הבחירה נרשמה.` : "הבחירה נרשמה - הפעם הבאה באולם הזה תיבנה כך מעצמה.",
+        );
         wake();
       } else say("הבנייה מחדש לא התחילה", actionErrorText(r.kind), true);
     },
-    [act, say, wake],
+    [act, say, wake, runStopped],
   );
 
   async function doApproveAll() {
@@ -174,19 +188,23 @@ export function BoardClient({
     const byId = new Map(board.items.map((i) => [i.id, i]));
     try {
       const r = await approveAll(runId);
-      if (r.kind) {
+      // `recheck_skipped` is no failure: every approval stands, only the availability re-check waits for the next sync.
+      if (r.kind && r.kind !== "recheck_skipped") {
         say("האישור נכשל", actionErrorText(r.kind), true);
         setLastResult(`האישור נכשל: ${actionErrorText(r.kind)}`);
         return;
       }
+      // One toast (the store shows one at a time): the skipped re-check rides in the approvals' toast.
+      const recheckNote = r.kind === "recheck_skipped" ? actionErrorText(r.kind) : null;
       const failed = r.failed;
       setLastResult(`אושרו ${r.approved}${failed.length > 0 ? `, ${failed.length} לא אושרו` : ""}`);
       say(
         `אושרו ${r.approved}`,
         failed.length === 0 ? (
-          "האירועים עלו לאתר. הקריאייטיב לפיד ייווצר בשעה הקרובה."
+          (recheckNote ?? "האירועים עלו לאתר. הקריאייטיב לפיד ייווצר בשעה הקרובה.")
         ) : (
           <div className="space-y-1">
+            {recheckNote && <p>{recheckNote}</p>}
             <p>{failed.length === 1 ? "הופעה אחת לא אושרה:" : `${failed.length} הופעות לא אושרו:`}</p>
             <ul className="space-y-0.5 ps-4">
               {failed.slice(0, 6).map((f) => {

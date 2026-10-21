@@ -8,7 +8,7 @@ import { parseBrief } from "@/lib/actions/uploader-actions";
 import { emptyPlan } from "@/lib/uploader/plan";
 import type { UploaderRun } from "@/types/uploader.types";
 import { BriefComposer } from "./brief-composer";
-import { actionErrorText } from "./copy";
+import { actionErrorText, BRIEF_INPUT_TEXT } from "./copy";
 import { PlanCard, type PlanSeed } from "./plan-card";
 import { RunsList } from "./runs-list";
 
@@ -46,7 +46,7 @@ export function UploaderClient({
     try {
       const res = await parseBrief(brief);
       if (!res.ok) {
-        toast({ variant: "destructive", title: "הבריף לא פוענח", description: actionErrorText(res.kind) });
+        toast({ variant: "destructive", title: "הבריף לא פוענח", description: res.kind === "bad_input" ? BRIEF_INPUT_TEXT : actionErrorText(res.kind) });
         return;
       }
       setStage({

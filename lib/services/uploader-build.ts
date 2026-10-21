@@ -44,10 +44,11 @@ import { findVenueMemory } from "@/lib/services/venue-memory";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { decision } from "@/lib/uploader/decisions";
+import { clearsOwnEvent } from "@/lib/uploader/run-rules";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { decidePlace, type PlaceInput } from "@/lib/uploader/place";
 import { buildDuplicateFor, existingEventFor, ownEventToClean, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
-import { ticketsFromLiveStock, ticketsFromTixStockFeed, type TixDropReason } from "@/lib/uploader/tickets";
+import { NO_PRICE_REASON, ticketsFromLiveStock, ticketsFromTixStockFeed, type TixDropReason } from "@/lib/uploader/tickets";
 import { WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import type { LiveTicketsStock, RawLiveTicketsCategory } from "@/lib/services/livetickets-offers";
@@ -132,6 +133,33 @@ async function tixstockTickets(eventId: string): Promise<{ tickets: EventTicket[
   return { tickets: out.tickets, decisions, reached: true };
 }
 
+/** Every `live_events` column a build reads: the snapshot fallback, the city, the venue picture. */
+const LIVE_ROW_COLUMNS = "currency,ticket_categories,iata,city_name,venue_map_heb_url,venue_map_url";
+
+async function selectLiveRow(eventId: number) {
+  return supabaseTyped.from("live_events").select(LIVE_ROW_COLUMNS).eq("event_id", eventId).maybeSingle();
+}
+type LiveRowRead = Awaited<ReturnType<typeof selectLiveRow>>["data"];
+
+/**
+ * The show's `live_events` row, read at most ONCE per build and only when a step needs it (the
+ * snapshot fallback, LiveTickets' city, their venue picture) - it was read up to three times per
+ * item. A failed read THROWS, to every step that asks.
+ */
+function liveRowReader(eventId: number): () => Promise<LiveRowRead> {
+  let pending: Promise<LiveRowRead> | null = null;
+  return () => {
+    pending ??= selectLiveRow(eventId).then(({ data, error }) => {
+      if (error) {
+        console.error("uploader-build: live_events read failed", JSON.stringify(error));
+        throw new Error(`live_events read failed: ${error.message}`);
+      }
+      return data;
+    });
+    return pending;
+  };
+}
+
 /**
  * LiveTickets: their live stock, once more on no answer, then our `live_events` snapshot (the
  * `buildLiveTicketsDrafts` fallback) - SELLABLE categories only; the rest are named in a decision
@@ -139,17 +167,16 @@ async function tixstockTickets(eventId: string): Promise<{ tickets: EventTicket[
  * not answer AND the snapshot sells nothing (a snapshot's categories are usually blocked - that is
  * an outage, not "LiveTickets has no tickets"). A failed snapshot READ throws.
  */
-async function liveTickets(eventId: number): Promise<{ tickets: EventTicket[]; decisions: Decision[]; reached: boolean }> {
+async function liveTickets(
+  eventId: number,
+  liveRow: () => Promise<LiveRowRead>,
+): Promise<{ tickets: EventTicket[]; decisions: Decision[]; reached: boolean }> {
   const offers = await import("@/lib/services/livetickets-offers");
   const eid = String(eventId);
   let stock: LiveTicketsStock | "SOLD_OUT" | null = await twice(() => offers.fetchLiveTicketsStock(eid));
   let fromSnapshot = false;
   if (stock === null) {
-    const { data, error } = await supabaseTyped.from("live_events").select("currency,ticket_categories").eq("event_id", eventId).maybeSingle();
-    if (error) {
-      console.error("uploader-build: live_events snapshot read failed", JSON.stringify(error));
-      throw new Error(`live_events snapshot read failed: ${error.message}`);
-    }
+    const data = await liveRow();
     const currency = data ? offers.currencyFromCode(data.currency) : null;
     if (data && currency) {
       const raw = Array.isArray(data.ticket_categories) ? data.ticket_categories : [];
@@ -165,7 +192,14 @@ async function liveTickets(eventId: number): Promise<{ tickets: EventTicket[]; d
   if (fromSnapshot) decisions.push(decision("live_from_snapshot", { count: out.tickets.length }));
   decisions.push(
     ...droppedLines(
-      out.dropped.map((d) => ({ label: d.reason === offers.NOT_INSTANT_REASON ? "של LiveTickets שאינן באישור מיידי" : `של LiveTickets (${d.reason})` })),
+      out.dropped.map((d) => ({
+        label:
+          d.reason === offers.NOT_INSTANT_REASON
+            ? "של LiveTickets שאינן באישור מיידי"
+            : d.reason === NO_PRICE_REASON
+              ? "של LiveTickets בלי מחיר"
+              : `של LiveTickets (${d.reason})`,
+      })),
     ),
   );
   return { tickets: out.tickets, decisions, reached: true };
@@ -255,12 +289,8 @@ function cityIataOf(v: Json | null): string | null {
 }
 
 /** `live_events.iata` / `city_name` of the show's LiveTickets row (`decidePlace` matches them to `locations`). */
-async function readLiveCity(liveEventId: number): Promise<{ iata: string | null; city: string | null }> {
-  const { data, error } = await supabaseTyped.from("live_events").select("iata,city_name").eq("event_id", liveEventId).maybeSingle();
-  if (error) {
-    console.error("uploader-build: live_events (location) read failed", JSON.stringify(error));
-    throw new Error(`live_events read failed: ${error.message}`);
-  }
+async function readLiveCity(liveRow: () => Promise<LiveRowRead>): Promise<{ iata: string | null; city: string | null }> {
+  const data = await liveRow();
   return { iata: data?.iata ?? null, city: data?.city_name ?? null };
 }
 
@@ -293,7 +323,13 @@ async function readMemory(show: ShowIdentity): Promise<PlaceInput["memory"]> {
  * Everything `decidePlace` needs, read once: the `locations` table, the venue's memory, and - only
  * for a show without venue coordinates - LiveTickets' city fields and an earlier run's answer.
  */
-async function readPlaceInput(run: UploaderRun, item: UploaderItem, show: ShowIdentity, ctx: BuildContext): Promise<PlaceInput> {
+async function readPlaceInput(
+  run: UploaderRun,
+  item: UploaderItem,
+  show: ShowIdentity,
+  ctx: BuildContext,
+  liveRow: (() => Promise<LiveRowRead>) | null,
+): Promise<PlaceInput> {
   const noCoords = typeof show.lat !== "number" || typeof show.lon !== "number";
   const answer = item.question?.kind === "pick_location" ? (item.question.answer ?? null) : null;
   // A two-city rebuild names its flight city itself: the memory is not read (a transient failure must not fail it).
@@ -301,8 +337,7 @@ async function readPlaceInput(run: UploaderRun, item: UploaderItem, show: ShowId
   let liveCity: PlaceInput["liveCity"] = null;
   let prior: PlaceInput["prior"] = null;
   if (noCoords && !answer && !ctx.twoCity) {
-    const liveRef = show.suppliers.livetickets;
-    const [city, priors] = await Promise.all([liveRef ? readLiveCity(liveRef.event_id) : null, loadPriorItems(ctx.subject.name_en, { includeTest: run.is_test })]);
+    const [city, priors] = await Promise.all([liveRow ? readLiveCity(liveRow) : null, loadPriorItems(ctx.subject.name_en, { includeTest: run.is_test })]);
     liveCity = city;
     const hit = priorAnswerFor({ subject_en: ctx.subject.name_en, kind: "pick_location", key: questionKey(show, ctx.subject.name_en) }, priors);
     prior = hit?.answer ? { key: hit.answer.key, text: hit.answer.text, by: hit.by, run_no: hit.run_no } : null;
@@ -379,9 +414,12 @@ function pushUnique(list: Decision[], more: Decision[]): void {
   for (const d of more) if (!list.some((x) => x.code === d.code && x.text === d.text)) list.push(d);
 }
 
-async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): Promise<BuildResult> {
+/** What one build did to the item's own event: its earlier one is gone (`cleaned`), a new one was made (`created`). */
+type BuildTrace = { cleaned: boolean; created: boolean };
+
+async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, trace: BuildTrace): Promise<BuildResult> {
   // A retry first removes the hidden event its earlier build left (never a second event beside it).
-  await cleanOwnEvent(run, item);
+  trace.cleaned = await cleanOwnEvent(run, item);
   const decisions: Decision[] = (item.decisions ?? []).filter((d) => SEARCH_DECISIONS.has(d.code));
   if (item.question?.answer?.key === "skip") return skipped(item.show, "skipped_by_answer", decisions);
   const show = await applyShowAnswer(item.show, item.question);
@@ -405,9 +443,10 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
   }
   const tixRef = show.suppliers.tixstock;
   const liveRef = show.suppliers.livetickets;
+  const liveRow = liveRef ? liveRowReader(liveRef.event_id) : null;
   const [tix, live] = await Promise.all([
     tixRef ? tixstockTickets(tixRef.event_id) : null,
-    liveRef ? liveTickets(liveRef.event_id) : null,
+    liveRef && liveRow ? liveTickets(liveRef.event_id, liveRow) : null,
   ]);
   const unreachable: Supplier[] = [];
   if (tix && !tix.reached) unreachable.push("tixstock");
@@ -427,7 +466,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
   }
 
   // 2. Location: the reads, then the pure decision tree.
-  const placed = decidePlace(await readPlaceInput(run, item, show, ctx));
+  const placed = decidePlace(await readPlaceInput(run, item, show, ctx, liveRow));
   if (placed.kind === "error") throw new Error(placed.message);
   pushUnique(decisions, placed.decisions);
   if (placed.kind === "ask") return { status: "question", item: { status: "question", show, question: placed.question, decisions } };
@@ -471,13 +510,9 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
     decisions.push(decision("zones_from_template", { zoned, total: tickets.length }));
   } else if (tixRef?.venue_map_url) {
     mapImageUrl = tixRef.venue_map_url;
-  } else if (liveRef) {
+  } else if (liveRow) {
     // LiveTickets-only: their own picture of the venue (Hebrew first), unzoned.
-    const { data, error } = await supabaseTyped.from("live_events").select("venue_map_heb_url,venue_map_url").eq("event_id", liveRef.event_id).maybeSingle();
-    if (error) {
-      console.error("uploader-build: live_events (map) read failed", JSON.stringify(error));
-      throw new Error(`live_events read failed: ${error.message}`);
-    }
+    const data = await liveRow();
     mapImageUrl = (data?.venue_map_heb_url || data?.venue_map_url || "").trim();
   }
 
@@ -528,6 +563,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
   };
   const { createEvent } = await import("@/lib/actions/event-actions");
   const created = await createEvent(draft);
+  trace.created = true;
   // The item points at its event BEFORE anything else can fail or time out: an action cut off from
   // here on never leaves a hidden event that no item points at. A failed write is logged only - the
   // caller writes the whole result (event_id included) at the end anyway.
@@ -586,11 +622,18 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
  * hidden event exists (`item.event_id`) and `item.payload` is its row as created.
  */
 export async function buildItem(run: UploaderRun, item: UploaderItem, ctx: BuildContext): Promise<BuildResult> {
+  const trace: BuildTrace = { cleaned: false, created: false };
+  let result: BuildResult;
   try {
-    return await build(run, item, ctx);
+    result = await build(run, item, ctx, trace);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(`uploader-build: item ${item.id} failed`, message);
-    return { status: "error", item: { status: "error", error: message } };
+    result = { status: "error", item: { status: "error", error: message } };
   }
+  // A rebuild that removed its earlier event and made none (skipped / question / error before
+  // `createEvent`) must not keep pointing at the deleted one. An error AFTER `createEvent` keeps the
+  // new event's id (written at once) - the next retry cleans that one.
+  if (clearsOwnEvent(result.status, trace)) result = { ...result, item: { ...result.item, event_id: null } };
+  return result;
 }

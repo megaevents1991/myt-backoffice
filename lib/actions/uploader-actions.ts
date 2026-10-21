@@ -61,6 +61,7 @@ import {
   previewOf,
   raiseQuestion,
   readEditRows,
+  readItem,
   readItemAndRun,
   readLocation,
   readRun,
@@ -423,6 +424,11 @@ export async function resumeRun(runId: string): Promise<Ok> {
   const found = await countFoundItems(runId);
   if (found === null) return fail("db_error");
   if (!canResume(run.status, found)) return fail("not_resumable");
+  // One run per subject at a time - the rule createRun keeps, kept on resume too (a stopped run is
+  // not "in progress", so another run of its subject may have started meanwhile).
+  const busy = await runInProgressFor(run.plan, run.id);
+  if (busy === null) return fail("db_error");
+  if (busy) return fail("run_in_progress");
   const resumed = await transitionRun(runId, [run.status], { status: "building" });
   if (resumed === "db_error") return fail("db_error");
   if (resumed === "moved") return fail("not_resumable"); // its status moved meanwhile
@@ -442,15 +448,21 @@ export async function listRuns(): Promise<UploaderRun[]> {
   return (await listRunRows(RUNS_LIST_MAX)) ?? [];
 }
 
+/** The board's blocker on a ready item whose event was soft deleted (or is gone) - never stored. */
+const EVENT_GONE_BLOCKER = { code: "event_gone", text: "האירוע נמחק" } as const;
+
 /**
  * The board: the run, its items (soonest first; a ready item's blockers re-judged against its live
- * event row), which built events staff already edited (unknown when that read failed -
- * `editedUnknown`), the people an answer can name, and the subject's own picture (one light read).
+ * event row - a deleted event blocks it, "האירוע נמחק"), which built events staff already edited
+ * (unknown when that read failed - `editedUnknown`), the people an answer can name (skipped with
+ * `{ people: false }` - `peopleOmitted`), and the subject's own picture (one light read).
  * null = no such run; `{ run: null, kind: "db_error" }` = a read failed.
  */
-export async function getRun(runId: string): Promise<RunView | null> {
+export async function getRun(runId: string, opts?: { people?: boolean }): Promise<RunView | null> {
   await requireAdmin();
   if (!isUuid(runId)) return null;
+  // The board's polls pass `{ people: false }`: the staff list is read once per board, not per poll.
+  const withPeople = !(typeof opts === "object" && opts !== null && opts.people === false);
   const { run, failed } = await readRun(runId);
   if (failed) return { run: null, kind: "db_error" };
   if (!run) return null;
@@ -463,10 +475,12 @@ export async function getRun(runId: string): Promise<RunView | null> {
     if (rows === null || !hasBuiltEvent(item)) return item;
     const row = rows.get(item.event_id) ?? null;
     edited[item.id] = editDiff(item.payload, row).length > 0;
-    return row ? { ...item, blockers: liveBlockers(item.blockers, row) } : item;
+    // Deleted (or gone) meanwhile: not approvable - approve would answer `event_gone` anyway.
+    if (!row) return { ...item, blockers: [...(item.blockers ?? []), EVENT_GONE_BLOCKER] };
+    return { ...item, blockers: liveBlockers(item.blockers, row) };
   });
-  const [people, subjectArt] = await Promise.all([loadPeople(), readSubjectArt(run.plan)]);
-  return { run, items, edited, editedUnknown: rows === null, people, subjectArt };
+  const [people, subjectArt] = await Promise.all([withPeople ? loadPeople() : Promise.resolve([]), readSubjectArt(run.plan)]);
+  return { run, items, edited, editedUnknown: rows === null, people, ...(withPeople ? {} : { peopleOmitted: true as const }), subjectArt };
 }
 
 // ---- questions ---------------------------------------------------------------------------------------
@@ -539,8 +553,9 @@ export async function answerQuestion(itemId: string, answer: { key: string | nul
 
 /**
  * "נסה שוב": an `error` item - or a build cut off mid-way (`building` past STALE_BUILD_MS) - goes
- * back to `found` (error cleared) for the build loop. Its `event_id` is kept as it is: an errored
- * build never wrote one, and the build re-checks duplicates by supplier id anyway.
+ * back to `found` (error cleared) for the build loop. Its `event_id` is kept as it is: a build cut
+ * off (or failed) after `createEvent` left that hidden event, and the rebuild soft-deletes it first
+ * (`cleanOwnEvent`, audit `uploader.orphan_cleaned`) before it builds again - never a second event.
  */
 export async function retryItem(itemId: string): Promise<Ok> {
   await requireAdmin();
@@ -605,13 +620,16 @@ export async function approveItem(itemId: string): Promise<ApproveResult> {
 
   const listed = await unhide(item);
   if (!listed.ok) return listed;
-  const approved = await markApproved(session.sub, run, item, listed);
+  const marked = await markApproved(session.sub, run, item, listed);
   // The event is listed whatever the record said - it is re-checked and the site refreshed either way.
   await boundedRecheck([listed.eventId], APPROVE_SYNC_MS);
   await revalidateMain();
   invalidatePriceLight("rows");
   await recomputeRun(run.id);
-  return approved;
+  // `not_ready` AFTER a successful un-hide = the item moved meanwhile (another click approved it):
+  // the event IS listed, so this is no failure - say so instead of a red "not approved".
+  if (!marked.ok && marked.kind === "not_ready") return { ok: true, edited: editDiff(item.payload, listed.before).length > 0, note: "moved" };
+  return marked;
 }
 
 /**
@@ -650,13 +668,15 @@ export async function approveAll(runId: string): Promise<ApproveAllResult> {
     else failed.push({ itemId: item.id, kind: marked.kind });
   }
 
+  let recheck: Awaited<ReturnType<typeof boundedRecheck>> = "done";
   if (eventIds.length > 0) {
-    await boundedRecheck(eventIds, Math.min(APPROVE_SYNC_MS, APPROVE_ALL_DEADLINE_MS - (Date.now() - started)));
+    recheck = await boundedRecheck(eventIds, Math.min(APPROVE_SYNC_MS, APPROVE_ALL_DEADLINE_MS - (Date.now() - started)));
     await revalidateMain();
     invalidatePriceLight("rows");
   }
   await recomputeRun(runId);
-  return { approved, failed };
+  // Every approval stands; only the re-check found no time left (logged) - the next price sync does it.
+  return recheck === "skipped" ? { approved, failed, kind: "recheck_skipped" } : { approved, failed };
 }
 
 /**
@@ -690,7 +710,12 @@ export async function rejectItem(itemId: string, reason: string, final: boolean)
   if ("kind" in read) return fail(read.kind);
   const { item, run } = read;
   if (!REJECTABLE_STATUSES.includes(item.status)) return fail("not_rejectable");
-  const removed = await removeBuiltEvent(item.event_id);
+  // Read again right before the delete: an approve (or a build) that landed since the first read
+  // must stop the reject here, not after its event is gone.
+  const fresh = await readItem(item.id);
+  if (fresh.failed) return fail("db_error");
+  if (!fresh.item || !REJECTABLE_STATUSES.includes(fresh.item.status)) return fail("not_rejectable");
+  const removed = await removeBuiltEvent(fresh.item.event_id);
   if (removed) return removed;
 
   const written = await transitionItem(item.id, REJECTABLE_STATUSES, { status: "rejected", rejected_reason: why, rejected_final: final });
@@ -750,7 +775,11 @@ export async function rebuildTwoCity(itemId: string, flightCityId?: number | nul
   // package to a city on another continent from this venue.
   if (km > FAR_VENUE_KM) return fail("too_far");
 
-  const removed = await removeBuiltEvent(item.event_id);
+  // Read again right before the delete (an approve may have landed since the first read).
+  const fresh = await readItem(item.id);
+  if (fresh.failed) return fail("db_error");
+  if (!fresh.item || fresh.item.status !== item.status || !canRebuildTwoCity(fresh.item)) return fail("not_rebuildable");
+  const removed = await removeBuiltEvent(fresh.item.event_id);
   if (removed) return removed;
   const requeued = await transitionItem(item.id, [item.status], {
     status: "found",

@@ -118,12 +118,14 @@ export function rejectedBeforeLine(item: UploaderItem): string | null {
 
 /**
  * The creative's subject on an approved card (spec §11): an artist's cut-out, or the flat photo
- * the creative falls back to when the build warned `no_cutout`; a team's crest. null = not known
- * (a competition, or a subject with no row).
+ * the creative falls back to when the build warned `no_cutout`, or "בלי תמונה" when the artist has
+ * no picture at all (`image_url` null - neither a cut-out nor a photo); a team's crest. null = not
+ * known (a competition, or a subject with no row).
  */
 export function creativeSubject(item: UploaderItem, art: SubjectArt): string | null {
   if (!art) return null;
   if (art.kind === "team") return "סמל";
+  if (art.image_url === null) return "בלי תמונה";
   return (item.warnings ?? []).some((w) => w.code === "no_cutout") ? "תמונה שטוחה" : "cut-out ✓";
 }
 

@@ -309,10 +309,23 @@ export type PlanPreview = {
   existing: number;
   /** Every city a show or a question is in, soonest first, once each. */
   cities: string[];
+  /** The subject's own page on the site (`subjectHasPage`): true / false; null or absent = not a person (a competition) or not known. */
+  hasPage?: boolean | null;
 };
 
 /** The preview of nothing (no subject yet - the manual form before it is filled). */
 export const EMPTY_PREVIEW: PlanPreview = { shows: 0, questions: 0, existing: 0, cities: [] };
+
+/**
+ * Does the subject have its own page on the site - the row the build warns about when it is missing
+ * (`no_artist_page` / `no_team_page`): an artist -> an `artists` row, a team -> a `football_teams`
+ * row (`resolveSubject` found them). A competition has no page of its own -> null (no chip).
+ */
+export function subjectHasPage(kind: SubjectKind, rows: { artist: unknown; team: unknown }): boolean | null {
+  if (kind === "artist") return rows.artist !== null;
+  if (kind === "team") return rows.team !== null;
+  return null;
+}
 
 /** `findShows`' answer as the plan card counts it. */
 export function planPreview(found: {
@@ -456,12 +469,15 @@ const likeEscape = (t: string): string => t.replace(/[\\%_]/g, (c) => `\\${c}`);
 /**
  * The ONE candidate read's `ilike` pattern for the subject's picture: `%<token>%` over
  * `name_english`, the token being a team's first club token (`clubKey` - "Liverpool FC" ->
- * "liverpool", the qualifiers dropped) or an artist's first word, escaped. null = nothing to search
- * by (a competition, a blank name, or a token holding `*` - PostgREST reads it as `%`).
+ * "liverpool", the qualifiers dropped) or an artist's LONGEST word (the first one on a tie) - "The
+ * Rolling Stones" searches "Rolling", not "The" (ten rows of "The ..." would crowd the subject out
+ * of the ART_CANDIDATES read), escaped. null = nothing to search by (a competition, a blank name, or
+ * a token holding `*` - PostgREST reads it as `%`).
  */
 export function artSearchPattern(kind: SubjectKind, nameEn: string): string | null {
   if (kind === "competition") return null;
-  const token = kind === "team" ? (clubKey(nameEn).split(" ")[0] ?? "") : (nameEn.trim().split(/\s+/)[0] ?? "");
+  const longest = (words: string[]): string => words.reduce((best, w) => (w.length > best.length ? w : best), "");
+  const token = kind === "team" ? (clubKey(nameEn).split(" ")[0] ?? "") : longest(nameEn.trim().split(/\s+/));
   if (token === "" || token.includes("*")) return null;
   return `%${likeEscape(token)}%`;
 }
@@ -536,6 +552,16 @@ export function liveBlockers(stored: Warning[] | null | undefined, row: BlockerR
 /** A `ready` item that points at its built (hidden) event - the board's edit diff and live blockers read those events. */
 export function hasBuiltEvent(item: UploaderItem): item is UploaderItem & { event_id: number } {
   return item.status === "ready" && typeof item.event_id === "number";
+}
+
+/**
+ * Does a build's result point the item at NO event: the build removed (or found gone) the item's
+ * earlier event and created none - a rebuild that ended skipped / question / error before
+ * `createEvent`. A `ready` result carries its new event; an error AFTER `createEvent` keeps the new
+ * event's id (written at once - the next retry cleans that one).
+ */
+export function clearsOwnEvent(status: ItemStatus, trace: { cleaned: boolean; created: boolean }): boolean {
+  return status !== "ready" && trace.cleaned && !trace.created;
 }
 
 /** The statuses a person may reject from (a show being built, or already approved / rejected / skipped, is not one). */

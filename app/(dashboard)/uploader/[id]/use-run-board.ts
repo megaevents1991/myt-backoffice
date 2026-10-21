@@ -11,7 +11,9 @@ import { loadErrorText } from "./board-words";
 
 // The review board's view of its run, kept fresh (spec §5.3 "build progress"):
 //
-// - refresh: `getRun`; a sequence number drops any answer older than the newest request.
+// - refresh: `getRun`; a sequence number drops any answer older than the newest request. The staff
+//   list (`people`) is read once per board: once a read brought it, every later one asks
+//   `{ people: false }` and the board keeps the list it has.
 // - The build loop: while the run is `building`, `buildNextItem` -> refresh -> again, one call at a
 //   time (the `loopRunning` guard), until the step says `done` or the status leaves `building`
 //   ("עצור"). A `done` while the status still reads building (another open board is building the
@@ -56,6 +58,8 @@ export function useRunBoard(runId: string, initial: RunBoard | null, initialErro
   /** The loop met an empty queue while the status still read `building` - wait for a change or a wake. */
   const exhausted = useRef(false);
   const wakeEpoch = useRef(0);
+  /** The staff list the board already has (null = none read yet - the next read asks for it). */
+  const peopleRef = useRef<RunBoard["people"] | null>(initial && !initial.peopleOmitted ? initial.people : null);
 
   useEffect(() => {
     alive.current = true;
@@ -68,7 +72,8 @@ export function useRunBoard(runId: string, initial: RunBoard | null, initialErro
     const id = ++seq.current;
     inFlight.current += 1;
     try {
-      const next = await getRun(runId);
+      const known = peopleRef.current;
+      const next = await getRun(runId, { people: known === null });
       if (!alive.current || id !== seq.current) return;
       if (next === null) {
         setLoadError("not_found");
@@ -79,7 +84,8 @@ export function useRunBoard(runId: string, initial: RunBoard | null, initialErro
         return;
       }
       statusRef.current = next.run.status;
-      setBoard(next);
+      if (!next.peopleOmitted) peopleRef.current = next.people;
+      setBoard(next.peopleOmitted ? { ...next, people: peopleRef.current ?? [] } : next);
       setLoadError(null);
       setNow(Date.now());
     } catch {

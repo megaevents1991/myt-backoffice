@@ -893,15 +893,19 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Res
   // The status as it was - read BEFORE the update, or an activity row would
   // record "from" equal to "to".
   const { data: beforeRow, error: beforeError } = (await tasks
-    .select("status,assignee_id,created_by,reviewer_ids")
+    .select("status,assignee_id,created_by,reviewer_ids,source")
     .eq("id", id)
     .maybeSingle()) as TaskResult<{
     status: string;
     assignee_id: string | null;
     created_by: string | null;
     reviewer_ids: string[] | null;
+    source: string | null;
   }>;
   if (beforeError) console.error("tasks: before-read failed", JSON.stringify(beforeError));
+  // A tour-uploader question IS its task: done here would close the task and strand the show on the
+  // board as an open question. The answer on the uploader board closes it (and builds the show).
+  if (beforeRow?.source === "uploader") return { ok: false, error: "ענו על השאלה בלוח ההעלאה" };
   // Tradeoff: if before-read fails, activity records status as changing from null (not true,
   // but safe: the actual update succeeded so audit has the final state).
   const previousStatus = (beforeRow?.status as TaskStatus | undefined) ?? null;

@@ -279,6 +279,8 @@ export async function syncTixStockPrices(
       "id,name,date,tickets_and_rates,tx_excluded_sections,deactivated_reason,is_hidden",
     );
     if ((error as { code?: string } | null)?.code === "42703") {
+      // NB: this fallback still reads `is_hidden` (migration 20261021115818), so it no longer rescues a
+      // database older than both columns - moot now that both migrations are applied.
       canDeactivate = false;
       ({ data, error } = await loadEvents(
         "id,name,date,tickets_and_rates,tx_excluded_sections,is_hidden",

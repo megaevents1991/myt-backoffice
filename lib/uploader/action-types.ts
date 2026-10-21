@@ -58,6 +58,8 @@ export type RunBoard = {
   /** The events read behind `edited` failed: `edited` is empty because it is UNKNOWN, not because nothing was edited. */
   editedUnknown: boolean;
   people: { id: string; name: string }[];
+  /** `getRun(id, { people: false })`: `people` was not read (it is []) - keep the list the board already has. */
+  peopleOmitted?: true;
   subjectArt: SubjectArt;
 };
 
@@ -65,9 +67,11 @@ export type RunBoard = {
 export type RunView = RunBoard | { run: null; kind: "db_error" };
 
 export type ApproveResult =
-  | { ok: true; edited: boolean }
+  /** `note: "moved"` = the event was listed, but the item moved meanwhile (approved by another click) - the approval on file is that one. */
+  | { ok: true; edited: boolean; note?: "moved" }
   | { ok: false; kind: "not_ready" | "blocked" | "event_gone" | "db_error" | "bad_input" | "not_found" };
 
+/** `kind` = the whole call failed - except `recheck_skipped`: every approval stands, only the availability re-check found no time left. */
 export type ApproveAllResult = { approved: number; failed: { itemId: string; kind: string }[]; kind?: string };
 
 export type OpenQuestions = {

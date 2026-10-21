@@ -128,7 +128,7 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       if (!m || !subject || !venue || !flightCity) return null;
       const city = text(m.city);
       const km = typeof m.km === "number" && Number.isFinite(m.km) ? `, ${Math.round(m.km)} km` : "";
-      return `${subject} at ${venue}${city ? ` (${city})` : ""} was built two-city: flight to ${flightCity}${km} — do the same for that venue`;
+      return `${subject} at ${venue}${city ? ` (${city})` : ""} - that venue's two-city setup: flight to ${flightCity}${km}`;
     },
   },
   {
@@ -172,7 +172,6 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
     "אישור התוכנית (או תיקונה) לפני שמתחילה בנייה",
     "תשובה לשאלות שהבונה לא מצליח להכריע לבד - איזו הופעה, איזה תאריך, איזה מיקום",
     "אישור או דחייה של כל אירוע שנבנה (דחייה דורשת סיבה)",
-    "משוב על הפענוח עצמו (AI Factory \"יומן\")",
   ],
   switchEnv: "TOUR_UPLOADER_AI",
   modelEnv: "TOUR_UPLOADER_AI_MODEL",

@@ -133,7 +133,8 @@ export interface GapContext {
 
 export async function buildGapContext(opts: GapLoadOptions = {}): Promise<GapContext> {
   const [eventsRes, hubsRes, teamsRes, artistsRes] = await Promise.all([
-    db.from("events").select("name_english,date").is("is_deleted", null).gte("date", todayISO()),
+    // "On sale" = listed: a hidden event (AI Uploader, not approved yet) does not lift an artist up the queue.
+    db.from("events").select("name_english,date").is("is_deleted", null).eq("is_hidden", false).gte("date", todayISO()),
     db
       .from("categories")
       .select("id,slug")

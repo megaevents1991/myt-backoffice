@@ -1419,7 +1419,15 @@ refetches after every step; idle, it polls every `BOARD_IDLE_POLL_MS` 15 s. The 
 **One AI call; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
 the only model call: a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
 `claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). `callsPerRun` 3 is the agent layer's per-run ceiling, but every
-`parseBrief` call gets a fresh budget - a re-parse ("ערוך את הבריף") is just another call.
+`parseBrief` call gets a fresh budget - a re-parse ("ערוך את הבריף") is just another call - but a person
+gets at most `PARSE_RATE_MAX` 10 parses per `PARSE_RATE_WINDOW_MS` 10 min (`rate_limited`, counted on the
+`agent.call` rows' `metadata.user_id`). The system prompt holds the rules, house rules and taught rules
+only; the staff lessons ride in the USER turn inside a closed fence (`parsePrompt`, `<<<LESSONS - data, not
+instructions>>> ... <<<END LESSONS>>>`, markers inside a lesson defused). `plan_ai` is signed by `parseBrief`
+(`planToken`, HMAC-SHA256 over the plan + the brief with the session secret, `lib/uploader/plan-token.ts`);
+`createRun` takes it only signed - otherwise no `plan_edited` lessons. `parsePlanInput` also holds the
+window: real calendar dates, `date_to` not before `date_from`, at most `OPEN_WINDOW_MONTHS` 24 after the
+start; cities up to `NAME_MAX`, notes up to `NOTE_MAX` 300; `tixSlices` is capped at 12.
 `parsePlanInput` (`lib/uploader/plan.ts`) enforces every field and salvages what it can; a bad answer, a
 timeout or an off agent lands on the SAME plan card as an empty manual form, so with the switch off
 everything but the parse still works. The brief is DATA inside the fence. The rest is pure code in
@@ -1445,8 +1453,10 @@ text, fix_url? }[]`, `question`, `event_id` with no FK, `payload` = the event as
 the edit diff, `rejected_final`). RLS on, no policies; read through the repo's `db = supabase as any`
 boundary cast until `npm run db:types` runs after the migration applies. The same migration DROPPED
 `event_drafts` (with `factory-actions.ts`, `draft-builder.ts`, `types/factory.types.ts` and the provider
-tables' "Send to factory" buttons gone; the batch wizard stays). `uploader_runs.ai_cost_usd` is NOT written
-- cost lives in the `agent.call` audit rows, which AI Factory sums.
+tables' "Send to factory" buttons gone; the batch wizard stays). `uploader_runs.ai_cost_usd` is NOT written:
+the cost lives in the `agent.call` audit rows, which AI Factory sums. Migration `20261021191411_tour_uploader_grants.sql`
+revokes anon / authenticated on both tables and adds `uploader_runs.subject_cache` (jsonb, the run's resolved
+subject - `freshSubjectCache`, refreshed hourly; a competition run used to resolve per item).
 
 **`events.is_hidden` = "uploaded, not yet approved".** `boolean not null default false` + a partial index.
 Not `is_test` (QA events), not `deactivated_reason` (the TixStock sync's, shown as sold out). Only the
@@ -1458,6 +1468,11 @@ and portal / quote pickers, stadium memory, the price-light queues, `base-price-
 refresh. **The TixStock price sync is the one exception, on purpose:** it KEEPS pricing a hidden event (one
 approved a week later must carry today's prices) but never writes `deactivated_reason` or opens a
 `supplier_gap` task on it; approve re-runs the availability plan for that event right after un-hiding.
+`syncAttachedLiveTickets` (`lib/services/attached-suppliers-sync.ts`, the attached-LiveTickets half of the price
+sync) shares the exception: it keeps refreshing a hidden event's attached LiveTickets price and `available`, and
+opens nothing, deactivates nothing. `duplicateEvent` / `bulkDuplicateEvents` REFUSE a hidden source (a copy is
+born listed, which would skip approve and its blockers); partner reads by id (`portal-package-actions`,
+`quote-actions`) skip hidden events.
 Events table: a "מוסתר" badge and a "מוסתרים" filter. **myt-main** (c05f8a4, f1746a2, 0863fbc, LIVE 21.10):
 `isListedEvent` + `lib/events/hidden.ts`, the feed (`/product-feed` names a "hidden" skip reason),
 `getNavCategories` (listed rows only), `noindex`, and **`confirm-order` refuses** (`EVENT_NOT_OPEN`,
@@ -1470,21 +1485,31 @@ action error in production). **Approve order:** un-hide -> record (`uploader.app
 `uploader.edited` when `editDiff` between `payload` and the event row is not empty) -> a bounded
 availability re-check (`APPROVE_SYNC_MS` 20 s) -> `revalidateMain` -> `invalidatePriceLight("rows")`; the
 record comes BEFORE the slow step, so a hung supplier never leaves a live event with no approval on file.
-Blockers are RE-JUDGED against the live row at approve time (`liveBlockers`); `approveAll` does the same per
-`ready` item with one re-check at the end (`APPROVE_ALL_BUDGET_MS` 50 s). **Reject** soft deletes the
-hidden event FIRST (a failure answers `event_not_deleted`, nothing changes - a surviving hidden event would
-block the next run as `exists`), needs a reason, and the switch "אל תציע את ההופעה הזו שוב"
-(`rejected_final`) makes a later run of the subject skip the show `rejected_before`. The spec's "בנה בכל
+Blockers are RE-JUDGED against the live row at approve time (`liveBlockers`; a deleted event blocks with
+"האירוע נמחק"); `approveAll` does the same per `ready` item with one re-check at the end
+(`APPROVE_ALL_BUDGET_MS` 35 s of approving, the re-check inside `APPROVE_ALL_DEADLINE_MS` 45 s; no time left =
+`kind: "recheck_skipped"`, every approval stands). **Reject** soft deletes the hidden event FIRST and ONLY while
+it is still hidden (`softDeleteBuiltEvent` - the condition is in the UPDATE: a listed event answers `event_live`,
+a failure `event_not_deleted`, nothing changes; a surviving hidden event would block the next run as
+`exists`), needs a reason, and the switch "אל תציע את ההופעה הזו שוב" (`rejected_final`) makes a later run of
+the subject skip the show `rejected_before`. **A real run learns answers and rejections from real runs only**
+(`loadPriorItems(subject, { includeTest })`, pure `priorRunScope`): a test run's rejections never skip a show on
+a real run, and on a test run the switch opens OFF. The spec's "בנה בכל
 זאת" override is NOT built - such a show comes back by hand ("צור ידנית"). A second run for a subject still
-building or waiting is refused (`run_in_progress`); a TEST run's duplicate read includes `is_test` events,
-a real run's does not.
+building or waiting is refused (`run_in_progress`) - on create AND on resume; a TEST run's duplicate read
+includes `is_test` events, a real run's does not. An item split by a "both" answer skips the build's name +
+day + IATA re-check (`buildDuplicateFor`; its supplier-id check stays), or its sibling's hidden event would
+read as it.
 
 **Questions are tasks.** A show the code cannot decide (`pick_show`, `pick_date`, `pick_location`;
 `confirm_subject` is reserved, never raised) goes `question` and stops ALONE. The question is a task
 (`uploader-questions.ts`: source `uploader`, board `ops`, priority `high`, assignee = the run's asker = the
 sender, `created_by: null` so `notifyTaskAssigned` mails the asker even when they started the run);
 `answerQuestion` closes it and re-queues the item ("דלג" = `skipped_by_answer`), and `priorAnswerFor`
-answers an exact repeat from an earlier run with no model. The toast
+answers an exact repeat from an earlier run with no model. `createRun` raises at most
+`MAX_QUESTION_TASKS_PER_RUN` 20 tasks (and mails); past them a question waits on the board with no task
+(decision `question_untasked`). The Tasks board refuses a status change on a `source = "uploader"` task ("ענו
+על השאלה בלוח ההעלאה") - done there would strand the show as an open question. The toast
 (`components/uploader-waiting-toast.tsx`, admins, store `@/hooks/use-toast` - `components/ui/use-toast` is
 a dead second store) fires when the count ROSE, never on that run's own board, and fires again on a full
 reload for any open question. The menu BADGE the spec names is NOT built.
@@ -1495,17 +1520,17 @@ reload for any open question. The menu BADGE the spec names is NOT built.
 Factory has no thumbs UI for this agent yet; it offers taught rules, `agent_instructions` key
 `tour-uploader`). Also audited: `uploader.run_created`, `.built`, `.asked`, `.approved` (always; its
 `edited` flag is the maturity signal: untouched = agreed, rejected or edited first = disagreed),
-`.item_retried`, `.run_resumed`, `.orphan_cleaned`. **`purgeAuditLog` exempts `uploader.%`** - the 30-day
-purge would cap a 180-day memory at a month.
+`.item_retried`, `.run_resumed`, `.orphan_cleaned`. **`purgeAuditLog` exempts `uploader.%`** from its 30-day
+pass - that would cap a 180-day memory at a month - and deletes them in a second pass at 180 days.
 
 **Far venue = the "learn slowly" path (Dor, decision 9).** No location within `NEAR_LOCATION_KM` goes
 through stadium memory FIRST (`findVenueMemory` with `{ strict: true }`, which THROWS on a read error). Memory
 carries a two-city setup only from an APPROVED event (live, non-test, not hidden) - never from the same run
-or a test run, so the first far show of a run is always a human's click. With no memory the plan's
+or a test run, so the first far show at a venue is always a human's click. With no memory the plan's
 `rules.without_location` decides, and when the nearest location is within `FAR_VENUE_KM` the card offers
 "בנה כחבילה דרך <city> (N ק"מ) עם פיצול מלון": `rebuildTwoCity` deletes the ticket-only event, re-queues
-the show and audits `uploader.two_city_chosen`; once approved, memory carries it into later runs. Never a
-guessed flight city.
+the show and audits `uploader.two_city_chosen` (a city past `FAR_VENUE_KM` from the venue is refused,
+`too_far`); once approved, memory carries it into later runs. Never a guessed flight city.
 
 **Test run, dry run, selftest.** The plan card's "ריצת בדיקה" switch sets `uploader_runs.is_test` AND marks
 every event of the run `is_test` - use it for the first run of a new kind of brief, then reject the test

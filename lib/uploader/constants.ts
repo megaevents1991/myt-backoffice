@@ -21,13 +21,10 @@ export const REJECT_REASON_MIN = 3;
 /** How often the toast polls for a run waiting on a question (ms). */
 export const TOAST_POLL_MS = 60_000;
 
-/** How often the review board polls a running build (ms). */
-export const BOARD_POLL_MS = 2_500;
-
 /**
  * How often the review board re-reads a run its own build loop is not driving - waiting on people,
  * or a build another open board is running (ms). While this board's loop runs it refreshes after
- * every step instead.
+ * every step instead (there is no faster poll).
  */
 export const BOARD_IDLE_POLL_MS = 15_000;
 

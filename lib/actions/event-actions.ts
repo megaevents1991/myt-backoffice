@@ -20,7 +20,7 @@ const EVENT_LIST_COLUMNS =
   "id,name,name_english,type,date,location,usual_price," +
   "tags,skip_flight,package_mode,is_prioritized,is_deleted," +
   "tickets_and_rates,def_date_depart,def_date_return," +
-  "base_flight_price,base_hotel_price,event_additional_markup," +
+  "base_flight_price,base_hotel_price,event_additional_markup,ticket_only_markup," +
   "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
   "price_drop_usd,price_drop_from,price_drop_until,deactivated_reason,is_hidden";
 

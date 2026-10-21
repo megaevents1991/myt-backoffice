@@ -34,6 +34,7 @@ import {
   sameSubject,
   STALE_BUILD_MS,
   subjectArtOf,
+  subjectHasPage,
   type ItemDraft,
   type PlanPreview,
   type SplitShow,
@@ -99,9 +100,13 @@ export const RUNS_LIST_MAX = 50;
 export const BRIEF_EXCERPT = 160;
 /** The availability re-check after an approve is awaited at most this long (it may go on running). */
 export const APPROVE_SYNC_MS = 20_000;
-/** `approveAll`: stop approving after this; the re-check gets what is left of APPROVE_ALL_DEADLINE_MS. */
-export const APPROVE_ALL_BUDGET_MS = 50_000;
-export const APPROVE_ALL_DEADLINE_MS = 55_000;
+/**
+ * `approveAll`: stop approving after APPROVE_ALL_BUDGET_MS; the re-check gets what is left of
+ * APPROVE_ALL_DEADLINE_MS (at most APPROVE_SYNC_MS), so re-check + `revalidateMain` (5 s) + the
+ * recompute still end inside the page's 60 s.
+ */
+export const APPROVE_ALL_BUDGET_MS = 35_000;
+export const APPROVE_ALL_DEADLINE_MS = 45_000;
 
 type DbError = { message: string; code?: string } | null;
 type DbResult<T> = { data: T | null; error: DbError };
@@ -191,8 +196,11 @@ export async function countFoundItems(runId: string): Promise<number | null> {
   return count ?? 0;
 }
 
-/** Is a run about the same subject (`sameSubject`) building or waiting right now? null = the read failed. */
-export async function runInProgressFor(plan: UploaderPlan): Promise<boolean | null> {
+/**
+ * Is a run about the same subject (`sameSubject`) building or waiting right now - other than
+ * `exceptRunId` (the run asking, on resume)? null = the read failed.
+ */
+export async function runInProgressFor(plan: UploaderPlan, exceptRunId?: string): Promise<boolean | null> {
   const { data, error } = (await db
     .from("uploader_runs")
     .select("id,plan")
@@ -202,7 +210,7 @@ export async function runInProgressFor(plan: UploaderPlan): Promise<boolean | nu
     logDb("open runs read", error);
     return null;
   }
-  return (data ?? []).some((r) => !!r.plan?.subject && sameSubject(r.plan.subject, plan.subject));
+  return (data ?? []).some((r) => r.id !== exceptRunId && !!r.plan?.subject && sameSubject(r.plan.subject, plan.subject));
 }
 
 export async function insertRun(row: {
@@ -569,8 +577,13 @@ export async function softDeleteBuiltEvent(eventId: number): Promise<DeleteOutco
  * supplier call inside it has no timeout of its own, so the wait is a race. A lost race is logged
  * and the sync is left to finish on its own; a failure is logged. Never throws.
  */
-export async function boundedRecheck(eventIds: number[], ms: number): Promise<void> {
-  if (eventIds.length === 0 || ms <= 0) return;
+export async function boundedRecheck(eventIds: number[], ms: number): Promise<"done" | "failed" | "timeout" | "skipped"> {
+  if (eventIds.length === 0) return "done";
+  if (ms <= 0) {
+    // No time left (approveAll past its deadline): logged - the next scheduled price sync re-checks them.
+    console.warn(`uploader: availability re-check of ${eventIds.length} event(s) skipped - no time left in this request`);
+    return "skipped";
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const sync = (async (): Promise<"done" | "failed"> => {
     // Imported in the call: the sync's exchange-rate service needs the supplier env at load.
@@ -590,10 +603,12 @@ export async function boundedRecheck(eventIds: number[], ms: number): Promise<vo
   if (outcome === "timeout") {
     console.warn(`uploader: availability re-check of ${eventIds.length} event(s) still running after ${ms} ms - not waited for`);
   }
+  return outcome;
 }
 
 async function selectEditRows(ids: number[]) {
-  return supabaseTyped.from("events").select(EDIT_EVENT_COLUMNS).in("id", ids);
+  // A soft-deleted event is no row here: the board then shows its ready item as not approvable.
+  return supabaseTyped.from("events").select(EDIT_EVENT_COLUMNS).in("id", ids).is("is_deleted", null);
 }
 /** An `events` row as EDIT_EVENT_COLUMNS reads it (the edit diff's and the live blockers' input). */
 export type EditRow = NonNullable<Awaited<ReturnType<typeof selectEditRows>>["data"]>[number];
@@ -715,16 +730,17 @@ export async function markApproved(
  */
 export async function previewOf(plan: UploaderPlan, includeTest: boolean): Promise<{ ok: true; preview: PlanPreview } | { ok: false; kind: string }> {
   if (plan.subject.name_en.trim() === "") return { ok: true, preview: { ...EMPTY_PREVIEW, cities: [] } };
-  let subject;
+  let resolved: Awaited<ReturnType<typeof resolveSubject>>;
   try {
-    subject = (await resolveSubject(plan)).subject;
+    resolved = await resolveSubject(plan);
   } catch (e) {
     // resolveSubject only throws when a roster read fails (an unknown name is a subject with no rows).
     console.error("uploader: subject resolution failed", errorText(e));
     return { ok: false, kind: "roster_read_failed" };
   }
   try {
-    return { ok: true, preview: planPreview(await findShows(plan, subject, { includeTest })) };
+    const preview = planPreview(await findShows(plan, resolved.subject, { includeTest }));
+    return { ok: true, preview: { ...preview, hasPage: subjectHasPage(plan.subject.kind, resolved.rows) } };
   } catch (e) {
     console.error("uploader: show search failed", errorText(e));
     return { ok: false, kind: "search_failed" };

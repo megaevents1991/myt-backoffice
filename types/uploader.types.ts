@@ -77,6 +77,8 @@ export type UploaderQuestion = {
 export type Decision = {
   code: string;
   text: string;
+  /** `duplicate_dropped`: the event the show already is (the board links it). */
+  event_id?: number;
 };
 
 /** A warning (look at it) or a blocker (approval is refused until fixed); `fix_url` deep-links the fix. */

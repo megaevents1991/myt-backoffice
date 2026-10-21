@@ -85,7 +85,8 @@ async function main() {
   const { fetchLiveTicketsStock, liveTicketsPriceUsd } = await import("../lib/services/livetickets-offers");
   const { supplierPriceUsd } = await import("../lib/suppliers");
   const { multiCurrencyExchangeRateService } = await import("../lib/services/ticket-price-sync");
-  const { TX_TICKET_COLOR } = await import("../lib/tixstock-map");
+  // The colour every supplier ticket wears (the editor and buildLiveTicketsDrafts write the same value).
+  const { SUPPLIER_TICKET_COLOR } = await import("../lib/uploader/tickets");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
@@ -116,7 +117,7 @@ async function main() {
         if (!c.sellable && !c.nonInstantOnly) continue;
         tickets.push({
           id: c.id, category: c.title, supplierCategory: c.title, description: c.description,
-          colorOnTheMap: "", price: liveTicketsPriceUsd(c.cost, stock.currency),
+          colorOnTheMap: SUPPLIER_TICKET_COLOR, price: liveTicketsPriceUsd(c.cost, stock.currency),
           supplier: "livetickets", eid: fx.lt, available: true,
           ...(c.nonInstantOnly ? { nonInstant: true } : {}),
         });
@@ -134,7 +135,7 @@ async function main() {
       const cheapest = rows.reduce((m, t) => (amountOf(t) < amountOf(m) ? t : m));
       const cur = ((cheapest.proceed_price?.currency || cheapest.face_value?.currency || "GBP").toUpperCase()) as "USD" | "EUR" | "GBP" | "ILS";
       tickets.push({
-        id: randomUUID(), category: cat, description: "", colorOnTheMap: TX_TICKET_COLOR,
+        id: randomUUID(), category: cat, description: "", colorOnTheMap: SUPPLIER_TICKET_COLOR,
         price: supplierPriceUsd(amountOf(cheapest), cur, toUsd), eid: fx.tx, available: true,
       });
     }

@@ -12,7 +12,7 @@
  */
 import assert from "node:assert/strict";
 import {
-  BOARD_POLL_MS,
+  BOARD_IDLE_POLL_MS,
   FAR_VENUE_KM,
   LIST_MAX,
   MARKUP_MAX,
@@ -60,6 +60,7 @@ import {
   type TixRow,
 } from "@/lib/uploader/shows";
 import {
+  NO_PRICE_REASON,
   SUPPLIER_TICKET_COLOR,
   ticketsFromLiveStock,
   ticketsFromTixStockFeed,
@@ -77,7 +78,8 @@ import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livet
 import type { SupplierCurrency } from "@/lib/suppliers";
 import { PRICED_PARTY } from "@/lib/tixstock-listings";
 import type { EventTicket } from "@/types/app.types";
-import type { ShowIdentity, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
+import type { ShowIdentity, UploaderItem, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
+import { creativeSubject, existingEventId } from "@/app/(dashboard)/uploader/[id]/board-words";
 import * as runRules from "@/lib/uploader/run-rules";
 
 let checks = 0;
@@ -123,8 +125,8 @@ const clapton = (): UploaderPlan => ({
 
 // ---- constants ------------------------------------------------------------------------------
 same(
-  [NEAR_LOCATION_KM, FAR_VENUE_KM, SHOW_WINDOW_DAYS, REJECT_REASON_MIN, TOAST_POLL_MS, BOARD_POLL_MS],
-  [50, 300, 3, 3, 60_000, 2_500],
+  [NEAR_LOCATION_KM, FAR_VENUE_KM, SHOW_WINDOW_DAYS, REJECT_REASON_MIN, TOAST_POLL_MS, BOARD_IDLE_POLL_MS],
+  [50, 300, 3, 3, 60_000, 15_000],
   "the spec's tuning constants",
 );
 same([MARKUP_MAX, NAME_MAX, LIST_MAX], [5000, 120, 20], "the plan's validation bounds");
@@ -2487,7 +2489,10 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   // artSearchPattern: the ONE candidate read's ilike pattern
   same(R.artSearchPattern("team", "Liverpool FC"), "%liverpool%", "art pattern: a team's first club token (FC dropped)");
   same(R.artSearchPattern("team", "FC Barcelona"), "%barcelona%", "art pattern: a leading qualifier is not the token");
-  same(R.artSearchPattern("artist", "  Eric Clapton "), "%Eric%", "art pattern: an artist's first word");
+  same(R.artSearchPattern("artist", "  Eric Clapton "), "%Clapton%", "art pattern: an artist's LONGEST word (B17)");
+  same(R.artSearchPattern("artist", "The Rolling Stones"), "%Rolling%", "art pattern: 'The' never crowds the subject out of the 10-row read");
+  same(R.artSearchPattern("artist", "Kiss Army"), "%Kiss%", "art pattern: a tie keeps the first word");
+  same(R.artSearchPattern("artist", "Adele"), "%Adele%", "art pattern: a one-word name is itself");
   same(R.artSearchPattern("artist", "100%_Pure\\Band"), "%100\\%\\_Pure\\\\Band%", "art pattern: %, _ and the escape char are escaped");
   same(R.artSearchPattern("artist", "Sta*r Band"), null, "art pattern: a '*' (PostgREST's wildcard) -> no read");
   same([R.artSearchPattern("artist", "   "), R.artSearchPattern("team", "FC"), R.artSearchPattern("competition", "Premier League")], [null, null, null], "art pattern: blank / no club token / a competition -> no read");
@@ -2796,7 +2801,64 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     same(R.planRunItems({ shows: [], questions: qs.slice(0, 2), existing: [], priors: [], fallback: new Map(), subject_en: CLAPTON, at: AT, maxQuestionTasks: 1 }).map((d) => d.ask), [true, false], "A10: the cap is a parameter");
   }
 
-  // @@MORE@@
+  // ---- the review round (minors) -----------------------------------------------------------------
+
+  // C11: a LiveTickets category with no usable cost never becomes a ticket (the TixStock side's rule).
+  {
+    const cat = (id: string, cost: number): LiveTicketsCategory => ({
+      id,
+      title: `Cat ${id}`,
+      hebTitle: "",
+      description: "",
+      cost,
+      maxPerOrder: 6,
+      seatingGroupMax: null,
+      sellable: true,
+      nonInstantOnly: false,
+      blockedReason: "",
+    });
+    const price = (cost: number): number => Math.round(cost * 1.1);
+    const out = ticketsFromLiveStock({ currency: "EUR", categories: [cat("1", 80), cat("2", 0), cat("3", -5), cat("4", Number.NaN)] }, "LT-9", price);
+    same(out.tickets.map((t) => [t.id, t.price]), [["1", 88]], "C11: only the category with a real cost is a ticket");
+    same(out.dropped, [2, 3, 4].map((n) => ({ title: `Cat ${n}`, reason: NO_PRICE_REASON })), "C11: zero / negative / NaN costs are dropped, named 'no price'");
+    same(ticketsFromLiveStock({ currency: "EUR", categories: [cat("5", 40)] }, "LT-9", () => Number.NaN).tickets, [], "C11: a price the function cannot give is no ticket either");
+  }
+
+  // B13: an `exists` skip keeps the event id as a field - the board links it from data, not the text.
+  {
+    const dup = decision("duplicate_dropped", { name: CLAPTON, event_id: 812 });
+    same(dup.event_id, 812, "B13: duplicate_dropped carries event_id");
+    same(decision("duplicate_dropped", { name: CLAPTON, event_id: "812" }).event_id, undefined, "B13: only a whole number is kept");
+    same(decision("prior_answer", { name: "Alon", run: 2 }).event_id, undefined, "B13: other codes carry none");
+    const existing15: ExistingEvent[] = [{ id: 812, name_english: CLAPTON, date: "2027-05-20T20:00:00", city_iata: "LON", eids: ["tx-l"], is_hidden: false }];
+    const drafts13 = R.planRunItems({ shows: [london], questions: [], existing: existing15, priors: [], fallback: new Map(), subject_en: CLAPTON, at: AT });
+    same(drafts13[0].decisions[0].event_id, 812, "B13: planRunItems' exists skip stores it");
+    const asItem = { ...drafts13[0], decisions: drafts13[0].decisions, payload: null } as unknown as UploaderItem;
+    same(existingEventId(asItem), 812, "B13: ... and the board's existingEventId reads it");
+  }
+
+  // B11: an artist with no picture at all is "בלי תמונה" on the creative line.
+  {
+    const card = { warnings: [] } as unknown as UploaderItem;
+    same(creativeSubject(card, { kind: "artist", name_english: CLAPTON, image_url: null }), "בלי תמונה", "B11: no picture at all");
+    same(creativeSubject(card, { kind: "artist", name_english: CLAPTON, image_url: "https://x/cut.png" }), "cut-out ✓", "B11: a picture with no no_cutout warning is the cut-out");
+    same(creativeSubject({ warnings: [{ code: "no_cutout", text: "" }] } as unknown as UploaderItem, { kind: "artist", name_english: CLAPTON, image_url: "https://x/p.jpg" }), "תמונה שטוחה", "B11: a flat photo");
+    same(creativeSubject(card, { kind: "team", name_english: "Liverpool", image_url: null }), "סמל", "B11: a team is its crest");
+    same(creativeSubject(card, null), null, "B11: no subject row");
+  }
+
+  // B4: a rebuild that removed its earlier event and made none points at nothing.
+  check(R.clearsOwnEvent("skipped", { cleaned: true, created: false }), "B4: skipped after the clean -> event_id cleared");
+  check(R.clearsOwnEvent("question", { cleaned: true, created: false }) && R.clearsOwnEvent("error", { cleaned: true, created: false }), "B4: ... question / error before createEvent too");
+  check(!R.clearsOwnEvent("error", { cleaned: true, created: true }), "B4: an error AFTER createEvent keeps the new event's id");
+  check(!R.clearsOwnEvent("ready", { cleaned: true, created: true }) && !R.clearsOwnEvent("skipped", { cleaned: false, created: false }), "B4: ready, or nothing cleaned -> untouched");
+
+  // C6: the plan card's subject-page chip.
+  same(
+    [R.subjectHasPage("artist", { artist: { id: 1 }, team: null }), R.subjectHasPage("artist", { artist: null, team: null }), R.subjectHasPage("team", { artist: null, team: { id: 2 } }), R.subjectHasPage("competition", { artist: null, team: null })],
+    [true, false, true, null],
+    "C6: an artist / team page is its row; a competition has none to show",
+  );
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
