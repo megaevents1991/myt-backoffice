@@ -6,7 +6,7 @@
  * waiting to be filed, the open cards, then History (closed deals and trips that left). A card opens in place into
  * the card page (CasePage embedded): its orders, travelers, offer, product, gift, source and notes.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CalendarClock, ChevronRight, GitMerge, Inbox, Link2, Loader2, Phone, PlusCircle, Star, StickyNote, TriangleAlert, UserRound, X, type LucideIcon } from "lucide-react";
@@ -35,7 +35,7 @@ import {
   type CustomerChange,
   type CustomerPageData,
 } from "@/lib/tours/cases";
-import { FollowUpInput, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, MailButton, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { CasePage, type CardFocus } from "@/components/tours/cases/case-page";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { MergeCustomerDialog } from "@/components/tours/cases/customer-dialogs";
@@ -176,6 +176,7 @@ function CardRow({
   open,
   onOpenChange,
   onChanged,
+  flash,
 }: {
   card: CaseRow;
   orders: BoardOrder[];
@@ -183,6 +184,8 @@ function CardRow({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onChanged: () => void;
+  /** The card the reader came from: highlighted for a moment, never opened by itself (Dor 21.10). */
+  flash?: boolean;
 }) {
   const today = todayIso();
   const { statuses } = data;
@@ -214,7 +217,15 @@ function CardRow({
   };
   return (
     <Collapsible open={open} onOpenChange={onOpenChange} asChild>
-      <article className={cn("group overflow-hidden rounded-lg border border-s-4 bg-card", CARD_EDGE[color] ?? "border-s-border", closed && "opacity-90")}>
+      <article
+        id={`card-${card.id}`}
+        className={cn(
+          "group overflow-hidden rounded-lg border border-s-4 bg-card transition-shadow",
+          CARD_EDGE[color] ?? "border-s-border",
+          closed && "opacity-90",
+          flash && "ring-2 ring-primary/60 ring-offset-2 ring-offset-background",
+        )}
+      >
         <CollapsibleTrigger className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 text-start hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90 rtl:-scale-x-100" />
           <StatusTag status={card.status} statuses={statuses} />
@@ -315,7 +326,19 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
   const [adding, setAdding] = useState(false);
   const [merging, setMerging] = useState<"pick" | "suggested" | null>(null);
   const [filing, setFiling] = useState<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
   const today = todayIso();
+  // every card opens folded (Dor 21.10: "the user opens what they want"); the card a board row led to is shown, not opened
+  const loadedId = data?.customer.id ?? null;
+  useEffect(() => {
+    if (!loadedId || !wanted) return;
+    const element = document.getElementById(`card-${wanted}`);
+    if (!element) return;
+    element.scrollIntoView({ block: "center", behavior: "smooth" });
+    setFlashId(wanted);
+    const timer = window.setTimeout(() => setFlashId(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [loadedId, wanted]);
 
   if (!data) {
     // the old case page until the migration ran: the card still opens
@@ -335,7 +358,7 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
 
   const { customer, cards, orders, statuses } = data;
   const name = customerName(customer) || customer.phones[0] || customer.email || "Customer";
-  const open = opened ?? new Set([wanted && cards.some((c) => c.id === wanted) ? wanted : data.openCardId].filter((v): v is string => !!v));
+  const open = opened ?? new Set<string>();
   const setOpen = (id: string, value: boolean) => {
     const next = new Set(open);
     if (value) next.add(id);
@@ -349,7 +372,8 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
   const openCards = cards.filter((c) => !c.toFile && !isHistory(c));
   const history = cards.filter((c) => !c.toFile && isHistory(c));
   const liveOrders = orders.filter((o) => o.phase === "active").length;
-  const travelled = history.some((c) => isPaidStatus(c.status));
+  // over EVERY card of the customer, the hidden ones too (the server says)
+  const travelled = data.travelled;
 
   const saveCustomer = async (change: CustomerChange) => {
     setSaving(true);
@@ -394,6 +418,7 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
                 </a>
               </Button>
             )}
+            <MailButton email={customer.email} />
             <Button size="sm" onClick={() => setAdding(true)}>
               <PlusCircle className="h-4 w-4" />
               New card
@@ -514,8 +539,13 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
           <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No open card. Add one with New card.</p>
         ) : (
           openCards.map((c) => (
-            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
+            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} flash={flashId === c.id} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
           ))
+        )}
+        {data.hiddenCards > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {data.hiddenCards === 1 ? "1 card of another rep is not shown" : `${data.hiddenCards} cards of other reps are not shown`}
+          </p>
         )}
       </section>
 
@@ -526,7 +556,7 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
             <span className="text-sm text-muted-foreground">Closed deals and trips that left.</span>
           </div>
           {history.map((c) => (
-            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
+            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} flash={flashId === c.id} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
           ))}
         </section>
       )}
