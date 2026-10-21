@@ -50,6 +50,8 @@ export interface WaProvider {
   /** Our app receives the WABA's webhooks from now on. */
   subscribeApp(token: string, wabaId: string): Promise<SendResult>;
   phoneInfo(token: string, phoneId: string): Promise<PhoneInfo | null>;
+  /** The ids of the WABA's phone numbers - a signup's phone id must be one of them; null when Meta refuses the read. */
+  wabaPhoneNumbers(token: string, wabaId: string): Promise<string[] | null>;
   /** Embedded Signup's code for a business token (the token never leaves the caller's scope). */
   exchangeCode(args: { appId: string; appSecret: string; code: string }): Promise<ExchangeResult>;
 }
@@ -294,6 +296,21 @@ export function createMetaProvider(fetchImpl: typeof fetch = fetch, opts: { time
         };
       } catch (e) {
         failure(`phone ${phoneId} read`, e);
+        return null;
+      }
+    },
+
+    async wabaPhoneNumbers(token, wabaId) {
+      try {
+        const answer = await graph(`${GRAPH}/${wabaId}/phone_numbers?fields=id,display_phone_number&limit=100`, { method: "GET", token });
+        const json = answer.json as { data?: { id?: string }[] } | null;
+        if (!answer.ok || !Array.isArray(json?.data)) {
+          console.warn(`whatsapp-cloud: phone numbers of WABA ${wabaId} answered ${answer.status}`);
+          return null;
+        }
+        return json.data.map((n) => n.id).filter((id): id is string => typeof id === "string");
+      } catch (e) {
+        failure(`phone numbers of WABA ${wabaId}`, e);
         return null;
       }
     },

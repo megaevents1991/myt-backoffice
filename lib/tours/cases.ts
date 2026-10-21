@@ -1073,9 +1073,14 @@ export function assembleThread(input: {
 /** Which messages a viewer may see: a manager all of them; a rep only those on a card they see, or on no card. */
 export type ThreadScope = { all: true } | { visibleCaseIds: ReadonlySet<string> };
 
-/** The thread cut to the viewer's cards (security review 21.10) - an unlinked message belongs to the customer, not to a card. */
+/**
+ * The thread cut to the viewer's cards (security review 21.10): a rep who sees none of the customer's cards sees nothing -
+ * the unlinked messages included, they are the customer's and the customer is another rep's; with a visible card, the
+ * unlinked ones come along (they belong to the customer, not to a card).
+ */
 export function scopeThread(messages: readonly WaThreadMessage[], scope: ThreadScope): WaThreadMessage[] {
   if ("all" in scope) return [...messages];
+  if (scope.visibleCaseIds.size === 0) return [];
   return messages.filter((m) => m.caseId === null || scope.visibleCaseIds.has(m.caseId));
 }
 

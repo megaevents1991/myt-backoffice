@@ -379,6 +379,15 @@ async function main(): Promise<void> {
     const failed = await q.exchangeCode({ appId: "2120", appSecret: "shh", code: "bad" });
     assert.ok("error" in failed && !failed.error.includes("shh"), "the secret never rides in an error");
   }
+  {
+    // the numbers of a WABA - what a signup's phone id is checked against before it is stored
+    const [p, calls] = provider({ "/222/phone_numbers": { status: 200, body: { data: [{ id: "111", display_phone_number: "+972 54-227-2554" }, { id: "112" }] } } });
+    assert.deepEqual(await p.wabaPhoneNumbers("tok-1", "222"), ["111", "112"]);
+    assert.ok(calls[0].url.startsWith("https://graph.facebook.com/v26.0/222/phone_numbers"), calls[0].url);
+    assert.equal(calls[0].auth, "Bearer tok-1");
+    const [q] = provider({ "/222/phone_numbers": { status: 400, body: { error: { message: "nope" } } } });
+    assert.equal(await q.wabaPhoneNumbers("tok-1", "222"), null, "a refused read is null, never an empty list");
+  }
   assert.equal(providerFor("meta"), metaProvider);
   assert.equal(providerFor("360dialog"), null, "a provider this build does not have");
 }

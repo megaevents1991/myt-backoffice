@@ -17,7 +17,7 @@ import { whatsappPhone } from "@/lib/tours/cases";
 import { parseSignupInput } from "@/lib/whatsapp/rules";
 import { tokenFor } from "@/lib/whatsapp/env";
 import { exchangeSignupCode, metaProvider, sendTemplate } from "@/lib/services/whatsapp-cloud";
-import { accountOfCompany, listTemplates as cachedTemplates, patchAccount, upsertAccount, upsertTemplate, type WaAccount, type WaTemplate } from "@/lib/services/whatsapp-db";
+import { accountOfCompany, listTemplates as cachedTemplates, patchAccount, phoneOwner, upsertAccount, upsertTemplate, type WaAccount, type WaTemplate } from "@/lib/services/whatsapp-db";
 
 const SCOPE = "whatsapp-settings-actions";
 const NOT_ADMIN = "Company admins only.";
@@ -78,6 +78,13 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
     const exchanged = await exchangeSignupCode(input.code);
     if ("error" in exchanged) throw new UserError(exchanged.error);
     const token = exchanged.token;
+
+    // the ids come from the browser: the number must be one of THAT WABA's (Meta says), and not another company's row
+    // here (wa_accounts is unique on phone_number_id - an upsert would hand the number over; security review 21.10)
+    const owner = await phoneOwner(input.phoneNumberId);
+    if (owner && owner !== company.id) throw new UserError("This number is connected to another company.");
+    const numbers = await metaProvider.wabaPhoneNumbers(token, input.wabaId);
+    if (!numbers || !numbers.includes(input.phoneNumberId)) throw new UserError("The phone number does not belong to that WhatsApp Business Account - run the signup again.");
 
     const subscribed = await metaProvider.subscribeApp(token, input.wabaId);
     if (!subscribed.ok) throw new UserError(`The webhook subscription failed: ${subscribed.error}`);

@@ -171,6 +171,16 @@ export const accountByPhoneId = (phoneNumberId: string): Promise<WaAccount | nul
 export const accountByWabaId = (wabaId: string): Promise<WaAccount | null> => oneAccount("waba_id", wabaId);
 export const accountOfCompany = (companyId: string): Promise<WaAccount | null> => oneAccount("company_id", companyId);
 
+/** The company holding that phone-number id, active or not - a signup must not take another company's number over (security review). */
+export async function phoneOwner(phoneNumberId: string): Promise<string | null> {
+  const { data, error } = await db.from("wa_accounts").select("company_id").eq("phone_number_id", phoneNumberId).maybeSingle();
+  if (error) {
+    if (missingTable(error)) return null;
+    throw new Error(`wa_accounts: ${error.message}`);
+  }
+  return (data as { company_id: string } | null)?.company_id ?? null;
+}
+
 export async function upsertAccount(input: Omit<WaAccount, "id" | "connectedAt">): Promise<WaAccount> {
   const { data, error } = await db
     .from("wa_accounts")

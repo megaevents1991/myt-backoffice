@@ -716,7 +716,7 @@ assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).cards[0].a
   const all = [m("a", "card-mine"), m("b", "card-other"), m("c", null)];
   assert.deepEqual(scopeThread(all, { all: true }).map((x) => x.id), ["a", "b", "c"], "a manager sees every message");
   assert.deepEqual(scopeThread(all, { visibleCaseIds: new Set(["card-mine"]) }).map((x) => x.id), ["a", "c"], "a rep: their own card and the unlinked ones, never a card of another rep");
-  assert.deepEqual(scopeThread(all, { visibleCaseIds: new Set() }).map((x) => x.id), ["c"], "no visible card: only what hangs on no card");
+  assert.deepEqual(scopeThread(all, { visibleCaseIds: new Set() }).map((x) => x.id), [], "no visible card of the customer: nothing, the unlinked ones included (security review)");
 }
 
 console.log("tours-cases selftest: ok");
