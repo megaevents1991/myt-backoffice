@@ -119,6 +119,18 @@ export function mediaExtension(mime: string): string {
   return EXTENSIONS[base] ?? "bin";
 }
 
+/**
+ * What the bucket is told the file IS: the declared mime only when this build names it (EXTENSIONS), else
+ * application/octet-stream - a sender's "text/html" or an SVG must never render from our storage (security review).
+ */
+export function safeContentType(mime: string): string {
+  const base = mime.split(";")[0].trim().toLowerCase();
+  return base in EXTENSIONS ? base : "application/octet-stream";
+}
+
+/** Only a picture is shown inline on the card; everything else is served as a download. */
+export const isInlineMedia = (mime: string): boolean => /^image\/(jpeg|png|webp|gif)$/.test(safeContentType(mime));
+
 /** Where a media lands in the private bucket: <companyId>/<mediaId>.<ext> - the id is never a path. */
 export function mediaStoragePath(companyId: string, mediaId: string, mime: string): string {
   return `${companyId}/${mediaId.replace(/[^A-Za-z0-9_-]/g, "_")}.${mediaExtension(mime)}`;

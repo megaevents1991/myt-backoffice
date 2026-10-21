@@ -10,6 +10,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import type { Company } from "@/lib/company";
 import type { WaThreadMessage } from "@/lib/tours/cases";
 import type { WaMessageType } from "@/lib/whatsapp/rules";
+import { isInlineMedia } from "@/lib/whatsapp/meta-provider";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -323,8 +324,9 @@ export async function attachOrphans(companyId: string, phone: string, customerId
   return (data as unknown[] | null)?.length ?? 0;
 }
 
-async function signedUrl(path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
+/** A picture renders inline; any other file is served as a download (Content-Disposition: attachment), never as a page. */
+async function signedUrl(path: string, mime: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS, isInlineMedia(mime) ? undefined : { download: true });
   if (error) {
     console.warn(`whatsapp-db: signed url failed for ${path}: ${error.message}`);
     return null;
@@ -341,7 +343,7 @@ async function toThreadMessage(r: MessageRow): Promise<WaThreadMessage> {
     origin: r.origin,
     type: r.type as WaMessageType,
     text: r.text,
-    mediaUrl: path ? await signedUrl(path) : null,
+    mediaUrl: path ? await signedUrl(path, r.media?.mime ?? "") : null,
     mediaMime: r.media?.mime ?? null,
     template: r.template ? { name: r.template.name, params: r.template.params ?? [] } : null,
     status: r.status,

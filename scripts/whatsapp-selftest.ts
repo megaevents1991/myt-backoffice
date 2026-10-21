@@ -24,8 +24,10 @@ import {
   createMetaProvider,
   explain,
   mediaExtension,
+  isInlineMedia,
   mediaStoragePath,
   metaProvider,
+  safeContentType,
   providerFor,
   templateBlock,
   templateBody,
@@ -231,6 +233,14 @@ async function main(): Promise<void> {
   assert.equal(mediaExtension(""), "bin");
   assert.equal(mediaStoragePath("co-1", "1234567890", "image/jpeg"), "co-1/1234567890.jpg");
   assert.equal(mediaStoragePath("co-1", "a/../b", "image/png"), "co-1/a____b.png", "a media id is never a path");
+  // what the bucket is told the file IS: only a type this build names - a declared text/html must never render from our storage
+  assert.equal(safeContentType("image/jpeg; charset=x"), "image/jpeg");
+  assert.equal(safeContentType("IMAGE/PNG"), "image/png");
+  assert.equal(safeContentType("text/html"), "application/octet-stream");
+  assert.equal(safeContentType("image/svg+xml"), "application/octet-stream", "svg scripts - not an allowed picture");
+  assert.equal(safeContentType(""), "application/octet-stream");
+  assert.equal(isInlineMedia("image/jpeg"), true);
+  assert.equal(isInlineMedia("application/pdf"), false, "a file is downloaded, never rendered from the bucket");
 
   const CACHE: WaTemplate[] = [
     { name: "booking_link", language: "he", category: "UTILITY", status: "APPROVED", body: null, paramCount: 3, syncedAt: NOW },

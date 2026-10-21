@@ -35,6 +35,7 @@ import {
   mediaStoragePath,
   metaProvider,
   providerFor,
+  safeContentType,
   templateBlock,
   type Config,
   type SendResult,
@@ -211,7 +212,8 @@ export async function storeMedia(account: WaAccount, mediaId: string, mime: stri
     if (!provider) return null;
     const media = await provider.downloadMedia(token, mediaId);
     if (!media) return null;
-    const contentType = media.mime || mime || "application/octet-stream";
+    // the allowlisted type only - a declared text/html must never render from our bucket
+    const contentType = safeContentType(media.mime || mime);
     const path = mediaStoragePath(account.companyId, mediaId, contentType);
     const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(path, media.bytes, { contentType, upsert: true });
     if (error) {
