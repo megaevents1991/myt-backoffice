@@ -84,7 +84,8 @@ values ('wa-media', 'wa-media', false)
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------- 5. consent + window on the customer, "seen" on the card
--- wa_consent: none | opted_in | customer | opted_out (no check). Three steps for the NOT NULL, per the migrations rule.
+-- wa_consent: none | form (claimed on a site form, unconfirmed) | opted_in | customer | opted_out (no check).
+-- Three steps for the NOT NULL, per the migrations rule.
 alter table public.customers add column if not exists wa_consent text;
 update public.customers set wa_consent = 'none' where wa_consent is null;
 alter table public.customers alter column wa_consent set default 'none';
@@ -184,13 +185,13 @@ begin
   end if;
   new.customer_id := v_cust;
 
-  -- (b) marketing consent from the site (2026-10-21, spec section 9): the contact form's checkbox or a newsletter
-  -- signup marks the customer opted in - ONLY a customer this very form created. A form is unauthenticated and
-  -- keyed by a phone anyone can type, so it never flips a known customer's consent (security review 21.10); the
-  -- lead's id is kept as the evidence. 'opted_out' is never touched.
+  -- (b) the site's marketing checkbox / a newsletter signup (2026-10-21, spec section 9) is a CLAIM, not consent:
+  -- wa_consent = 'form' (claimed, unconfirmed - marketing needs opted_in / customer; a later round confirms it by a
+  -- reply), ONLY on a customer this very form created, with the lead's id as the evidence. A form is unauthenticated
+  -- and keyed by a phone anyone can type, so a known customer is never touched (security review 21.10).
   if v_new_customer and (new.kind = 'newsletter' or coalesce(new.payload->>'acceptance', '') in ('on', 'true', '1')) then
     update public.customers c
-       set wa_consent = 'opted_in', wa_consent_source = 'site_form:' || new.id::text, wa_consent_at = now()
+       set wa_consent = 'form', wa_consent_source = 'site_form:' || new.id::text, wa_consent_at = now()
      where c.id = v_cust and c.wa_consent = 'none';
   end if;
 

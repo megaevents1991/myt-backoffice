@@ -133,10 +133,11 @@ assert.equal(wa2.to_file, false);
 assert.equal(wa2.customer_id, b.customer_id, "the same customer");
 assert.equal(wa2.payload?.joined_into, undefined);
 
-// consent: the site form's checkbox marks a NEW customer opted in (the form created the row), with the lead as evidence
+// consent: the site form's checkbox marks a NEW customer as 'form' = claimed, not confirmed (an unauthenticated form is
+// a claim; marketing needs opted_in / customer - phase 3 confirms it), with the lead as evidence
 const c = await lead({ company_id: C, kind: "contact", name: "רונית", phone: "0501112233", payload: { acceptance: "on", message: "x" } });
 const [cust] = await q(`select wa_consent, wa_consent_source from public.customers where id = $1`, [c.customer_id]);
-assert.equal(cust.wa_consent, "opted_in");
+assert.equal(cust.wa_consent, "form");
 assert.equal(cust.wa_consent_source, `site_form:${c.id}`);
 // a form keyed by a KNOWN customer's phone never flips that customer (anyone can type a phone - security review 21.10)
 const known = await lead({ company_id: C, kind: "contact", name: "מישהו", phone: "0541234567", payload: { acceptance: "on", message: "x" } });
@@ -146,9 +147,9 @@ assert.equal((await q(`select wa_consent from public.customers where id = $1`, [
 await q(`update public.customers set wa_consent = 'opted_out' where id = $1`, [c.customer_id]);
 await lead({ company_id: C, kind: "newsletter", name: "רונית", phone: "0501112233" });
 assert.equal((await q(`select wa_consent from public.customers where id = $1`, [c.customer_id]))[0].wa_consent, "opted_out", "opted_out is never overwritten");
-// a newsletter signup from a new person = consent
+// a newsletter signup from a new person = the same claim
 const nl = await lead({ company_id: C, kind: "newsletter", name: "", phone: "0503334455", email: "a@b.co" });
-assert.equal((await q(`select wa_consent from public.customers where id = $1`, [nl.customer_id]))[0].wa_consent, "opted_in");
+assert.equal((await q(`select wa_consent from public.customers where id = $1`, [nl.customer_id]))[0].wa_consent, "form");
 
 // the three tables, the new column and the bucket exist
 const [{ n }] = await q(`select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name in ('wa_accounts','wa_messages','wa_templates')`);
