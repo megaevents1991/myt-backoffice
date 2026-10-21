@@ -17,14 +17,13 @@
  * Selftest: scripts/tour-uploader-selftest.ts. Spec: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md (build, step 1).
  */
 import type { LiveTicketsStock } from "@/lib/services/livetickets-offers";
-import type { SupplierCurrency } from "@/lib/suppliers";
+import { normalizeSupplierCategory, type SupplierCurrency } from "@/lib/suppliers";
 import {
   hasObstructedViewRestriction,
   listingsTheSiteSells,
   PRICED_PARTY,
   type TixStockListingRuleFields,
 } from "@/lib/tixstock-listings";
-import { TX_TICKET_COLOR } from "@/lib/tixstock-map";
 import type { EventTicket } from "@/types/app.types";
 
 /**
@@ -40,12 +39,17 @@ export interface TixListing extends TixStockListingRuleFields {
 /** Why a category (or a listing with none) did not become a ticket. */
 export type TixDropReason = "restricted" | "split" | "excluded";
 
-/** The colour LiveTickets tickets wear on the map - `buildLiveTicketsDrafts`' own value. */
-const LIVE_TICKET_COLOR = "rgb(5, 32, 60)";
+/**
+ * The colour every supplier ticket wears on the map: the editor's TixStock tickets (events/[id]/page.tsx,
+ * page-local TX_TICKET_COLOR) and `buildLiveTicketsDrafts` write the same value, and the editor rewrites
+ * a tx_event ticket whose colour differs - so do not use lib/tixstock-map's CSS-variable constant here.
+ */
+export const SUPPLIER_TICKET_COLOR = "rgb(5, 32, 60)";
 
 /** Plain code-unit order: the same on every machine, unlike `localeCompare`. */
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+/** The category as TixStock names it on the listing, trimmed ("" = the listing names none). */
 const categoryOf = (listing: TixListing): string =>
   (listing.seat_details?.category ?? "").trim();
 
@@ -81,8 +85,12 @@ function pricedUsd(
  * ticket and is not reported even if other listings of it were refused. A category whose sellable
  * listings carry no price is `excluded`, like a listing with no `seat_details.category` at all
  * (reported with category "", once per such listing). Sorted by category, then in feed order.
- * `categoriesSeen` = the distinct categories of ALL listings, before any rule.
- * Tickets come out sorted by category name, and `newId` is called once per ticket in that order,
+ * Listings are grouped by `normalizeSupplierCategory` of the category - the key the TixStock price
+ * sync and main match a ticket to its listings by (case, accents, punctuation and parenthesised
+ * codes do not split a category) - and the ticket carries the group's first-seen raw trimmed name.
+ * A category that normalizes to nothing (no letters or digits) counts as no category.
+ * `categoriesSeen` = the distinct (normalized) categories of ALL listings, before any rule.
+ * Tickets come out sorted by that name, and `newId` is called once per ticket in that order,
  * so the same feed and a counting `newId` always give the same result.
  */
 export function ticketsFromTixStockFeed(
@@ -96,24 +104,24 @@ export function ticketsFromTixStockFeed(
   categoriesSeen: number;
 } {
   const dropped: { category: string; reason: TixDropReason }[] = [];
-  const byCategory = new Map<string, TixListing[]>();
+  const byCategory = new Map<string, { name: string; listings: TixListing[] }>();
   for (const listing of listings) {
-    const category = categoryOf(listing);
-    if (!category) {
+    const name = categoryOf(listing);
+    const key = normalizeSupplierCategory(name);
+    if (!key) {
       dropped.push({ category: "", reason: "excluded" });
       continue;
     }
-    const group = byCategory.get(category);
-    if (group) group.push(listing);
-    else byCategory.set(category, [listing]);
+    const group = byCategory.get(key);
+    if (group) group.listings.push(listing);
+    else byCategory.set(key, { name, listings: [listing] });
   }
 
   // No section is excluded on a brand-new event (staff set `tx_excluded_sections` later).
   const sellable = new Set<TixListing>(listingsTheSiteSells(listings, [], PRICED_PARTY));
 
   const tickets: EventTicket[] = [];
-  for (const category of [...byCategory.keys()].sort(byText)) {
-    const group = byCategory.get(category) ?? [];
+  for (const { name: category, listings: group } of [...byCategory.values()].sort((a, b) => byText(a.name, b.name))) {
     const offered = group.filter((listing) => sellable.has(listing));
     if (offered.length === 0) {
       dropped.push({
@@ -140,7 +148,7 @@ export function ticketsFromTixStockFeed(
       supplierCategory: category,
       description: "",
       price,
-      colorOnTheMap: TX_TICKET_COLOR,
+      colorOnTheMap: SUPPLIER_TICKET_COLOR,
       available: true,
     });
   }
@@ -187,7 +195,7 @@ export function ticketsFromLiveStock(
       supplierCategory: title,
       description: category.description,
       price: priceUsd(category.cost, stock.currency),
-      colorOnTheMap: LIVE_TICKET_COLOR,
+      colorOnTheMap: SUPPLIER_TICKET_COLOR,
       available: true,
     });
   }

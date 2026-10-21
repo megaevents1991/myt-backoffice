@@ -47,13 +47,13 @@ import {
   type TixRow,
 } from "@/lib/uploader/shows";
 import {
+  SUPPLIER_TICKET_COLOR,
   ticketsFromLiveStock,
   ticketsFromTixStockFeed,
   type TixListing,
 } from "@/lib/uploader/tickets";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
-import { TX_TICKET_COLOR } from "@/lib/tixstock-map";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
 import type { EventTicket } from "@/types/app.types";
@@ -1202,7 +1202,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
         supplierCategory: "Cat 1",
         description: "",
         price: 117,
-        colorOnTheMap: TX_TICKET_COLOR,
+        colorOnTheMap: "rgb(5, 32, 60)",
         available: true,
       },
     ],
@@ -1273,6 +1273,30 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same([unpriced.tickets, unpriced.dropped], [[], [{ category: "Free", reason: "excluded" }]], "a category whose listings carry no price is dropped, not sold at the markup alone");
   same(ticketsFromTixStockFeed([], "TX-4", priceUsd, counter()), { tickets: [], dropped: [], categoriesSeen: 0 }, "an empty feed: nothing, nothing dropped");
 
+  // A price function that cannot price (NaN, then 0) leaves the category without a ticket - reported, never a bad price.
+  for (const bad of [NaN, 0]) {
+    const noPrice = ticketsFromTixStockFeed([listing("Cat 1", "90"), listing("Cat 1", "100")], "TX-5", () => bad, counter());
+    same([noPrice.tickets, noPrice.dropped, noPrice.categoriesSeen], [[], [{ category: "Cat 1", reason: "excluded" }], 1], `a priceUsd answering ${bad} for every listing: no ticket, the category is dropped excluded`);
+  }
+
+  // Listings group by the NORMALIZED category (what the price sync and main match tickets by); the first-seen raw name is the ticket's.
+  const grouped = ticketsFromTixStockFeed(
+    [listing("Category 1 (A)", "90"), listing(" Category 1 (B) ", "80"), listing("CATEGORY 1", "95")],
+    "TX-6",
+    priceUsd,
+    counter(),
+  );
+  same(
+    grouped.tickets.map((t) => [t.category, t.supplierCategory, t.price]),
+    [["Category 1 (A)", "Category 1 (A)", 104]],
+    "'Category 1 (A)' / '(B)' / 'CATEGORY 1' are ONE ticket named by the first-seen raw name, priced from the cheapest (GBP 80)",
+  );
+  same([grouped.dropped, grouped.categoriesSeen], [[], 1], "one normalized category seen, nothing dropped");
+  // A category that normalizes to nothing is the "no category" case.
+  const punctuation = ticketsFromTixStockFeed([listing("---", "50")], "TX-7", priceUsd, counter());
+  same([punctuation.tickets, punctuation.dropped, punctuation.categoriesSeen], [[], [{ category: "", reason: "excluded" }], 0], "a category with no letters or digits is dropped excluded, like no category");
+  same(SUPPLIER_TICKET_COLOR, "rgb(5, 32, 60)", "the supplier ticket colour is the editor's own value");
+
   // Live: sellable -> ticket in the buildLiveTicketsDrafts shape; non-instant and other blocked -> dropped with their reason.
   const liveCat = (over: Partial<LiveTicketsCategory>): LiveTicketsCategory => ({
     id: "501",
@@ -1334,7 +1358,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     category: "Cat 1",
     price: 100,
     description: "",
-    colorOnTheMap: TX_TICKET_COLOR,
+    colorOnTheMap: "rgb(5, 32, 60)",
     supplier: "tixstock",
   };
   const zoned = zoneFromTemplate([bare], "tx_event", map)[0];
