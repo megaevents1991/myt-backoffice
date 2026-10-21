@@ -97,12 +97,27 @@ alter table public.customers
   add column if not exists wa_profile_name text;       -- the name WhatsApp gives
 alter table public.leads add column if not exists wa_seen_at timestamptz; -- when the card's rep last opened its thread
 
--- ---------------------------------------------------------------- 6. leads_fill: a WhatsApp message joins the newest open card
--- Re-pasted WHOLE from 20261019180000 (never a partial edit). Two changes, both marked "(2026-10-21)":
+-- ---------------------------------------------------------------- 6. a phone as WhatsApp knows it (TS twin: whatsappPhone, lib/tours/cases.ts)
+-- Digits only; a leading "00" dropped; a leading "0" is an Israeli number (972...); 11-15 digits, else null.
+create or replace function public.whatsapp_phone(p text)
+returns text
+language sql
+immutable
+as $$
+  select case when length(d) between 11 and 15 then d end
+    from (select case when d0 like '0%' then '972' || substr(d0, 2) else d0 end as d
+            from (select case when d00 like '00%' then substr(d00, 3) else d00 end as d0
+                    from (select regexp_replace(coalesce(p, ''), '\D', '', 'g') as d00) a) b) c;
+$$;
+
+-- ---------------------------------------------------------------- 7. leads_fill: a WhatsApp message joins the newest open card
+-- Re-pasted WHOLE from 20261019180000 (never a partial edit). Three changes, all marked "(2026-10-21)":
 --   (a) kind = 'whatsapp' joins the customer's NEWEST open card whatever its tour, and is never filed - a message
 --       is the continuation of a conversation, not a form about a tour (TS twin: routeInquiry in lib/tours/cases.ts);
---   (b) the site's marketing checkbox ("acceptance" = on) or a newsletter signup marks the customer opted in - never
---       over a customer who asked to be removed.
+--   (b) the site's marketing checkbox ("acceptance" = on) or a newsletter signup records a consent CLAIM on the
+--       customer the form created - never a known customer, never over one who asked to be removed;
+--   (c) a 'whatsapp' row names a full international number and binds only to a customer whose stored phone IS that
+--       number (the last-9 key alone could collide across country codes - security review 21.10).
 create or replace function public.leads_fill()
 returns trigger
 language plpgsql
@@ -173,6 +188,9 @@ begin
   if v_cust is null and v_key <> '' then
     select c.id into v_cust from public.customers c
      where c.company_id = new.company_id and c.is_deleted is null and c.phone_keys @> array[v_key]
+       -- (c) a WhatsApp row binds only to a customer whose stored phone normalises to the same full number
+       and (new.kind <> 'whatsapp'
+            or exists (select 1 from unnest(c.phones) ph where public.whatsapp_phone(ph) = public.whatsapp_phone(new.phone)))
      order by c.customer_no limit 1;
   end if;
   if v_cust is null then

@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { OPT_OUT_REPLY, type WaEvent } from "../lib/whatsapp/rules";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
+import { whatsappPhone } from "../lib/tours/cases";
 import type { WaAccount, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaMessageInsert } from "../lib/services/whatsapp-db";
 
 const ACCOUNT: WaAccount = {
@@ -74,15 +75,18 @@ function makeDeps(opts: { customers?: WaCustomerLite[]; openCardId?: string | nu
     },
     insertLead: async (row) => {
       const id = `lead-${++seq}`;
-      // leads_fill picks the LOWEST customer_no holding the phone key
-      const existing = (opts.customers ?? []).filter((c) => c.phoneKey === row.phoneKey).sort((a, b) => a.customerNo - b.customerNo)[0];
+      // leads_fill picks the LOWEST customer_no holding the phone key - and for a whatsapp row only a customer whose
+      // stored phone normalises to the same full number (migration 20261021172647)
+      const existing = (opts.customers ?? [])
+        .filter((c) => c.phoneKey === row.phoneKey && c.phones.some((p) => whatsappPhone(p) === whatsappPhone(row.phone)))
+        .sort((a, b) => a.customerNo - b.customerNo)[0];
       const customerId = existing?.id ?? `c-new-${seq}`;
       const joinedIntoId = opts.openCardId ?? null;
       leads.push({ ...row, id, joinedIntoId, customerId });
       return { id, caseNo: 1000 + seq, joinedIntoId, customerId };
     },
-    attachOrphans: async (_companyId, key, customerId) => {
-      attached.push({ key, customerId });
+    attachOrphans: async (_companyId, phone, customerId) => {
+      attached.push({ key: phone, customerId });
       return 0;
     },
     storeMedia: async (_account, mediaId) => (mediaId === "broken" ? null : `wa/co-1/${mediaId}.bin`),
@@ -128,7 +132,7 @@ const echo = (id: string, at: string, text: string, origin: "app" | "history" = 
   direction: "out",
 });
 
-const DANA: WaCustomerLite = { id: "c-dana", customerNo: 1001, phoneKey: "541234567", waConsent: "none", waProfileName: null, waLastInAt: null };
+const DANA: WaCustomerLite = { id: "c-dana", customerNo: 1001, phoneKey: "541234567", phones: ["054-1234567"], waConsent: "none", waProfileName: null, waLastInAt: null };
 
 async function main(): Promise<void> {
 // 1. first text from a known customer: stored, ONE inquiry, the message linked to the case the inquiry landed on
@@ -192,7 +196,7 @@ async function main(): Promise<void> {
   const r2 = await handleWebhookEvents([inbound("wamid.6", "2026-10-21T09:00:00.000Z", "היי")], t.deps);
   assert.equal(r2.inquiries, 1);
   assert.equal(t.leads[0].customerId?.startsWith("c-new-"), true, "the lead created the customer");
-  assert.deepEqual(t.attached, [{ key: "541234567", customerId: t.leads[0].customerId! }], "orphans of that phone are attached to the new customer");
+  assert.deepEqual(t.attached, [{ key: "972541234567", customerId: t.leads[0].customerId! }], "orphans of that FULL number are attached to the new customer");
   assert.equal(t.messages[1].caseId, t.leads[0].id, "a new case, not a join");
 }
 
@@ -202,6 +206,18 @@ async function main(): Promise<void> {
   const t = makeDeps({ customers: [DANA, other], openCardId: null });
   await handleWebhookEvents([inbound("wamid.7", "2026-10-21T09:00:00.000Z", "היי")], t.deps);
   assert.equal(t.messages[0].customerId, "c-older");
+}
+
+// 7b. a key collision across country codes never binds: a UK number sharing the last 9 digits is not Dana
+{
+  const uk: WaCustomerLite = { ...DANA, id: "c-uk", customerNo: 999, phones: ["+44 7700 541234567"] };
+  const t = makeDeps({ customers: [uk], openCardId: "card-UK" });
+  await handleWebhookEvents([inbound("wamid.7b", "2026-10-21T09:00:00.000Z", "היי")], t.deps);
+  assert.equal(t.messages[0].customerId === "c-uk", false, "the sender 972541234567 is not the UK customer");
+  assert.equal(t.customerPatches.some((p) => p.id === "c-uk"), false, "nothing is stamped on the UK customer");
+  // an event whose number yields no key is skipped, never filed under ""
+  const r = await handleWebhookEvents([inbound("wamid.7c", "2026-10-21T09:00:00.000Z", "היי", { from: "12" })], t.deps);
+  assert.deepEqual({ stored: r.stored, skipped: r.skipped, errors: r.errors }, { stored: 0, skipped: 1, errors: [] });
 }
 
 // 8. a status event updates the row; a template event upserts; an unknown phone id is skipped with a warning

@@ -151,6 +151,18 @@ assert.equal((await q(`select wa_consent from public.customers where id = $1`, [
 const nl = await lead({ company_id: C, kind: "newsletter", name: "", phone: "0503334455", email: "a@b.co" });
 assert.equal((await q(`select wa_consent from public.customers where id = $1`, [nl.customer_id]))[0].wa_consent, "form");
 
+// a WhatsApp row never binds across country codes: a UK customer sharing the last 9 digits is not the sender
+const [{ id: ukId }] = await q(`insert into public.customers (company_id, first_name, phones) values ($1, 'Jane', array['+44 7700 527654321']) returning id`, [C]);
+const waUk = await lead({ company_id: C, kind: "whatsapp", source: "whatsapp", name: "רון", phone: "972527654321", message: "היי" });
+assert.notEqual(waUk.customer_id, ukId, "the sender 972527654321 is not the UK customer with the same last 9 digits");
+assert.ok(waUk.customer_id, "a customer of their own was created");
+// Dana's short form DOES normalise to the sender's full number, so she binds
+const waDana = await lead({ company_id: C, kind: "whatsapp", source: "whatsapp", name: "דנה", phone: "972541234567", message: "שוב אני" });
+assert.equal(waDana.customer_id, a.customer_id, "054-1234567 normalises to 972541234567");
+assert.equal((await q(`select public.whatsapp_phone('054-1234567') as p`))[0].p, "972541234567");
+assert.equal((await q(`select public.whatsapp_phone('0044 7700 541234567') as p`))[0].p, "447700541234567");
+assert.equal((await q(`select public.whatsapp_phone('12') as p`))[0].p, null);
+
 // the three tables, the new column and the bucket exist
 const [{ n }] = await q(`select count(*)::int as n from information_schema.tables where table_schema = 'public' and table_name in ('wa_accounts','wa_messages','wa_templates')`);
 assert.equal(n, 3, "wa tables");

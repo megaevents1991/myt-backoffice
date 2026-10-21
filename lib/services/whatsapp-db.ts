@@ -73,6 +73,8 @@ export interface WaCustomerLite {
   id: string;
   customerNo: number;
   phoneKey: string;
+  /** The phones as typed - a sender binds only when one of them normalises to the sender's full number. */
+  phones: string[];
   waConsent: string;
   waProfileName: string | null;
   waLastInAt: string | null;
@@ -300,9 +302,9 @@ export async function lastInbound(companyId: string, phoneKey: string): Promise<
   return row ? { at: row.sent_at, caseId: row.case_id } : null;
 }
 
-/** Messages of that phone stored before the customer existed get the customer now. */
-export async function attachOrphans(companyId: string, phoneKey: string, customerId: string): Promise<number> {
-  const { data, error } = await db.from("wa_messages").update({ customer_id: customerId }).eq("company_id", companyId).eq("phone_key", phoneKey).is("customer_id", null).select("id");
+/** Messages of that FULL number stored before the customer existed get the customer now. */
+export async function attachOrphans(companyId: string, phone: string, customerId: string): Promise<number> {
+  const { data, error } = await db.from("wa_messages").update({ customer_id: customerId }).eq("company_id", companyId).eq("phone", phone).is("customer_id", null).select("id");
   if (error) {
     if (missingTable(error)) return 0;
     throw new Error(`wa_messages: ${error.message}`);
@@ -385,7 +387,7 @@ export async function countUnseen(cases: { id: string; waSeenAt: string | null }
 
 // ---------------------------------------------------------------- customers + leads (the typed tables)
 
-const CUSTOMER_COLUMNS = "id, customer_no, phone_keys, wa_consent, wa_profile_name, wa_last_in_at";
+const CUSTOMER_COLUMNS = "id, customer_no, phones, phone_keys, wa_consent, wa_profile_name, wa_last_in_at";
 
 /** Every live customer of the company holding that phone key, lowest customer_no first (the one leads_fill picks). */
 export async function findCustomers(companyId: string, phoneKey: string): Promise<WaCustomerLite[]> {
@@ -395,13 +397,14 @@ export async function findCustomers(companyId: string, phoneKey: string): Promis
   let answer = await read(CUSTOMER_COLUMNS);
   if (answer.error && missingColumn(answer.error)) {
     warnOnce("customers.wa", "customers.wa_* columns are missing (migration not applied)");
-    answer = await read("id, customer_no, phone_keys");
+    answer = await read("id, customer_no, phones, phone_keys");
   }
   if (answer.error) throw new Error(`customers: ${answer.error.message}`);
-  return ((answer.data ?? []) as unknown as { id: string; customer_no: number; wa_consent?: string; wa_profile_name?: string | null; wa_last_in_at?: string | null }[]).map((r) => ({
+  return ((answer.data ?? []) as unknown as { id: string; customer_no: number; phones?: string[] | null; wa_consent?: string; wa_profile_name?: string | null; wa_last_in_at?: string | null }[]).map((r) => ({
     id: r.id,
     customerNo: r.customer_no,
     phoneKey,
+    phones: r.phones ?? [],
     waConsent: r.wa_consent ?? "none",
     waProfileName: r.wa_profile_name ?? null,
     waLastInAt: r.wa_last_in_at ?? null,

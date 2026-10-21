@@ -11,7 +11,7 @@
  * here throws past the function: a failed event lands in `errors`, the rest of the batch goes on.
  */
 import { OPT_OUT_REPLY, isOptOut, shouldOpenInquiry, standInText, type WaEvent } from "@/lib/whatsapp/rules";
-import { phoneKey } from "@/lib/tours/cases";
+import { phoneKey, whatsappPhone } from "@/lib/tours/cases";
 import type { WaAccount, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaLeadResult, WaMessageInsert, WaTemplate } from "@/lib/services/whatsapp-db";
 
 export interface InboundDeps {
@@ -26,7 +26,8 @@ export interface InboundDeps {
   findCustomers(companyId: string, phoneKey: string): Promise<WaCustomerLite[]>;
   setCustomerFields(customerId: string, patch: WaCustomerPatch): Promise<void>;
   insertLead(row: WaLeadInsert): Promise<WaLeadResult>;
-  attachOrphans(companyId: string, phoneKey: string, customerId: string): Promise<number>;
+  /** Messages of that FULL international number stored with no customer get one. */
+  attachOrphans(companyId: string, phone: string, customerId: string): Promise<number>;
   /** Downloads Meta's media into the private bucket; the storage path, or null when it could not be fetched. */
   storeMedia(account: WaAccount, mediaId: string, mime: string): Promise<string | null>;
   /** A free-text service message inside the window (the opt-out confirmation). */
@@ -44,10 +45,15 @@ export interface InboundSummary {
   errors: string[];
 }
 
-/** The customer leads_fill would pick: the lowest customer number among the live rows holding the key. */
-export function pickCustomer(candidates: readonly WaCustomerLite[]): WaCustomerLite | null {
-  if (candidates.length === 0) return null;
-  return [...candidates].sort((a, b) => a.customerNo - b.customerNo)[0];
+/**
+ * The customer a sender binds to: among the live rows holding the key, only those with a stored phone that
+ * normalises to the sender's FULL international number (a last-9-digits key alone could collide across country
+ * codes - security review 21.10), the lowest customer number first (the one leads_fill picks).
+ */
+export function pickCustomer(candidates: readonly WaCustomerLite[], from: string): WaCustomerLite | null {
+  const same = candidates.filter((c) => c.phones.some((p) => whatsappPhone(p) === from));
+  if (same.length === 0) return null;
+  return [...same].sort((a, b) => a.customerNo - b.customerNo)[0];
 }
 
 type MessageEvent = Extract<WaEvent, { kind: "message" }>;
@@ -67,11 +73,16 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
     return;
   }
   const key = phoneKey(phone);
+  if (!key) {
+    deps.log.warn(`message ${ev.waMessageId} from a number with no key (${phone}) - skipped`);
+    out.skipped += 1;
+    return;
+  }
   const companyId = account.companyId;
   const live = ev.origin !== "history";
   const inboundFromCustomer = ev.direction === "in" && ev.origin === "customer";
 
-  const customer = pickCustomer(await deps.findCustomers(companyId, key));
+  const customer = pickCustomer(await deps.findCustomers(companyId, key), phone);
   // read BEFORE this message is stored: the gap is measured against the previous inbound one
   const previous = await deps.lastInbound(companyId, key);
   const media = ev.media
@@ -133,8 +144,8 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
   const customerId = lead.customerId ?? customer?.id ?? null;
   await deps.linkMessage(stored.id, caseId, customerId);
   if (lead.customerId) {
-    // the lead found or created the customer: messages of this phone stored before it get the customer too
-    await deps.attachOrphans(companyId, key, lead.customerId);
+    // the lead found or created the customer: messages of this full number stored before it get the customer too
+    await deps.attachOrphans(companyId, phone, lead.customerId);
     if (!customer) await deps.setCustomerFields(lead.customerId, { waLastInAt: ev.sentAt, ...(ev.profileName ? { waProfileName: ev.profileName } : {}) });
   }
 }
