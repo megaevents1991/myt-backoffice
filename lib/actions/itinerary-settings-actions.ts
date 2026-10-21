@@ -1,12 +1,15 @@
 "use server";
 
-import { requireStaff } from "@/lib/auth/guards";
+import { requireAdmin, requireStaff } from "@/lib/auth/guards";
+import type { SessionPayload } from "@/lib/auth/session";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import { diffChanges, logAudit } from "@/lib/audit";
 import { supabase } from "@/lib/supabase-server";
 import { isMissingRelation } from "@/lib/services/marketing-db";
 import { revalidateItinerary } from "@/lib/revalidate-itinerary";
 import {
   DEFAULT_ITINERARY_SETTINGS,
+  ITINERARY_ADMIN_ONLY_TEXT,
   itineraryErrorsText,
   itineraryRows,
   parseItinerarySettingRows,
@@ -17,7 +20,8 @@ import {
 
 /**
  * "Build Your Euro Trip" - the settings screen's reads and writes (Templates > Euro Trip > Settings).
- * Staff run it (requireStaff, the default guard of every dashboard mutation). The rules live in
+ * Any staff member READS it (requireStaff); only an admin SAVES (requireAdmin) - the master switch and the
+ * discounts decide what the site sells and at what price. The rules live in
  * lib/itinerary/settings.ts (pure, scripts/itinerary-settings-selftest.ts); the table is the key / value
  * `itinerary_settings` (migration 20261021193309) that myt-main reads.
  *
@@ -34,6 +38,21 @@ const TABLE = "itinerary_settings";
 
 const NO_ACCESS = "אין הרשאה - התחברו מחדש ונסו שוב";
 const TABLE_MISSING = "הטבלה itinerary_settings עדיין לא קיימת - ההגדרות נשמרות אחרי פריסת המיגרציה";
+
+/** The admin session, or why not: a staff member below admin is told so; anyone else, to sign in. */
+async function adminOrReason(): Promise<{ session: SessionPayload } | { error: string }> {
+  try {
+    return { session: await requireAdmin() };
+  } catch {
+    // Only the failure path pays for the second check, which only picks the message.
+  }
+  try {
+    await requireStaff();
+    return { error: ITINERARY_ADMIN_ONLY_TEXT };
+  } catch {
+    return { error: NO_ACCESS };
+  }
+}
 
 type RowsRead =
   | { kind: "rows"; rows: { key: string; value: unknown }[] }
@@ -56,16 +75,19 @@ async function readRows(): Promise<RowsRead> {
  * are NOT what is saved, and the screen says so).
  */
 export async function readItinerarySettings(): Promise<ItinerarySettingsRead> {
+  let session: SessionPayload;
   try {
-    await requireStaff();
+    session = await requireStaff();
   } catch {
     return { status: "error", settings: DEFAULT_ITINERARY_SETTINGS, message: NO_ACCESS };
   }
+  // Same test as the other pages (ADMIN_ROLES.includes(session.role)); the save re-checks with requireAdmin.
+  const canEdit = ADMIN_ROLES.includes(session.role);
   try {
     const read = await readRows();
-    if (read.kind === "missing") return { status: "table_missing", settings: DEFAULT_ITINERARY_SETTINGS };
+    if (read.kind === "missing") return { status: "table_missing", settings: DEFAULT_ITINERARY_SETTINGS, canEdit };
     if (read.kind === "error") return { status: "error", settings: DEFAULT_ITINERARY_SETTINGS, message: read.message };
-    return { status: "ok", settings: parseItinerarySettingRows(read.rows), saved: read.rows.length > 0 };
+    return { status: "ok", settings: parseItinerarySettingRows(read.rows), saved: read.rows.length > 0, canEdit };
   } catch (e) {
     console.error("readItinerarySettings failed:", e);
     return { status: "error", settings: DEFAULT_ITINERARY_SETTINGS, message: e instanceof Error ? e.message : String(e) };
@@ -73,17 +95,16 @@ export async function readItinerarySettings(): Promise<ItinerarySettingsRead> {
 }
 
 /**
- * Validates the whole form, writes all eleven keys in ONE upsert (jsonb numbers / booleans), audits the
- * change, then tells the site to refresh. The write is what counts: a refresh that fails comes back as
- * `{ ok: true, warning }`, never an error - the site picks the change up on its own cache expiry.
+ * Admin only. Validates the whole form, writes all eleven keys in ONE upsert (jsonb numbers / booleans),
+ * and - when a value actually changed - audits the change and tells the site to refresh. The write is what
+ * counts: a refresh that fails comes back as `{ ok: true, warning }`, never an error - the site picks the
+ * change up on its own cache expiry. A form identical to what the site already uses comes back
+ * `{ ok: true, unchanged: true }`: no audit row, no ping.
  */
 export async function saveItinerarySettings(form: unknown): Promise<SaveItinerarySettingsResult> {
-  let session;
-  try {
-    session = await requireStaff();
-  } catch {
-    return { error: NO_ACCESS };
-  }
+  const allowed = await adminOrReason();
+  if ("error" in allowed) return { error: allowed.error };
+  const { session } = allowed;
 
   try {
     const checked = validateItinerarySettings(form);
@@ -105,14 +126,18 @@ export async function saveItinerarySettings(form: unknown): Promise<SaveItinerar
       return { error: `השמירה נכשלה: ${error.message ?? "שגיאה"}` };
     }
 
+    // What the site used until now (the stored rows over the defaults) against what was just written: a save
+    // that changes nothing leaves no audit row and does not ping the site.
     const beforeByKey = itineraryRows(parseItinerarySettingRows(before.rows));
+    const changes = diffChanges(
+      Object.fromEntries(beforeByKey.map((r) => [r.key, r.value])),
+      Object.fromEntries(rows.map((r) => [r.key, r.value])),
+    );
+    if (Object.keys(changes).length === 0) return { ok: true, unchanged: true };
     await logAudit({
       action: "itinerary.settings",
       entityType: "itinerary_settings",
-      changes: diffChanges(
-        Object.fromEntries(beforeByKey.map((r) => [r.key, r.value])),
-        Object.fromEntries(rows.map((r) => [r.key, r.value])),
-      ),
+      changes,
       actor: { id: session.sub, email: session.email, role: session.role },
     });
 

@@ -8,6 +8,7 @@ import {
   itineraryErrorsText,
   itineraryRows,
   parseItinerarySettingRows,
+  refreshItineraryErrors,
   validateItinerarySettings,
   type ItineraryField,
   type ItinerarySettings,
@@ -157,6 +158,37 @@ assert.deepEqual(parseItinerarySettingRows([]), D);
     { key: "mystery", value: 1 }, // unknown key
   ]);
   assert.deepEqual(s, { ...D, enabled: true, tier3Pct: 65, okGapDays: 4 });
+}
+
+// refreshItineraryErrors: the messages on screen are re-checked after an edit - fixed ones go (a cross-rule
+// partner included), standing ones stay, and no message appears on a field that was not showing one.
+{
+  const shown = (patch: Record<string, unknown>) => {
+    const r = validateItinerarySettings({ ...D, ...patch });
+    assert.equal(r.ok, false);
+    return r.ok ? {} : r.errors;
+  };
+  // best 700 > max 600 -> the message is on bestKm. Raising the MAXIMUM (the partner) clears it.
+  const before = shown({ bestKm: 700, maxKm: 600 });
+  assert.deepEqual(Object.keys(before), ["bestKm"]);
+  assert.deepEqual(refreshItineraryErrors(before, { ...D, bestKm: 700, maxKm: 800 }), {}, "raising max km clears best km's message");
+  assert.deepEqual(refreshItineraryErrors(before, { ...D, bestKm: 500, maxKm: 600 }), {}, "lowering best km clears it too");
+  assert.deepEqual(Object.keys(refreshItineraryErrors(before, { ...D, bestKm: 700, maxKm: 650 })), ["bestKm"], "still wrong: stays");
+  // The other three rules, from the partner's side.
+  const gap = shown({ okGapDays: 11, maxGapDays: 10 });
+  assert.deepEqual(refreshItineraryErrors(gap, { ...D, okGapDays: 11, maxGapDays: 12 }), {}, "raising max gap clears ok gap's message");
+  const span = shown({ maxGapDays: 22, maxSpanDays: 21, okGapDays: 5 });
+  assert.deepEqual(refreshItineraryErrors(span, { ...D, maxGapDays: 22, maxSpanDays: 25 }), {}, "raising the trip length clears max gap's message");
+  const tier = shown({ tier2Pct: 40, tier3Pct: 30 });
+  assert.deepEqual(refreshItineraryErrors(tier, { ...D, tier2Pct: 20, tier3Pct: 30 }), {}, "lowering the 2nd discount clears the 3rd's message");
+  // A range message stays until the value is fixed, then goes.
+  const range = shown({ maxKm: 10 });
+  assert.deepEqual(Object.keys(refreshItineraryErrors(range, { ...D, maxKm: 20 })), ["maxKm"]);
+  assert.deepEqual(refreshItineraryErrors(range, { ...D, maxKm: 900 }), {});
+  // A blank (NaN) field stays flagged; a typo elsewhere does not get a message of its own.
+  assert.deepEqual(Object.keys(refreshItineraryErrors(range, { ...D, maxKm: Number.NaN })), ["maxKm"]);
+  assert.deepEqual(refreshItineraryErrors({}, { ...D, tier2Pct: 500 }), {}, "nothing showing -> nothing appears while typing");
+  assert.deepEqual(refreshItineraryErrors(before, { ...D, bestKm: 700, maxKm: 800, tier2Pct: 500 }), {}, "an unrelated bad field is not announced early");
 }
 
 console.log("itinerary-settings-selftest: all good");

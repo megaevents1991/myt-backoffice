@@ -194,6 +194,22 @@ export function validateItinerarySettings(
   return { ok: true, settings: out };
 }
 
+/**
+ * The messages the screen already shows, re-checked against the form as it is now - called on every edit, so a
+ * message that the edit just made untrue goes away (raising the maximum distance clears the "best" distance's
+ * "can't pass the maximum"), and one that still holds stays. Only fields that ALREADY show a message are looked
+ * at: an edit never produces a fresh error on a field the person has not been told about (Save does that).
+ */
+export function refreshItineraryErrors(shown: ItineraryFieldErrors, input: unknown): ItineraryFieldErrors {
+  const fresh = validateItinerarySettings(input);
+  const now: ItineraryFieldErrors = fresh.ok ? {} : fresh.errors;
+  const out: ItineraryFieldErrors = {};
+  for (const spec of ITINERARY_SPECS) {
+    if (shown[spec.field] && now[spec.field]) out[spec.field] = now[spec.field];
+  }
+  return out;
+}
+
 /** The table rows of a validated form: every key, as jsonb numbers / booleans, in `ITINERARY_SPECS` order. */
 export function itineraryRows(settings: ItinerarySettings): { key: string; value: number | boolean }[] {
   return ITINERARY_SPECS.map((s) => ({ key: s.key, value: settings[s.field] }));
@@ -205,16 +221,25 @@ export function itineraryErrorsText(errors: ItineraryFieldErrors): string {
   return `ההגדרות לא נשמרו. ${parts.join("; ")}`;
 }
 
+/** What a staff member below admin is told when they try to save (the action) and sees on the page (the form is read-only). */
+export const ITINERARY_ADMIN_ONLY_TEXT = "רק מנהלים יכולים לשנות את הגדרות היורו טריפ";
+
 /** What `readItinerarySettings` hands the screen. Defaults are always merged in; `status` says why they may be all there is. */
 export type ItinerarySettingsRead =
-  /** `saved` = the table holds at least one row; false = nothing saved yet, so these are the defaults (feature off). */
-  | { status: "ok"; settings: ItinerarySettings; saved: boolean }
+  /**
+   * `saved` = the table holds at least one row; false = nothing saved yet, so these are the defaults (feature off).
+   * `canEdit` = the viewer may save (admin / superadmin); an editor reads the same screen, read-only.
+   */
+  | { status: "ok"; settings: ItinerarySettings; saved: boolean; canEdit: boolean }
   /** The migration has not been pushed: the table does not exist. The defaults are shown; a save is refused. */
-  | { status: "table_missing"; settings: ItinerarySettings }
+  | { status: "table_missing"; settings: ItinerarySettings; canEdit: boolean }
   /** Anything else that went wrong (the screen must not present the defaults as what is saved). */
   | { status: "error"; settings: ItinerarySettings; message: string };
 
-/** What `saveItinerarySettings` answers; it never throws. `warning` = saved, but the site could not be told. */
+/**
+ * What `saveItinerarySettings` answers; it never throws. `warning` = saved, but the site could not be told.
+ * `unchanged` = the form matched what the site already uses: nothing to audit and nobody to tell.
+ */
 export type SaveItinerarySettingsResult =
-  | { ok: true; warning?: string }
+  | { ok: true; warning?: string; unchanged?: true }
   | { error: string; fieldErrors?: ItineraryFieldErrors };

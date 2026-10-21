@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { saveItinerarySettings } from "@/lib/actions/itinerary-settings-actions";
 import {
   ITINERARY_SPEC_BY_FIELD,
+  refreshItineraryErrors,
   validateItinerarySettings,
   type ItineraryBoolField,
   type ItineraryFieldErrors,
@@ -90,12 +91,14 @@ function NumberField({
   help,
   value,
   error,
+  disabled,
   onChange,
 }: {
   field: ItineraryNumField;
   help: string;
   value: string;
   error?: string;
+  disabled: boolean;
   onChange: (v: string) => void;
 }) {
   const spec = ITINERARY_SPEC_BY_FIELD[field];
@@ -114,20 +117,34 @@ function NumberField({
         max={spec.max}
         step={spec.int ? 1 : "any"}
         value={value}
+        disabled={disabled}
         aria-invalid={error ? true : undefined}
-        aria-describedby={`${id}-help`}
+        aria-describedby={error ? `${id}-help ${id}-error` : `${id}-help`}
         onChange={(e) => onChange(e.target.value)}
       />
       <p id={`${id}-help`} className="text-xs text-muted-foreground">
         {help} <span className="whitespace-nowrap">({rangeHint(field)})</span>
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
 
 /** The settings of "Build Your Euro Trip": two switches, the two discounts, the route rules. Settings in, so it renders without a load. */
-export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySettings; saved: boolean }) {
+export function EuroTripSettingsForm({
+  initial,
+  saved,
+  canEdit,
+}: {
+  initial: ItinerarySettings;
+  saved: boolean;
+  /** Admins save; anyone else sees the same form, read-only. */
+  canEdit: boolean;
+}) {
   const { toast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(initial));
   const [errors, setErrors] = useState<ItineraryFieldErrors>({});
@@ -136,15 +153,21 @@ export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySet
   const [savedOnce, setSavedOnce] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  /** A change clears that field's message (and the save-level ones) - the next Save re-checks everything. */
+  /**
+   * A change re-checks the messages already on screen against the new form (refreshItineraryErrors): the field
+   * just fixed loses its message, and so does its partner in a cross-field rule - raise the maximum distance and
+   * the "best" distance's "can't pass the maximum" goes with it. The save-level messages go too; Save checks all.
+   */
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((f) => ({ ...f, [key]: value }));
-    setErrors((e) => (e[key] ? { ...e, [key]: undefined } : e));
+    const next = { ...form, [key]: value };
+    setForm(next);
+    setErrors((shown) => (Object.values(shown).some(Boolean) ? refreshItineraryErrors(shown, toSettings(next)) : shown));
     setServerError(null);
     setWarning(null);
   };
 
   async function save() {
+    if (!canEdit) return;
     setServerError(null);
     setWarning(null);
     const payload = toSettings(form);
@@ -165,7 +188,9 @@ export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySet
         return;
       }
       setSavedOnce(true);
-      if (res.warning) {
+      if (res.unchanged) {
+        toast({ title: "ההגדרות נשמרו", description: "לא היה שינוי - האתר לא התרענן" });
+      } else if (res.warning) {
         setWarning(res.warning);
         toast({ variant: "destructive", title: "נשמר, אבל האתר לא התרענן", description: res.warning });
       } else {
@@ -211,11 +236,16 @@ export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySet
                   <Switch
                     id={id}
                     checked={form[field]}
-                    aria-describedby={`${id}-help`}
+                    disabled={!canEdit}
+                    aria-describedby={errors[field] ? `${id}-help ${id}-error` : `${id}-help`}
                     onCheckedChange={(v) => set(field, v)}
                   />
                 </div>
-                {errors[field] && <p className="text-sm text-destructive">{errors[field]}</p>}
+                {errors[field] && (
+                  <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
+                    {errors[field]}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -237,6 +267,7 @@ export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySet
               help={help}
               value={form[field]}
               error={errors[field]}
+              disabled={!canEdit}
               onChange={(v) => set(field, v)}
             />
           ))}
@@ -258,6 +289,7 @@ export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySet
               help={help}
               value={form[field]}
               error={errors[field]}
+              disabled={!canEdit}
               onChange={(v) => set(field, v)}
             />
           ))}
@@ -277,7 +309,7 @@ export function EuroTripSettingsForm({ initial, saved }: { initial: ItinerarySet
         </Alert>
       )}
 
-      <Button onClick={save} disabled={saving}>
+      <Button onClick={save} disabled={saving || !canEdit}>
         {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
         שמירה
       </Button>

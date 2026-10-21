@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import { readItinerarySettings } from "@/lib/actions/itinerary-settings-actions";
+import { ITINERARY_ADMIN_ONLY_TEXT } from "@/lib/itinerary/settings";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { EuroTripSettingsForm } from "./settings-form";
 
-// Staff-only: the read goes through requireStaff, and the save repeats it.
+// Any staff member can read this page (requireStaff); only an admin can save (requireAdmin in the action).
+// An editor sees the same form, read-only.
 export const dynamic = "force-dynamic";
 
 export default async function EuroTripSettingsPage() {
@@ -39,7 +41,17 @@ export default async function EuroTripSettingsPage() {
               </AlertDescription>
             </Alert>
           )}
-          <EuroTripSettingsForm initial={read.settings} saved={read.status !== "ok" || read.saved} />
+          {!read.canEdit && (
+            <Alert>
+              <AlertTitle>תצוגה בלבד</AlertTitle>
+              <AlertDescription>{ITINERARY_ADMIN_ONLY_TEXT}. אפשר לעיין בהגדרות, אבל לא לשמור.</AlertDescription>
+            </Alert>
+          )}
+          <EuroTripSettingsForm
+            initial={read.settings}
+            saved={read.status !== "ok" || read.saved}
+            canEdit={read.canEdit}
+          />
         </div>
       )}
     </div>
