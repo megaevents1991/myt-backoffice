@@ -16,7 +16,6 @@ import {
   type ExistingEvent,
   type PriorItem,
 } from "@/lib/uploader/shows";
-import type { SubjectRows } from "@/lib/uploader/warnings";
 import {
   ITEM_STATUSES,
   type Decision,
@@ -353,26 +352,51 @@ export function nextRunStatus(current: string, counts: Record<string, number>): 
 /** The statuses `nextRunStatus` may overwrite (the sticky ones are not in it). */
 export const RECOMPUTED_RUN_STATUSES: RunStatus[] = ["planned", "building", "waiting", "review", "done"];
 
+/**
+ * May "המשך" put the run back to building (spec 9: a run is resumable from any point): a stopped
+ * run always (its items are as it left them); a run in a non-terminal status only when an item is
+ * still waiting to be built (`found`). `done` and `error` are terminal.
+ */
+export function canResume(status: string, foundLeft: number): boolean {
+  if (status === "stopped") return true;
+  return (["planned", "building", "waiting", "review"] as string[]).includes(status) && foundLeft > 0;
+}
+
 // ---- the subject's picture, two-city choice -------------------------------------------------------
 
 export type SubjectArt = { kind: "artist" | "team"; name_english: string; image_url: string | null } | null;
 
 const nonBlank = (v: string | null | undefined): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
 
+/** The picture columns of an `artists` / `football_teams` row (`logo_url` is a team's only). */
+export type SubjectArtRow = {
+  name_english: string | null;
+  image_url: string | null;
+  art_image_url: string | null;
+  logo_url?: string | null;
+};
+
 /**
  * The subject's own picture for the board's header (`personArtFor` is the board's business): an
- * artist's cut-out, else its photo; a team's crest, else its photo. null = no artist / team row
- * (a competition, or a name the roster does not know). An artist row has no English name of its
- * own here, so it is the run's English subject name (what the roster was matched on).
+ * artist's cut-out, else its photo; a team's crest, else its photo. null = no row (a competition,
+ * or a name the roster does not know). The name is the row's English name, else the run's.
  */
-export function subjectArtOf(kind: SubjectKind, rows: SubjectRows, subjectNameEn: string): SubjectArt {
-  if (kind === "artist" && rows.artist) {
-    return { kind: "artist", name_english: subjectNameEn, image_url: nonBlank(rows.artist.art_image_url) ?? nonBlank(rows.artist.image_url) };
-  }
-  if (kind === "team" && rows.team) {
-    return { kind: "team", name_english: rows.team.name, image_url: nonBlank(rows.team.logo_url) ?? nonBlank(rows.team.image_url) };
-  }
-  return null;
+export function subjectArtOf(kind: SubjectKind, row: SubjectArtRow | null, subjectNameEn: string): SubjectArt {
+  if (row === null || kind === "competition") return null;
+  const name_english = nonBlank(row.name_english) ?? subjectNameEn;
+  if (kind === "artist") return { kind, name_english, image_url: nonBlank(row.art_image_url) ?? nonBlank(row.image_url) };
+  return { kind, name_english, image_url: nonBlank(row.logo_url) ?? nonBlank(row.image_url) };
+}
+
+/**
+ * A name as an exact, case-insensitive `ilike` pattern: Postgres' wildcards (`%`, `_`) and the
+ * escape character itself are escaped. null when the name holds a `*` (PostgREST reads it as `%`
+ * and it cannot be escaped there) or is blank - the caller then does not search by it.
+ */
+export function ilikeExact(name: string | null | undefined): string | null {
+  const t = (name ?? "").trim();
+  if (t === "" || t.includes("*")) return null;
+  return t.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
 /**

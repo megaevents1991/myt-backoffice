@@ -2156,21 +2156,35 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id",
   );
 
-  // subjectArtOf
-  const artistRows = (art: string | null, image: string | null): SubjectRows => ({
-    artist: { id: 7, name: "אריק קלפטון", image_url: image, art_image_url: art, event_gallery: [], bio: null, hasTwin: true },
-    team: null,
+  // subjectArtOf (over the one light row getRun reads)
+  const artistRow = (art: string | null, image: string | null, nameEn: string | null = "Eric Clapton"): runRules.SubjectArtRow => ({
+    name_english: nameEn,
+    image_url: image,
+    art_image_url: art,
   });
-  same(R.subjectArtOf("artist", artistRows("cut.png", "flat.jpg"), CLAPTON), { kind: "artist", name_english: CLAPTON, image_url: "cut.png" }, "subjectArt: the cut-out first");
-  same(R.subjectArtOf("artist", artistRows("  ", "flat.jpg"), CLAPTON)?.image_url, "flat.jpg", "subjectArt: a blank cut-out -> the photo");
-  same(R.subjectArtOf("artist", artistRows(null, null), CLAPTON)?.image_url, null, "subjectArt: no picture at all -> null image");
-  same(R.subjectArtOf("artist", { artist: null, team: null }, CLAPTON), null, "subjectArt: no artist row -> null");
-  const teamRows: SubjectRows = {
-    artist: null,
-    team: { id: 3, name: "Liverpool", logo_url: "crest.svg", crestInLibrary: false, image_url: "team.jpg", art_image_url: null, bio: null, hasTwin: true },
-  };
-  same(R.subjectArtOf("team", teamRows, "Liverpool FC"), { kind: "team", name_english: "Liverpool", image_url: "crest.svg" }, "subjectArt: a team's crest, under its own English name");
-  same(R.subjectArtOf("competition", teamRows, "Premier League"), null, "subjectArt: a competition has no picture");
+  same(R.subjectArtOf("artist", artistRow("cut.png", "flat.jpg"), CLAPTON), { kind: "artist", name_english: CLAPTON, image_url: "cut.png" }, "subjectArt: the cut-out first");
+  same(R.subjectArtOf("artist", artistRow("  ", "flat.jpg"), CLAPTON)?.image_url, "flat.jpg", "subjectArt: a blank cut-out -> the photo");
+  same(R.subjectArtOf("artist", artistRow(null, null), CLAPTON)?.image_url, null, "subjectArt: no picture at all -> null image");
+  same(R.subjectArtOf("artist", artistRow("cut.png", null, null), CLAPTON)?.name_english, CLAPTON, "subjectArt: a row with no English name -> the run's");
+  same(R.subjectArtOf("artist", null, CLAPTON), null, "subjectArt: no artist row -> null");
+  const teamRow: runRules.SubjectArtRow = { name_english: "Liverpool", logo_url: "crest.svg", image_url: "team.jpg", art_image_url: null };
+  same(R.subjectArtOf("team", teamRow, "Liverpool FC"), { kind: "team", name_english: "Liverpool", image_url: "crest.svg" }, "subjectArt: a team's crest, under its own English name");
+  same(R.subjectArtOf("team", { ...teamRow, logo_url: null }, "Liverpool FC")?.image_url, "team.jpg", "subjectArt: no crest -> the team photo");
+  same(R.subjectArtOf("competition", teamRow, "Premier League"), null, "subjectArt: a competition has no picture");
+
+  // ilikeExact: a name as an exact ilike pattern
+  same(R.ilikeExact("  Eric Clapton "), "Eric Clapton", "ilikeExact: trimmed, nothing to escape");
+  same(R.ilikeExact("100%_Pure\\Band"), "100\\%\\_Pure\\\\Band", "ilikeExact: %, _ and the escape char are escaped");
+  same(R.ilikeExact("Guns N' Roses"), "Guns N' Roses", "ilikeExact: a quote is plain text");
+  same([R.ilikeExact(""), R.ilikeExact("   "), R.ilikeExact(null), R.ilikeExact(undefined)], [null, null, null, null], "ilikeExact: blank -> no search");
+  same(R.ilikeExact("Sta*r"), null, "ilikeExact: a '*' (PostgREST's wildcard) -> no search");
+
+  // canResume: "המשך"
+  same(R.canResume("stopped", 0), true, "resume: a stopped run, even with nothing left to build");
+  same(R.canResume("waiting", 2), true, "resume: a non-terminal run with items to build");
+  same(["planned", "building", "review"].map((s) => R.canResume(s, 1)), [true, true, true], "resume: every non-terminal status with work left");
+  same(R.canResume("waiting", 0), false, "resume: nothing to build -> nothing to resume");
+  same([R.canResume("done", 3), R.canResume("error", 3)], [false, false], "resume: done / error are terminal");
 
   // twoCityOf / withTwoCity
   const chosen = R.withTwoCity(A, 7);

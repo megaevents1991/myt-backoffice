@@ -43,10 +43,12 @@ import { applyPriorDefaults, emptyPlan, parsePlanInput, planDiff } from "@/lib/u
 import {
   answerEffect,
   BRIEF_MAX,
+  canResume,
   checkAnswer,
   cleanAnswerInput,
   EDIT_EVENT_COLUMNS,
   EMPTY_PREVIEW,
+  ilikeExact,
   isPositiveInt,
   isUuid,
   nextRunStatus,
@@ -61,6 +63,7 @@ import {
   withTwoCity,
   type SplitShow,
   type StoredAnswer,
+  type SubjectArtRow,
 } from "@/lib/uploader/run-rules";
 import type {
   ApproveAllResult,
@@ -258,9 +261,9 @@ async function previewOf(plan: UploaderPlan): Promise<{ ok: true; preview: PlanP
   try {
     subject = (await resolveSubject(plan)).subject;
   } catch (e) {
-    // resolveSubject only throws when a roster read fails (an unknown name is a null row, not a throw).
+    // resolveSubject only throws when a roster read fails (an unknown name is a subject with no rows).
     console.error("uploader-actions: subject resolution failed", errorText(e));
-    return { ok: false, kind: "subject_not_found" };
+    return { ok: false, kind: "roster_read_failed" };
   }
   try {
     return { ok: true, preview: planPreview(await findShows(plan, subject)) };
@@ -358,7 +361,7 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
     subject = (await resolveSubject(plan)).subject;
   } catch (e) {
     console.error("uploader-actions: subject resolution failed", errorText(e));
-    return { ok: false, kind: "subject_not_found" };
+    return { ok: false, kind: "roster_read_failed" };
   }
   let found: Awaited<ReturnType<typeof findShows>>;
   let priors: PriorItem[];
@@ -590,6 +593,81 @@ export async function stopRun(runId: string): Promise<Ok> {
   return run ? { ok: false, kind: "not_running" } : notFound;
 }
 
+/**
+ * "המשך": a stopped run - or a run in a non-terminal status that still has items to build - goes
+ * back to building (`canResume`); its items are untouched. The board then calls `buildNextItem`
+ * again. The status settles by its items right after (`recomputeRun`).
+ */
+export async function resumeRun(runId: string): Promise<Ok> {
+  await requireAdmin();
+  if (!isUuid(runId)) return badInput;
+  const { run, failed } = await readRun(runId);
+  if (failed) return dbError;
+  if (!run) return notFound;
+  const found = (await db
+    .from("uploader_items")
+    .select("id", { count: "exact", head: true })
+    .eq("run_id", runId)
+    .eq("status", "found")) as DbResult<null> & { count: number | null };
+  if (found.error) {
+    logDb("found items count", found.error);
+    return dbError;
+  }
+  if (!canResume(run.status, found.count ?? 0)) return { ok: false, kind: "not_resumable" };
+  const resumed = (await db
+    .from("uploader_runs")
+    .update({ status: "building", updated_at: nowIso() })
+    .eq("id", runId)
+    .eq("status", run.status)
+    .select("id")) as DbResult<{ id: string }[]>;
+  if (resumed.error) {
+    logDb("run resume", resumed.error);
+    return dbError;
+  }
+  if ((resumed.data ?? []).length === 0) return { ok: false, kind: "not_resumable" }; // its status moved meanwhile
+  await logAudit({
+    action: "uploader.run_resumed",
+    entityType: "uploader_run",
+    entityId: runId,
+    metadata: { agent: AGENT, run_id: runId, from: run.status },
+  });
+  await recomputeRun(runId);
+  return { ok: true };
+}
+
+/**
+ * "נסה שוב": an `error` item goes back to `found` (error cleared) for the build loop to pick up.
+ * Its `event_id` is kept as it is - an errored build never wrote one, and the build re-checks
+ * duplicates by supplier id anyway.
+ */
+export async function retryItem(itemId: string): Promise<Ok> {
+  await requireAdmin();
+  if (!isUuid(itemId)) return badInput;
+  const read = await readItemAndRun(itemId);
+  if ("kind" in read) return { ok: false, kind: read.kind };
+  const { item, run } = read;
+  if (item.status !== "error") return { ok: false, kind: "not_retryable" };
+  const written = (await db
+    .from("uploader_items")
+    .update({ status: "found", error: null, updated_at: nowIso() })
+    .eq("id", item.id)
+    .eq("status", "error")
+    .select("id")) as DbResult<{ id: string }[]>;
+  if (written.error) {
+    logDb("item retry", written.error);
+    return dbError;
+  }
+  if ((written.data ?? []).length === 0) return { ok: false, kind: "not_retryable" };
+  await logAudit({
+    action: "uploader.item_retried",
+    entityType: "uploader_item",
+    entityId: item.id,
+    metadata: { agent: AGENT, run_id: run.id, item_id: item.id, event_id: item.event_id, error: item.error },
+  });
+  await recomputeRun(run.id);
+  return { ok: true };
+}
+
 /** The newest runs, newest first. */
 export async function listRuns(): Promise<UploaderRun[]> {
   await requireAdmin();
@@ -646,14 +724,53 @@ export async function getRun(runId: string): Promise<RunView | null> {
   const staff = await taskPeopleOf({ id: MEGA_EVENTS_COMPANY_ID });
   const people = (staff ?? []).map((p) => ({ id: p.id, name: p.display_name?.trim() || p.email }));
 
-  let subjectArt: RunView["subjectArt"] = null;
-  try {
-    const resolved = await resolveSubject(run.plan);
-    subjectArt = subjectArtOf(run.plan.subject.kind, resolved.rows, run.plan.subject.name_en);
-  } catch (e) {
-    console.error("uploader-actions: subject art read failed", errorText(e));
-  }
+  const subjectArt = subjectArtOf(run.plan.subject.kind, await readSubjectArtRow(run.plan), run.plan.subject.name_en);
   return { run, items, edited, people, subjectArt };
+}
+
+/**
+ * The subject's own row for the board's picture - ONE light read per try (the board polls
+ * `getRun`, so never the whole roster `resolveSubject` reads): the active row whose English name
+ * is the plan's (case-insensitive, exact), else whose `name` is the plan's Hebrew name (or its
+ * English one). A competition has no row. A failed read logs and draws no picture.
+ */
+async function readSubjectArtRow(plan: UploaderPlan): Promise<SubjectArtRow | null> {
+  const kind = plan.subject.kind;
+  if (kind === "competition") return null;
+  const tries: { column: "name_english" | "name"; pattern: string | null }[] = [
+    { column: "name_english", pattern: ilikeExact(plan.subject.name_en) },
+    { column: "name", pattern: ilikeExact(plan.subject.name_he ?? plan.subject.name_en) },
+  ];
+  for (const { column, pattern } of tries) {
+    if (pattern === null) continue;
+    const read =
+      kind === "artist"
+        ? await supabaseTyped
+            .from("artists")
+            .select("id,name_english,image_url,art_image_url")
+            .eq("is_active", true)
+            .eq("is_deleted", false)
+            .ilike(column, pattern)
+            .order("name")
+            .order("id")
+            .limit(1)
+        : await supabaseTyped
+            .from("football_teams")
+            .select("id,name_english,image_url,art_image_url,logo_url")
+            .eq("is_active", true)
+            .eq("is_deleted", false)
+            .ilike(column, pattern)
+            .order("name")
+            .order("id")
+            .limit(1);
+    if (read.error) {
+      logDb("subject art read", read.error);
+      return null;
+    }
+    const row = read.data?.[0];
+    if (row) return row;
+  }
+  return null;
 }
 
 // ---- questions ---------------------------------------------------------------------------------------
