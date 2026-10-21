@@ -103,6 +103,7 @@ const facts = (over: Partial<TodayFacts> = {}): TodayFacts => ({
   toFile: false,
   paymentAnswer: null,
   confirmationPending: false,
+  waUnseen: 0,
   ...over,
 });
 assert.equal(todayReason(facts(), S, TODAY), "new");

@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "components/tours/cases/case-ui.tsx"
+        ],
+        "createdAt": "2026-10-21T18:09:41.585Z",
+        "reason": "Alon 21.10 asked for a marker bar per TODAY reason on the board rows (TODAY_ROW_CLASSES comment); the whatsapp row class mirrors the existing rows"
+      }
+    ]
+  }
+}
