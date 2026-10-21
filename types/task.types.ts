@@ -37,6 +37,8 @@ export const PRIORITY_ORDER: Record<TaskPriority, number> = {
  * supplier_gap - opened by the TixStock price sync for an event whose tickets cannot
  *   sell at the supplier (source_ref = the event, kind "supplier_gap"); see
  *   lib/services/supplier-gap-tasks.ts.
+ * uploader - a question the tour uploader (agent #3) needs a person to answer
+ *   (server-only; spec docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md).
  */
 export const TASK_SOURCES = [
   "manual",
@@ -46,6 +48,7 @@ export const TASK_SOURCES = [
   "recurring",
   "roadmap",
   "supplier_gap",
+  "uploader",
 ] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 

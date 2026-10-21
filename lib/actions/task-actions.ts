@@ -138,8 +138,8 @@ function validSource(value: string | undefined): value is TaskSource {
   return !!value && (TASK_SOURCES as readonly string[]).includes(value);
 }
 
-/** Sources only the server itself may stamp (the rules cron, the roadmap import). */
-const SERVER_ONLY_SOURCES: readonly TaskSource[] = ["recurring", "roadmap"];
+/** Sources only the server itself may stamp (the rules cron, the roadmap import, the tour uploader). */
+const SERVER_ONLY_SOURCES: readonly TaskSource[] = ["recurring", "roadmap", "uploader"];
 
 /** A client-supplied source_ref must have the shape every reader assumes - and its
  *  url must be a same-site path, because it becomes a link in mails and the UI. */

@@ -74,6 +74,9 @@ export type Event = {
   // QA-only events: main keeps them orderable by direct /order/{id} link but
   // filters them from every listing, search, category and feed surface.
   is_test?: boolean;
+  // Uploaded by the tour uploader, not yet approved - main lists nothing hidden;
+  // `updateEvent` never writes it. Synced with main lib/app.types.ts.
+  is_hidden?: boolean;
   // Off the customer site (2026-10-04): null / absent = listed. The TixStock
   // price sync writes "tx_no_category" / "tx_sold_out" when the event has no
   // ticket left to sell, and clears them when tickets return

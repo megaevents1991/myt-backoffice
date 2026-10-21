@@ -122,6 +122,7 @@ const VIEW_IDS = TASK_VIEWS;
 const SOURCE_BADGE: Partial<Record<TaskSource, string>> = {
   creative_gap: "creative",
   price_review: "price",
+  uploader: "AI Uploader",
 };
 
 /** Still work to do - "paused" included (OPEN_TASK_STATUSES). */
