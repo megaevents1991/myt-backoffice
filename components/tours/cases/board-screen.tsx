@@ -16,7 +16,7 @@
  * The server already answers only the cards the viewer may see (a manager all, a rep their own + the unassigned).
  * Every row opens its customer, with that card highlighted. TODAY / RESERVATIONS / LEADS share one load (listBoard).
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { CalendarClock, ListChecks, Loader2, PlusCircle, RefreshCw } from "lucide-react";
@@ -120,7 +120,10 @@ export function BoardScreen() {
   const repName = useCallback((id: string | null) => (id ? (reps.find((p) => p.id === id)?.name ?? "Another teammate") : ""), [reps]);
   const currentUserId = data?.currentUserId ?? "";
   const viewer = data?.viewer ?? NOBODY_VIEWER;
-  const orderIds = useMemo(() => data?.order ?? [], [data]);
+  // the order as this screen last set it wins over whatever a later quiet reload answers (a save may still be in flight)
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const orderIds = useMemo(() => localOrder ?? data?.order ?? [], [localOrder, data]);
+  const saveQueue = useRef<{ running: boolean; pending: string[] | null }>({ running: false, pending: null });
 
   // the search and "Mine" narrow every tab alike
   const cards = useMemo(
@@ -176,17 +179,30 @@ export function BoardScreen() {
     [data, repName, run, setData, toast, viewer],
   );
 
-  // the viewer's own order: shown at once, saved behind it (a failed save toasts and the screen keeps the order)
+  // the viewer's own order: shown at once, saved behind it - ONE save in flight, the newest order replaces anything still
+  // waiting (two quick drags never race; an older save can never land after a newer one). A failed save toasts; the screen
+  // keeps the order.
   const commitOrder = useCallback(
-    async (ids: string[]) => {
-      setData((current) => current && { ...current, order: ids });
-      const result = await saveBoardOrder(ids);
-      if (!result.success) toast({ variant: "destructive", title: "The order was not saved", description: result.error });
+    (ids: string[]) => {
+      setLocalOrder(ids);
+      const queue = saveQueue.current;
+      queue.pending = ids;
+      if (queue.running) return;
+      queue.running = true;
+      void (async () => {
+        while (queue.pending) {
+          const next = queue.pending;
+          queue.pending = null;
+          const result = await saveBoardOrder(next);
+          if (!result.success) toast({ variant: "destructive", title: "The order was not saved", description: result.error });
+        }
+        queue.running = false;
+      })();
     },
-    [setData, toast],
+    [toast],
   );
-  const onMove = useCallback((activeId: string, overId: string) => void commitOrder(moveInOrder(fullIds, activeId, overId)), [commitOrder, fullIds]);
-  const onPlace = useCallback((id: string, place: number) => void commitOrder(placeInOrder(fullIds, id, place)), [commitOrder, fullIds]);
+  const onMove = useCallback((activeId: string, overId: string) => commitOrder(moveInOrder(fullIds, activeId, overId)), [commitOrder, fullIds]);
+  const onPlace = useCallback((id: string, place: number) => commitOrder(placeInOrder(fullIds, id, place)), [commitOrder, fullIds]);
 
   // a manager hands out cards in bulk (Dor 21.10); the server refuses anyone else
   const bulkAssign = useCallback(
