@@ -67,6 +67,7 @@ import {
   suggestZoneTiered,
   type TieredSuggestion,
 } from "@/lib/venue-maps/zone-suggest";
+import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { isSectionExcluded } from "@/lib/tixstock-map";
 import {
   adoptVenueMap,
@@ -147,33 +148,6 @@ const formatDate = (iso: string) =>
     year: "numeric",
     timeZone: "UTC",
   });
-
-/**
- * Tickets with no zone yet take it from the venue template (supplier +
- * category → zone). Tickets the operator already zoned are never touched.
- */
-function zoneFromTemplate(
-  tickets: EventTicket[],
-  eventType: Event["type"],
-  map: VenueMap,
-): EventTicket[] {
-  return tickets.map((ticket) => {
-    if (ticket.zoneId) return ticket;
-    const category = ticket.supplierCategory || ticket.category;
-    const zoneId =
-      map.supplier_categories?.[ticketSupplier(ticket, eventType)]?.[
-        normalizeSupplierCategory(category)
-      ];
-    const zone = map.zones.find((z) => z.id === zoneId);
-    if (!zone) return ticket;
-    return {
-      ...ticket,
-      supplierCategory: category,
-      zoneId: zone.id,
-      zoneLabel: zone.label,
-    };
-  });
-}
 
 /** The name a fresh zone gets from a ticket: its Hebrew description when it is short enough to be a title. */
 const zoneNameFromTicket = (ticket: EventTicket): string => {

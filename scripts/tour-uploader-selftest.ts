@@ -46,6 +46,17 @@ import {
   type Subject,
   type TixRow,
 } from "@/lib/uploader/shows";
+import {
+  ticketsFromLiveStock,
+  ticketsFromTixStockFeed,
+  type TixListing,
+} from "@/lib/uploader/tickets";
+import { calculateSmartDates } from "@/lib/smart-dates";
+import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
+import { TX_TICKET_COLOR } from "@/lib/tixstock-map";
+import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
+import type { SupplierCurrency } from "@/lib/suppliers";
+import type { EventTicket } from "@/types/app.types";
 import type { ShowIdentity, UploaderPlan } from "@/types/uploader.types";
 
 let checks = 0;
@@ -1143,6 +1154,203 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     same(priorRejectionFor(lon23, "Eric Clapton", priors)?.reason, "one Royal Albert Hall night is enough", "priorRejectionFor: a final rejection is remembered");
     same(priorRejectionFor(lon20, "Eric Clapton", priors), null, "priorRejectionFor: an answered question is not a rejection");
   }
+}
+
+// ---- Task 4: tickets + moves ---------------------------------------------------------------
+{
+  /** A listing as the TixStock feed sends it - the fields the three site rules and the price read. */
+  const listing = (category: string | null, amount: string, extra: Partial<TixListing> = {}): TixListing => ({
+    seat_details: category === null ? {} : { category },
+    ticket: { split_type: "No Preferences" },
+    number_of_tickets_for_sale: { quantity_available: 4, split_quantity: 0 },
+    proceed_price: { amount, currency: "GBP" },
+    ...extra,
+  });
+  /** A stand-in for `tixstockTicketPriceUsd`: a known rate per currency, so the winner is visible in the number. */
+  const calls: { cost: number; currency: string }[] = [];
+  const RATE: Record<string, number> = { GBP: 1.3, EUR: 1.1, USD: 1 };
+  const priceUsd = (cost: number, currency: string): number => {
+    calls.push({ cost, currency });
+    return Math.round(cost * (RATE[currency] ?? 1));
+  };
+  const counter = (): (() => string) => {
+    let n = 0;
+    return () => `id-${++n}`;
+  };
+
+  // The brief's case: two Cat 1 (100, 90), one restricted Cat 2, one with no category.
+  const fed = ticketsFromTixStockFeed(
+    [
+      listing("Cat 1", "100"),
+      listing("Cat 1", "90"),
+      listing("Cat 2", "50", { restrictions_benefits: { other: "Restricted view" } }),
+      listing(null, "40"),
+    ],
+    "TX-9",
+    priceUsd,
+    counter(),
+  );
+  same(
+    fed.tickets,
+    [
+      {
+        id: "id-1",
+        eid: "TX-9",
+        supplier: "tixstock",
+        vendor: "TixStock",
+        category: "Cat 1",
+        supplierCategory: "Cat 1",
+        description: "",
+        price: 117,
+        colorOnTheMap: TX_TICKET_COLOR,
+        available: true,
+      },
+    ],
+    "ticketsFromTixStockFeed: one ticket per category, the cheapest listing priced through priceUsd (GBP 90), eid and id stamped",
+  );
+  check(calls.some((c) => c.cost === 90 && c.currency === "GBP"), "the winning listing went through the given priceUsd");
+  same(
+    fed.dropped,
+    [
+      { category: "", reason: "excluded" },
+      { category: "Cat 2", reason: "restricted" },
+    ],
+    "a listing with no category is dropped excluded; a restricted-view category is dropped restricted",
+  );
+  same(fed.categoriesSeen, 2, "categoriesSeen counts the distinct categories of ALL listings, before the rules");
+
+  // The cheapest is the cheapest AS PRICED, not by raw cost; the currency falls back like the sync's listingPriceUsd.
+  const mixed = ticketsFromTixStockFeed(
+    [
+      listing("Cat A", "100"), // GBP 100 -> 130
+      listing("Cat A", "110", { proceed_price: { amount: "110", currency: "eur" } }), // EUR 110 -> 121: dearer raw, cheaper priced
+      listing("Cat B", "80", { proceed_price: { amount: "80" }, face_value: { currency: "EUR" } }), // no proceed currency -> face value's
+      listing("Cat C", "70", { proceed_price: { amount: "70" } }), // neither -> GBP
+    ],
+    "TX-1",
+    priceUsd,
+    counter(),
+  );
+  same(
+    mixed.tickets.map((t) => [t.category, t.price]),
+    [
+      ["Cat A", 121],
+      ["Cat B", 88],
+      ["Cat C", 91],
+    ],
+    "cheapest as priced (EUR 110 beats GBP 100); currency from proceed_price, else face_value, else GBP; upper-cased",
+  );
+  same(mixed.tickets.map((t) => t.id), ["id-1", "id-2", "id-3"], "newId is called once per ticket, in category order");
+
+  // The rules: a seller who will not split to a pair drops the category as `split`.
+  const rules = ticketsFromTixStockFeed(
+    [
+      listing("Together", "60", { ticket: { split_type: "Sell Together" }, number_of_tickets_for_sale: { quantity_available: 4 } }),
+      listing("One left", "60", { number_of_tickets_for_sale: { quantity_available: 1 } }),
+      listing("Side", "60", { restrictions_benefits: { options: ["Side view"] } }),
+      listing("Fine", "60"),
+      // A refused listing beside a sellable one in the same category does not drop the category.
+      listing("Fine", "55", { restrictions_benefits: { other: "Limited view" } }),
+    ],
+    "TX-2",
+    priceUsd,
+    counter(),
+  );
+  same(rules.tickets.map((t) => [t.category, t.price]), [["Fine", 78]], "a category with a sellable listing keeps its ticket (its refused listings do not count)");
+  same(
+    rules.dropped,
+    [
+      { category: "One left", reason: "split" },
+      { category: "Side", reason: "restricted" },
+      { category: "Together", reason: "split" },
+    ],
+    "one dropped entry per refused CATEGORY, sorted; a split refusal is `split`, a view refusal `restricted`",
+  );
+  same(rules.categoriesSeen, 4, "categoriesSeen counts refused categories too");
+
+  // Unpriced listings never become a $0 ticket.
+  const unpriced = ticketsFromTixStockFeed([listing("Free", ""), listing("Free", "0")], "TX-3", priceUsd, counter());
+  same([unpriced.tickets, unpriced.dropped], [[], [{ category: "Free", reason: "excluded" }]], "a category whose listings carry no price is dropped, not sold at the markup alone");
+  same(ticketsFromTixStockFeed([], "TX-4", priceUsd, counter()), { tickets: [], dropped: [], categoriesSeen: 0 }, "an empty feed: nothing, nothing dropped");
+
+  // Live: sellable -> ticket in the buildLiveTicketsDrafts shape; non-instant and other blocked -> dropped with their reason.
+  const liveCat = (over: Partial<LiveTicketsCategory>): LiveTicketsCategory => ({
+    id: "501",
+    title: "Gold",
+    hebTitle: "זהב",
+    description: "ליד הבמה",
+    cost: 80,
+    maxPerOrder: 6,
+    seatingGroupMax: null,
+    sellable: true,
+    nonInstantOnly: false,
+    blockedReason: "",
+    ...over,
+  });
+  const livePrice = (cost: number, currency: SupplierCurrency): number => Math.round(cost * (RATE[currency] ?? 1));
+  const stock: LiveTicketsStock = {
+    currency: "EUR",
+    categories: [
+      liveCat({}),
+      liveCat({ id: "502", title: "Silver", hebTitle: "כסף", sellable: false, nonInstantOnly: true, blockedReason: "Not instant-confirm" }),
+    ],
+  };
+  const live = ticketsFromLiveStock(stock, "LT-7", livePrice);
+  const goldTicket: EventTicket = {
+    id: "501",
+    eid: "LT-7",
+    supplier: "livetickets",
+    vendor: "LiveTickets",
+    category: "Gold",
+    supplierCategory: "Gold",
+    description: "ליד הבמה",
+    price: 88,
+    colorOnTheMap: "rgb(5, 32, 60)",
+    available: true,
+  };
+  same(live.tickets, [goldTicket], "ticketsFromLiveStock: the sellable category is a ticket in buildLiveTicketsDrafts' shape (id = their category id)");
+  same(live.dropped, [{ title: "Silver", reason: "Not instant-confirm" }], "a non-instant-only category is dropped with its blockedReason");
+  same(live.state, "ok", "a stock that answered is ok");
+  const live2 = ticketsFromLiveStock(
+    { currency: "USD", categories: [liveCat({ title: "", hebTitle: "יציע", cost: 30 }), liveCat({ id: "503", title: "Pit", sellable: false, blockedReason: "Single seats" })] },
+    "LT-8",
+    livePrice,
+  );
+  same(
+    [live2.tickets.map((t) => [t.category, t.supplierCategory, t.price]), live2.dropped],
+    [[["יציע", "יציע", 30]], [{ title: "Pit", reason: "Single seats" }]],
+    "an empty title falls back to hebTitle; any other blocked category is dropped with its reason too",
+  );
+  same(ticketsFromLiveStock("SOLD_OUT", "LT-7", livePrice), { tickets: [], dropped: [], state: "sold_out" }, "SOLD_OUT: no tickets, state sold_out");
+  same(ticketsFromLiveStock(null, "LT-7", livePrice), { tickets: [], dropped: [], state: "unreachable" }, "null (no answer, no snapshot): state unreachable");
+
+  // zoneFromTemplate: the venue template zones a ticket with no zone and never touches one already zoned.
+  const map = {
+    zones: [{ id: "z-cat1", label: "קטגוריה 1", sections: ["s1"] }],
+    supplier_categories: { tixstock: { "cat 1": "z-cat1" } },
+  };
+  const bare: EventTicket = {
+    id: "t-1",
+    category: "Cat 1",
+    price: 100,
+    description: "",
+    colorOnTheMap: TX_TICKET_COLOR,
+    supplier: "tixstock",
+  };
+  const zoned = zoneFromTemplate([bare], "tx_event", map)[0];
+  same(
+    [zoned.zoneId, zoned.zoneLabel, zoned.supplierCategory],
+    ["z-cat1", "קטגוריה 1", "Cat 1"],
+    "zoneFromTemplate: a tixstock ticket is zoned from supplier_categories.tixstock['cat 1']",
+  );
+  const already: EventTicket = { ...bare, id: "t-2", zoneId: "z-other", zoneLabel: "ידני" };
+  same(zoneFromTemplate([already], "tx_event", map)[0], already, "zoneFromTemplate leaves an already-zoned ticket alone");
+  const unknown: EventTicket = { ...bare, id: "t-3", category: "Cat 9" };
+  same(zoneFromTemplate([unknown], "tx_event", map)[0], unknown, "zoneFromTemplate leaves a ticket with no template entry unzoned");
+  same(zoneFromTemplate([{ ...bare, supplier: undefined }], "tx_event", map)[0].zoneId, "z-cat1", "a ticket with no supplier takes it from the event type (tx_event = tixstock)");
+
+  // calculateSmartDates, moved to lib/.
+  same(calculateSmartDates("2027-05-20"), { departure: "2027-05-18", return: "2027-05-21" }, "calculateSmartDates: two days before, one after");
 }
 
 console.log(`tour uploader selftest: all ${checks} checks passed`);

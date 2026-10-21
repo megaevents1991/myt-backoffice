@@ -1,38 +1,10 @@
 import type { Event } from "@/types/app.types";
 import type { TixStockEventDB } from "@/types/tixstock.types";
+import { calculateSmartDates } from "@/lib/smart-dates";
 
-/**
- * Smart departure/return dates for an event date.
- * Departure: 2 days before, moved to Thursday if it lands on Fri/Sat.
- * Return: 1 day after, moved to Sunday if it lands on Saturday.
- * (Extracted verbatim from the single-create flow so both paths match.)
- */
-export function calculateSmartDates(eventDate: string): {
-  departure: string;
-  return: string;
-} {
-  const event = new Date(eventDate);
-
-  const departure = new Date(event);
-  departure.setDate(event.getDate() - 2);
-  const departureDay = departure.getDay();
-  if (departureDay === 5) {
-    departure.setDate(departure.getDate() - 1); // Friday -> Thursday
-  } else if (departureDay === 6) {
-    departure.setDate(departure.getDate() - 2); // Saturday -> Thursday
-  }
-
-  const returnDate = new Date(event);
-  returnDate.setDate(event.getDate() + 1);
-  if (returnDate.getDay() === 6) {
-    returnDate.setDate(returnDate.getDate() + 1); // Saturday -> Sunday
-  }
-
-  return {
-    departure: departure.toISOString().split("T")[0],
-    return: returnDate.toISOString().split("T")[0],
-  };
-}
+// Moved to lib/ (a service must not import from a page folder); re-exported so every importer
+// of this module (lib/provider-batch.ts) keeps working.
+export { calculateSmartDates } from "@/lib/smart-dates";
 
 /**
  * Maps a TixStock event row to a new-event payload (`Omit<Event,"id">`),
