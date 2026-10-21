@@ -7,6 +7,7 @@
  * Pure - no DB, no network, no clock except the timestamps a caller hands in. Selftest:
  * scripts/tour-uploader-selftest.ts ("Task 8").
  */
+import { clubKey, normalizeName } from "@/lib/on-tour";
 import { decision } from "@/lib/uploader/decisions";
 import {
   existingEventFor,
@@ -23,7 +24,10 @@ import {
   type RunStatus,
   type ShowIdentity,
   type SubjectKind,
+  type UploaderItem,
+  type UploaderPlan,
   type UploaderQuestion,
+  type Warning,
 } from "@/types/uploader.types";
 
 // ---- input limits ---------------------------------------------------------------------------------
@@ -336,21 +340,40 @@ export function runCounts(statuses: string[]): Record<string, number> {
 
 /**
  * The run's status from its items: `building` while anything is still to build (found / building),
- * then `waiting` while a question is open, then `review` while a built event waits for approval,
+ * then `waiting` while a question is open, then `review` while a built event waits for approval OR
+ * an item failed (an error is retried or rejected by a person - a run holding one is not done),
  * else `done`. `stopped` (a person stopped it) and `error` stay as they are - only a person moves a
- * run out of them.
+ * run out of them, never a recompute.
  */
 export function nextRunStatus(current: string, counts: Record<string, number>): RunStatus {
   if (current === "stopped" || current === "error") return current;
   const n = (k: string): number => counts[k] ?? 0;
   if (n("found") + n("building") > 0) return "building";
   if (n("question") > 0) return "waiting";
-  if (n("ready") > 0) return "review";
+  if (n("ready") + n("error") > 0) return "review";
   return "done";
 }
 
 /** The statuses `nextRunStatus` may overwrite (the sticky ones are not in it). */
 export const RECOMPUTED_RUN_STATUSES: RunStatus[] = ["planned", "building", "waiting", "review", "done"];
+
+/** Two plans are about the same subject: the same kind and the same English name once normalized (`createRun`'s one-run-at-a-time rule). */
+export function sameSubject(a: UploaderPlan["subject"], b: UploaderPlan["subject"]): boolean {
+  const name = normalizeName(a.name_en);
+  return a.kind === b.kind && name !== "" && name === normalizeName(b.name_en);
+}
+
+/**
+ * An item left `building` longer than this was cut off (the board's page gives an action 60 s): the
+ * run settles it to `error` (retryable) instead of reading "building" for ever.
+ */
+export const STALE_BUILD_MS = 3 * 60_000;
+
+/** Is a `building` item's last write older than STALE_BUILD_MS at `nowMs`? An unreadable time is not stale. */
+export function isStaleBuild(updatedAt: string | null | undefined, nowMs: number): boolean {
+  const at = Date.parse(updatedAt ?? "");
+  return Number.isFinite(at) && nowMs - at > STALE_BUILD_MS;
+}
 
 /**
  * May "המשך" put the run back to building (spec 9: a run is resumable from any point): a stopped
@@ -368,8 +391,9 @@ export type SubjectArt = { kind: "artist" | "team"; name_english: string; image_
 
 const nonBlank = (v: string | null | undefined): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
 
-/** The picture columns of an `artists` / `football_teams` row (`logo_url` is a team's only). */
+/** The columns of an `artists` / `football_teams` row the picture read takes (`logo_url` is a team's only). */
 export type SubjectArtRow = {
+  name: string | null;
   name_english: string | null;
   image_url: string | null;
   art_image_url: string | null;
@@ -388,15 +412,95 @@ export function subjectArtOf(kind: SubjectKind, row: SubjectArtRow | null, subje
   return { kind, name_english, image_url: nonBlank(row.logo_url) ?? nonBlank(row.image_url) };
 }
 
+/** A LIKE value with Postgres' wildcards (`%`, `_`) and the escape character escaped. */
+const likeEscape = (t: string): string => t.replace(/[\\%_]/g, (c) => `\\${c}`);
+
 /**
- * A name as an exact, case-insensitive `ilike` pattern: Postgres' wildcards (`%`, `_`) and the
- * escape character itself are escaped. null when the name holds a `*` (PostgREST reads it as `%`
- * and it cannot be escaped there) or is blank - the caller then does not search by it.
+ * The ONE candidate read's `ilike` pattern for the subject's picture: `%<token>%` over
+ * `name_english`, the token being a team's first club token (`clubKey` - "Liverpool FC" ->
+ * "liverpool", the qualifiers dropped) or an artist's first word, escaped. null = nothing to search
+ * by (a competition, a blank name, or a token holding `*` - PostgREST reads it as `%`).
  */
-export function ilikeExact(name: string | null | undefined): string | null {
-  const t = (name ?? "").trim();
-  if (t === "" || t.includes("*")) return null;
-  return t.replace(/[\\%_]/g, (c) => `\\${c}`);
+export function artSearchPattern(kind: SubjectKind, nameEn: string): string | null {
+  if (kind === "competition") return null;
+  const token = kind === "team" ? (clubKey(nameEn).split(" ")[0] ?? "") : (nameEn.trim().split(/\s+/)[0] ?? "");
+  if (token === "" || token.includes("*")) return null;
+  return `%${likeEscape(token)}%`;
+}
+
+/**
+ * The candidate that IS the subject: a team whose `clubKey` equals the plan's ("Liverpool" for
+ * "Liverpool FC"); an artist whose English name equals the plan's once normalized, else whose
+ * Hebrew `name` equals the plan's Hebrew (or English) name. The first such row in read order.
+ */
+export function pickArtRow(
+  kind: SubjectKind,
+  rows: SubjectArtRow[],
+  subject: { name_en: string; name_he: string | null },
+): SubjectArtRow | null {
+  if (kind === "competition") return null;
+  if (kind === "team") {
+    const key = clubKey(subject.name_en);
+    if (key === "") return null;
+    return rows.find((r) => clubKey(r.name_english ?? "") === key) ?? null;
+  }
+  const en = normalizeName(subject.name_en);
+  const he = normalizeName(subject.name_he ?? subject.name_en);
+  return (
+    rows.find((r) => en !== "" && normalizeName(r.name_english) === en) ??
+    rows.find((r) => he !== "" && normalizeName(r.name) === he) ??
+    null
+  );
+}
+
+// ---- approval -------------------------------------------------------------------------------------
+
+/** The `events` columns a blocker is re-judged on (a row of EDIT_EVENT_COLUMNS carries all four). */
+export type BlockerRow = {
+  package_mode?: string | null;
+  base_flight_price?: number | null;
+  base_hotel_price?: number | null;
+  ticket_only_markup?: number | null;
+};
+
+const positive = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+/**
+ * The item's blockers as they stand NOW (approve time): a blocker was written at build time and
+ * its text sends staff to the editor to fix it, so the live row decides -
+ * - `no_base_price` (flight or hotel) clears once the event is a package with BOTH bases above 0;
+ * - `no_ticket_only_markup` clears once the event is ticket-only with a ticket-only markup (0 counts);
+ * - any other code stays as stored.
+ * A package is any `package_mode` but "ticket_only" (main's `isTicketOnlyEvent`).
+ */
+export function liveBlockers(stored: Warning[] | null | undefined, row: BlockerRow): Warning[] {
+  const ticketOnly = row.package_mode === "ticket_only";
+  return (stored ?? []).filter((b) => {
+    if (b.code === "no_base_price") return !(!ticketOnly && positive(row.base_flight_price) && positive(row.base_hotel_price));
+    if (b.code === "no_ticket_only_markup") {
+      return !(ticketOnly && typeof row.ticket_only_markup === "number" && Number.isFinite(row.ticket_only_markup));
+    }
+    return true;
+  });
+}
+
+/** A `ready` item that points at its built (hidden) event - the board's edit diff and live blockers read those events. */
+export function hasBuiltEvent(item: UploaderItem): item is UploaderItem & { event_id: number } {
+  return item.status === "ready" && typeof item.event_id === "number";
+}
+
+/** The statuses a person may reject from (a show being built, or already approved / rejected / skipped, is not one). */
+export const REJECTABLE_STATUSES: ItemStatus[] = ["ready", "question", "found", "error"];
+
+/**
+ * The far-venue offer ("בנה כחבילה דרך <city>") rebuilds only a show that has no package: a built
+ * ticket-only event (`ready`, mode ticket_only), or a show skipped for having no location
+ * (`skip_reason` no_location). Never an `exists` / `no_tickets` / `rejected_before` /
+ * `skipped_by_answer` skip - rebuilding those would undo a decision.
+ */
+export function canRebuildTwoCity(item: Pick<UploaderItem, "status" | "mode" | "skip_reason">): boolean {
+  if (item.status === "ready") return item.mode === "ticket_only";
+  return item.status === "skipped" && item.skip_reason === "no_location";
 }
 
 /**

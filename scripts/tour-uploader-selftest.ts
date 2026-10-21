@@ -2279,6 +2279,30 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const unheld = R.answerEffect(pickShow, showAt("London", "2027-05-20", "tx-zz", null), answer("both"));
   same(unheld.kind === "split" ? unheld.extra.map((e) => e.question.answer?.key) : null, ["tx-1", "tx-3"], "effect: a show holding no option keeps the first one, the rest become extras");
 
+  // confirm_subject: "yes" / "skip"
+  const confirm = ask("confirm_subject", london, ["yes", "skip"]);
+  same(R.checkAnswer(confirm, { key: "yes", text: null }), { ok: true, label: "label yes" }, "confirm_subject: yes is an option");
+  same(R.checkAnswer(confirm, { key: "both", text: null }), { ok: false }, "confirm_subject: both is not");
+  same(R.checkAnswer(confirm, { key: null, text: "the other one" }), { ok: false }, "confirm_subject: no free text");
+  same(R.answerEffect(confirm, london, answer("yes")), { kind: "requeue", show: london }, "confirm_subject: yes -> built as found");
+  same(R.answerEffect(confirm, london, answer("skip")), { kind: "skip" }, "confirm_subject: skip -> skipped");
+
+  // pick_date "both" with a day option missing: the show's own date stands in
+  const noLiveDay = ask("pick_date", london, ["tix:2027-05-20", "both", "skip"]);
+  const fallbackSplit = R.answerEffect(noLiveDay, london, answer("both"));
+  same(
+    fallbackSplit.kind === "split" ? [fallbackSplit.show.date, fallbackSplit.extra[0]?.show.date, fallbackSplit.extra[0]?.question.answer?.key] : null,
+    ["2027-05-20", "2027-05-20", "live:2027-05-20"],
+    "pick_date both, no LiveTickets day option -> the extra keeps the show's date",
+  );
+  const noTixDay = ask("pick_date", showAt("London", "2027-05-21", "tx-1", 9001), ["live:2027-05-22", "both", "skip"]);
+  const fallbackTix = R.answerEffect(noTixDay, showAt("London", "2027-05-21", "tx-1", 9001), answer("both"));
+  same(
+    fallbackTix.kind === "split" ? [fallbackTix.show.date, fallbackTix.extra[0]?.show.date] : null,
+    ["2027-05-21", "2027-05-22"],
+    "pick_date both, no TixStock day option -> the item keeps the show's date",
+  );
+
   // planRunItems
   const A = showAt("London", "2027-05-20", "tx-a", 1);
   const E = showAt("Berlin", "2027-05-21", "tx-e1", null, { country_code: "DE" });
@@ -2373,7 +2397,10 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(R.nextRunStatus("building", R.runCounts(["building", "question"])), "building", "run status: a build in flight -> building");
   same(R.nextRunStatus("building", R.runCounts(["question", "ready"])), "waiting", "run status: only questions left to unblock -> waiting");
   same(R.nextRunStatus("waiting", R.runCounts(["ready", "approved", "skipped"])), "review", "run status: built events to approve -> review");
-  same(R.nextRunStatus("review", R.runCounts(["approved", "rejected", "skipped", "error"])), "done", "run status: nothing left for anyone -> done");
+  same(R.nextRunStatus("review", R.runCounts(["approved", "rejected", "skipped"])), "done", "run status: nothing left for anyone -> done");
+  same(R.nextRunStatus("review", R.runCounts(["approved", "rejected", "skipped", "error"])), "review", "run status: an error item keeps the run in review (retry or reject it) - never done");
+  same(R.nextRunStatus("building", R.runCounts(["error"])), "review", "run status: only an error left -> review");
+  same(R.nextRunStatus("building", R.runCounts(["error", "question"])), "waiting", "run status: a question still outranks an error");
   same(R.nextRunStatus("done", R.runCounts(["found", "approved"])), "building", "run status: a re-queued item reopens a done run");
   same(R.nextRunStatus("planned", R.runCounts([])), "done", "run status: a run with no items is done");
   same(R.nextRunStatus("stopped", R.runCounts(["found"])), "stopped", "run status: stopped stays stopped");
@@ -2395,8 +2422,9 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id",
   );
 
-  // subjectArtOf (over the one light row getRun reads)
-  const artistRow = (art: string | null, image: string | null, nameEn: string | null = "Eric Clapton"): runRules.SubjectArtRow => ({
+  // subjectArtOf (over the row the one candidate read picked)
+  const artistRow = (art: string | null, image: string | null, nameEn: string | null = "Eric Clapton", name: string | null = "אריק קלפטון"): runRules.SubjectArtRow => ({
+    name,
     name_english: nameEn,
     image_url: image,
     art_image_url: art,
@@ -2406,17 +2434,95 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(R.subjectArtOf("artist", artistRow(null, null), CLAPTON)?.image_url, null, "subjectArt: no picture at all -> null image");
   same(R.subjectArtOf("artist", artistRow("cut.png", null, null), CLAPTON)?.name_english, CLAPTON, "subjectArt: a row with no English name -> the run's");
   same(R.subjectArtOf("artist", null, CLAPTON), null, "subjectArt: no artist row -> null");
-  const teamRow: runRules.SubjectArtRow = { name_english: "Liverpool", logo_url: "crest.svg", image_url: "team.jpg", art_image_url: null };
+  const teamRow: runRules.SubjectArtRow = { name: "ליברפול", name_english: "Liverpool", logo_url: "crest.svg", image_url: "team.jpg", art_image_url: null };
   same(R.subjectArtOf("team", teamRow, "Liverpool FC"), { kind: "team", name_english: "Liverpool", image_url: "crest.svg" }, "subjectArt: a team's crest, under its own English name");
   same(R.subjectArtOf("team", { ...teamRow, logo_url: null }, "Liverpool FC")?.image_url, "team.jpg", "subjectArt: no crest -> the team photo");
   same(R.subjectArtOf("competition", teamRow, "Premier League"), null, "subjectArt: a competition has no picture");
 
-  // ilikeExact: a name as an exact ilike pattern
-  same(R.ilikeExact("  Eric Clapton "), "Eric Clapton", "ilikeExact: trimmed, nothing to escape");
-  same(R.ilikeExact("100%_Pure\\Band"), "100\\%\\_Pure\\\\Band", "ilikeExact: %, _ and the escape char are escaped");
-  same(R.ilikeExact("Guns N' Roses"), "Guns N' Roses", "ilikeExact: a quote is plain text");
-  same([R.ilikeExact(""), R.ilikeExact("   "), R.ilikeExact(null), R.ilikeExact(undefined)], [null, null, null, null], "ilikeExact: blank -> no search");
-  same(R.ilikeExact("Sta*r"), null, "ilikeExact: a '*' (PostgREST's wildcard) -> no search");
+  // artSearchPattern: the ONE candidate read's ilike pattern
+  same(R.artSearchPattern("team", "Liverpool FC"), "%liverpool%", "art pattern: a team's first club token (FC dropped)");
+  same(R.artSearchPattern("team", "FC Barcelona"), "%barcelona%", "art pattern: a leading qualifier is not the token");
+  same(R.artSearchPattern("artist", "  Eric Clapton "), "%Eric%", "art pattern: an artist's first word");
+  same(R.artSearchPattern("artist", "100%_Pure\\Band"), "%100\\%\\_Pure\\\\Band%", "art pattern: %, _ and the escape char are escaped");
+  same(R.artSearchPattern("artist", "Sta*r Band"), null, "art pattern: a '*' (PostgREST's wildcard) -> no read");
+  same([R.artSearchPattern("artist", "   "), R.artSearchPattern("team", "FC"), R.artSearchPattern("competition", "Premier League")], [null, null, null], "art pattern: blank / no club token / a competition -> no read");
+
+  // pickArtRow: the candidate that IS the subject
+  const liverpoolRows: runRules.SubjectArtRow[] = [
+    { name: "ליברפול 2", name_english: "Liverpool Reserves", logo_url: "r.svg", image_url: null, art_image_url: null },
+    teamRow,
+  ];
+  same(R.pickArtRow("team", liverpoolRows, { name_en: "Liverpool FC", name_he: null })?.name_english, "Liverpool", "pickArtRow: a team by clubKey equality ('Liverpool FC' = 'Liverpool'), not by containment");
+  same(R.pickArtRow("team", liverpoolRows, { name_en: "Everton", name_he: null }), null, "pickArtRow: no club match -> null");
+  const ericRows = [artistRow("a.png", null, "Eric Church", "אריק צ'רץ'"), artistRow("b.png", null, "ERIC CLAPTON", "אריק קלפטון")];
+  same(R.pickArtRow("artist", ericRows, { name_en: "Eric Clapton", name_he: null })?.art_image_url, "b.png", "pickArtRow: an artist by normalized English name");
+  same(
+    R.pickArtRow("artist", [artistRow("c.png", null, "Clapton, Eric", "אריק קלפטון")], { name_en: "Eric Clapton", name_he: "אריק קלפטון" })?.art_image_url,
+    "c.png",
+    "pickArtRow: ... else by the Hebrew name",
+  );
+  same(R.pickArtRow("artist", ericRows, { name_en: "Eric Idle", name_he: null }), null, "pickArtRow: no artist match -> null");
+  same(R.pickArtRow("competition", liverpoolRows, { name_en: "Liverpool", name_he: null }), null, "pickArtRow: a competition -> null");
+
+  // liveBlockers: approve-time blockers against the live row
+  const flightBlock = { code: "no_base_price", text: "flight" };
+  const hotelBlock = { code: "no_base_price", text: "hotel" };
+  const markupBlock = { code: "no_ticket_only_markup", text: "markup" };
+  const otherBlock = { code: "something_else", text: "?" };
+  same(R.liveBlockers([flightBlock, hotelBlock], { package_mode: "package", base_flight_price: 310, base_hotel_price: 290 }), [], "liveBlockers: both bases filled in the editor -> both no_base_price clear");
+  same(R.liveBlockers([flightBlock, hotelBlock], { package_mode: "package", base_flight_price: 310, base_hotel_price: 0 }), [flightBlock, hotelBlock], "liveBlockers: one base still 0 -> no_base_price stays (both lines)");
+  same(R.liveBlockers([flightBlock], { package_mode: null, base_flight_price: 310, base_hotel_price: 290 }), [], "liveBlockers: an unset package_mode is a package");
+  same(R.liveBlockers([flightBlock], { package_mode: "ticket_only", base_flight_price: 310, base_hotel_price: 290 }), [flightBlock], "liveBlockers: no_base_price does not clear on a ticket-only row");
+  same(R.liveBlockers([flightBlock], { package_mode: "package", base_flight_price: null, base_hotel_price: 290 }), [flightBlock], "liveBlockers: a null base is not filled");
+  same(R.liveBlockers([markupBlock], { package_mode: "ticket_only", ticket_only_markup: 0 }), [], "liveBlockers: a ticket-only markup of 0 is a markup -> clears");
+  same(R.liveBlockers([markupBlock], { package_mode: "ticket_only", ticket_only_markup: 120 }), [], "liveBlockers: a ticket-only markup -> clears");
+  same(R.liveBlockers([markupBlock], { package_mode: "ticket_only", ticket_only_markup: null }), [markupBlock], "liveBlockers: still no markup -> stays");
+  same(R.liveBlockers([markupBlock], { package_mode: "package", ticket_only_markup: 120 }), [markupBlock], "liveBlockers: no_ticket_only_markup clears only on a ticket-only row");
+  same(R.liveBlockers([otherBlock, flightBlock], { package_mode: "package", base_flight_price: 1, base_hotel_price: 1 }), [otherBlock], "liveBlockers: any other code stays as stored");
+  same([R.liveBlockers([], {}), R.liveBlockers(null, {}), R.liveBlockers(undefined, {})], [[], [], []], "liveBlockers: nothing stored -> nothing");
+
+  // canRebuildTwoCity: only a show with no package
+  same(R.canRebuildTwoCity({ status: "ready", mode: "ticket_only", skip_reason: null }), true, "two-city rebuild: a built ticket-only event");
+  same(R.canRebuildTwoCity({ status: "ready", mode: "package", skip_reason: null }), false, "two-city rebuild: never a package");
+  same(R.canRebuildTwoCity({ status: "skipped", mode: null, skip_reason: "no_location" }), true, "two-city rebuild: a show skipped for no location");
+  same(
+    ["exists", "no_tickets", "rejected_before", "skipped_by_answer"].map((r) => R.canRebuildTwoCity({ status: "skipped", mode: null, skip_reason: r })),
+    [false, false, false, false],
+    "two-city rebuild: never undoes another skip",
+  );
+  same(
+    (["found", "question", "approved", "rejected", "error", "building"] as const).map((s) => R.canRebuildTwoCity({ status: s, mode: "ticket_only", skip_reason: "no_location" })),
+    [false, false, false, false, false, false],
+    "two-city rebuild: no other status",
+  );
+
+  // isStaleBuild / sameSubject / hasBuiltEvent / REJECTABLE_STATUSES
+  const T0 = Date.parse("2026-10-21T10:00:00.000Z");
+  same(R.STALE_BUILD_MS, 180_000, "stale build: 3 minutes");
+  same(
+    [R.isStaleBuild("2026-10-21T09:56:59.000Z", T0), R.isStaleBuild("2026-10-21T09:57:30.000Z", T0), R.isStaleBuild("garbage", T0), R.isStaleBuild(null, T0)],
+    [true, false, false, false],
+    "stale build: older than 3 min only; an unreadable time is not stale",
+  );
+  const subj = (kind: "artist" | "team" | "competition", name_en: string) => ({ kind, name_he: null, name_en });
+  same(
+    [
+      R.sameSubject(subj("artist", "Eric Clapton"), subj("artist", "  eric clapton ")),
+      R.sameSubject(subj("artist", "Eric Clapton"), subj("team", "Eric Clapton")),
+      R.sameSubject(subj("artist", "Eric Clapton"), subj("artist", "Eric Church")),
+      R.sameSubject(subj("artist", ""), subj("artist", "")),
+    ],
+    [true, false, false, false],
+    "sameSubject: kind + normalized name; a blank name is nobody",
+  );
+  type BuiltProbe = Parameters<typeof R.hasBuiltEvent>[0];
+  const asItem = (status: BuiltProbe["status"], event_id: number | null): BuiltProbe => ({ status, event_id }) as BuiltProbe;
+  same(
+    [R.hasBuiltEvent(asItem("ready", 812)), R.hasBuiltEvent(asItem("ready", null)), R.hasBuiltEvent(asItem("approved", 812))],
+    [true, false, false],
+    "hasBuiltEvent: a ready item with its event only",
+  );
+  same([...R.REJECTABLE_STATUSES].sort(), ["error", "found", "question", "ready"], "reject: from ready / question / found / error only");
 
   // canResume: "המשך"
   same(R.canResume("stopped", 0), true, "resume: a stopped run, even with nothing left to build");
