@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -24,6 +24,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  GripVertical,
   Inbox,
   SlidersHorizontal,
 } from "lucide-react";
@@ -49,6 +50,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** A saved view - a named filter over the same rows, with its own count. */
@@ -108,6 +121,17 @@ interface DataTableProps<TData, TValue> {
    * one only when the columns change with the data (price-light's competitors).
    */
   stateKey?: string;
+  /**
+   * Rows the reader drags into an order (the tours TODAY list, 21.10). A handle column is prepended; a drop
+   * calls `onMove(activeId, overId)` with the two row ids (getRowId) and the SCREEN keeps and saves the order.
+   * Dragging is live only while `enabled`, the table's own search is empty and the rows are sorted by
+   * `orderColumnId` ascending (or not sorted) - any other sort would save a slice that is not the list.
+   */
+  rowReorder?: {
+    enabled: boolean;
+    orderColumnId: string;
+    onMove: (activeId: string, overId: string) => void;
+  };
 }
 
 /** The id TanStack gives a column: its own `id`, else the accessor key. */
@@ -119,7 +143,7 @@ function columnIdOf<TData, TValue>(column: ColumnDef<TData, TValue>): string {
 
 /** A click that landed on a control inside the row belongs to that control. */
 const ROW_CLICK_IGNORE =
-  "a,button,input,textarea,select,label,[role=combobox],[role=checkbox],[role=switch],[role=menuitem]";
+  "a,button,input,textarea,select,label,[role=combobox],[role=checkbox],[role=switch],[role=menuitem],[data-drag-handle]";
 
 /** Compact pager: 1 … 4 [5] 6 … 13 - never more than 7 buttons wide. */
 function pageWindow(current: number, total: number): (number | "gap")[] {
@@ -310,6 +334,72 @@ export function DataTableSkeleton({
   );
 }
 
+const REORDER_COLUMN_ID = "reorder";
+
+/** What the row hands its drag handle: the sortable bits of useSortable, and whether dragging is live. */
+type RowDrag = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners" | "setActivatorNodeRef"> & { live: boolean };
+const RowDragContext = createContext<RowDrag | null>(null);
+
+interface RowShellProps {
+  rowId: string;
+  live: boolean;
+  selected: boolean;
+  className?: string;
+  onClick?: React.MouseEventHandler<HTMLTableRowElement>;
+  children: React.ReactNode;
+}
+
+/** The row as it always was. */
+function PlainRow({ selected, className, onClick, children }: RowShellProps) {
+  return (
+    <TableRow data-state={selected && "selected"} className={className} onClick={onClick}>
+      {children}
+    </TableRow>
+  );
+}
+
+/** The row as a sortable item: it moves with the drag, and its handle gets the listeners. */
+function SortableRow({ rowId, live, selected, className, onClick, children }: RowShellProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: rowId, disabled: !live });
+  return (
+    <RowDragContext.Provider value={{ attributes, listeners, setActivatorNodeRef, live }}>
+      <TableRow
+        ref={setNodeRef}
+        data-state={selected && "selected"}
+        className={cn(className, isDragging && "relative z-20 bg-card shadow-lg")}
+        style={{ transform: CSS.Transform.toString(transform), transition }}
+        onClick={onClick}
+      >
+        {children}
+      </TableRow>
+    </RowDragContext.Provider>
+  );
+}
+
+/** The grip at the start of a reorderable row - greyed while dragging is not live. */
+function DragHandle() {
+  const drag = useContext(RowDragContext);
+  const live = !!drag?.live;
+  return (
+    <button
+      type="button"
+      data-drag-handle
+      ref={drag?.setActivatorNodeRef}
+      {...(live ? drag?.attributes : {})}
+      {...(live ? drag?.listeners : {})}
+      disabled={!live}
+      aria-label="Drag to reorder"
+      title={live ? "Drag to reorder" : "Clear the search and sort by # to drag"}
+      className={cn(
+        "inline-flex h-7 w-7 touch-none items-center justify-center rounded text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        live ? "cursor-grab hover:bg-muted active:cursor-grabbing" : "cursor-not-allowed opacity-40",
+      )}
+    >
+      <GripVertical className="h-4 w-4" />
+    </button>
+  );
+}
+
 export function DataTable<TData, TValue>({
   columns,
   data,
@@ -337,6 +427,7 @@ export function DataTable<TData, TValue>({
   expandedRowId,
   renderExpandedRow,
   stateKey,
+  rowReorder,
 }: DataTableProps<TData, TValue>) {
   // Search, sort, page and hidden columns are remembered for the browser tab
   // (hooks/use-view-state.ts) - a refresh used to throw you back to page 1 of
@@ -361,6 +452,35 @@ export function DataTable<TData, TValue>({
     pageSize: defaultPageSize ?? 25,
   });
   const [globalFilter, setGlobalFilter] = useSessionState<string>(`${memory}:search`, "");
+
+  // Dragging is live only in the order column's own ascending sort (or no sort) with no search: anything else
+  // would hand the screen a slice that is not the list it keeps.
+  const reorderLive =
+    !!rowReorder &&
+    rowReorder.enabled &&
+    !globalFilter &&
+    (sorting.length === 0 || (sorting.length === 1 && sorting[0].id === rowReorder.orderColumnId && !sorting[0].desc));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!rowReorder || !over || active.id === over.id) return;
+    rowReorder.onMove(String(active.id), String(over.id));
+  };
+  const reorderColumns: ColumnDef<TData, TValue>[] = rowReorder
+    ? [
+        {
+          id: REORDER_COLUMN_ID,
+          header: () => <span className="sr-only">Drag</span>,
+          cell: () => <DragHandle />,
+          enableSorting: false,
+          enableHiding: false,
+        },
+      ]
+    : [];
 
   // Add selection column if row selection is enabled
   const selectionColumns: ColumnDef<TData, TValue>[] = enableRowSelection
@@ -390,7 +510,7 @@ export function DataTable<TData, TValue>({
       ]
     : [];
 
-  const allColumns = [...selectionColumns, ...columns];
+  const allColumns = [...reorderColumns, ...selectionColumns, ...columns];
 
   const table = useReactTable({
     data,
@@ -465,6 +585,26 @@ export function DataTable<TData, TValue>({
   useEffect(() => {
     if (pageCount > 0 && pageIndex > pageCount - 1) table.setPageIndex(pageCount - 1);
   }, [pageCount, pageIndex, table]);
+
+  // A table nobody drags renders exactly as before: no DndContext, no sortable rows, no handle column.
+  const RowShell = rowReorder ? SortableRow : PlainRow;
+  const pageRowIds = table.getRowModel().rows.map((row) => row.id);
+  const sortable = (rows: React.ReactNode) =>
+    rowReorder ? (
+      <SortableContext items={pageRowIds} strategy={verticalListSortingStrategy}>
+        {rows}
+      </SortableContext>
+    ) : (
+      rows
+    );
+  const dnd = (node: React.ReactNode) =>
+    rowReorder ? (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        {node}
+      </DndContext>
+    ) : (
+      node
+    );
 
   return (
     <div className="relative space-y-3">
@@ -547,6 +687,7 @@ export function DataTable<TData, TValue>({
           the header stays in view and the sideways bar stays within reach,
           instead of sitting under row 50. Phones keep plain page scrolling. */}
       <div className="relative overflow-hidden rounded-lg border bg-card">
+        {dnd(
         <Table ref={tableRef} containerClassName="md:max-h-[calc(100svh-9rem)]">
           {/* Solid card under the tint - rows scroll beneath a sticky header. */}
           <TableHeader className="sticky top-0 z-10 bg-card [&_tr]:border-b-0">
@@ -582,10 +723,13 @@ export function DataTable<TData, TValue>({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row, index) => (
+              sortable(
+                table.getRowModel().rows.map((row, index) => (
                 <Fragment key={row.id}>
-                  <TableRow
-                    data-state={row.getIsSelected() && "selected"}
+                  <RowShell
+                    rowId={row.id}
+                    live={reorderLive}
+                    selected={row.getIsSelected()}
                     className={cn(
                       getRowClassName?.(row, index, sorting),
                       onRowClick && "cursor-pointer",
@@ -622,7 +766,7 @@ export function DataTable<TData, TValue>({
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
-                  </TableRow>
+                  </RowShell>
                   {renderExpandedRow && expandedRowId === row.id && (
                     <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={allColumns.length} className="bg-muted/20 p-4">
@@ -631,7 +775,8 @@ export function DataTable<TData, TValue>({
                     </TableRow>
                   )}
                 </Fragment>
-              ))
+                )),
+              )
             ) : (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={allColumns.length} className="h-40">
@@ -651,7 +796,8 @@ export function DataTable<TData, TValue>({
               </TableRow>
             )}
           </TableBody>
-        </Table>
+        </Table>,
+        )}
         {/* More columns this way. The trailing side is left to the pinned
             actions column when there is one - it draws its own edge. */}
         {!(pinsActions && edges.rtl) && (
