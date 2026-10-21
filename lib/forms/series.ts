@@ -118,6 +118,8 @@ export type SeriesDeparture = {
   start_date: string;
   end_date: string | null;
   series_code: string;
+  /** The tours.series row - a series form only takes its own series' departures. */
+  series_id?: string;
 };
 
 /**

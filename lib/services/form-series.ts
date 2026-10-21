@@ -120,6 +120,7 @@ export async function readDeparture(id: string): Promise<SeriesDeparture | null>
     start_date: data.start_date,
     end_date: data.end_date,
     series_code: series.code,
+    series_id: series.id,
   };
 }
 

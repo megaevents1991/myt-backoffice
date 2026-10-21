@@ -253,7 +253,8 @@ async function escortSuggestions(operatorOnly: boolean): Promise<string[]> {
             .order("id", { ascending: true }),
         5000,
       ),
-      readGuideNames(),
+      // The guides list is staff's; an operator gets the names on their own forms only.
+      operatorOnly ? Promise.resolve([] as string[]) : readGuideNames(),
     ]);
     const escortField = new Map<number, number>();
     for (const f of (fieldsRes.data ?? []) as { id: number; form_id: number }[]) {
@@ -483,6 +484,16 @@ export async function createTripLink(
 
   const departure = input.departureId ? await readDeparture(String(input.departureId)) : null;
   if (input.departureId && !departure) throw new Error("Departure not found");
+  if (departure) {
+    // A series form takes its own series' departures only; a general form takes any.
+    const { data: owner } = await liveRowsQuery((withSeries) =>
+      formsTable().select(withSeries ? "id,series_id" : "id").eq("id", formId).maybeSingle(),
+    );
+    const formSeries: string | null = owner?.series_id ?? null;
+    if (formSeries && departure.series_id !== formSeries) {
+      throw new Error("This departure belongs to another series than the form");
+    }
+  }
   const fromDeparture = departure ? departureTripCode(departure) : null;
   if (departure && !fromDeparture) throw new Error("This departure has no trip code - type it by hand");
 

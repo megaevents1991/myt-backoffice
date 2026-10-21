@@ -641,9 +641,13 @@ export async function getFormResponseCount(formId: number): Promise<number> {
   return count ?? 0;
 }
 
-/** Every tours series a form can belong to, by code, with its tour's name. */
+/**
+ * Every tours series a form can belong to, by code, with its tour's name. Staff only:
+ * tying a form to a series is a builder action, and an operator's trip-link card reads its
+ * own form's series through getTripLinkOptions.
+ */
 export async function listFormSeries(): Promise<FormSeries[]> {
-  await requireFormsAccess();
+  await requireStaff();
   return readSeries();
 }
 
