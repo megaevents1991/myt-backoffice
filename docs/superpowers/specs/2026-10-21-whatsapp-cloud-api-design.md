@@ -355,11 +355,13 @@ Meta requires opt-in as well and pauses templates whose quality drops. Rules:
   are not advertising: allowed on `none` too. Meta category `UTILITY`. "The tour is live" to a
   waiting list IS what they asked for (`notify` / `waitlist` = they asked to be told) - allowed on
   `none` for that tour only, category per Meta's review (likely `MARKETING`, paid as such).
-- Consent capture on the site (mega-family, same round): the contact form's checkbox "אני
-  מאשר/ת קבלת מבצעים והטבות" reads "...במייל ובוואטסאפ" and travels as `payload.marketing_consent:
-  true`; the footer newsletter form = consent by its nature (`kind: newsletter`); `leads_fill`
-  copies `payload.marketing_consent` to `customers.wa_consent = opted_in` (source `site_form`) when
-  the customer's consent is `none` - never over `opted_out`.
+- Consent capture on the site (mega-family, same round): the contact form's and the lead form's checkbox
+  "אני מאשר/ת קבלת מבצעים והטבות" reads "...במייל ובוואטסאפ" and travels as it always did
+  (`payload.acceptance: "on"`); the footer newsletter form = consent by its nature (`kind: newsletter`).
+  **As built (security reviews 21.10):** `leads_fill` sets `customers.wa_consent = form` - a CLAIM, source
+  `site_form:<lead id>` - and only on a customer the form itself CREATED; an unauthenticated form keyed by
+  a phone never flips a known customer, and `form` is not consent for marketing until the customer
+  confirms it (phase 3 double opt-in) - marketing sends need `opted_in` or `customer`.
 - Consent comes from FOUR sources only: the site form checkbox, the newsletter form, the booking
   terms (`customer`), and a staff mark with a note. **A reply is never consent in this round**: a
   "כן" to "do you want the 3-night option" must not become marketing consent, and the law allows

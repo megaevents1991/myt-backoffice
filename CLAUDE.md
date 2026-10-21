@@ -108,9 +108,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > site (mega-family) pre-fills the funnel from `rooms` and sends `lr` as `lead_ref`. Actions:
 > `lib/actions/tours-cases-actions.ts` (one action per screen load); screens `components/tours/cases/*`;
 > `/tours/bookings` and `/tours/leads` redirect. `scripts/tours-cases-sql-dryrun.mjs` runs the migration +
-> checks on prod inside a transaction that aborts itself (nothing stays). Not built (phase 2, needs the
-> WhatsApp Cloud API): automations, several reps on one number, "it is live" to potentials, bulk messages,
-> marketing reports.
+> checks on prod inside a transaction that aborts itself (nothing stays).
+> **WhatsApp Cloud API, phase 1 (2026-10-21; spec `docs/superpowers/specs/2026-10-21-whatsapp-cloud-api-design.md`, plan
+> `docs/superpowers/plans/2026-10-21-whatsapp-phase1.md`, migration `20261021172647_whatsapp_phase1.sql`).** The company's
+> number (054-227-2554) STAYS in the WhatsApp Business app and is connected to the Cloud API in COEXISTENCE: Embedded
+> Signup on Settings > WhatsApp (`components/tours/content/whatsapp-card.tsx`, `lib/actions/whatsapp-settings-actions.ts`);
+> our Meta app "Mega Tours Reporting" is the Tech Provider - Tom's Meta-side steps are
+> `docs/superpowers/specs/2026-10-21-whatsapp-meta-setup-tom-he.md`. `POST /api/whatsapp/webhook` (the signature IS the
+> guard; `lib/services/whatsapp-webhook.ts` -> `whatsapp-inbound.ts` with its deps injected, selftests
+> `whatsapp-webhook` / `whatsapp-inbound`) stores every message in `wa_messages` (idempotent on `wa_message_id`), the
+> echoes of what reps write from the app (`smb_message_echoes`) and the 6-month history too; a customer message after
+> 24 h of silence inserts a `whatsapp` lead that `leads_fill` joins to the customer's newest open card (FULL-number
+> phone match, `public.whatsapp_phone`) or opens a case - never "to file". The thread sits on the case and customer pages
+> (`whatsapp-thread.tsx`, cut to the cards the viewer sees), unread inbound messages are the TODAY reason `whatsapp` and
+> a chip on the board, `leads.wa_seen_at` is stamped when the card's fold opens. Consent is `customers.wa_consent` (none /
+> `form` = a site-form claim, only on a customer the form itself created / opted_in / customer / opted_out): staff mark
+> it with a note (`whatsapp.consent`), an opt-out word gets one free reply; marketing sends need opted_in / customer
+> (phase 3, with double opt-in). Sending: `lib/services/whatsapp-cloud.ts` over `lib/whatsapp/meta-provider.ts` (Graph
+> v26.0 behind `WaProvider` - a BSP is a later file, never a change to callers), every send recorded (`accepted` ->
+> `sent` / `failed`) and audited `whatsapp.sent` (ids only), 5 a second per company, free text only inside the 24-hour
+> window, a stored media keeps only an allowlisted content type. Tokens live in Vercel env only (block below). Pure rules
+> `lib/whatsapp/rules.ts` (selftest `whatsapp`). Not built: automations, broadcasts, a reply box on the card, double
+> opt-in (phases 2-3); several reps on one number IS the coexistence itself.
 > **Alon's rejects round (2026-10-15, same tab, migration `20261015172708_tours_cases_rejects.sql`).** (1) WhatsApp
 > opens the rep's APP (`whatsappAppLink`, `whatsapp://send`, no browser tab; Web stays in a menu - `WhatsAppButton` in
 > `case-ui.tsx`); the company's own number sends the booking link through the Cloud API
@@ -1822,6 +1841,17 @@ NEXT_SECRET_GA4_SA_JSON_B64=
 NEXT_SECRET_WHATSAPP_TOKEN=
 NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY=
 NEXT_SECRET_WHATSAPP_LINK_TEMPLATE=
+# WhatsApp phase 1 (2026-10-21, coexistence with the WhatsApp Business app). Our Meta app ("Mega Tours Reporting"), for
+# the Embedded Signup on Settings > WhatsApp: the app id is public (the JS SDK needs it); the app secret also signs every
+# webhook batch (X-Hub-Signature-256) - unset, POST /api/whatsapp/webhook refuses everything with one error line.
+NEXT_PUBLIC_WHATSAPP_APP_ID=
+NEXT_SECRET_WHATSAPP_APP_SECRET=
+# The Embedded Signup configuration id (Facebook Login for Business > Configurations) and the verify token we hand Meta
+# when the webhook is registered (any long random string; GET /api/whatsapp/webhook echoes the challenge only for it).
+NEXT_SECRET_WHATSAPP_CONFIG_ID=
+NEXT_SECRET_WHATSAPP_VERIFY_TOKEN=
+# Optional: a company's own sending token (wins over the shared NEXT_SECRET_WHATSAPP_TOKEN), same <SLUG> rule.
+NEXT_SECRET_WHATSAPP_TOKEN_MEGA_FAMILY=
 ```
 
 ## Database

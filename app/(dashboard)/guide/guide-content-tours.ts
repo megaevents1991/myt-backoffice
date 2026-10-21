@@ -991,6 +991,27 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
           t("The URL is secret and never shown again. Leave the field empty to keep it; \"Remove URL\" removes it on save.", "הכתובת סודית ולא מוצגת שוב. משאירים את השדה ריק כדי לשמור אותה; \"Remove URL\" מסיר אותה בשמירה."),
         ],
       },
+      {
+        title: t("Connect the company's WhatsApp number", "לחבר את WhatsApp של החברה"),
+        steps: [
+          t(
+            "Before you start: the number stays in the WhatsApp Business app on the phone (version 2.24.17 or newer); broadcast lists in the app stop working; computers linked to WhatsApp Web re-link afterwards; the choice to share the message history (6 months) is final.",
+            "לפני שמתחילים: המספר נשאר באפליקציית WhatsApp Business בטלפון (גרסה 2.24.17 ומעלה); רשימות תפוצה באפליקציה מפסיקות לעבוד; מחשבים שמחוברים ל-WhatsApp Web מתחברים מחדש אחר כך; הבחירה לשתף את היסטוריית ההודעות (6 חודשים) היא סופית.",
+          ),
+          t(
+            "Under \"WhatsApp\" tick \"share the history\" (recommended) and press \"Connect the company's WhatsApp\". Log in to Facebook as an admin of the business portfolio our app belongs to, pick that portfolio, and scan the QR code with the WhatsApp Business app on the phone (Linked devices).",
+            "תחת \"WhatsApp\" מסמנים \"לשתף את ההיסטוריה\" (מומלץ) ולוחצים \"חבר את WhatsApp של החברה\". מתחברים לפייסבוק כאדמין של הפורטפוליו העסקי שהאפליקציה שלנו שייכת לו, בוחרים בו, וסורקים את קוד ה-QR עם אפליקציית WhatsApp Business בטלפון (מכשירים מקושרים).",
+          ),
+          t(
+            "When it finishes the card shows the number, its mode and quality. \"Sync templates\" reads the approved message templates; \"Send a test to me\" sends one to the phone on your user profile.",
+            "כשזה מסתיים הכרטיס מציג את המספר, המצב והאיכות. \"סנכרן תבניות\" קורא את תבניות ההודעה המאושרות; \"שלח בדיקה אליי\" שולח אחת לטלפון שבפרופיל המשתמש שלך.",
+          ),
+          t(
+            "From then on every customer message lands on the customer's card: a new conversation opens an inquiry (one per 24 hours of silence), what reps write from the app shows in the thread too, and the TODAY list marks cards with unread messages.",
+            "מכאן כל הודעה של לקוח נוחתת בכרטיס הלקוח: שיחה חדשה פותחת פנייה (אחת ל-24 שעות שקט), מה שנציגים כותבים מהאפליקציה מופיע גם בשרשור, ורשימת היום מסמנת כרטיסים עם הודעות שלא נקראו.",
+          ),
+        ],
+      },
     ],
     points: [
       t("People and roles are not here - they are managed in [Users](/users).", "אנשים ותפקידים לא כאן - מנהלים אותם ב[משתמשים](/users)."),
