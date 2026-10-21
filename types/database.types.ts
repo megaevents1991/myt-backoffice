@@ -3477,6 +3477,7 @@ export type Database = {
           type: string
           updated_at: string | null
           utm: Json
+          wa_seen_at: string | null
         }
         Insert: {
           customer_id?: string | null
