@@ -820,15 +820,15 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     title: t("AI Factory", "AI Factory"),
     adminOnly: true,
     intro: t(
-      "One screen per agent running in this system - what it is, what it has learned, every AI call it made, and how well its calls have held up against what staff actually decided. The price-light judge is agent #1; the price advisor (agent #2, 2026-09-17) words and ranks price suggestions from facts the light already computed. More will follow the same shape.",
-      "מסך אחד לכל agent שרץ במערכת - מה הוא, מה הוא למד, כל קריאת AI שהוא ביצע, ומידת ההתאמה בין הקריאות שלו לבין מה שהצוות בפועל החליט. שופט הרמזור הוא agent מספר 1; יועץ המחיר (agent מספר 2, 17.09.2026) מנסח ומדרג הצעות מחיר מתוך עובדות שהרמזור עצמו חישב. עוד ילכו בעקבותיהם באותה תצורה.",
+      "One screen per agent running in this system - what it is, what it has learned, every AI call it made, and how well its calls have held up against what staff actually decided. The price-light judge is agent #1; the price advisor (agent #2, 2026-09-17) words and ranks price suggestions from facts the light already computed; the tour uploader (agent #3, 2026-10-21) reads a free-text brief into the plan behind [AI Uploader](/uploader). More will follow the same shape.",
+      "מסך אחד לכל agent שרץ במערכת - מה הוא, מה הוא למד, כל קריאת AI שהוא ביצע, ומידת ההתאמה בין הקריאות שלו לבין מה שהצוות בפועל החליט. שופט הרמזור הוא agent מספר 1; יועץ המחיר (agent מספר 2, 17.09.2026) מנסח ומדרג הצעות מחיר מתוך עובדות שהרמזור עצמו חישב; מעלה הטורים (agent מספר 3, 21.10.2026) קורא בריף חופשי לתוכנית שמאחורי [AI Uploader](/uploader). עוד ילכו בעקבותיהם באותה תצורה.",
     ),
     howTo: [
       {
         title: t("Open an agent and check it is on", "לפתוח agent ולבדוק שהוא דלוק"),
         steps: [
           t("Open [AI Factory](/ai-factory) (admins). Each card shows the agent's status pill, \"עלות החודש\", \"קריאות החודש\" and \"שיעור התאמה\".", "פותחים את [AI Factory](/ai-factory) (מנהלים). בכל כרטיס רואים את תג הסטטוס של הסוכן, \"עלות החודש\", \"קריאות החודש\" ו\"שיעור התאמה\"."),
-          t("Click a card (\"לפרטים\"), or go straight to the [Price light judge](/ai-factory/price-light) or the [Price advisor](/ai-factory/price-advisor).", "לוחצים על כרטיס (\"לפרטים\"), או נכנסים ישר ל[שופט הרמזור](/ai-factory/price-light) או ל[יועץ המחיר](/ai-factory/price-advisor)."),
+          t("Click a card (\"לפרטים\"), or go straight to the [Price light judge](/ai-factory/price-light), the [Price advisor](/ai-factory/price-advisor) or the [Tour uploader](/ai-factory/tour-uploader).", "לוחצים על כרטיס (\"לפרטים\"), או נכנסים ישר ל[שופט הרמזור](/ai-factory/price-light), ל[יועץ המחיר](/ai-factory/price-advisor) או ל[מעלה הטורים](/ai-factory/tour-uploader)."),
           t("The pill should read \"פעיל\". \"כבוי\", \"מפתח חסר\" or \"כבוי (מפסק ראשי)\" means the agent is not running.", "התג צריך להראות \"פעיל\". \"כבוי\", \"מפתח חסר\" או \"כבוי (מפסק ראשי)\" אומרים שהסוכן לא רץ."),
           t("To switch it on, pass the \"איך מדליקים\" list from the \"זהות\" tab to the developer. You can't turn an agent on from this screen.", "כדי להדליק אותו מעבירים למפתח את רשימת \"איך מדליקים\" מלשונית \"זהות\". אי אפשר להדליק סוכן מהמסך הזה."),
         ],
@@ -1040,7 +1040,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         steps: [
           t("Tick the events you want - the selection is kept when you change a tournament, category, performer, series or city, so a batch holds exactly what \"N selected\" says.", "מסמנים את האירועים שרוצים - הבחירה נשמרת גם כשמחליפים טורניר, קטגוריה, מבצע, סדרה או עיר, כך שהבאץ' מכיל בדיוק את מה ש-\"N selected\" אומר."),
           t("\"Create N events\" opens the batch wizard in a new tab: \"Save & Next (i/N)\", \"Skip this event\", and \"Save & Finish\" on the last step.", "\"Create N events\" פותח את וויזרד הבאץ' בלשונית חדשה: \"Save & Next (i/N)\", \"Skip this event\", ו-\"Save & Finish\" בשלב האחרון."),
-          t("Or \"Send to factory\" (admins) - drafts build in the background and [Events Factory](/factory) opens for approval. \"Clear\" empties the selection.", "או \"Send to factory\" (מנהלים) - הטיוטות נבנות ברקע ו[מפעל האירועים](/factory) נפתח לאישור. \"Clear\" מנקה את הבחירה."),
+          t("To upload a whole tour or a team's home games hands-off, don't select rows here - write a brief in [AI Uploader](/uploader) (admins); the events are built hidden and you approve them there. \"Clear\" empties the selection.", "כדי להעלות טור שלם או משחקי בית של קבוצה בלי עבודה ידנית לא מסמנים שורות כאן - כותבים בריף ב-[AI Uploader](/uploader) (מנהלים); האירועים נבנים מוסתרים ומאשרים אותם שם. \"Clear\" מנקה את הבחירה."),
         ],
       },
       {
@@ -1075,8 +1075,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         "TixStock — המקור הגדול ביותר; אירועים לילית ב־02:00, מחירים 4 פעמים ביום, אירועי עבר נמחקים אוטומטית. החיפוש בטבלאות האלה מבוסס מילים — \"real madrid champion\" מוצא את מה שהתכוונתם.",
       ),
       t(
-        "From any provider row: open the single-event page to create one event, or multi-select rows for Batch create / Send to factory.",
-        "מכל שורת ספק: פותחים את עמוד האירוע הבודד ליצירה אחת, או מסמנים כמה שורות ל־Batch create / שליחה למפעל.",
+        "From any provider row: open the single-event page to create one event, or multi-select rows for Batch create. A whole tour or a team's home games are uploaded through AI Uploader instead.",
+        "מכל שורת ספק: פותחים את עמוד האירוע הבודד ליצירה אחת, או מסמנים כמה שורות ל־Batch create. טור שלם או משחקי בית של קבוצה מעלים דרך AI Uploader במקום.",
       ),
       t(
         "Our own tickets: on a TixStock event, Suppliers & zones → \"Our own ticket\" adds seats WE hold - name, price (USD, the ticket part), number of seats, zone. The site sells them beside the suppliers (in a shared zone the cheaper offer wins) and stops when the seats are gone: every live reservation of that ticket takes seats (Cancelled / Lost / 24Save don't), and checkout re-counts before it books. The board shows \"sold X · left Y\"; the order mail and reservation page say \"our stock - nothing to buy\". \"Together (up to)\" says how many of the seats sit together: a party up to that size is promised to sit together, a bigger one in groups of up to that many; empty = no seating promise.",
@@ -1095,97 +1095,126 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
-    id: "batch-factory",
-    nav: "/factory",
+    id: "uploader",
+    nav: "/uploader",
     productType: "events",
+    adminOnly: true,
+    title: t("AI Uploader", "העלאה חכמה (AI Uploader)"),
+    intro: t(
+      "Type a brief about a tour - an artist's shows in Europe, a football team's home games, a competition round - and the AI Uploader finds every show at TixStock and LiveTickets, builds one HIDDEN event per show with all the tickets, and lays them out on a review board with what it decided and what is missing. Nothing reaches the site until an admin presses Approve.",
+      "כותבים בריף על טור - הופעות של אמן באירופה, משחקי בית של קבוצה, סבב בתחרות - וה-AI Uploader מוצא כל הופעה אצל TixStock ו-LiveTickets, בונה אירוע מוסתר אחד לכל הופעה עם כל הכרטיסים, ומסדר אותם על לוח בדיקה עם מה שהחליט ומה שחסר. שום דבר לא מגיע לאתר עד שמנהל לוחץ אישור.",
+    ),
     howTo: [
       {
-        title: t("Send provider events to the factory (admins)", "לשלוח אירועי ספק למפעל (מנהלים)"),
+        title: t("Upload an artist's tour", "להעלות טור של אמן"),
         steps: [
-          t("Open a provider page - [TixStock](/tixstock-events), [Sports](/sports-events), [Live](/live-events) or [P1](/p1-events) - and tick the events you want.", "פותחים עמוד ספק - [TixStock](/tixstock-events), [ספורט](/sports-events), [Live](/live-events) או [P1](/p1-events) - ומסמנים את האירועים שרוצים."),
-          t("In the bottom bar (\"N selected\") click \"Send to factory\". Each event becomes a draft and [Events Factory](/factory) opens in a new tab.", "בפס שלמטה (\"N selected\") לוחצים \"Send to factory\". כל אירוע הופך לטיוטה ו[מפעל האירועים](/factory) נפתח בלשונית חדשה."),
-          t("Drafts are not on the site - nothing reaches customers until you approve. Want to review each event on the full form instead? Use \"Create N events\" (the batch wizard).", "טיוטות לא מופיעות באתר - שום דבר לא מגיע ללקוחות עד שמאשרים. רוצים לעבור על כל אירוע בטופס המלא? \"Create N events\" (וויזרד הבאץ')."),
+          t("Open [AI Uploader](/uploader) (admins) and write what to upload the way you would write a colleague - or click the \"טור של אמן\" example under the box and edit it. A good brief says who (one artist), which dates, what to do with a show that has no flight-and-hotel location (ticket only, or skip) and the markups. The example: \"יצא טור של אריק קלפטון באירופה. לכל היעדים שיש לנו לוקיישן קיים - לעלות כחבילה. לאלו שאין לוקיישן - לעלות ככרטיס בלבד. מארק אפ לכרטיס בלבד - 250 דולר. אדישנל מארק אפ - 75 דולר. כל הספקים שלנו.\"", "פותחים את [AI Uploader](/uploader) (מנהלים) וכותבים מה להעלות כמו שכותבים לעמית - או לוחצים על הדוגמה \"טור של אמן\" מתחת לתיבה ומתקנים אותה. בריף טוב אומר מי (אמן אחד), באילו תאריכים, מה לעשות בהופעה שאין לה לוקיישן לטיסה ומלון (כרטיס בלבד או לדלג) וכמה מארק אפ. הדוגמה: \"יצא טור של אריק קלפטון באירופה. לכל היעדים שיש לנו לוקיישן קיים - לעלות כחבילה. לאלו שאין לוקיישן - לעלות ככרטיס בלבד. מארק אפ לכרטיס בלבד - 250 דולר. אדישנל מארק אפ - 75 דולר. כל הספקים שלנו.\""),
+          t("Click \"פענח\". The \"מה הבנתי\" card shows how the agent read the brief: the subject (artist / team / competition, Hebrew and English name), the dates, how to build a show with and without a location, the suppliers (always TixStock and LiveTickets) and the two markups. A markup the brief did not state is filled from the last run and tagged \"מהפעם הקודמת\". Fix any field right on the card; \"עוד מהבריף\" lists what the agent could not place.", "לוחצים \"פענח\". הכרטיס \"מה הבנתי\" מראה איך הסוכן קרא את הבריף: הנושא (אמן / קבוצה / תחרות, שם בעברית ובאנגלית), התאריכים, איך בונים הופעה עם לוקיישן ובלי, הספקים (תמיד TixStock ו-LiveTickets) ושני המארק אפים. מארק אפ שהבריף לא אמר ממולא מהריצה הקודמת ומסומן \"מהפעם הקודמת\". מתקנים כל שדה ישר בכרטיס; \"עוד מהבריף\" מפרט מה שהסוכן לא ידע לשבץ."),
+          t("Read the line under the card - \"נמצאו N הופעות · N קיימות · N שאלות\" and the cities. It is only a search of the suppliers' catalogs: nothing is built yet, and a show that already exists as an event is counted \"קיימות\" and left alone.", "קוראים את השורה מתחת לכרטיס - \"נמצאו N הופעות · N קיימות · N שאלות\" והערים. זו רק חיפוש בקטלוגים של הספקים: עוד לא נבנה כלום, והופעה שכבר קיימת כאירוע נספרת \"קיימות\" ונשארת כמו שהיא."),
+          t("Click \"בנה את האירועים (N)\". The run's board opens and a card appears as each show is built (a few seconds each). Keep the board open while it builds: \"עצור\" stops after the show in progress, \"המשך\" goes on, and a board you closed picks up where it stopped when you open the run again from the list under the brief.", "לוחצים \"בנה את האירועים (N)\". לוח הריצה נפתח וכרטיס מופיע עם כל הופעה שנבנית (כמה שניות לכל אחת). משאירים את הלוח פתוח בזמן הבנייה: \"עצור\" עוצר אחרי ההופעה שבתהליך, \"המשך\" ממשיך, ולוח שסגרתם ממשיך מאיפה שעצר כשפותחים שוב את הריצה מהרשימה מתחת לבריף."),
+          t("Go through the cards and approve them - see \"Approve, edit or reject\" below. Until then every event is hidden.", "עוברים על הכרטיסים ומאשרים - ראו \"לאשר, לערוך או לדחות\" למטה. עד אז כל האירועים מוסתרים."),
         ],
       },
       {
-        title: t("Let the drafts build", "לתת לטיוטות להיבנות"),
+        title: t("Upload a team's home games", "להעלות משחקי בית של קבוצה"),
         steps: [
-          t("Keep [Events Factory](/factory) open - the build loop starts by itself, one draft at a time (IATA, stadium-memory tickets, live flight/hotel prices).", "משאירים את [מפעל האירועים](/factory) פתוח - לולאת הבנייה מתחילה לבד, טיוטה אחת בכל פעם (IATA, כרטיסים מזיכרון האצטדיון, מחירי טיסה/מלון חיים)."),
-          t("The bar shows \"נבנו X מתוך Y\". \"עצור\" stops after the current draft; closing the page pauses, reopening resumes.", "הפס מציג \"נבנו X מתוך Y\". \"עצור\" עוצר אחרי הטיוטה הנוכחית; סגירת הדף משהה, פתיחה מחדש ממשיכה."),
-          t("Each row ends \"מוכן\" (complete), \"חסר קלט\" (something missing, amber) or \"שגיאה\" (hover the red text for why).", "כל שורה מסתיימת ב-\"מוכן\" (שלם), \"חסר קלט\" (חסר משהו, בענבר) או \"שגיאה\" (ריחוף על הטקסט האדום מסביר)."),
+          t("In the brief box click the \"משחקי בית של קבוצה\" example, or write your own. The example: \"להעלות את כל משחקי הבית של ליברפול לעונה הקרובה. חבילה לכל יעד עם לוקיישן, אחרת לדלג. אדישנל מארק אפ 75 דולר.\"", "בתיבת הבריף לוחצים על הדוגמה \"משחקי בית של קבוצה\" או כותבים בריף משלכם. הדוגמה: \"להעלות את כל משחקי הבית של ליברפול לעונה הקרובה. חבילה לכל יעד עם לוקיישן, אחרת לדלג. אדישנל מארק אפ 75 דולר.\""),
+          t("Click \"פענח\". For a team the plan card has the switch \"רק משחקי בית\" - ON unless the brief asked for all games or away games. Turn it off to take every fixture. A whole round of a competition works the same way: the subject kind is \"תחרות\" and \"סבב\" holds the round.", "לוחצים \"פענח\". לקבוצה יש בכרטיס התוכנית את המתג \"רק משחקי בית\" - דלוק, אלא אם הבריף ביקש את כל המשחקים או משחקי חוץ. מכבים אותו כדי לקחת כל משחק. סבב שלם בתחרות עובד אותו דבר: סוג הנושא \"תחרות\" ו\"סבב\" מחזיק את הסבב."),
+          t("A football brief usually says \"לדלג\" for a show with no location. The skipped games show on the board as grey cards with the reason and \"צור ידנית\" (opens a new event form).", "בריף כדורגל בדרך כלל אומר \"לדלג\" להופעה בלי לוקיישן. המשחקים שדולגו מופיעים בלוח ככרטיסים אפורים עם הסיבה ו-\"צור ידנית\" (פותח טופס אירוע חדש)."),
+          t("A stadium more than 50 km from every location of ours gets no package by itself. The card offers \"בנה כחבילה דרך <עיר> עם פיצול מלון\" - one click builds that show as a two-city package (fly to our nearest location, hotel split between the two cities), and the system remembers the venue so the next runs do it on their own.", "אצטדיון שרחוק יותר מ-50 ק\"מ מכל לוקיישן שלנו לא מקבל חבילה מעצמו. הכרטיס מציע \"בנה כחבילה דרך <עיר> עם פיצול מלון\" - לחיצה אחת בונה את ההופעה כחבילה דו-עירונית (טיסה ללוקיישן הקרוב שלנו, לינה מפוצלת בין שתי הערים), והמערכת זוכרת את האולם כך שהריצות הבאות עושות זאת לבד."),
+          t("Build and review exactly as for an artist's tour (steps 4-5 above).", "בונים ובודקים בדיוק כמו בטור של אמן (שלבים 4-5 למעלה)."),
         ],
       },
       {
-        title: t("Fill in what the automation missed", "להשלים מה שהאוטומציה לא מילאה"),
+        title: t("Answer a question from the AI", "לענות לשאלה של ה-AI"),
         steps: [
-          t("The \"Needs input\" view shows only \"חסר קלט\" rows. Amber cells are what's missing: \"IATA\", \"Flight $\", \"Hotel $\" - type and press Enter; it saves and the status updates.", "התצוגה \"Needs input\" מציגה רק שורות \"חסר קלט\". תאים בענבר הם מה שחסר: \"IATA\", \"Flight $\", \"Hotel $\" - מקלידים ולוחצים Enter; נשמר והסטטוס מתעדכן."),
-          t("Typing an IATA doesn't re-quote the flight - fill \"Flight $\" too. The \"Event\" name can also be fixed inline.", "הקלדת IATA לא מתמחרת את הטיסה מחדש - ממלאים גם את \"Flight $\". גם את השם בעמודת \"Event\" אפשר לתקן בגריד."),
-          t("An amber \"Tickets\" count (0) can't be fixed here and such a draft is never approved: \"מחק\" it and use the batch wizard or the single-event page. Editing a draft that was already created is refused - edit the event itself.", "ספירת \"Tickets\" בענבר (0) לא מתקנים כאן וטיוטה כזו לא מאושרת: \"מחק\" ואז וויזרד הבאץ' או עמוד האירוע הבודד. עריכת טיוטה שכבר נוצרה נחסמת - עורכים את האירוע עצמו."),
+          t("When the builder cannot decide a show alone - two shows in one city on one day, a date that differs by a day between the suppliers, a venue with no coordinates (\"לאיזה מיקום לטוס?\") - that card stops as a question and the rest of the run goes on.", "כשהבונה לא מצליח להכריע הופעה לבד - שתי הופעות באותה עיר ביום אחד, תאריך שמשתנה ביום בין הספקים, אולם בלי קואורדינטות (\"לאיזה מיקום לטוס?\") - הכרטיס הזה עוצר כשאלה ושאר הריצה ממשיכה."),
+          t("You hear about it three ways: an amber bar at the top of the board (\"ה-AI מחכה לך: ...\"), a task in [Tasks](/tasks) assigned to whoever started the run (the usual assignment mail goes out too), and a toast \"🟠 ה-AI מחכה לתשובה\" on any dashboard screen, within about a minute, with \"פתח את הלוח\". Closing the toast keeps it quiet until a new question arrives.", "מקבלים על זה הודעה בשלוש דרכים: פס ענבר בראש הלוח (\"ה-AI מחכה לך: ...\"), משימה ב[משימות](/tasks) על מי שהתחיל את הריצה (גם מייל השיוך הרגיל יוצא), והודעה \"🟠 ה-AI מחכה לתשובה\" בכל מסך בדשבורד, תוך כדקה, עם \"פתח את הלוח\". סגירת ההודעה משתיקה אותה עד שמגיעה שאלה חדשה."),
+          t("On the question card pick one of the options - or type a free answer where the box is offered - and click \"ענה\". The task closes by itself and the show goes back to building with your answer.", "בכרטיס השאלה בוחרים אחת מהאפשרויות - או כותבים תשובה חופשית במקום שהתיבה מוצעת - ולוחצים \"ענה\". המשימה נסגרת לבד וההופעה חוזרת להיבנות עם התשובה שלכם."),
+          t("\"דלג על ההופעה\" is an answer too: the show is skipped and its card turns grey. An answer is remembered - the same question about the same show in a later run is answered from memory (\"לפי תשובה קודמת\") and not asked again.", "\"דלג על ההופעה\" היא גם תשובה: ההופעה מדולגת והכרטיס שלה נהיה אפור. תשובה נזכרת - אותה שאלה על אותה הופעה בריצה מאוחרת יותר נענית מהזיכרון (\"לפי תשובה קודמת\") ולא נשאלת שוב."),
         ],
       },
       {
-        title: t("Approve drafts into real events", "לאשר טיוטות לאירועים אמיתיים"),
+        title: t("Approve, edit or reject", "לאשר, לערוך או לדחות"),
         steps: [
-          t("Open the \"Ready\" view, tick the rows and click \"אשר נבחרים\" - each draft becomes a live catalog event.", "פותחים את התצוגה \"Ready\", מסמנים שורות ולוחצים \"אשר נבחרים\" - כל טיוטה הופכת לאירוע חי בקטלוג."),
-          t("The row turns \"נוצר\" with a \"לאירוע\" link - open it and check images, tags and tickets like any event.", "השורה הופכת ל-\"נוצר\" עם קישור \"לאירוע\" - פותחים ובודקים תמונות, תגיות וכרטיסים כמו בכל אירוע."),
-          t("Only \"מוכן\" drafts are created - \"חסר קלט\" and \"שגיאה\" rows are skipped, and the toast says how many and why.", "רק טיוטות \"מוכן\" נוצרות - שורות \"חסר קלט\" ו\"שגיאה\" מדולגות, וההודעה אומרת כמה ולמה."),
-          t("\"מחק\" asks first, then deletes the selected drafts for good. Created and failed rows clean up after 30 days.", "\"מחק\" מבקש אישור ואז מוחק את הטיוטות המסומנות לצמיתות. שורות שנוצרו או נכשלו מתנקות אחרי 30 יום."),
+          t("Every built event is hidden (\"מוסתר\"): not on the site, not in the feeds, and the checkout refuses it. A card shows the picture the site will draw, city · venue · date, the mode (\"חבילה\" or \"כרטיס בלבד\") and \"החל מ-$X\", the supplier chips, the decisions the agent took (one checkable line each) and amber warnings with a fix link (a missing artist page, no cut-out, a new venue with no zone template ...).", "כל אירוע שנבנה מוסתר (\"מוסתר\"): לא באתר, לא בפידים, והקופה דוחה אותו. הכרטיס מראה את התמונה שהאתר ישרטט, עיר · אולם · תאריך, את המצב (\"חבילה\" או \"כרטיס בלבד\") ו-\"החל מ-$X\", צ'יפים של הספקים, את ההחלטות שהסוכן קיבל (שורה אחת שאפשר לבדוק לכל החלטה) ואזהרות בענבר עם קישור לתיקון (עמוד אמן חסר, בלי cut-out, אולם חדש בלי תבנית אזורים ...)."),
+          t("A red \"חוסם אישור\" line (no base price for a package, no ticket-only markup) switches the approve button off until you fill it in the event editor - the check runs again when you press approve.", "שורה אדומה \"חוסם אישור\" (אין מחיר בסיס לחבילה, אין מארק אפ לכרטיס בלבד) מכבה את כפתור האישור עד שממלאים בעורך האירוע - הבדיקה רצה שוב בלחיצה על אשר."),
+          t("\"אשר\" lists the event on the site at once and the card turns \"באתר ✓\" (who approved, link to the site). The ad picture is drawn on the next hourly creative tick.", "\"אשר\" מעלה את האירוע לאתר מיד והכרטיס נהפך ל-\"באתר ✓\" (מי אישר, קישור לאתר). תמונת המודעה מצוירת בטיק הקריאייטיב השעתי הבא."),
+          t("\"ערוך\" opens the event in the editor in a new tab. Change what you need, save, and come back: the card carries a \"נערך\" tag, and what you changed is recorded as a lesson when you approve.", "\"ערוך\" פותח את האירוע בעורך בלשונית חדשה. משנים מה שצריך, שומרים וחוזרים: על הכרטיס תג \"נערך\", ומה ששיניתם נרשם כלקח כשמאשרים."),
+          t("\"דחה\" asks for a reason (at least 3 characters - the agent reads it next time) and has the switch \"אל תציע את ההופעה הזו שוב\" (ON: later runs of this subject skip the show as \"נדחה בעבר\"; OFF: the next run builds it again). The hidden event is deleted. To bring back a show you rejected for good, create it by hand with \"צור ידנית\".", "\"דחה\" מבקש סיבה (לפחות 3 תווים - הסוכן קורא אותה בפעם הבאה) ויש בו את המתג \"אל תציע את ההופעה הזו שוב\" (דלוק: ריצות מאוחרות של הנושא מדלגות על ההופעה כ-\"נדחה בעבר\"; כבוי: הריצה הבאה בונה אותה שוב). האירוע המוסתר נמחק. כדי להחזיר הופעה שדחיתם סופית יוצרים אותה ביד עם \"צור ידנית\"."),
+          t("\"אשר הכל (N) ← עולה לאתר\" in the bottom bar approves every ready card that has no blocker, after one confirmation. Keyboard: ↑ / ↓ moves between cards, A approves the focused one, R opens reject.", "\"אשר הכל (N) ← עולה לאתר\" בפס התחתון מאשר כל כרטיס מוכן בלי חוסם, אחרי אישור אחד. מקלדת: ↑ / ↓ עוברים בין כרטיסים, A מאשר את הכרטיס שבפוקוס, R פותח דחייה."),
         ],
       },
     ],
-    title: t("Batch wizard & the Factory", "וויזרד הבאץ' והמפעל"),
-    intro: t(
-      "Three ways to create events, from hands-on to hands-off. All three share the same automation blocks: stadium memory, live price quotes, automatic IATA.",
-      "שלוש דרכים ליצור אירועים, מידני ועד אוטומטי. שלושתן חולקות את אותם רכיבי אוטומציה: זיכרון אצטדיון, תמחור חי, IATA אוטומטי.",
-    ),
     flow: {
-      title: t("Three creation paths", "שלושת מסלולי היצירה"),
+      title: t("From a brief to the site", "מבריף לאתר"),
       steps: [
         {
-          label: t("Single: provider page → form", "בודד: עמוד ספק → טופס"),
-          sub: t("full control, live provider tickets", "שליטה מלאה, כרטיסי ספק חיים"),
+          label: t("Brief → plan card", "בריף → כרטיס תוכנית"),
+          sub: t("the agent's one AI call; you confirm", "קריאת ה-AI היחידה; אתם מאשרים"),
         },
         {
-          label: t("Batch: multi-select → wizard", "באץ': מולטי־בחירה → וויזרד"),
-          sub: t("review each step, form drags along", "סוקרים כל שלב, הטופס נגרר"),
+          label: t("Search → build (hidden)", "חיפוש → בנייה (מוסתר)"),
+          sub: t("code, not AI: shows, tickets, location, prices", "קוד, לא AI: הופעות, כרטיסים, לוקיישן, מחירים"),
         },
         {
-          label: t("Factory: send → grid → approve", "מפעל: שליחה → גריד → אישור"),
-          sub: t("drafts build themselves, you approve in bulk", "טיוטות נבנות לבד, מאשרים בבת אחת"),
+          label: t("Questions → answers", "שאלות → תשובות"),
+          sub: t("only what code cannot decide", "רק מה שהקוד לא מכריע"),
+        },
+        {
+          label: t("Board → Approve", "לוח → אישור"),
+          sub: t("the event goes live", "האירוע עולה לאתר"),
         },
       ],
     },
     points: [
       t(
-        "Multi-team batch (TixStock): selection accumulates across teams with a chips row; \"select all home games of X\" uses the name-starts-with-team rule; crossing into another team - or another venue, as on an artist's tour - resets the dragged form so the previous venue doesn't leak.",
-        "באץ' רב־קבוצות (TixStock): הבחירה נצברת בין קבוצות עם שורת צ'יפים; \"בחר את כל משחקי הבית של X\" משתמש בכלל שם־מתחיל־בשם־הקבוצה; מעבר לקבוצה אחרת - או לאולם אחר, כמו בסיבוב הופעות של אמן - מאפס את הטופס הנגרר כדי שהמתחם הקודם לא ידלוף.",
+        "What is AI and what is code: the agent's only job is reading the brief into the plan. Finding the shows, joining the two suppliers' rows into one show, the tickets, the location, the dates and every price are plain code - the flight and hotel bases from the one pricing rule, ticket prices from the supplier formula, markups only from the brief. The AI never writes a price and never guesses a match.",
+        "מה AI ומה קוד: התפקיד היחיד של הסוכן הוא לקרוא את הבריף לתוכנית. מציאת ההופעות, חיבור השורות של שני הספקים להופעה אחת, הכרטיסים, הלוקיישן, התאריכים וכל מחיר הם קוד פשוט - בסיסי הטיסה והמלון מכלל התמחור היחיד, מחירי הכרטיסים מנוסחת הספק, מארק אפים רק מהבריף. ה-AI אף פעם לא כותב מחיר ואף פעם לא מנחש התאמה.",
       ),
       t(
-        "Stadium memory: a step that lands with no ticket categories copies the TixStock categories of the last event on the same seat map - the stadium's drawing, never the city (banner + undo). The copies carry this game's TixStock id, so live listings reprice them. A generic map (\"General Admission\") remembers nothing. Only football reaches the stadium's OTHER drawings (football drawings of one stadium are the same seating); a concert remembers only its own drawing - each tour has its own stage.",
-        "זיכרון אצטדיון: שלב שמגיע בלי קטגוריות כרטיסים מעתיק את קטגוריות ה-TixStock מהאירוע האחרון על אותה מפת מושבים - השרטוט של האצטדיון, לא העיר (באנר + ביטול). ההעתקים נושאים את מזהה ה-TixStock של המשחק הזה, כך שהליסטינגים החיים מתמחרים אותם מחדש. מפה כללית (\"General Admission\") לא זוכרת כלום. רק כדורגל מגיע לשרטוטים האחרים של האצטדיון (שרטוטי כדורגל של אותו אצטדיון הם אותה ישיבה); הופעה זוכרת רק את השרטוט שלה - לכל סיבוב הופעות במה משלו.",
+        "What gets found: a row whose performer is the artist (a tribute act that only has the name in its title is left out); a team's home games; a competition's fixtures. Rows from the two suppliers with the same city and day are one show; two shows on one day, or a one-day gap between the suppliers, become a question. A show with a flight-and-hotel location within 50 km is a package; without one it follows the brief (ticket only, or skipped).",
+        "מה נמצא: שורה שהמבצע בה הוא האמן (מופע מחווה שרק מזכיר את השם בכותרת נשאר בחוץ); משחקי הבית של קבוצה; משחקי תחרות. שורות של שני הספקים באותה עיר וביום זהה הן הופעה אחת; שתי הופעות ביום אחד, או פער של יום בין הספקים, הופכים לשאלה. הופעה עם לוקיישן לטיסה ומלון עד 50 ק\"מ היא חבילה; בלי לוקיישן היא עוקבת אחרי הבריף (כרטיס בלבד, או דילוג).",
       ),
       t(
-        "Save & Next carries only TixStock tickets to the next game. LiveTickets tickets and our own stock belong to ONE game - attach them again on each step (the venue template zones LiveTickets); a banner says how many were left behind.",
-        "Save & Next מעביר למשחק הבא רק כרטיסי TixStock. כרטיסי LiveTickets והמלאי שלנו שייכים למשחק אחד - מצרפים אותם מחדש בכל שלב (תבנית האצטדיון משייכת את LiveTickets לאזורים); באנר מראה כמה לא הועברו.",
+        "What it learns: markups you correct on the plan card, your answers, rejections with their reason, what you edit before approving, and a venue you built two-city. They are read back on the next run (and exact repeats are answered from memory), so the next tour has fewer gaps and fewer questions. Thumbs and taught rules for it live in [AI Factory → Tour uploader](/ai-factory/tour-uploader).",
+        "מה הוא לומד: מארק אפים שתיקנתם בכרטיס התוכנית, התשובות שלכם, דחיות עם הסיבה, מה שערכתם לפני אישור, ואולם שבניתם דו-עירוני. כל אלה נקראים בריצה הבאה (וחזרות מדויקות נענות מהזיכרון), כך שלטור הבא יהיו פחות פערים ופחות שאלות. אגודלים וחוקים שמלמדים אותו נמצאים ב-[AI Factory ← Tour uploader](/ai-factory/tour-uploader).",
       ),
       t(
-        "Auto-fill: once a step has an IATA and dates, flight+hotel base prices fill themselves in the background - empty fields only, with a green flash. A venue without IATA resolves it from the nearest known location within 50km (that's what makes artist tours work city by city).",
-        "מילוי אוטומטי: ברגע שלשלב יש IATA ותאריכים, מחירי הבסיס מתמלאים ברקע — שדות ריקים בלבד, עם הבהוב ירוק. מתחם בלי IATA פותר אותו מהלוקיישן הקרוב עד 50 ק\"מ (זה מה שמאפשר סיבובי הופעות עיר־עיר).",
+        "Where a hidden event shows up: in [Events](/events) with a \"מוסתר\" tag and a \"מוסתרים\" filter. It is not in the Meta product feed picker (nor in any other feed, nor in the price-light and base-price runs) until it is approved. Its page opens by direct link as a preview, but nobody can complete an order on it.",
+        "איפה אירוע מוסתר מופיע: ב-[אירועים](/events) עם תג \"מוסתר\" ופילטר \"מוסתרים\". הוא לא בבורר של פיד המוצרים למטא (ולא באף פיד אחר, ולא בריצות הרמזור ובסיסי המחיר) עד שהוא מאושר. אפשר לפתוח את העמוד שלו בקישור ישיר כתצוגה מקדימה, אבל אף אחד לא יכול להשלים עליו הזמנה.",
       ),
       t(
-        "The Factory: Send to factory from any provider creates draft rows; a stoppable loop builds them one by one through the same blocks; the grid shows what automation couldn't fill in amber, you edit inline and approve selected - each approval creates a real catalog event.",
-        "המפעל: Send to factory מכל ספק יוצר שורות טיוטה; לולאה עם עצירה בונה אותן אחת־אחת דרך אותם רכיבים; הגריד מראה בענבר מה האוטומציה לא הצליחה למלא, עורכים אינליין ומאשרים נבחרים — כל אישור יוצר אירוע קטלוג אמיתי.",
+        "When the agent is off (\"הסוכן כבוי\" next to the title) the brief cannot be read; the same screen offers \"מלאו את התוכנית\" - the plan card as an empty form. Searching, building, questions and approvals work the same. The batch wizard (\"Create N events\" on the provider tables) stays as the hands-on path.",
+        "כשהסוכן כבוי (\"הסוכן כבוי\" ליד הכותרת) אי אפשר לקרוא את הבריף; אותו מסך מציע \"מלאו את התוכנית\" - כרטיס התוכנית כטופס ריק. חיפוש, בנייה, שאלות ואישורים עובדים אותו דבר. וויזרד הבאץ' (\"Create N events\" בטבלאות הספקים) נשאר כמסלול הידני.",
+      ),
+      t(
+        "Stadium memory still serves both paths: a step with no ticket categories copies the TixStock categories of the last event on the same seat map - the stadium's drawing, never the city. A generic map (\"General Admission\") remembers nothing; only football reaches the stadium's other drawings; Save & Next carries only TixStock tickets (LiveTickets and our own stock belong to one game).",
+        "זיכרון האצטדיון עדיין משרת את שני המסלולים: שלב בלי קטגוריות כרטיסים מעתיק את קטגוריות ה-TixStock מהאירוע האחרון על אותה מפת מושבים - השרטוט של האצטדיון, לא העיר. מפה כללית (\"General Admission\") לא זוכרת כלום; רק כדורגל מגיע לשרטוטים האחרים של האצטדיון; Save & Next מעביר רק כרטיסי TixStock (LiveTickets והמלאי שלנו שייכים למשחק אחד).",
       ),
     ],
     rules: [
       t(
-        "Drafts are invisible to customers by design - they live in their own table. Nothing reaches the site until you press Approve.",
-        "טיוטות שקופות ללקוחות בכוונה — הן חיות בטבלה נפרדת. שום דבר לא מגיע לאתר עד שלוחצים אישור.",
+        "Hidden until approved. A built event is invisible to customers, feeds and checkout until an admin presses Approve - there is no auto-approve, however many good runs it has had.",
+        "מוסתר עד אישור. אירוע שנבנה בלתי נראה ללקוחות, לפידים ולקופה עד שמנהל לוחץ אשר - אין אישור אוטומטי, גם אחרי הרבה ריצות טובות.",
+      ),
+      t(
+        "No tickets, no event. A show that neither TixStock nor LiveTickets sells tickets for is not created - its card is grey with \"אין כרטיסים למכירה\" and \"צור ידנית\".",
+        "אין כרטיסים - אין אירוע. הופעה שאף אחד מ-TixStock ו-LiveTickets לא מוכר לה כרטיסים לא נוצרת - הכרטיס שלה אפור עם \"אין כרטיסים למכירה\" ו-\"צור ידנית\".",
+      ),
+      t(
+        "Never a guessed match. When the suppliers disagree or a venue cannot be placed, the show waits for your answer; it never guesses a supplier show, a date or a flight city.",
+        "אף פעם לא התאמה מנוחשת. כשהספקים לא מסכימים או שאי אפשר לשבץ אולם, ההופעה מחכה לתשובה שלכם; היא לא מנחשת הופעת ספק, תאריך או עיר טיסה.",
+      ),
+      t(
+        "Rehearse with the test-run switch. \"ריצת בדיקה\" at the bottom of the plan card also marks every event of the run as a test event - the marking the site and the feeds already skip - so a rehearsal stays out of customers' sight even if something about the hidden flag is off. Use it for the first run of a new kind of brief, then reject the test events.",
+        "מתאמנים עם מתג ריצת הבדיקה. \"ריצת בדיקה\" בתחתית כרטיס התוכנית מסמן את כל אירועי הריצה גם כאירועי בדיקה - סימון שהאתר והפידים כבר מדלגים עליו - כך שהתנסות נשארת רחוקה מעיני הלקוחות גם אם משהו בדגל ההסתרה לא תקין. משתמשים בו בריצה הראשונה של סוג חדש של בריף, ואחר כך דוחים את אירועי הבדיקה.",
       ),
     ],
     links: [
-      { label: t("The Factory", "המפעל"), href: "/factory", adminOnly: true },
-      { label: t("TixStock (best batch source)", "TixStock (מקור הבאץ' הטוב ביותר)"), href: "/tixstock-events" },
+      { label: t("AI Uploader", "העלאה חכמה"), href: "/uploader", adminOnly: true },
+      { label: t("Tour uploader in AI Factory", "Tour uploader ב-AI Factory"), href: "/ai-factory/tour-uploader", adminOnly: true },
+      { label: t("Events (hidden filter)", "אירועים (פילטר מוסתרים)"), href: "/events" },
     ],
   },
   {
@@ -2080,8 +2109,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     productType: "events",
     title: t("Locations - cities and hotels", "מיקומים - ערים ומלונות"),
     intro: t(
-      "The cities events happen in, each with coordinates and an optional IATA code. The IATA drives flight pricing and the automatic lookup in the wizard and the factory (keep this table growing); \"טען מלונות\" loads a city's hotels before it goes on sale.",
-      "הערים שבהן יש אירועים, כל אחת עם קואורדינטות וקוד IATA לא חובה. ה-IATA מניע את תמחור הטיסות ואת הזיהוי האוטומטי בוויזרד ובמפעל (כדאי להמשיך להרחיב את הטבלה); \"טען מלונות\" טוען את המלונות של עיר לפני שהיא עולה למכירה.",
+      "The cities events happen in, each with coordinates and an optional IATA code. The IATA drives flight pricing and the automatic lookup in the wizard and the AI Uploader - which also decides package or ticket-only by the nearest location within 50 km (keep this table growing); \"טען מלונות\" loads a city's hotels before it goes on sale.",
+      "הערים שבהן יש אירועים, כל אחת עם קואורדינטות וקוד IATA לא חובה. ה-IATA מניע את תמחור הטיסות ואת הזיהוי האוטומטי בוויזרד וב-AI Uploader - שגם מחליט חבילה או כרטיס בלבד לפי הלוקיישן הקרוב עד 50 ק\"מ (כדאי להמשיך להרחיב את הטבלה); \"טען מלונות\" טוען את המלונות של עיר לפני שהיא עולה למכירה.",
     ),
     howTo: [
       {

@@ -754,7 +754,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   (`base_price_sync_log`).
 > - **Event creation automation:** stadium memory, background base-price
 >   auto-fill, nearest-location IATA, multi-team batch, batch from every
->   provider, and the `/factory` draft grid (`event_drafts`) - see "Event
+>   provider, and the `/factory` draft grid (`event_drafts`; replaced by the AI Uploader
+>   on 2026-10-21 - see "Agent #3" under Agents) - see "Event
 >   creation automation".
 > - **`/guide`:** bilingual (EN/HE toggle, Hebrew default) system manual for staff, content in
 >   `app/(dashboard)/guide/guide-content.ts`. **When a flow described there
@@ -889,9 +890,9 @@ every table is the design (service role only). Read the notes with
 - `contexts/auth-context.tsx` - React context wrapping client-side auth state
 - `lib/nav.ts` - the ONLY definition of navigation (groups, roles, breadcrumb labels, palette keywords)
 - `lib/search.ts` - `matchesSearch` token search used by every table/filter
-- `lib/services/price-quote.ts` - the pricing rule + constants; `flight-search.ts` (Amadeus, server-side), `base-price-sync.ts` (nightly cron), `venue-memory.ts`, `nearest-location.ts`, `draft-builder.ts`
-- `lib/provider-batch.ts` - per-provider identity mappers for the batch wizard + factory (`{ provider, rows }` stash envelope under localStorage `batch_create`)
-- `docs/superpowers/` - design specs + implementation plans for big features (the Events Factory one is the reference)
+- `lib/services/price-quote.ts` - the pricing rule + constants; `flight-search.ts` (Amadeus, server-side), `base-price-sync.ts` (nightly cron), `venue-memory.ts`, `nearest-location.ts`; `uploader-build.ts` / `uploader-search.ts` / `uploader-store.ts` / `uploader-questions.ts` / `uploader-prior.ts` / `tour-uploader-parse.ts` (the tour uploader, agent #3), with its pure rules in `lib/uploader/`
+- `lib/provider-batch.ts` - per-provider identity mappers for the batch wizard (`{ provider, rows }` stash envelope under localStorage `batch_create`)
+- `docs/superpowers/` - design specs + implementation plans for big features (the tour uploader one is the reference)
 
 ### Auth
 
@@ -1186,14 +1187,14 @@ Exchange rates (EUR, ILS, GBP → USD) are managed via `lib/services/exchange-ra
 
 ### Event creation automation (2026-09-02)
 
-Spec: `docs/superpowers/specs/2026-09-02-events-factory-design.md`. Three paths share the same building blocks, all wired into `app/(dashboard)/events/[id]/page.tsx` (the `/events/new?batch=1` wizard) and `lib/services/draft-builder.ts` (the factory):
+Spec: `docs/superpowers/specs/2026-09-02-events-factory-design.md` (the Factory half of it is gone - see below). The single-event form and the batch wizard (`app/(dashboard)/events/[id]/page.tsx`, the `/events/new?batch=1` wizard) share these building blocks; the tour uploader ("Agent #3" under Agents, `lib/services/uploader-build.ts`) reuses the pricing rule, nearest-location and `findVenueMemory`'s lodging, but takes its tickets from the suppliers' own feeds, not from stadium memory:
 
-- **Stadium memory** (`lib/services/venue-memory.ts`): a step with no ticket categories copies `tickets_and_rates` structure from the most recent live, non-test event of the same `type` on the same SEAT MAP - `map_image_url` in any spelling (spaces vs `%20`), its `venue_maps` twin (supplier drawing <-> our copy), and - for a FOOTBALL drawing only - every other football drawing TixStock uses for the same `venue_name` (Anfield has two). **Football only (Alon 29.09):** widened by venue name, Oasis at the Etihad copied Man City - Aston Villa (the Etihad has five TixStock drawings: two football, three concerts); a concert is staged per tour, so its drawing alone is its venue. `isFixtureDrawing` (pure) = most TixStock events drawn on it are "A vs B" fixtures (`fixturePair`); an unknown drawing never widens. **Not the location** (2026-09-28): every live event's `location` is a CITY from the Locations dropdown, so the old name / <1km coords match meant "latest event in the same city" (a Real Madrid game got Harry Styles' tickets). A map TixStock uses for more than `GENERIC_MAP_VENUES` (3) venues is a placeholder ("General Admission.svg", 244 venues) and remembers nothing. Only tickets that may move between fixtures are copied (`carriesToAnotherFixture` in `lib/suppliers.ts`: TixStock + manual structure; never LiveTickets / XS2Event ids or our own `static` stock), with fresh ids and the NEW fixture's TixStock id as `eid` (`ticketForFixture`; the factory carries it as `payload.source_event_id`, stripped before insert); `zoneId` survives only on the same drawing. The same rule gates the TixStock batch "Save & Next" carry-over (a banner counts what stayed behind). Prices come along only as the reprice fallback. Banner + undo in the wizard.
+- **Stadium memory** (`lib/services/venue-memory.ts`): a step with no ticket categories copies `tickets_and_rates` structure from the most recent live, non-test event of the same `type` on the same SEAT MAP - `map_image_url` in any spelling (spaces vs `%20`), its `venue_maps` twin (supplier drawing <-> our copy), and - for a FOOTBALL drawing only - every other football drawing TixStock uses for the same `venue_name` (Anfield has two). **Football only (Alon 29.09):** widened by venue name, Oasis at the Etihad copied Man City - Aston Villa (the Etihad has five TixStock drawings: two football, three concerts); a concert is staged per tour, so its drawing alone is its venue. `isFixtureDrawing` (pure) = most TixStock events drawn on it are "A vs B" fixtures (`fixturePair`); an unknown drawing never widens. **Not the location** (2026-09-28): every live event's `location` is a CITY from the Locations dropdown, so the old name / <1km coords match meant "latest event in the same city" (a Real Madrid game got Harry Styles' tickets). A map TixStock uses for more than `GENERIC_MAP_VENUES` (3) venues is a placeholder ("General Admission.svg", 244 venues) and remembers nothing. Only tickets that may move between fixtures are copied (`carriesToAnotherFixture` in `lib/suppliers.ts`: TixStock + manual structure; never LiveTickets / XS2Event ids or our own `static` stock), with fresh ids and the NEW fixture's TixStock id as `eid` (`ticketForFixture`); `zoneId` survives only on the same drawing. The same rule gates the TixStock batch "Save & Next" carry-over (a banner counts what stayed behind). Prices come along only as the reprice fallback. Banner + undo in the wizard.
 - **Auto base-fill**: once a new event has `city_iata` + flight dates, `fetchPriceQuote` fills `base_flight_price`/`base_hotel_price` in the background - **empty (0) fields only**, one shot per step, green flash, inline warning on failure, never blocks save.
 - **Nearest IATA** (`lib/services/nearest-location.ts`): venue coords → closest `locations` row with an IATA within 50km. This is what makes artist tours price per city.
 - **Multi-team batch** (TixStock): selection accumulates across performers (chips per team); "select all home games of X" = `lib/tixstock-home.ts` `isHomeGame` (event name starts with team name); crossing teams in the wizard resets the dragged form.
 - **Batch from every provider**: Live/P1/Sports tables have multi-select + Create-N; the stash is `{ provider, rows }` (`lib/provider-batch.ts` mappers are identity-only - name/date/venue/coords/smart dates; tickets come from stadium memory, not from provider live tickets, which stay on the single-event pages).
-- **Factory** (`/factory`, `lib/actions/factory-actions.ts`, table `event_drafts`): "Send to factory" from any provider bar creates draft rows; the page loops `buildNextDraft()` one draft per call (stoppable) through the blocks above and records what stayed empty in `missing`; the grid inline-edits name/iata/prices (amber = missing), bulk-approve calls `createEvent` per draft. Drafts are a separate table on purpose - main never sees them. Terminal rows purge after 30 days.
+- **Factory - GONE (2026-10-21).** The `/factory` draft grid (`factory-actions.ts`, `draft-builder.ts`, `types/factory.types.ts`, table `event_drafts`, the "Send to factory" buttons on the four provider tables) was replaced by the AI Uploader (Dor: "לא מאוד שמיש"): `/factory` redirects to `/uploader` and migration `20261021115818` drops `event_drafts`. What the factory was for - a whole tour, a team's home games - is now one brief: see "Agent #3: the tour uploader" under Agents. The batch wizard above stays, as the hands-on path.
 - **Form cleanup**: legacy composed-pricing markups (`markup_ticket/flight/hotel`, `skip_hotel_markup`) sit in a collapsed Advanced section (auto-opens when used); `usual_price` is gone from the UI but the column stays (main's feed uses it as a last-resort price fallback).
 
 ### Price light (רמזור) (2026-09-10, phase 0)
@@ -1399,6 +1400,173 @@ empty (`listAgentLog` already returns `{ rows: [] }` for any key but `"price-lig
 every AI-worded advice is now audited as `agent.advice` (`{ agent, event_id, scope, cost_usd }`) -
 that row is deliberately left unread by the tab for now, so a later log reader has a source to
 build on without this task's screen changes.
+
+**Agent #3: the tour uploader (`lib/agents/tour-uploader.agent.ts`, `TOUR_UPLOADER_AI`,
+2026-10-21).** It replaced the Events Factory (Dor, 21.10: "מעלה את כל האירועים נסתר - מסדר בטבלה ברורה
+... ואם כפתור אישור לכל אירוע - שמעלה אותו לאתר"). Spec
+`docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md`, plan
+`docs/superpowers/plans/2026-10-21-tour-uploader-agent.md`, migration `20261021115818_tour_uploader.sql`,
+Hebrew how-to for Alon `docs/superpowers/guides/2026-10-21-tour-uploader-how-to-he.md`. **What it is:** a
+staff member types ONE free-text brief ("יצא טור של אריק קלפטון באירופה ... מארק אפ לכרטיס בלבד 250,
+אדישנל 75"), the agent parses it into a plan, a person confirms the plan ("מה הבנתי"), code finds every
+show at TixStock + LiveTickets and builds one **hidden** event per show (all tickets, one pricing rule),
+and a review board lays them out with the decisions taken, the warnings and an Approve per event.
+Admins only: nav "AI Uploader" `/uploader` (`ADMIN_ROLES`, group Products), every action
+`requireAdmin()`; `/factory` redirects there. Screens: `app/(dashboard)/uploader/` (`BriefComposer` ->
+`PlanCard` -> `RunsList`) and `uploader/[id]/` (the board: a card per show, filters, the sticky "אשר הכל
+(N)" bar, a keyboard layer; both `maxDuration` 60). The board drives the build from the client - the
+loop calls `buildNextItem(runId)` one show per server action (a 20-show tour is minutes), polls every
+`BOARD_POLL_MS` 2.5 s, "עצור" / "המשך" stop and resume it, and a closed board resumes when reopened.
+
+**One AI call; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`)
+is the only place a model is called: a forced, NON-strict tool `plan`, `callsPerRun` 3 (a parse + two
+"ערוך את הבריף" re-parses), `timeoutMs` 20 s, `maxRetries: 0`, `max_tokens` 2000, default model
+`claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). The schema is only the model's guide - `parsePlanInput`
+(`lib/uploader/plan.ts`) enforces every field and salvages what it can, and a bad answer, a timeout or
+an off agent lands on the SAME plan card as an empty manual form (so with the switch off the whole
+feature still works; the agent is the parser, nothing else). The brief is DATA inside the fence like
+every staff text. Everything after the plan is deterministic and pure in `lib/uploader/*` (`plan`,
+`shows`, `tickets`, `place`, `warnings`, `decisions`, `names`, `run-rules`, `constants`: `NEAR_LOCATION_KM`
+50, `FAR_VENUE_KM` 300, `SHOW_WINDOW_DAYS` 3 = main's availability window, `MARKUP_MAX` 5000,
+`REJECT_REASON_MIN` 3, `TOAST_POLL_MS` 60_000, `BOARD_POLL_MS` 2_500), with the DB reads in
+`lib/services/uploader-search.ts` / `uploader-prior.ts` / `uploader-store.ts` and the builder in
+`uploader-build.ts`. **The AI never writes a price:** tickets are priced by the syncs' own functions
+(`tixstockTicketPriceUsd` over `listingsTheSiteSells`, `liveTicketsPriceUsd`), the flight and hotel bases
+by `price-quote.ts` (`quoteFlight` / `quoteHotel`, the ONE rule), markups only from the plan card.
+Suppliers are TixStock + LiveTickets and no others: XS2Event / P1 appear only as "נמצא ב-... (מידע בלבד)"
+on a grey card. A row is a show for the subject by performer (an artist's tribute act that only carries
+the name in its title is excluded), `isHomeGame` (a team: home games unless the plan says all), or the
+TixStock `category_name` (a competition); rows of the two suppliers with the same country + city +
+calendar day are ONE show, two shows on one day or a one-day gap are a question, a show already on
+`events` is skipped `exists`; an open-ended window is capped at today + 24 months (TixStock lists junk
+to 2030). `buildItem`, one show per call, cheapest checks first: tickets (zero = skipped `no_tickets`,
+"אין כרטיסים אין אירוע"; a supplier that never answered = `supplier_unreachable`, never a quiet zero),
+location (`decidePlace`, below), duplicate, map + zones (`zoneFromTemplate`, moved to
+`lib/venue-maps/zone-from-template.ts`; `calculateSmartDates` moved to `lib/` too), bases (a null quote
+= the blocker `no_base_price`; a ticket-only build with no markup = `no_ticket_only_markup`), then
+`createEvent({ is_hidden: true, ... })` with `event_id` written onto the item AT ONCE (an action cut off
+mid-build never leaves a hidden event no item points at; a retry soft-deletes a still-hidden orphan
+first, audit `uploader.orphan_cleaned`). Tickets carry `rgb(5, 32, 60)` like every other writer of a
+supplier ticket (the lib's `TX_TICKET_COLOR` is a CSS variable the editor would rewrite).
+
+**Tables.** `uploader_runs` (`brief`, `plan`, `plan_ai` = what the model first answered, `status`
+`planned | building | waiting | review | done | stopped | error`, `counts`, `is_test`, `asker_id`) and
+`uploader_items` (one per show: `show` = the supplier identity, `status` `found | building | question |
+skipped | ready | approved | rejected | error`, `mode`, `location`, `decisions` / `warnings` /
+`blockers` as `{ code, text, fix_url? }[]`, `question`, `event_id` with no FK, `payload` = the event as
+written = the baseline of the edit diff, `rejected_final`). RLS on, no policies, service role only;
+read through the repo's `db = supabase as any` boundary cast until `npm run db:types` runs after the
+migration applies (it has not been regenerated yet). The same migration DROPPED `event_drafts`;
+`factory-actions.ts`, `draft-builder.ts`, `types/factory.types.ts` and the four provider tables' "Send
+to factory" buttons are gone (the batch wizard `/events/new?batch=1` stays, a different manual path).
+`uploader_runs.ai_cost_usd` is NOT written - the cost lives in the `agent.call` audit rows, which AI
+Factory sums (`auditedCallCostThisMonth`).
+
+**`events.is_hidden` = "uploaded, not yet approved".** `boolean not null default false` + a partial
+index where true. Not `is_test` (QA events, a different meaning on the events table) and not
+`deactivated_reason` (the TixStock sync's, shown as sold out). Only the uploader writes it: the build
+sets it, approve flips it with a direct one-column update; `updateEvent` and `bulkUpdateEvents` strip
+it (a form opened before an approve would hide the event again) and `duplicateEvent` resets it (a
+copy has no item to approve it). **Backoffice readers that must not see a hidden event** (each got an
+`is_hidden` filter, T9): the creative cron and `lib/creative/auto.ts`, the `/meta-feed` picker (hidden
+events are OUT of it, and the editor's push button answers "מוסתר - ממתין לאישור ב-AI Uploader"),
+`creative-gaps.ts`, the Mega Family feed (`tours-events-feed-sync.ts`) and its search, the homepage
+pins and the portal / quote pickers, stadium memory (never a source), the price-light queues (nightly,
+crawl detail queue, ours, alternatives, `listPriceLight`, the task rule), `base-price-sync`, the
+ready-package refresh. **The TixStock price sync is the one exception, on purpose:** it KEEPS pricing a
+hidden event (one approved a week after its build must carry today's prices) but never writes
+`deactivated_reason` and never opens a `supplier_gap` task on it (a 20-show run must not be a burst of
+tasks nobody asked for); approve re-runs the availability plan for that event right after un-hiding.
+Events table: a "מוסתר" badge and a "מוסתרים" filter. **myt-main** (c05f8a4, f1746a2, 0863fbc, LIVE
+21.10): `isListedEvent` and `lib/events/hidden.ts` (`isHiddenForCheckout`, one predicate), the feed
+read (`lib/feed/feedData.ts`; `/product-feed` names a "hidden" skip reason), `getNavCategories` (listed
+rows only, so an empty hub never leaks an unapproved tour's existence), `noindex` on the page, and
+**`confirm-order` refuses** (`EVENT_NOT_OPEN`, "האירוע עדיין לא פתוח להזמנה" - it fails open only on
+42703 / PGRST204, the pre-migration window, and CLOSED on any other DB error: its one job is "never
+purchasable"). `/order/{id}` stays reachable by direct link - that is the admin's preview - but nobody
+completes an order on it.
+
+**Approve, edit, reject** (`lib/actions/uploader-actions.ts`, 16 actions; each starts with
+`requireAdmin()`, validates its input before any read and RETURNS `{ ok: false, kind }` - Next masks a
+thrown action error in production; the exported actions stay in this one file, their reads and writes
+are in the non-server `uploader-store.ts`, the rules in `run-rules.ts`). **Approve order:** un-hide ->
+record (`uploader.approved`, and `uploader.edited` when `editDiff` between the item's `payload` and the
+event row over `EDIT_EVENT_COLUMNS` is not empty) -> a bounded availability re-check (`APPROVE_SYNC_MS`
+20 s, a race: the sync may finish after the action returned) -> `revalidateMain` -> `invalidatePriceLight("rows")`.
+The record comes BEFORE the slow step, so a hung supplier never leaves a live event with no approval on
+file. Blockers are RE-JUDGED at approve time against the live row (`liveBlockers`: staff may have filled
+the base in the editor); `approveAll` does the same per `ready` item, soonest first, with one re-check
+and one revalidate at the end and `APPROVE_ALL_BUDGET_MS` 50 s (the rest answer `time_budget`). "ערוך" is
+a link to `/events/[id]`; a card whose event differs from its payload wears "נערך". **Reject** soft
+deletes the hidden event FIRST (a failure answers `event_not_deleted` and changes nothing - a surviving
+hidden event would block the next run as `exists`; `rebuildTwoCity` deletes first the same way), needs a
+reason of `REJECT_REASON_MIN`+ characters and has the switch "אל תציע את ההופעה הזו שוב" (`rejected_final`):
+a later run of the same subject skips that show as `rejected_before` without a supplier call. The spec's
+"בנה בכל זאת" override is NOT built - a show rejected for good comes back by hand ("צור ידנית"). A second
+run for a subject still building or waiting is refused (`run_in_progress`); a TEST run's duplicate read
+includes `is_test` events, a real run's does not.
+
+**Questions are tasks.** A show the code cannot decide (`pick_show`, `pick_date`, `pick_location`,
+`confirm_subject`) goes `question` and stops ALONE - the run goes on. The question is a task
+(`lib/services/uploader-questions.ts`: source `uploader`, board `ops`, priority `high`, assignee = the
+run's asker = the sender, `created_by: null` like a rule-made task so `notifyTaskAssigned` mails the
+asker even when they started the run, `source_ref.url` = the board anchor); `answerQuestion` records the
+answer, closes the task and re-queues the item with the answer applied ("דלג" = skipped
+`skipped_by_answer`). A repeat is answered from memory, no model: `priorAnswerFor` finds an answered
+question of the same kind + key (subject + city + date) in an earlier run and applies it with the
+decision "לפי תשובה קודמת". The waiting toast (`components/uploader-waiting-toast.tsx`, mounted in the
+dashboard layout for admins) calls `countOpenQuestionsFor()` every `TOAST_POLL_MS` (not while the tab
+is hidden) and shows "🟠 ה-AI מחכה לתשובה" when the count ROSE - never on that run's own board; it is
+the `@/hooks/use-toast` store (the one the mounted Toaster reads; `components/ui/use-toast` is a dead
+second store). The menu BADGE the spec also names is NOT built.
+
+**What it learns from** (`learnsFrom`, every row tagged `metadata.agent: "tour-uploader"`, 180 days, 10
+lessons): `uploader.plan_edited` (a field, from -> to, a brief excerpt - measured from what the card
+SHOWED, so a "מהפעם הקודמת" markup nobody touched is not a lesson), `uploader.answered`,
+`uploader.rejected` (the reason), `uploader.edited` (the fields staff changed before approving),
+`uploader.two_city_chosen`, and `agent.feedback` tagged for it. Also audited, not taught:
+`uploader.run_created`, `.built`, `.asked`, `.approved` (always; its `edited` flag is the maturity
+signal - approved untouched = agreed, rejected or edited first = disagreed), `.item_retried`,
+`.run_resumed`, `.orphan_cleaned`. **`purgeAuditLog` exempts `uploader.%`** - the 30-day purge would cap
+a 180-day memory at a month, like `price_light.%` and `agent.%` before it. Taught rules
+(`agent_instructions`, key `tour-uploader`) ride with the house rules as in the other agents.
+
+**Far venue = the "learn slowly" path (Dor, decision 9).** A show with no location within
+`NEAR_LOCATION_KM` goes through stadium memory FIRST (`findVenueMemory` with `{ strict: true }`, which
+THROWS on a read error - a two-city venue must never silently become ticket-only): when the last event
+at that venue was built two-city it is built the same way (`two_city_from_memory`: `event_location`,
+`lodging_mode`, `lodging_default`, `split_default_nights` copied). With no memory the plan's
+`rules.without_location` decides (ticket only, or skipped `no_location`) and, when the nearest location
+is within `FAR_VENUE_KM`, the card offers "בנה כחבילה דרך <city> עם פיצול מלון" (`far_venue`):
+`rebuildTwoCity` deletes the ticket-only event, re-queues the show with the choice and audits
+`uploader.two_city_chosen` - from then on stadium memory carries that venue's setup into every later run
+by itself, and the lesson teaches the parser a brief like "ליברפול - טיסה למנצ'סטר". Never a guessed
+flight city. `item.location` always holds the nearest location within `FAR_VENUE_KM` so the one-click
+rebuild has a default.
+
+**Test run, dry run, selftest.** The plan card's "ריצת בדיקה" switch sets `uploader_runs.is_test` AND
+marks every event of the run `is_test` - use it for the first run of a new kind of brief, then reject
+the test events. `npx tsx scripts/uploader-dryrun.ts "<name>" [artist|team|competition] [--he "<name>"]
+[--from --to] [--all]` is a READ-ONLY dry run of the search against the real database (shows,
+questions, what was left out, existing events; it builds nothing, calls no supplier API and no model).
+`scripts/tour-uploader-selftest.ts` is pure (synthetic Clapton with a tribute act and a two-London-dates
+case, Liverpool home and away, a competition round, the place tree, the run rules);
+`scripts/agents-selftest.ts` asserts the registry holds three keys; `scripts/multi-supplier-selftest.ts`
+covers the moved `zoneFromTemplate`.
+
+**Deploy order (21.10).** (1) The backoffice push to master carries the migration (`events.is_hidden`,
+the two tables, `drop table event_drafts` - first `select status, count(*) from event_drafts group by 1`:
+pending drafts are lost; push away from the :15 / :20 crons) -> confirm "Apply DB Migrations" green.
+(2) myt-main with the gate is ALREADY live (push 7c6024b..4d952b2, confirmed on the site) and MUST be
+before the switch: until then a built event, hidden here, would be listed. (3) Vercel env
+`TOUR_UPLOADER_AI=on` (the key and `AI_AGENTS` are the shared ones). (4) The first run is a TEST run on
+a small subject: approve one event, check it on the site and, after the next hourly creative tick, in the
+feed. Then `npm run db:types`. **BLOCKER for the first real run (Dor's call, outside this build): the
+`mondial` branch site (mondial2026.mega-events.co.il, the same database) has no `isListedEvent` /
+`is_test` / `is_hidden` handling and no checkout gate - an unapproved or test event is listed and
+purchasable there, and a test run is no safer than a real one. Decommission it (plan
+`docs/superpowers/plans/2026-09-01-mondial-decommission-plan.md`, still planned) or port the gate
+before the first hidden row exists.** `revalidateMain` also pings that site.
 
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
@@ -1614,6 +1782,15 @@ PRICE_LIGHT_AI_MODEL=
 PRICE_ADVISOR_AI=
 # Model id for the advisor. Empty -> its own defaultModel "claude-opus-5" (price-advisor.agent.ts).
 PRICE_ADVISOR_AI_MODEL=
+# Agent #3 - the tour uploader (lib/agents/tour-uploader.agent.ts, /uploader). Same opt-in, fails-closed rule
+# (needs ANTHROPIC_API_KEY too, and AI_AGENTS=off still stops it): unset, empty or anything but "on" = off =
+# the plan card is the empty manual form - searching, building, questions and approvals all still work. The
+# agent only READS a brief into a plan; it never finds a show, never prices, never creates an event. Turn it
+# on only AFTER migration 20261021115818 is applied AND myt-main's hidden-event gate is live (it is, 21.10) -
+# see "Agent #3" under Agents for the deploy order and the mondial-site blocker.
+TOUR_UPLOADER_AI=
+# Model id for the uploader. Empty -> its own defaultModel "claude-opus-5" (tour-uploader.agent.ts).
+TOUR_UPLOADER_AI_MODEL=
 # Set -> crawler connects to a remote stealth browser over CDP (Browserbase/Bright Data) and
 # that provider owns the fingerprint (UA/locale/timezone/proxy). Unset -> local @sparticuz/chromium.
 NEXT_SECRET_BROWSER_CDP_URL=
@@ -1667,7 +1844,7 @@ NEXT_SECRET_WHATSAPP_LINK_TEMPLATE=
 
 Schema is in `db.schema.sql`. Key tables: `events`, `reservations`, `partners`, `locations`, `p1_events`, `live_events`, `sports_events`, `offline_flights`, `tixstock_events`. Managed via Supabase (PostgreSQL).
 
-Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `task_rules`, `task_comments`, `task_reads`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `event_drafts`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `competitor_listing_corrections`, `event_price_snapshots`, and the marketing dashboard's eight (migration `20261008120000`): `ad_spend_daily`, `ad_entities`, `ad_clicks`, `ig_media`, `ig_media_insights_daily`, `ig_account_daily`, `marketing_settings`, `marketing_alerts` (the same migration added `ticket_cost_usd`, `ticket_cost_source`, `actual_cost_usd`, `actual_cost_note` to `reservations`; main writes the first two). Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
+Backoffice-only tables (RLS on, no policies, service-role access; main never reads them): `tasks`, `task_rules`, `task_comments`, `task_reads`, `creative_gap_dismissals` (gap_key = `{kind}:{table}:{row_id}`), `base_price_sync_log`, `uploader_runs`, `uploader_items`, `user_profiles`, `audit_log`, the `forms*` family, `prepared_packages`, `competitor_crawl_runs`, `competitor_listings`, `competitor_matches`, `competitor_listing_corrections`, `event_price_snapshots`, and the marketing dashboard's eight (migration `20261008120000`): `ad_spend_daily`, `ad_entities`, `ad_clicks`, `ig_media`, `ig_media_insights_daily`, `ig_account_daily`, `marketing_settings`, `marketing_alerts` (the same migration added `ticket_cost_usd`, `ticket_cost_source`, `actual_cost_usd`, `actual_cost_note` to `reservations`; main writes the first two). Same shape but READ by main with its service client: `google_reviews` + `google_review_sources` (the site's "לקוחות משתפים"; `is_hidden` pulls a review off the site). Several predate the generated `types/database.types.ts` - their actions use a single `const db = supabase as any` boundary cast (scoped eslint-disable) until `npm run db:types` is rerun after the next master merge.
 
 ### Migrations (Supabase CLI)
 
@@ -1793,7 +1970,7 @@ product feed. Keep both copies in sync.
 ### Price Logic Chain (Spans Both Projects)
 
 1. **This backoffice** sets: `base_flight_price`, `base_hotel_price`, and ticket prices on events (currency markups in `lib/services/ticket-price-sync.ts`: USD +$40, EUR +€40, GBP +£35, ILS +₪150).
-   **Base prices come from ONE rule** - `lib/services/price-quote.ts` (Dor, 2026-09-02): flight = cheapest **direct** Amadeus offer **+$100**, but the cheapest connection (+$100) when the direct beats it by more than **$300**; hotel = cheapest **3-star** from main's `/api/hotels` (it already filters `star_rating = 3` - its `total_4star_hotels_found` field is a legacy misnomer) **per person - the route prices a room for 2 adults, divide by `QUOTE_HOTEL_ADULTS` - +$120**; both rounded to whole tens. `base_hotel_price` is per person (main compares `hotel.price / persons` to it); the room total doubled every base the first sync touched (2026-09-07). The form's Search buttons, the wizard auto-fill, the nightly sync and the factory all quote through it, so every surface shows the same number. Constants live there only: `FLIGHT_MARGIN_USD 100`, `HOTEL_MARGIN_USD 120`, `QUOTE_HOTEL_ADULTS 2`, `DIRECT_GAP_USD 300`, `SYNC_DEVIATION_USD 20`, `SYNC_FREEZE_USD 400`. (The `/api/flights/search` route keeps its older third-cheapest rule for legacy callers only.)
+   **Base prices come from ONE rule** - `lib/services/price-quote.ts` (Dor, 2026-09-02): flight = cheapest **direct** Amadeus offer **+$100**, but the cheapest connection (+$100) when the direct beats it by more than **$300**; hotel = cheapest **3-star** from main's `/api/hotels` (it already filters `star_rating = 3` - its `total_4star_hotels_found` field is a legacy misnomer) **per person - the route prices a room for 2 adults, divide by `QUOTE_HOTEL_ADULTS` - +$120**; both rounded to whole tens. `base_hotel_price` is per person (main compares `hotel.price / persons` to it); the room total doubled every base the first sync touched (2026-09-07). The form's Search buttons, the wizard auto-fill, the nightly sync and the AI Uploader all quote through it, so every surface shows the same number. Constants live there only: `FLIGHT_MARGIN_USD 100`, `HOTEL_MARGIN_USD 120`, `QUOTE_HOTEL_ADULTS 2`, `DIRECT_GAP_USD 300`, `SYNC_DEVIATION_USD 20`, `SYNC_FREEZE_USD 400`. (The `/api/flights/search` route keeps its older third-cheapest rule for legacy callers only.)
    **A TixStock ticket's price is ONE formula in both repos (2026-10-07):** `supplierPriceUsd` (`lib/suppliers.ts`) = (cost + currency markup) → USD → **+3.5% → rounded up**, identical to main's `lib/supplier-pricing.ts`. Main prices the same listing with it on a customer's ticket step AND writes that price back to `events.tickets_and_rates` (`/api/tixstock/tickets`), so two writers hold this column: the TixStock price sync (03/09/15/21 UTC) and every visitor. The sync now prices through `tixstockTicketPriceUsd` (`lib/services/tixstock-price-sync.ts`). Until then it had its own inline formula - no 3.5%, rounded to nearest - so four times a day it wrote every price 3.5% UNDER what the order page charges and the first visitor to each event wrote it back: 340 rewrites a day (859 of their 1,418 ticket prices moved by exactly 3.5%), a card / feed price that dipped in between, and - main dropped its `events` cache tag on each - a re-render of the whole site every time (main's side: `lib/events/livePriceInvalidation.ts`). **The sync also picks the SAME listing main does (same day):** only a listing the site would sell to a pair sets a price - `listingsTheSiteSells` in the pure `lib/tixstock-listings.ts` (`scripts/tixstock-listings-selftest.ts`), main's own three rules mirrored: not in a section staff excluded on the event's map (`events.tx_excluded_sections`), not a restricted / limited / side / partial view, and the seller splits to two (`listingCanSatisfyQuantity`: an all-or-nothing block of four, or three seats under "avoid leaving one", cannot serve a pair). Then the cheapest AS PRICED (each listing through the formula, then the minimum). Before, any listing with 2+ seats did: with the formula alone 65 of 106 just-visited tickets came out equal and 17 more than 4.5% under main, some at a third of the price (event 794: 1,101 stored, 333 from the sync) - a card price hundreds of dollars under what the order page offers, until a visitor came. With both, a dry run on 30 events a visitor had priced in the last two hours: **114 of 117 tickets identical, 27 of 30 events untouched**. A category with no listing the site would sell keeps its price (main does the same); availability (`planTixstockAvailability`) still reads the whole feed. **A rule that changes in main (`lib/tixstock-quantity.ts`, the two filters in `app/api/tixstock/tickets/route.ts`, `categoryMatchesMapId`) changes in `lib/tixstock-listings.ts` too**, or the two writers drift apart again. Not moved: the event editor's two TixStock price buttons (`app/(dashboard)/events/[id]/page.tsx`) still carry the old inline formula and choice - the next sync run corrects what they write.
 2. **Main app** calculates final customer price: `base_flight_price + base_hotel_price + min_ticket_price + 175 USD markup`
 3. Changing price/markup logic here directly affects what customers see and pay in the main app
