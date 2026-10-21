@@ -10,8 +10,11 @@
  * (`null`, `false`, `"db_error"`), because the actions return their errors (Next masks a thrown
  * action error in production). The rules these steps apply are pure in lib/uploader/run-rules.ts.
  */
+// Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
+import "server-only";
 import { logAudit } from "@/lib/audit";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
+import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { taskPeopleOf } from "@/lib/services/task-people";
 import { closeQuestionTask, openQuestionTask } from "@/lib/services/uploader-questions";
 import { findShows, resolveSubject } from "@/lib/services/uploader-search";
@@ -61,6 +64,34 @@ const CLAIM_ATTEMPTS = 3;
 /** Rows the board's picture read looks at (`artSearchPattern` candidates). */
 const ART_CANDIDATES = 10;
 const STALE_BUILD_ERROR = "הבנייה נקטעה באמצע (חרגה מזמן הבקשה) - בדקו באירועים אם נוצר אירוע מוסתר לפני שמנסים שוב";
+
+/**
+ * The key `plan_ai` is signed with (lib/uploader/plan-token.ts) - the session's signing secret, as
+ * lib/auth/session.ts picks it. null = none set: nothing is signed, so no `plan_ai` is trusted.
+ */
+export function planTokenKey(): string | null {
+  return process.env.NEXT_SECRET_SESSION_SECRET || process.env.NEXT_SECRET_ADMIN_PASSWORD || null;
+}
+
+/**
+ * This person's `agent.call` rows of the tour uploader inside the last `windowMs` (the parse writes
+ * `metadata.user_id`) - `parseBrief`'s rate cap. null = the count could not be read (logged).
+ */
+export async function countRecentParses(userId: string, windowMs: number): Promise<number | null> {
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { error, count } = (await db
+    .from("audit_log")
+    .select("id", { count: "exact", head: true })
+    .eq("action", "agent.call")
+    .eq("metadata->>agent", AGENT)
+    .eq("metadata->>user_id", userId)
+    .gte("created_at", since)) as DbResult<null> & { count: number | null };
+  if (error) {
+    logDb("recent parses count", error);
+    return null;
+  }
+  return count ?? 0;
+}
 
 /** Newest runs the list shows. */
 export const RUNS_LIST_MAX = 50;
@@ -482,16 +513,54 @@ export async function closeTask(taskId: string, note: string): Promise<boolean> 
 
 // ---- events -----------------------------------------------------------------------------------------
 
-/** Soft delete a built hidden event (the same soft delete every path uses); false = it failed (logged). */
-export async function softDeleteBuiltEvent(eventId: number): Promise<boolean> {
-  try {
-    const { softDeleteEvent } = await import("@/lib/actions/event-actions");
-    await softDeleteEvent(eventId);
-    return true;
-  } catch (e) {
-    console.error(`uploader: soft delete of event ${eventId} failed`, errorText(e));
-    return false;
+/**
+ * What a built event's soft delete did: `deleted`; `gone` (already deleted, or no such row - nothing
+ * to do); `event_live` (it is LISTED - approved meanwhile - and is never deleted here); `failed`.
+ */
+export type DeleteOutcome = "deleted" | "gone" | "event_live" | "failed";
+
+/** Today as `events.is_deleted` stores it ("MM-DD-YYYY", the soft-delete stamp every path writes). */
+function deletedStamp(d: Date = new Date()): string {
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}-${d.getFullYear()}`;
+}
+
+/**
+ * Soft delete a built event ONLY while it is still hidden and not deleted - the condition sits in the
+ * UPDATE (`is_hidden = true`, `is_deleted is null`), so an approve that lands between a reject's read
+ * and its delete can never take a LIVE event off the site. Nothing written = read why (`gone` /
+ * `event_live`). Audited like `softDeleteEvent` (`delete`, entity `event`). Never throws.
+ */
+export async function softDeleteBuiltEvent(eventId: number): Promise<DeleteOutcome> {
+  const stamp = deletedStamp();
+  const { data, error } = (await db
+    .from("events")
+    .update({ is_deleted: stamp })
+    .eq("id", eventId)
+    .eq("is_hidden", true)
+    .is("is_deleted", null)
+    .select("id")) as DbResult<{ id: number }[]>;
+  if (error) {
+    logDb(`event ${eventId} soft delete`, error);
+    return "failed";
   }
+  if ((data ?? []).length === 0) {
+    const row = (await db.from("events").select("id,is_hidden,is_deleted").eq("id", eventId).maybeSingle()) as DbResult<{
+      id: number;
+      is_hidden: boolean | null;
+      is_deleted: string | null;
+    }>;
+    if (row.error) {
+      logDb(`event ${eventId} (after a refused delete) read`, row.error);
+      return "failed";
+    }
+    if (row.data === null || (row.data.is_deleted ?? "").trim() !== "") return "gone";
+    if (row.data.is_hidden !== true) return "event_live";
+    console.error(`uploader: event ${eventId} is hidden and not deleted, yet the soft delete wrote nothing`);
+    return "failed";
+  }
+  await logAudit({ action: "delete", entityType: "event", entityId: eventId, changes: { is_deleted: stamp }, metadata: { agent: AGENT } });
+  invalidatePriceLight("rows");
+  return "deleted";
 }
 
 /**

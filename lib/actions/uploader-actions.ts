@@ -27,7 +27,7 @@
  */
 import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
-import { newBudget, TOUR_UPLOADER_AGENT } from "@/lib/agents";
+import { agentEnabled, newBudget, TOUR_UPLOADER_AGENT } from "@/lib/agents";
 import { revalidateMain } from "@/lib/revalidate-main";
 import { distanceKm, loadLocations } from "@/lib/services/nearest-location";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
@@ -46,6 +46,7 @@ import {
   claimNextItem,
   closeTask,
   countFoundItems,
+  countRecentParses,
   errorText,
   fail,
   insertDraftItems,
@@ -56,6 +57,7 @@ import {
   loadPeople,
   markApproved,
   nowIso,
+  planTokenKey,
   previewOf,
   raiseQuestion,
   readEditRows,
@@ -77,9 +79,10 @@ import {
   unhide,
   writeSubjectCache,
 } from "@/lib/services/uploader-store";
-import { REJECT_REASON_MIN } from "@/lib/uploader/constants";
+import { FAR_VENUE_KM, PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS, REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { editDiff } from "@/lib/uploader/decisions";
 import { applyPriorDefaults, emptyPlan, parsePlanInput } from "@/lib/uploader/plan";
+import { planTokenFor, verifyPlanToken } from "@/lib/uploader/plan-token";
 import {
   answerEffect,
   BRIEF_MAX,
@@ -93,6 +96,7 @@ import {
   isStaleBuild,
   isUuid,
   liveBlockers,
+  parseRateLimited,
   planEdits,
   planRunItems,
   REJECT_REASON_MAX,
@@ -130,16 +134,23 @@ import type { ItemStatus, UploaderPlan, UploaderQuestion, UploaderRun } from "@/
  * preview read still hands back the (paid) parse, with `preview: null` and `previewKind`.
  */
 export async function parseBrief(brief: string): Promise<ParseBriefResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
   if (typeof brief !== "string" || brief.trim() === "") return fail("bad_input");
   if (brief.length > BRIEF_MAX) return fail("brief_too_long");
+
+  // A paid call: at most PARSE_RATE_MAX per person per PARSE_RATE_WINDOW_MS (`agent.call` rows). A
+  // count that cannot be read lets the parse through (logged) - the cap is a brake, not the gate.
+  if (agentEnabled(TOUR_UPLOADER_AGENT) && isUuid(session.sub)) {
+    const recent = await countRecentParses(session.sub, PARSE_RATE_WINDOW_MS);
+    if (parseRateLimited(recent, PARSE_RATE_MAX)) return fail("rate_limited");
+  }
 
   let base: UploaderPlan;
   let planAi: UploaderPlan | null = null;
   let agent: "on" | "off" | "failed";
   let problems: string[] = [];
   try {
-    const outcome = await parseBriefWithAgent(brief, newBudget(TOUR_UPLOADER_AGENT));
+    const outcome = await parseBriefWithAgent(brief, newBudget(TOUR_UPLOADER_AGENT), { userId: session.sub });
     if (outcome.ok) {
       base = outcome.plan;
       planAi = outcome.plan;
@@ -169,10 +180,13 @@ export async function parseBrief(brief: string): Promise<ParseBriefResult> {
     console.error("uploader-actions: prior markups read failed", errorText(e));
   }
   const { plan, fromPrior } = applyPriorDefaults(base, prior);
+  // The model's plan is signed with its brief: createRun trusts `plan_ai` (the edit lessons) only with it.
+  const key = planTokenKey();
+  const signed = planAi !== null && key !== null ? { planToken: await planTokenFor(planAi, brief, key) } : {};
 
   const preview = await previewOf(plan, false);
-  if (!preview.ok) return { ok: true, plan, planAi, fromPrior, preview: null, previewKind: preview.kind, agent, problems };
-  return { ok: true, plan, planAi, fromPrior, preview: preview.preview, agent, problems };
+  if (!preview.ok) return { ok: true, plan, planAi, ...signed, fromPrior, preview: null, previewKind: preview.kind, agent, problems };
+  return { ok: true, plan, planAi, ...signed, fromPrior, preview: preview.preview, agent, problems };
 }
 
 /** The plan card after an edit (or the manual form): the plan is checked again first. `isTest` = the card's test switch. */
@@ -205,8 +219,12 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   const plan = parsed.plan;
   // The model's own plan is kept for the lesson (what staff changed), salvaged like any plan; a
   // value that is no object at all is no plan (diffing it would teach a dozen false corrections).
+  // It travelled through the browser: it is used only when `planToken` signs exactly it and this
+  // brief (`verifyPlanToken`) - anything else is no model plan (no lessons; the run is still made).
   const rawAi: unknown = input.plan_ai;
-  const planAi = typeof rawAi === "object" && rawAi !== null && !Array.isArray(rawAi) ? parsePlanInput(rawAi).plan : null;
+  const claimedAi = typeof rawAi === "object" && rawAi !== null && !Array.isArray(rawAi) ? parsePlanInput(rawAi).plan : null;
+  const planAi = claimedAi !== null && (await verifyPlanToken(input.planToken, claimedAi, brief, planTokenKey())) ? claimedAi : null;
+  if (claimedAi !== null && planAi === null) console.warn("uploader-actions: plan_ai came without a valid signature - kept as no model plan");
 
   const busy = await runInProgressFor(plan);
   if (busy === null) return fail("db_error");
@@ -642,8 +660,22 @@ export async function approveAll(runId: string): Promise<ApproveAllResult> {
 }
 
 /**
- * Reject a show: its hidden event is soft deleted FIRST (a failure answers `event_not_deleted` and
- * changes nothing - a surviving hidden event would block the next run as `exists`), then the item
+ * The item's built event soft deleted before a reject / rebuild changes the item: null = done (or
+ * nothing to delete); `event_live` = the event is LISTED (approved meanwhile) and was not touched;
+ * `event_not_deleted` = the delete failed. Either refusal changes nothing.
+ */
+async function removeBuiltEvent(eventId: number | null): Promise<{ ok: false; kind: string } | null> {
+  if (eventId === null) return null;
+  const outcome = await softDeleteBuiltEvent(eventId);
+  if (outcome === "event_live") return fail("event_live");
+  if (outcome === "failed") return fail("event_not_deleted");
+  return null;
+}
+
+/**
+ * Reject a show: its hidden event is soft deleted FIRST, and only while it is still hidden (a failure
+ * answers `event_not_deleted`, a LISTED event `event_live` - both change nothing; a surviving hidden
+ * event would block the next run as `exists`), then the item
  * (only from ready / question / found / error, the condition in the UPDATE), its open question task
  * closed, and the rejection audited (the reason is the lesson). `final` = never offer this show
  * again (a later run skips it, `rejected_before`).
@@ -658,7 +690,8 @@ export async function rejectItem(itemId: string, reason: string, final: boolean)
   if ("kind" in read) return fail(read.kind);
   const { item, run } = read;
   if (!REJECTABLE_STATUSES.includes(item.status)) return fail("not_rejectable");
-  if (item.event_id !== null && !(await softDeleteBuiltEvent(item.event_id))) return fail("event_not_deleted");
+  const removed = await removeBuiltEvent(item.event_id);
+  if (removed) return removed;
 
   const written = await transitionItem(item.id, REJECTABLE_STATUSES, { status: "rejected", rejected_reason: why, rejected_final: final });
   if (written === "db_error") return fail("db_error");
@@ -689,8 +722,10 @@ export async function rejectItem(itemId: string, reason: string, final: boolean)
  * The far-venue offer ("בנה כחבילה דרך <city>"): a built ticket-only show, or one skipped for having
  * no location (`canRebuildTwoCity`), is built again as a two-city package flying to
  * `flightCityId` - by default the item's own nearest location (`item.location.id`) - lodging split
- * with the venue city. The ticket-only event is soft deleted FIRST (failure -> `event_not_deleted`,
- * nothing changed); then the item is re-queued with the choice on its show (`two_city`).
+ * with the venue city - and never through a city farther than FAR_VENUE_KM from the venue (`too_far`).
+ * The ticket-only event is soft deleted FIRST, only while still hidden (failure -> `event_not_deleted`,
+ * a listed event -> `event_live`, nothing changed); then the item is re-queued with the choice on its
+ * show (`two_city`).
  */
 export async function rebuildTwoCity(itemId: string, flightCityId?: number | null): Promise<Ok> {
   await requireAdmin();
@@ -711,8 +746,12 @@ export async function rebuildTwoCity(itemId: string, flightCityId?: number | nul
   if (!loc.row) return fail("location_not_found");
   if (!loc.row.city_iata?.trim()) return fail("location_no_iata");
   const km = Math.round(distanceKm(lat, lon, loc.row.latitude, loc.row.longitude));
+  // The offer names the item's nearest location within FAR_VENUE_KM; a hand-picked id must not fly a
+  // package to a city on another continent from this venue.
+  if (km > FAR_VENUE_KM) return fail("too_far");
 
-  if (item.event_id !== null && !(await softDeleteBuiltEvent(item.event_id))) return fail("event_not_deleted");
+  const removed = await removeBuiltEvent(item.event_id);
+  if (removed) return removed;
   const requeued = await transitionItem(item.id, [item.status], {
     status: "found",
     show: withTwoCity(item.show, cityId),

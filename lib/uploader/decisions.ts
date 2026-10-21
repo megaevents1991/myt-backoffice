@@ -45,7 +45,7 @@ function withPrefix(prefix: string, name: string): string {
  *  base_prices {flight, hotel} · prior_answer {name, run} · lodging_from_memory {event} ·
  *  tribute_excluded {name} · duplicate_dropped {name, event_id} ·
  *  two_city_from_memory {event, show_city, flight_city, lodging?} · two_city_chosen {show_city, flight_city, km} ·
- *  rejected_before {run, by, reason}
+ *  rejected_before {run, by, reason} · question_untasked {max}
  */
 export const DECISION_TEXT = {
   // No `km` = the venue has no coordinates (a LiveTickets-only show, an answered location): no distance is printed.
@@ -69,6 +69,7 @@ export const DECISION_TEXT = {
   two_city_chosen: (p) =>
     `דו-עירוני לפי בחירת צוות: הופעה ${withPrefix("ב", str(p, "show_city"))}, טיסה ${withPrefix("ל", str(p, "flight_city"))} (${km(p)} ק"מ), פיצול מלון`,
   rejected_before: (p) => `נדחתה בריצה #${str(p, "run")} על ידי ${str(p, "by")}${str(p, "reason") === "" ? "" : `: ${str(p, "reason")}`}`,
+  question_untasked: (p) => `שאלה ללא משימה - מעל ${str(p, "max")} שאלות בריצה`,
 } satisfies Record<string, DecisionText>;
 
 export type DecisionCode = keyof typeof DECISION_TEXT;

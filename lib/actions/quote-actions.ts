@@ -161,6 +161,8 @@ async function suggestedUnitPriceFor(
     )
     .eq("id", eventId)
     .is("is_deleted", null)
+    // A hidden event (AI Uploader, not approved yet) has no baseline a partner may quote from.
+    .eq("is_hidden", false)
     .maybeSingle();
   if (error) {
     // A missing baseline is recorded as NULL rather than failing the quote -
@@ -219,6 +221,7 @@ async function packageBaselineFor(
       "base_flight_price,base_hotel_price,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,skip_flight_markup,skip_hotel_markup,ticket_only_markup",
     )
     .eq("id", row.event_id)
+    .eq("is_hidden", false)
     .maybeSingle();
   if (eventError || !eventData) {
     if (eventError)

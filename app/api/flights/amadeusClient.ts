@@ -48,9 +48,18 @@ const CLIENT_SECRET = process.env
 let cachedToken: { value: string; expiresAt: number } | null = null;
 let inFlight: Promise<string> | null = null;
 
+/**
+ * The token call and every API call are awaited at most this long: a hung Amadeus used to hold the
+ * caller (the uploader's base quote, the nightly sync) until the function's own limit. The abort is
+ * a thrown error like any failed fetch - every caller already catches (searchCheapestOffer -> null,
+ * the search route's catch, our-offer-detail's allSettled).
+ */
+const AMADEUS_TIMEOUT_MS = 20_000;
+
 async function fetchToken(): Promise<string> {
   const res = await fetch(`${AUTH_HOST}/v1/security/oauth2/token`, {
     method: "POST",
+    signal: AbortSignal.timeout(AMADEUS_TIMEOUT_MS),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "client_credentials",
@@ -154,6 +163,7 @@ async function request(
 
   const res = await fetch(url, {
     method,
+    signal: AbortSignal.timeout(AMADEUS_TIMEOUT_MS),
     headers,
     body:
       method === "POST" && body !== undefined

@@ -160,6 +160,11 @@ function feedCategories(raw: unknown): string[] | null {
   return names.length ? names : null;
 }
 
+/** One feed page is awaited at most this long - an AbortError is a failed fetch like any other (every caller catches it). */
+const FEED_PAGE_TIMEOUT_MS = 15_000;
+/** A show's feed is read in at most this many pages (50 listings each); past it the read THROWS rather than return a part. */
+const FEED_PAGES_MAX = 40;
+
 async function fetchFeedForEvent(tixstockEventId: string): Promise<TixStockFeed> {
   if (!TIXSTOCK_TOKEN) throw new Error("TixStock API token is missing");
 
@@ -182,6 +187,7 @@ async function fetchFeedForEvent(tixstockEventId: string): Promise<TixStockFeed>
         Accept: "application/json",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(FEED_PAGE_TIMEOUT_MS),
     });
 
     if (!res.ok) {
@@ -192,6 +198,10 @@ async function fetchFeedForEvent(tixstockEventId: string): Promise<TixStockFeed>
     if (currentPage === 1) {
       lastPage = data.meta?.last_page ?? 1;
       categories = feedCategories(data.meta?.categories);
+      // A partial feed would read as listings gone (availability takes tickets off): refuse, never cut.
+      if (lastPage > FEED_PAGES_MAX) {
+        throw new Error(`TixStock feed of event ${tixstockEventId} has ${lastPage} pages - more than ${FEED_PAGES_MAX}, not read in part`);
+      }
     }
     allTickets.push(...(data.data || []));
     currentPage++;

@@ -18,6 +18,8 @@ export type ParseBriefResult =
       plan: UploaderPlan;
       /** The model's own plan before those defaults - what `createRun` takes as `plan_ai`; null when the agent did not answer with one. */
       planAi: UploaderPlan | null;
+      /** The signature of `planAi` with this brief (`planTokenFor`) - hand it back to `createRun` with `plan_ai`; absent = no model plan, or no signing key. */
+      planToken?: string;
       /** Which markups came from the last run (not from the brief). */
       fromPrior: ("ticket_only" | "additional")[];
       /** null = the preview's read failed (`previewKind` says why) - the parse itself is never thrown away. */
@@ -34,6 +36,8 @@ export type CreateRunInput = {
   brief: string;
   plan: UploaderPlan;
   plan_ai: UploaderPlan | null;
+  /** `parseBrief`'s `planToken`: `plan_ai` is used (the edit lessons) only when it signs exactly that plan and this brief. */
+  planToken?: string;
   /** Ignored: the asker is always the session's user. Kept so existing callers stay valid. */
   asker_id: string | null;
   is_test: boolean;

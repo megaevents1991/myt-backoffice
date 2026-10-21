@@ -32,10 +32,13 @@
  * service, the TixStock / LiveTickets clients, the event actions) are imported inside the call,
  * so a missing env is an item error, not a crash of whoever imports this file.
  */
+// Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
+import "server-only";
 import { logAudit } from "@/lib/audit";
 import { loadLocations } from "@/lib/services/nearest-location";
 import { quoteFlight, quoteHotel, type QuoteResult } from "@/lib/services/price-quote";
 import { loadPriorItems, venueMapFor } from "@/lib/services/uploader-prior";
+import { softDeleteBuiltEvent } from "@/lib/services/uploader-store";
 import { existingForShow } from "@/lib/services/uploader-search";
 import { findVenueMemory } from "@/lib/services/venue-memory";
 import { calculateSmartDates } from "@/lib/smart-dates";
@@ -325,29 +328,31 @@ async function readPlaceInput(run: UploaderRun, item: UploaderItem, show: ShowId
  * hidden event its earlier build made. That event is soft-deleted FIRST (audit
  * `uploader.orphan_cleaned`) so the rebuild never leaves it hidden with nothing pointing at it; a
  * failed read or delete THROWS - the build then stops as an error rather than make a second event.
+ * The delete is conditional (`softDeleteBuiltEvent`: still hidden, not deleted) - a LIVE event is
+ * never taken down. Returns whether the item's `event_id` now names nothing (deleted here, already
+ * deleted, or gone) - the build then clears it on a result that creates no event (B4).
  */
-async function cleanOwnEvent(run: UploaderRun, item: UploaderItem): Promise<void> {
+async function cleanOwnEvent(run: UploaderRun, item: UploaderItem): Promise<boolean> {
   const eventId = item.event_id;
-  if (eventId === null) return;
+  if (eventId === null) return false;
   const { data, error } = await db.from("events").select("id,is_hidden,is_deleted").eq("id", eventId).maybeSingle();
   if (error) {
     console.error("uploader-build: own event read failed", JSON.stringify(error));
     throw new Error(`could not read the item's earlier event #${eventId}: ${error.message}`);
   }
   const row = (data ?? null) as { id: number; is_hidden: boolean | null; is_deleted: string | null } | null;
-  if (!ownEventToClean(row)) return;
-  try {
-    const { softDeleteEvent } = await import("@/lib/actions/event-actions");
-    await softDeleteEvent(eventId);
-  } catch (e) {
-    throw new Error(`could not remove the earlier hidden event #${eventId} - not building a second one: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  if (!ownEventToClean(row)) return row === null || (row.is_deleted ?? "").trim() !== "";
+  const outcome = await softDeleteBuiltEvent(eventId);
+  if (outcome === "failed") throw new Error(`could not remove the earlier hidden event #${eventId} - not building a second one`);
+  if (outcome === "event_live") return false; // approved meanwhile: left alone, still the item's event
+  if (outcome === "gone") return true;
   await logAudit({
     action: "uploader.orphan_cleaned",
     entityType: "uploader_item",
     entityId: item.id,
     metadata: { agent: "tour-uploader", run_id: run.id, item_id: item.id, event_id: eventId },
   });
+  return true;
 }
 
 // ---- bases ---------------------------------------------------------------------------------------
@@ -512,13 +517,14 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
     is_deleted: "",
     tags: "",
     skip_flight: true,
-    is_hidden: true,
     is_test: run.is_test,
     tx_excluded_sections: [],
     ticket_only_markup: run.plan.markups.ticket_only,
     event_additional_markup: run.plan.markups.additional,
     package_mode: placed.mode,
     ...placed.lodging,
+    // LAST, after every spread: nothing the lodging (or any later field) carries can list the event.
+    is_hidden: true,
   };
   const { createEvent } = await import("@/lib/actions/event-actions");
   const created = await createEvent(draft);

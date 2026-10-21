@@ -190,7 +190,8 @@ export function QuestionCard({
             {q.task_id ? (
               <>נשלח כמשימה ל{askerName ?? "השולח"}</>
             ) : (
-              <>ממתין לתשובה של {askerName ?? "השולח"}</>
+              // Past MAX_QUESTION_TASKS_PER_RUN a question raises no task - its decision line says so.
+              (item.decisions ?? []).find((d) => d.code === "question_untasked")?.text ?? <>ממתין לתשובה של {askerName ?? "השולח"}</>
             )}
             {q.asked_at && (
               <>

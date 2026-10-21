@@ -20,7 +20,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { clubKey, clubNamesMatch, normalizeName } from "@/lib/on-tour";
 import { findCategoryTwin, namesMatch, TWIN_HUB_SLUG, type TwinPerson } from "@/lib/services/category-twins";
 import { hasLibraryCrest } from "@/lib/services/creative-gaps";
-import { SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
+import { planWindowCap, planWindowStart } from "@/lib/uploader/plan";
 import {
   calendarDay,
   fixtureSidesOf,
@@ -56,8 +56,12 @@ const OR_PATTERNS_MAX = 30;
 const TIX_SLICE_DAYS = 120;
 /** Slices read side by side. */
 const TIX_SLICES_AT_ONCE = 3;
-/** An open-ended plan searches this many months ahead: TixStock lists placeholder rows years out (2030). */
-const OPEN_WINDOW_MONTHS = 24;
+/**
+ * The most slices one read is cut into - a hard ceiling under the plan's own window rule
+ * (OPEN_WINDOW_MONTHS = 7 slices): a stored plan from before that rule, or any other unbounded
+ * window, can never fan one search out into thousands of statements (security review, 21.10).
+ */
+export const TIX_SLICES_MAX = 12;
 
 /** Postgres "canceling statement due to statement timeout". */
 const STATEMENT_TIMEOUT = "57014";
@@ -81,20 +85,18 @@ const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T
 
 /**
  * The SQL bounds of a plan's window: `groupRows`' own floor (`date_from`, never before today +
- * SHOW_WINDOW_DAYS) up to `date_to`, ONE DAY WIDER on each side - SQL compares instants while the
- * rules compare the day a supplier PRINTS ("2027-05-20T23:30:00-05:00" is the 20th), so the edge
- * rows are fetched and `groupRows` decides (listing them `out_of_scope` when they are). `to` is
- * exclusive. An open-ended plan (`date_to` null) ends OPEN_WINDOW_MONTHS after the window's START
- * (a `date_from` years ahead still gets a full window, never an empty one).
+ * SHOW_WINDOW_DAYS - `planWindowStart`) up to `date_to`, ONE DAY WIDER on each side - SQL compares
+ * instants while the rules compare the day a supplier PRINTS ("2027-05-20T23:30:00-05:00" is the
+ * 20th), so the edge rows are fetched and `groupRows` decides (listing them `out_of_scope` when they
+ * are). `to` is exclusive. An open-ended plan (`date_to` null) ends OPEN_WINDOW_MONTHS after the
+ * window's START (a `date_from` years ahead still gets a full window, never an empty one), and a
+ * `date_to` past that is held to it (`parsePlanInput` already cuts it; a stored plan may predate that).
  */
 export function searchWindow(scope: UploaderPlan["scope"], now: Date = new Date()): SearchWindow {
-  const today = now.toISOString().slice(0, 10);
-  const floor = addDays(today, SHOW_WINDOW_DAYS);
-  const start = scope.date_from !== null && scope.date_from > floor ? scope.date_from : floor;
-  if (scope.date_to !== null) return { from: addDays(start, -1), to: addDays(scope.date_to, 2) };
-  const cap = new Date(`${start}T00:00:00Z`);
-  cap.setUTCMonth(cap.getUTCMonth() + OPEN_WINDOW_MONTHS);
-  return { from: addDays(start, -1), to: cap.toISOString().slice(0, 10) };
+  const start = planWindowStart(scope.date_from, now);
+  const cap = planWindowCap(start);
+  if (scope.date_to !== null) return { from: addDays(start, -1), to: addDays(scope.date_to < cap ? scope.date_to : cap, 2) };
+  return { from: addDays(start, -1), to: cap };
 }
 
 // ---- name patterns -------------------------------------------------------------------------------
@@ -443,10 +445,10 @@ async function searchTixRows(subject: Subject, window: SearchWindow): Promise<Ti
   return rows.map(toTixRow);
 }
 
-/** The window as `TIX_SLICE_DAYS` slices, each `[from, to)`, in order. Pure. */
+/** The window as `TIX_SLICE_DAYS` slices, each `[from, to)`, in order - at most TIX_SLICES_MAX (the rest is never read). Pure. */
 export function tixSlices(window: SearchWindow): SearchWindow[] {
   const slices: SearchWindow[] = [];
-  for (let from = window.from; from < window.to; from = addDays(from, TIX_SLICE_DAYS)) {
+  for (let from = window.from; from < window.to && slices.length < TIX_SLICES_MAX; from = addDays(from, TIX_SLICE_DAYS)) {
     const to = addDays(from, TIX_SLICE_DAYS);
     slices.push({ from, to: to < window.to ? to : window.to });
   }

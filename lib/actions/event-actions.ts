@@ -271,6 +271,9 @@ export async function bulkSoftDeleteEvents(ids: number[]) {
   return data as Event[];
 }
 
+/** Why a hidden (uploaded, not yet approved) event is never duplicated - thrown by both duplicate actions. */
+const HIDDEN_DUPLICATE_ERROR = "A hidden event (built by the AI Uploader, not approved yet) cannot be duplicated - approve or reject it on its uploader board first.";
+
 export async function duplicateEvent(
   id: number,
   opts?: { skipAudit?: boolean },
@@ -287,6 +290,9 @@ export async function duplicateEvent(
 
   // Remove the id and modify the name to indicate it's a copy
   const source = eventToDuplicate as Event;
+  // A hidden event is the tour uploader's, waiting for its Approve: a copy is born LISTED (below), so
+  // duplicating one would put an unapproved event on the site past approve and its blockers.
+  if (source.is_hidden === true) throw new Error(HIDDEN_DUPLICATE_ERROR);
   const newEvent: Record<string, unknown> = {
     ...source,
     name: `${source.name} (Copy)`,
@@ -382,6 +388,13 @@ export async function bulkUpdateEvents(ids: number[], input: Partial<Event>) {
 
 export async function bulkDuplicateEvents(ids: number[]) {
   await requireStaff();
+  // Every source checked BEFORE the first copy: a hidden one (see duplicateEvent) refuses the whole
+  // batch, rather than leave half of it duplicated.
+  const { data: sources, error: sourcesError } = await supabase.from("events").select("id,is_hidden").in("id", ids);
+  if (sourcesError) throw sourcesError;
+  if (((sources ?? []) as unknown as { id: number; is_hidden: boolean | null }[]).some((e) => e.is_hidden === true)) {
+    throw new Error(HIDDEN_DUPLICATE_ERROR);
+  }
   const duplicatedEvents: Event[] = [];
 
   // We need to duplicate each event one by one

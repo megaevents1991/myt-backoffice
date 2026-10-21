@@ -55,6 +55,7 @@ export function UploaderClient({
           id: ++seedId.current,
           plan: res.plan,
           planAi: res.planAi,
+          planToken: res.planToken ?? null,
           fromPrior: res.fromPrior,
           preview: res.preview,
           agent: res.agent,
@@ -72,7 +73,7 @@ export function UploaderClient({
     if (brief.length > briefMax) return;
     setStage({
       name: "plan",
-      seed: { id: ++seedId.current, plan: emptyPlan(), planAi: null, fromPrior: [], preview: null, agent: "off", problems: [] },
+      seed: { id: ++seedId.current, plan: emptyPlan(), planAi: null, planToken: null, fromPrior: [], preview: null, agent: "off", problems: [] },
     });
   }
 

@@ -40,6 +40,24 @@ export const NAME_MAX = 120;
 /** The most entries in any plan list (cities to include / exclude, notes). */
 export const LIST_MAX = 20;
 
+/** The longest note a plan keeps (characters, after trimming); a city in a plan list is at most NAME_MAX. */
+export const NOTE_MAX = 300;
+
+/**
+ * The widest window a plan searches: `date_to` at most this many months after the window's start
+ * (`date_from`, never before today + SHOW_WINDOW_DAYS), and an open-ended plan ends there.
+ * TixStock lists placeholder rows years out (2030), and an unbounded `date_to` fanned one search
+ * out into thousands of date slices (security review, 21.10).
+ */
+export const OPEN_WINDOW_MONTHS = 24;
+
+/** `createRun` raises at most this many question tasks (a task + a mail each); further questions wait on the board without a task. */
+export const MAX_QUESTION_TASKS_PER_RUN = 20;
+
+/** `parseBrief` calls the model at most this many times per person per PARSE_RATE_WINDOW_MS (counted on the `agent.call` audit rows). */
+export const PARSE_RATE_MAX = 10;
+export const PARSE_RATE_WINDOW_MS = 10 * 60_000;
+
 // The party a stored TixStock ticket price is for (`PRICED_PARTY`) is NOT re-exported here: the
 // /uploader screens import this file on the client, and the re-export dragged the supplier modules
 // into that bundle. Import it from "@/lib/tixstock-listings", the price sync's own constant.

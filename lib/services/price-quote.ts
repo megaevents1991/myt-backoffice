@@ -118,6 +118,9 @@ export async function quoteFlight(
   };
 }
 
+/** The hotel search behind a quote is awaited at most this long. */
+const QUOTE_HOTEL_TIMEOUT_MS = 15_000;
+
 export async function quoteHotel(
   lat: number,
   lon: number,
@@ -132,6 +135,8 @@ export async function quoteHotel(
     const url = `${base}/api/hotels?lat=${lat}&lon=${lon}&checkin=${checkin}&checkout=${checkout}&secret=${secret}`;
     const response = await fetch(url, {
       headers: { "Content-Type": "application/json" },
+      // A hung hotel search is an error like any other (caught below -> null, "no quote").
+      signal: AbortSignal.timeout(QUOTE_HOTEL_TIMEOUT_MS),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data?.message || "hotel search failed");

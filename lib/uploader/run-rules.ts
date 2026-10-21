@@ -8,6 +8,7 @@
  * scripts/tour-uploader-selftest.ts ("Task 8").
  */
 import { clubKey, normalizeName } from "@/lib/on-tour";
+import { MAX_QUESTION_TASKS_PER_RUN } from "@/lib/uploader/constants";
 import { decision } from "@/lib/uploader/decisions";
 import { applyPriorDefaults, planDiff } from "@/lib/uploader/plan";
 import { WARNING_TEXT, type SubjectRows } from "@/lib/uploader/warnings";
@@ -207,7 +208,9 @@ const byShow = (a: Entry, b: Entry): number =>
  * 3. a grouping question an earlier run answered (`priorAnswerFor`, and the answer still fits this
  *    question's options) -> applied exactly as `answerQuestion` applies it (`answerEffect`), decision
  *    `prior_answer`, no task; a "both" adds its extra items right after;
- * 4. any other question -> `question`, waiting for a person (`ask`);
+ * 4. any other question -> `question`, waiting for a person (`ask`) - the first `maxQuestionTasks`
+ *    (MAX_QUESTION_TASKS_PER_RUN, soonest first) become tasks; past that a question waits on the
+ *    board WITHOUT a task (and its mail), with the `question_untasked` decision line;
  * 5. the rest -> `found`.
  * Every show carries its XS2Event / P1 sightings (`fallback`, by `showKey`).
  */
@@ -220,7 +223,11 @@ export function planRunItems(input: {
   subject_en: string;
   /** ISO time stamped on an answer applied from an earlier run. */
   at: string;
+  /** How many questions may become tasks (default MAX_QUESTION_TASKS_PER_RUN). */
+  maxQuestionTasks?: number;
 }): ItemDraft[] {
+  const maxTasks = input.maxQuestionTasks ?? MAX_QUESTION_TASKS_PER_RUN;
+  let tasked = 0;
   const withFallback = (show: ShowIdentity): ShowIdentity => ({
     ...show,
     fallback: [...(input.fallback.get(showKey(show.country_code, show.city, show.date, show.home_team)) ?? [])],
@@ -267,7 +274,9 @@ export function planRunItems(input: {
     const prior = priorAnswerFor({ subject_en: input.subject_en, kind: question.kind, key: question.key }, input.priors);
     const fits = prior?.answer ? checkAnswer(question, prior.answer).ok : false;
     if (!prior?.answer || !fits) {
-      push({ show, status: "question", skip_reason: null, decisions: [], question, ask: true });
+      const ask = tasked < maxTasks;
+      if (ask) tasked += 1;
+      push({ show, status: "question", skip_reason: null, decisions: ask ? [] : [decision("question_untasked", { max: maxTasks })], question, ask });
       continue;
     }
     const answer: StoredAnswer = { key: prior.answer.key, text: prior.answer.text, by: prior.by, at: input.at };
@@ -559,6 +568,17 @@ export function twoCityOf(show: unknown): { flightCityId: number } | null {
 /** The show with the two-city choice on it (a copy). */
 export function withTwoCity(show: ShowIdentity, flightCityId: number): ShowIdentity & { two_city: { flight_city_id: number } } {
   return { ...show, two_city: { flight_city_id: flightCityId } };
+}
+
+// ---- the parse's rate cap -------------------------------------------------------------------------
+
+/**
+ * Is this person over the parse cap: `recent` = their `agent.call` rows in the window (null = the
+ * count could not be read - let through, the cap is a brake on spend, not the gate), `max` = the cap.
+ * At `max` calls already made the next one is refused.
+ */
+export function parseRateLimited(recent: number | null, max: number): boolean {
+  return recent !== null && recent >= max;
 }
 
 // ---- the run's resolved subject, cached on the run row ----------------------------------------------

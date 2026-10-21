@@ -383,6 +383,15 @@ export function EventsTable() {
   };
 
   const handleDuplicate = async (id: number) => {
+    // The server refuses it too (duplicateEvent) - this says why, where a thrown action error reads generic in production.
+    if (events.find((e) => e.id === id)?.is_hidden === true) {
+      toast({
+        variant: "destructive",
+        title: "Hidden event",
+        description: "A hidden event (AI Uploader, not approved yet) cannot be duplicated - approve or reject it on its uploader board first.",
+      });
+      return;
+    }
     try {
       const duplicatedEvent = await duplicateEvent(id);
 

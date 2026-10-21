@@ -6,8 +6,9 @@
  * Run: npx tsx scripts/tour-uploader-selftest.ts
  * (tsx rather than plain node: the modules resolve `@/` paths from tsconfig.)
  *
- * One independent section per module. A later task adds its section ABOVE the summary line at the
- * bottom - `check` / `same` / `problemFor` count themselves, so the summary never needs editing.
+ * One independent section per module. A later task adds its section ABOVE `planTokenChecks` at the
+ * bottom (the async checks; the summary prints once they are done) - `check` / `same` / `problemFor`
+ * count themselves, so the summary never needs editing.
  */
 import assert from "node:assert/strict";
 import {
@@ -15,8 +16,13 @@ import {
   FAR_VENUE_KM,
   LIST_MAX,
   MARKUP_MAX,
+  MAX_QUESTION_TASKS_PER_RUN,
   NAME_MAX,
   NEAR_LOCATION_KM,
+  NOTE_MAX,
+  OPEN_WINDOW_MONTHS,
+  PARSE_RATE_MAX,
+  PARSE_RATE_WINDOW_MS,
   REJECT_REASON_MIN,
   SHOW_WINDOW_DAYS,
   TOAST_POLL_MS,
@@ -27,8 +33,11 @@ import {
   parsePlanInput,
   PLAN_TOOL_SCHEMA,
   planDiff,
+  planWindowCap,
+  planWindowStart,
   type PlanParse,
 } from "@/lib/uploader/plan";
+import { canonicalJson, planTokenFor, verifyPlanToken } from "@/lib/uploader/plan-token";
 import {
   buildDuplicateFor,
   calendarDay,
@@ -62,7 +71,7 @@ import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type Subject
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
-import { nameFragments, searchWindow, subjectPatterns, tixSlices } from "@/lib/services/uploader-search";
+import { nameFragments, searchWindow, subjectPatterns, tixSlices, TIX_SLICES_MAX } from "@/lib/services/uploader-search";
 import { decidePlace, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
@@ -1560,6 +1569,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "location_missing_ticket_only",
       "lodging_from_memory",
       "prior_answer",
+      "question_untasked",
       "rejected_before",
       "tickets_livetickets",
       "tickets_tixstock",
@@ -1568,7 +1578,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "two_city_from_memory",
       "zones_from_template",
     ],
-    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before",
+    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10)",
   );
   same(decision("dates_smart", { depart: "18.05", ret: "21.05" }), { code: "dates_smart", text: "טיסות 18.05 → 21.05" }, "dates_smart: the spec's text");
   same(decision("base_prices", { flight: 310, hotel: 290 }).text, "בסיס מהכלל: טיסה $310 · מלון $290", "base_prices: the spec's text");
@@ -1626,6 +1636,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     two_city_from_memory: { event: "Oasis", show_city: "Manchester", flight_city: "London" },
     two_city_chosen: { show_city: "Manchester", flight_city: "London", km: 262 },
     rejected_before: { run: 3, by: "Alon", reason: "מחיר שגוי" },
+    question_untasked: { max: 20 },
   };
   for (const code of Object.keys(DECISION_TEXT) as (keyof typeof DECISION_TEXT)[]) {
     const d = decision(code, samples[code]);
@@ -2718,7 +2729,101 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     same(R.freshSubjectCache(bad, now), null, `C3: a malformed cache is no cache (${String(JSON.stringify(bad)).slice(0, 40)})`);
   }
 
+  // ---- the security round -----------------------------------------------------------------------
+
+  // A1: the plan's dates are real days, in order, and bounded - one search can no longer fan out.
+  const NOW15 = new Date("2026-10-21T09:00:00.000Z"); // floor = today + SHOW_WINDOW_DAYS = 2026-10-24
+  const withScope = (scope: Partial<UploaderPlan["scope"]>): UploaderPlan => ({ ...clapton(), scope: { ...clapton().scope, ...scope } });
+  problemFor(parsePlanInput(withScope({ date_from: "2027-02-30" }), NOW15), "scope.date_from", "A1: 30 February has the shape and is no day");
+  problemFor(parsePlanInput(withScope({ date_to: "2027-13-01" }), NOW15), "scope.date_to", "A1: month 13 is no day");
+  check(parsePlanInput(withScope({ date_from: "2028-02-29", date_to: "2028-03-01" }), NOW15).ok, "A1: a leap day is a day");
+  {
+    const reversed = parsePlanInput(withScope({ date_from: "2027-06-30", date_to: "2027-05-01" }), NOW15);
+    problemFor(reversed, "scope.date_to", "A1: date_to before date_from is a problem");
+    same([reversed.plan.scope.date_from, reversed.plan.scope.date_to], ["2027-06-30", null], "A1: ... and the end is dropped (date_from kept)");
+  }
+  {
+    const far = parsePlanInput(withScope({ date_from: null, date_to: "9000-01-01" }), NOW15);
+    problemFor(far, "scope.date_to", "A1: an end years out is a problem");
+    same(far.plan.scope.date_to, "2028-10-24", `A1: ... cut to the start (2026-10-24) + ${OPEN_WINDOW_MONTHS} months`);
+    const farFrom = parsePlanInput(withScope({ date_from: "2030-01-15", date_to: "2033-01-01" }), NOW15);
+    same(farFrom.plan.scope.date_to, "2032-01-15", "A1: a later date_from moves the cap with it");
+    check(parsePlanInput(withScope({ date_from: null, date_to: "2028-10-24" }), NOW15).ok, "A1: an end exactly on the cap is fine");
+  }
+  same(planWindowStart(null, NOW15), "2026-10-24", "A1: the window starts at today + SHOW_WINDOW_DAYS");
+  same(planWindowStart("2026-10-01", NOW15), "2026-10-24", "A1: ... never before");
+  same(planWindowCap("2026-10-24"), "2028-10-24", "A1: the cap is OPEN_WINDOW_MONTHS later");
+  same(searchWindow(withScope({ date_from: null, date_to: "9000-01-01" }).scope, NOW15), { from: "2026-10-23", to: "2028-10-26" }, "A1: a stored plan's far end is held to the cap by the search too");
+  same(TIX_SLICES_MAX, 12, "A1: the slice ceiling");
+  same(tixSlices({ from: "2026-10-23", to: "9000-01-01" }).length, TIX_SLICES_MAX, "A1: an unbounded window is cut at TIX_SLICES_MAX slices (it was 21,225)");
+  same(tixSlices(searchWindow(withScope({ date_from: null, date_to: null }).scope, NOW15)).length, 7, "A1: a real open window is still its 7 slices");
+
+  // A6: per-entry caps on the plan's lists.
+  {
+    const long = parsePlanInput({ ...clapton(), scope: { ...clapton().scope, exclude_cities: ["Basel", "x".repeat(NAME_MAX + 1)] } }, NOW15);
+    problemFor(long, "scope.exclude_cities", "A6: a city longer than NAME_MAX is a problem");
+    same(long.plan.scope.exclude_cities, ["Basel"], "A6: ... dropped, the rest kept");
+    const notes = parsePlanInput({ ...clapton(), notes: ["short", "y".repeat(NOTE_MAX + 1), "z".repeat(NOTE_MAX + 5)] }, NOW15);
+    problemFor(notes, "notes", "A6: notes longer than NOTE_MAX are one problem line");
+    same(notes.plan.notes, ["short"], "A6: ... both dropped");
+    check(notes.problems[0].includes("2 entries"), `A6: ... and the line counts them (${notes.problems[0]})`);
+    check(parsePlanInput({ ...clapton(), notes: ["y".repeat(NOTE_MAX)] }, NOW15).ok, "A6: a note of exactly NOTE_MAX is kept");
+    same(NOTE_MAX, 300, "A6: the note cap");
+  }
+
+  // A9: the parse's rate cap.
+  same([PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS], [10, 600_000], "A9: 10 parses per person per 10 minutes");
+  check(!R.parseRateLimited(9, PARSE_RATE_MAX), "A9: the 10th call goes through");
+  check(R.parseRateLimited(10, PARSE_RATE_MAX) && R.parseRateLimited(57, PARSE_RATE_MAX), "A9: past ten, refused");
+  check(!R.parseRateLimited(null, PARSE_RATE_MAX), "A9: an unreadable count lets the call through (a brake, not the gate)");
+
+  // A10: at most MAX_QUESTION_TASKS_PER_RUN questions become tasks.
+  {
+    const qs = Array.from({ length: MAX_QUESTION_TASKS_PER_RUN + 3 }, (_, i) => {
+      const s = show15(`City ${String(i).padStart(2, "0")}`, `2027-0${1 + Math.floor(i / 9)}-${String(10 + (i % 9)).padStart(2, "0")}`, `tx-q${i}`, null);
+      return { show: s, question: q15("pick_show", s, [`tx-q${i}`, `tx-r${i}`, "both", "skip"]) };
+    });
+    const drafts15 = R.planRunItems({ shows: [], questions: qs, existing: [], priors: [], fallback: new Map(), subject_en: CLAPTON, at: AT });
+    same(MAX_QUESTION_TASKS_PER_RUN, 20, "A10: the cap");
+    same(drafts15.filter((d) => d.status === "question").length, MAX_QUESTION_TASKS_PER_RUN + 3, "A10: every question is still on the board");
+    same(drafts15.filter((d) => d.ask).length, MAX_QUESTION_TASKS_PER_RUN, "A10: ... but only 20 raise a task + mail");
+    same(drafts15.slice(0, MAX_QUESTION_TASKS_PER_RUN).every((d) => d.ask && d.decisions.length === 0), true, "A10: the soonest 20 are the tasked ones");
+    same(
+      drafts15.slice(MAX_QUESTION_TASKS_PER_RUN).map((d) => [d.ask, d.decisions.map((x) => x.text)]),
+      Array.from({ length: 3 }, () => [false, ["שאלה ללא משימה - מעל 20 שאלות בריצה"]]),
+      "A10: past them, no task and the decision line says why",
+    );
+    same(R.planRunItems({ shows: [], questions: qs.slice(0, 2), existing: [], priors: [], fallback: new Map(), subject_en: CLAPTON, at: AT, maxQuestionTasks: 1 }).map((d) => d.ask), [true, false], "A10: the cap is a parameter");
+  }
+
   // @@MORE@@
 }
 
-console.log(`tour uploader selftest: all ${checks} checks passed`);
+// ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
+// A named async function + a call at the bottom (not top-level `await`): this file runs under plain
+// `npx tsx`, whose cjs output rejects top-level await.
+async function planTokenChecks(): Promise<void> {
+  const KEY = "synthetic-signing-key";
+  const brief = "יצא טור של אריק קלפטון באירופה";
+  const ai = clapton();
+  const token = await planTokenFor(ai, brief, KEY);
+  check(/^[0-9a-f]{64}$/.test(token), "A5: the token is an HMAC-SHA256 in hex");
+  check(await verifyPlanToken(token, ai, brief, KEY), "A5: the plan it was made for, with its brief, checks out");
+  const reordered = JSON.parse(JSON.stringify({ notes: ai.notes, suppliers: ai.suppliers, markups: ai.markups, rules: ai.rules, scope: ai.scope, subject: ai.subject })) as UploaderPlan;
+  check(await verifyPlanToken(token, reordered, brief, KEY), "A5: key order does not matter (canonical JSON)");
+  check(!(await verifyPlanToken(token, { ...ai, markups: { ticket_only: 999, additional: null } }, brief, KEY)), "A5: a forged plan_ai (any field changed) fails");
+  check(!(await verifyPlanToken(token, ai, `${brief} `, KEY)), "A5: the same plan under another brief fails");
+  check(!(await verifyPlanToken(token, ai, brief, "another-key")), "A5: another key fails");
+  for (const bad of [undefined, null, "", 5, token.toUpperCase(), token.slice(1), `${token}0`]) {
+    check(!(await verifyPlanToken(bad, ai, brief, KEY)), `A5: a missing / malformed token fails (${String(bad).slice(0, 12)})`);
+  }
+  check(!(await verifyPlanToken(token, ai, brief, null)), "A5: no signing key = nothing is trusted");
+  same(canonicalJson({ b: 1, a: { d: [2, { z: 1, y: 2 }], c: null } }), '{"a":{"c":null,"d":[2,{"y":2,"z":1}]},"b":1}', "A5: canonical JSON sorts keys at every level, arrays keep their order");
+}
+
+planTokenChecks()
+  .then(() => console.log(`tour uploader selftest: all ${checks} checks passed`))
+  .catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });

@@ -11,7 +11,7 @@
  * Pure - no DB, no network. Selftest: scripts/tour-uploader-selftest.ts.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { LIST_MAX, MARKUP_MAX, NAME_MAX } from "@/lib/uploader/constants";
+import { LIST_MAX, MARKUP_MAX, NAME_MAX, NOTE_MAX, OPEN_WINDOW_MONTHS, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
 
 const SUBJECT_KINDS = ["artist", "team", "competition"] as const satisfies readonly SubjectKind[];
@@ -77,13 +77,13 @@ export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
         round: { type: ["string", "null"], maxLength: NAME_MAX, description: 'A competition round ("Round of 16"), or null.' },
         exclude_cities: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", maxLength: NAME_MAX },
           maxItems: LIST_MAX,
           description: "Cities the brief says to leave out.",
         },
         include_cities: {
           type: "array",
-          items: { type: "string" },
+          items: { type: "string", maxLength: NAME_MAX },
           maxItems: LIST_MAX,
           description: "Only these cities, when the brief names them. Empty = every city.",
         },
@@ -134,7 +134,7 @@ export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
     },
     notes: {
       type: "array",
-      items: { type: "string" },
+      items: { type: "string", maxLength: NOTE_MAX },
       maxItems: LIST_MAX,
       description: "Anything in the brief that fits no field above, so the person can read it. [] when nothing is left over.",
     },
@@ -199,12 +199,56 @@ function readKind(v: unknown, problems: string[]): SubjectKind {
   return emptyPlan().subject.kind;
 }
 
+/** A real calendar day in YYYY-MM-DD: "2027-02-30" has the shape and is no day. */
+function isCalendarDay(text: string): boolean {
+  if (!DATE_RE.test(text)) return false;
+  const t = Date.parse(`${text}T00:00:00Z`);
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === text;
+}
+
 function readDate(v: unknown, field: string, problems: string[]): string | null {
   if (v === undefined || v === null) return null;
   const text = typeof v === "string" ? v.trim() : "";
-  if (DATE_RE.test(text)) return text;
-  problems.push(`${field}: must be YYYY-MM-DD or null`);
+  if (isCalendarDay(text)) return text;
+  problems.push(`${field}: must be a real date (YYYY-MM-DD) or null`);
   return null;
+}
+
+const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The first day a plan searches: its `date_from`, never before today + SHOW_WINDOW_DAYS (the site
+ * stops selling a show that close). The search's window (`searchWindow`) starts here too.
+ */
+export function planWindowStart(dateFrom: string | null, now: Date = new Date()): string {
+  const floor = addDays(now.toISOString().slice(0, 10), SHOW_WINDOW_DAYS);
+  return dateFrom !== null && dateFrom > floor ? dateFrom : floor;
+}
+
+/** The last day a plan may search: OPEN_WINDOW_MONTHS after its start (`planWindowStart`). */
+export function planWindowCap(start: string): string {
+  const cap = new Date(`${start}T00:00:00Z`);
+  cap.setUTCMonth(cap.getUTCMonth() + OPEN_WINDOW_MONTHS);
+  return cap.toISOString().slice(0, 10);
+}
+
+/**
+ * `date_to` held to the window: before `date_from` = no end (dropped, with a problem line); past
+ * `planWindowCap` = cut to it (with a problem line). Every search, preview and run reads a bounded
+ * window - an unbounded end fanned one search out into thousands of 120-day slices.
+ */
+function boundDateTo(dateFrom: string | null, dateTo: string | null, now: Date, problems: string[]): string | null {
+  if (dateTo === null) return null;
+  if (dateFrom !== null && dateFrom > dateTo) {
+    problems.push("scope.date_to: before scope.date_from - dropped");
+    return null;
+  }
+  const cap = planWindowCap(planWindowStart(dateFrom, now));
+  if (dateTo > cap) {
+    problems.push(`scope.date_to: more than ${OPEN_WINDOW_MONTHS} months after the start - cut to ${cap}`);
+    return cap;
+  }
+  return dateTo;
 }
 
 /** Absent = `fallback` (a plain omission); present but not a boolean = a problem and `fallback`. */
@@ -229,8 +273,9 @@ function readMarkup(v: unknown, field: string, problems: string[]): number | nul
 /**
  * A list of trimmed non-blank strings. Non-strings are dropped quietly (a stray number in a
  * city list is noise); more than LIST_MAX entries or a non-array is a problem and an empty list.
+ * An entry longer than `itemMax` characters is dropped with a problem line (the rest are kept).
  */
-function readList(v: unknown, field: string, problems: string[]): string[] {
+function readList(v: unknown, field: string, itemMax: number, problems: string[]): string[] {
   if (v === undefined) return [];
   if (!Array.isArray(v)) {
     problems.push(`${field}: must be a list of text`);
@@ -241,10 +286,13 @@ function readList(v: unknown, field: string, problems: string[]): string[] {
     problems.push(`${field}: more than ${LIST_MAX} entries`);
     return [];
   }
-  return items;
+  const kept = items.filter((x) => x.length <= itemMax);
+  const cut = items.length - kept.length;
+  if (cut > 0) problems.push(`${field}: ${cut === 1 ? "an entry" : `${cut} entries`} longer than ${itemMax} characters dropped`);
+  return kept;
 }
 
-function readPlan(raw: unknown, problems: string[]): UploaderPlan {
+function readPlan(raw: unknown, problems: string[], now: Date): UploaderPlan {
   if (!isObj(raw)) {
     problems.push("plan: must be an object");
     return emptyPlan();
@@ -260,6 +308,9 @@ function readPlan(raw: unknown, problems: string[]): UploaderPlan {
       : (WITHOUT_LOCATION.find((m) => m === rules.without_location) ?? null);
   if (withoutLocation === null) problems.push(`rules.without_location: must be one of ${WITHOUT_LOCATION.join(", ")}`);
 
+  const dateFrom = readDate(scope.date_from, "scope.date_from", problems);
+  const dateTo = boundDateTo(dateFrom, readDate(scope.date_to, "scope.date_to", problems), now, problems);
+
   return {
     subject: {
       kind: readKind(subject.kind, problems),
@@ -267,12 +318,12 @@ function readPlan(raw: unknown, problems: string[]): UploaderPlan {
       name_en: requiredName(subject.name_en, "subject.name_en", problems),
     },
     scope: {
-      date_from: readDate(scope.date_from, "scope.date_from", problems),
-      date_to: readDate(scope.date_to, "scope.date_to", problems),
+      date_from: dateFrom,
+      date_to: dateTo,
       home_only: readBool(scope.home_only, "scope.home_only", true, problems),
       round: optionalText(scope.round, "scope.round", problems),
-      exclude_cities: readList(scope.exclude_cities, "scope.exclude_cities", problems),
-      include_cities: readList(scope.include_cities, "scope.include_cities", problems),
+      exclude_cities: readList(scope.exclude_cities, "scope.exclude_cities", NAME_MAX, problems),
+      include_cities: readList(scope.include_cities, "scope.include_cities", NAME_MAX, problems),
     },
     // Not the model's choices: a location always means a package, and the suppliers are fixed.
     rules: { with_location: "package", without_location: withoutLocation ?? emptyPlan().rules.without_location },
@@ -281,15 +332,18 @@ function readPlan(raw: unknown, problems: string[]): UploaderPlan {
       additional: readMarkup(markups.additional, "markups.additional", problems),
     },
     suppliers: ["tixstock", "livetickets"],
-    notes: readList(raw.notes, "notes", problems),
+    notes: readList(raw.notes, "notes", NOTE_MAX, problems),
   };
 }
 
-/** Check the model's tool answer (or a form's payload). Never throws - see the file header. */
-export function parsePlanInput(raw: unknown): PlanParse {
+/**
+ * Check the model's tool answer (or a form's payload). Never throws - see the file header. `now`
+ * anchors the window rule (`boundDateTo`: today + SHOW_WINDOW_DAYS is the earliest start).
+ */
+export function parsePlanInput(raw: unknown, now: Date = new Date()): PlanParse {
   const problems: string[] = [];
   try {
-    const plan = readPlan(raw, problems);
+    const plan = readPlan(raw, problems, now);
     return problems.length === 0 ? { ok: true, plan, problems: [] } : { ok: false, plan, problems };
   } catch (e) {
     // An object whose property reads throw (a hostile getter / Proxy) - nothing here is trustworthy.

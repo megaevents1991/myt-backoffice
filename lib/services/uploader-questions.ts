@@ -11,6 +11,8 @@
  *
  * Session-free: the server actions that call it own the guard (Task 8).
  */
+// Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
+import "server-only";
 import { logAudit } from "@/lib/audit";
 import { notifyTaskAssigned } from "@/lib/services/task-notify";
 import { megaEventsTasks, type TaskResult } from "@/lib/tasks-scope";

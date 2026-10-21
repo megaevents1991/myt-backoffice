@@ -40,6 +40,8 @@ export type PlanSeed = {
   plan: UploaderPlan;
   /** The model's own plan (createRun's `plan_ai`, the lesson of what staff changed); null = manual. */
   planAi: UploaderPlan | null;
+  /** `parseBrief`'s signature of `planAi` - createRun uses `plan_ai` only with it. */
+  planToken: string | null;
   fromPrior: MarkupKey[];
   /** null = nothing searched yet (the manual form opens before a subject is typed). */
   preview: PlanPreview | null;
@@ -211,7 +213,14 @@ export function PlanCard({
     if (!canBuild) return;
     setCreating(true);
     try {
-      const res = await createRun({ brief, plan, plan_ai: seed.planAi, asker_id: null, is_test: isTest });
+      const res = await createRun({
+        brief,
+        plan,
+        plan_ai: seed.planAi,
+        ...(seed.planToken ? { planToken: seed.planToken } : {}),
+        asker_id: null,
+        is_test: isTest,
+      });
       if (!res.ok) {
         const problems = res.problems?.slice(0, 3).join(" · ");
         toast({

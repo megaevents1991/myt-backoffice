@@ -8,6 +8,8 @@
  * `venue_maps` template). Every failed read THROWS. Session-free: the server actions own the guard.
  * Never writes.
  */
+// Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
+import "server-only";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { normalizeName } from "@/lib/on-tour";
@@ -148,10 +150,13 @@ function supplierCategoriesOf(v: Json): SupplierCategoryMap {
 export async function venueMapFor(sourceUrl: string | null): Promise<Pick<VenueMap, "svg_url" | "zones" | "supplier_categories"> | null> {
   const url = (sourceUrl ?? "").trim();
   if (url === "") return null;
+  // A spelling holding `"` would break out of PostgREST's quoted `in.(...)` list - a supplier URL never has one.
+  const spellings = urlSpellings(url).filter((u) => !u.includes('"'));
+  if (spellings.length === 0) return null;
   const { data, error } = await supabaseTyped
     .from("venue_maps")
     .select("svg_url,zones,supplier_categories")
-    .in("source_url", urlSpellings(url))
+    .in("source_url", spellings)
     .order("updated_at", { ascending: false })
     .limit(1);
   if (error) fail("venue_maps read", error);

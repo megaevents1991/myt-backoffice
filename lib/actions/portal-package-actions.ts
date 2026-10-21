@@ -439,6 +439,8 @@ export async function getLiveTicketOffers(input: {
     .from("events")
     .select(EVENT_COLUMNS)
     .eq("id", eventId)
+    // A hidden event (AI Uploader, not approved yet) is no partner's to sell.
+    .eq("is_hidden", false)
     .maybeSingle();
   if (error || !data) {
     console.error("getLiveTicketOffers event:", JSON.stringify(error));
@@ -870,6 +872,8 @@ async function buildPackageRowCore(
         "skip_flight, skip_flight_markup, skip_hotel_markup, ticket_only_markup",
     )
     .eq("id", eventId)
+    // A hidden event (AI Uploader, not approved yet) is no partner's to package.
+    .eq("is_hidden", false)
     .maybeSingle();
 
   if (eventError) {
