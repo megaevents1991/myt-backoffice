@@ -87,6 +87,14 @@ export type WaOrigin = "customer" | "app" | "history";
 
 export type WaEvent =
   | {
+      /** A chunk of the 6-month history sync arrived (its messages ride as `message` events): how far the sync is. */
+      kind: "history";
+      phoneNumberId: string;
+      phase: number | null;
+      chunkOrder: number | null;
+      progress: number | null;
+    }
+  | {
       kind: "message";
       phoneNumberId: string;
       waMessageId: string;
@@ -247,7 +255,10 @@ export function parseWebhook(body: unknown): WaEvent[] {
           if (ev) out.push(ev);
         }
       } else if (field === "history") {
+        const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
         for (const chunkRaw of arr(value.history)) {
+          const meta = obj(obj(chunkRaw)?.metadata);
+          out.push({ kind: "history", phoneNumberId, phase: num(meta?.phase), chunkOrder: num(meta?.chunk_order), progress: num(meta?.progress) });
           for (const threadRaw of arr(obj(chunkRaw)?.threads)) {
             const thread = obj(threadRaw);
             const customer = str(thread?.id);

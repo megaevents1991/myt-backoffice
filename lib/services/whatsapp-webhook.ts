@@ -52,7 +52,11 @@ export async function handleWebhookPost(rawBody: string, signature: string | nul
     deps.log.error("NEXT_SECRET_WHATSAPP_APP_SECRET is not set - every webhook is refused");
     return UNAUTHORIZED;
   }
-  if (!verifySignature(rawBody, signature, env.appSecret)) return UNAUTHORIZED;
+  if (!verifySignature(rawBody, signature, env.appSecret)) {
+    // a wrong secret in Vercel is otherwise invisible on our side (Meta's dashboard alone shows the failures) - never the body
+    deps.log.warn(`signature refused (${signature ? "header does not match" : "no header"}, ${rawBody.length} bytes)`);
+    return UNAUTHORIZED;
+  }
 
   let payload: unknown;
   try {

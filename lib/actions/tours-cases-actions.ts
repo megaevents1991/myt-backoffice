@@ -32,7 +32,7 @@ import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
 import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
-import { countUnseen } from "@/lib/services/whatsapp-db";
+import { countUnseen, relinkCardCustomer, relinkCaseMessages, relinkCustomerMessages } from "@/lib/services/whatsapp-db";
 import { threadOf } from "@/lib/services/whatsapp-thread";
 import { ROOM_COMPOSITIONS, roomPrice, toPriceMatrix } from "@/lib/tours/pricing";
 import { departureSiteId, LEAD_KIND_LABELS } from "@/types/tours.types";
@@ -1366,6 +1366,8 @@ export async function mergeCases(caseId: string, otherId: string): Promise<Actio
     const answer = asObject(data as never);
     if (answer.ok !== true) throw new UserError(answer.error === "not_found" ? "One of the cases was deleted meanwhile - reload." : "The cases could not be merged.");
     const moved = { bookings: Number(answer.bookings) || 0, seats: Number(answer.seats) || 0 };
+    // merge_lead_cases moves bookings, seats and notes; the WhatsApp messages of the merged card follow here (never fails the merge)
+    await relinkCaseMessages(source.id, target.id).catch((e: unknown) => console.error("cases: wa_messages relink failed:", e instanceof Error ? e.message : e));
     await Promise.all([
       logAudit({
         action: "merge",
@@ -1825,7 +1827,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
     const records = cardsAnswer.rows.map(withDefaults);
     // the thread is cut to the cards this viewer sees (security review 21.10) - the same rule as the cards below
     const visibleIds = new Set(records.filter((r) => canSeeCard({ assignedTo: r.assigned_to ?? null }, viewer)).map((r) => r.id));
-    const [x, whatsapp] = await Promise.all([enrich(company.id, records), threadOf(company, customer.id, customer.phones ?? [], { scope: { visibleCaseIds: visibleIds } })]);
+    const [x, whatsapp] = await Promise.all([enrich(company.id, records), threadOf(company, customer.id, customer.phones ?? [], { scope: viewer.manager ? { all: true } : { visibleCaseIds: visibleIds } })]);
     const today = todayIso();
     // the viewer's cards; the others are counted, never listed (21.10) - what a card knows is still read over all of them
     const all = records.map((r) => toCaseRow(r, x, statuses));
@@ -2059,6 +2061,7 @@ export async function mergeCustomers(keepId: string, otherId: string): Promise<A
       .eq("company_id", company.id)
       .eq("id", keep.id);
     if (keepError) throw new Error(`customers: ${keepError.message}`);
+    await relinkCustomerMessages(otherId, keep.id).catch((e: unknown) => console.error("cases: wa_messages relink failed:", e instanceof Error ? e.message : e));
     const count = moved?.length ?? 0;
     await Promise.all([
       logAudit({
@@ -2122,6 +2125,7 @@ export async function moveCardToCustomer(cardId: string, customerId: string): Pr
     if (card.customer_id === target.id) throw new UserError("The card is already this customer's.");
     const { error } = await supabaseTyped.from("leads").update({ customer_id: target.id }).eq("company_id", company.id).eq("id", card.id);
     if (error) throw new Error(`leads: ${error.message}`);
+    await relinkCardCustomer(card.id, target.id).catch((e: unknown) => console.error("cases: wa_messages relink failed:", e instanceof Error ? e.message : e));
     await logAudit({
       action: "move",
       entityType: "tours_case",

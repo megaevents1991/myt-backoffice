@@ -18,6 +18,10 @@ const db = supabase as any;
 const MEDIA_BUCKET = "wa-media";
 const SIGNED_URL_SECONDS = 600;
 const IN_CHUNK = 100;
+/** Meta ids (wamid..., ~60 chars) per .in() request - the list travels in the URL. */
+const ID_CHUNK = 100;
+/** Rows per page of a count read - a plain select answers 1,000 at most and says nothing. */
+const ROW_PAGE = 1000;
 
 type DbError = { code?: string; message?: string } | null | undefined;
 const missingTable = (error: DbError): boolean => error?.code === "42P01" || error?.code === "PGRST205";
@@ -305,7 +309,52 @@ export async function finishSend(id: string, patch: { waMessageId?: string; stat
   }
 }
 
-/** The customer's newest inbound message: the 24-hour window and the case the conversation is on. */
+/** Which of these Meta ids are stored already (the webhook reads it once per batch); a missing table knows none. */
+export async function knownMessageIds(waMessageIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const ids = [...new Set(waMessageIds.filter(Boolean))];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const { data, error } = await db.from("wa_messages").select("wa_message_id").in("wa_message_id", ids.slice(i, i + ID_CHUNK));
+    if (error) {
+      if (missingTable(error)) return out;
+      throw new Error(`wa_messages: ${error.message}`);
+    }
+    for (const r of (data ?? []) as { wa_message_id: string }[]) out.add(r.wa_message_id);
+  }
+  return out;
+}
+
+/** A card merged into another (merge_lead_cases moves bookings, seats and notes - not these rows): its messages follow. */
+export async function relinkCaseMessages(fromCaseId: string, toCaseId: string): Promise<number> {
+  const { data, error } = await db.from("wa_messages").update({ case_id: toCaseId }).eq("case_id", fromCaseId).select("id");
+  if (error) {
+    if (missingTable(error)) return 0;
+    throw new Error(`wa_messages: ${error.message}`);
+  }
+  return (data as unknown[] | null)?.length ?? 0;
+}
+
+/** A customer merged into another: the messages of the merged-away one follow. */
+export async function relinkCustomerMessages(fromCustomerId: string, toCustomerId: string): Promise<number> {
+  const { data, error } = await db.from("wa_messages").update({ customer_id: toCustomerId }).eq("customer_id", fromCustomerId).select("id");
+  if (error) {
+    if (missingTable(error)) return 0;
+    throw new Error(`wa_messages: ${error.message}`);
+  }
+  return (data as unknown[] | null)?.length ?? 0;
+}
+
+/** A card moved to another customer: the messages on that card follow. */
+export async function relinkCardCustomer(caseId: string, customerId: string): Promise<number> {
+  const { data, error } = await db.from("wa_messages").update({ customer_id: customerId }).eq("case_id", caseId).select("id");
+  if (error) {
+    if (missingTable(error)) return 0;
+    throw new Error(`wa_messages: ${error.message}`);
+  }
+  return (data as unknown[] | null)?.length ?? 0;
+}
+
+/** The customer's newest LIVE inbound message (origin customer): the 24-hour window and the case the conversation is on. */
 export async function lastInbound(companyId: string, phoneKey: string): Promise<{ at: string; caseId: string | null } | null> {
   const { data, error } = await db
     .from("wa_messages")
@@ -313,6 +362,8 @@ export async function lastInbound(companyId: string, phoneKey: string): Promise<
     .eq("company_id", companyId)
     .eq("phone_key", phoneKey)
     .eq("direction", "in")
+    // a history row is not a conversation that is on: the gap and the case come from the live ones
+    .eq("origin", "customer")
     .order("sent_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -387,22 +438,42 @@ export async function listThread(
   return { messages: await Promise.all(page.map(toThreadMessage)), hasMore: rows.length > opts.limit };
 }
 
-/** Inbound messages after each card's wa_seen_at (all of them when never opened), by case id. */
+/**
+ * Inbound messages after each card's wa_seen_at (all of them when never opened), by case id. Read in pages (a plain
+ * select answers 1,000 rows at most and says nothing - the 05.10 rule) and, when every card of the chunk has a stamp,
+ * floored at the oldest one, so an old thread is not re-read on every board load.
+ */
 export async function countUnseen(cases: { id: string; waSeenAt: string | null }[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   if (cases.length === 0) return out;
   const seen = new Map(cases.map((c) => [c.id, c.waSeenAt]));
   for (let i = 0; i < cases.length; i += IN_CHUNK) {
-    const ids = cases.slice(i, i + IN_CHUNK).map((c) => c.id);
-    const { data, error } = await db.from("wa_messages").select("case_id, sent_at").in("case_id", ids).eq("direction", "in");
-    if (error) {
-      if (missingTable(error)) return out;
-      throw new Error(`wa_messages: ${error.message}`);
-    }
-    for (const row of (data ?? []) as { case_id: string; sent_at: string }[]) {
-      const at = seen.get(row.case_id);
-      if (at === undefined) continue;
-      if (at === null || row.sent_at > at) out.set(row.case_id, (out.get(row.case_id) ?? 0) + 1);
+    const part = cases.slice(i, i + IN_CHUNK);
+    const ids = part.map((c) => c.id);
+    const stamps = part.map((c) => c.waSeenAt).filter((v): v is string => !!v);
+    const floor = stamps.length === part.length ? [...stamps].sort()[0] : null;
+    for (let from = 0; ; from += ROW_PAGE) {
+      let query = db
+        .from("wa_messages")
+        .select("case_id, sent_at")
+        .in("case_id", ids)
+        .eq("direction", "in")
+        .order("sent_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + ROW_PAGE - 1);
+      if (floor) query = query.gt("sent_at", floor);
+      const { data, error } = await query;
+      if (error) {
+        if (missingTable(error)) return out;
+        throw new Error(`wa_messages: ${error.message}`);
+      }
+      const rows = (data ?? []) as { case_id: string; sent_at: string }[];
+      for (const row of rows) {
+        const at = seen.get(row.case_id);
+        if (at === undefined) continue;
+        if (at === null || row.sent_at > at) out.set(row.case_id, (out.get(row.case_id) ?? 0) + 1);
+      }
+      if (rows.length < ROW_PAGE) break;
     }
   }
   return out;

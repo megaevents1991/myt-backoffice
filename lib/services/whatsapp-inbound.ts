@@ -3,12 +3,14 @@
  * (`InboundDeps`) so the whole flow runs in scripts/whatsapp-inbound-selftest.ts over stubs; the real wiring
  * is `lib/services/whatsapp-inbound-deps.ts` (the DB boundary + the sender).
  *
- * Per inbound customer message: store it (Meta re-deliveries are ignored by wa_message_id), stamp the
- * customer's window, an opt-out word closes marketing and gets ONE free reply, otherwise a message after
- * WA_INQUIRY_GAP_HOURS of silence inserts a `whatsapp` lead that leads_fill routes (joins the customer's
- * newest open card or opens a case) - messages inside the gap hang on the same case. An echo (a rep wrote
- * from the app) is stored on the conversation's case; history rows are stored and nothing else. Nothing
- * here throws past the function: a failed event lands in `errors`, the rest of the batch goes on.
+ * Per batch: the ids already stored are read ONCE (a re-delivered batch then costs no further read) and a phone's
+ * customers are looked up once. Per inbound customer message: store it, stamp the customer's window, an opt-out
+ * word closes marketing and gets ONE free reply, otherwise a message after WA_INQUIRY_GAP_HOURS of silence - or one
+ * whose conversation never got its case (the lead insert failed last time) - inserts a `whatsapp` lead that
+ * leads_fill routes (joins the customer's newest open card or opens a case); messages inside the gap hang on the
+ * same case. An echo (a rep wrote from the app) is stored on the conversation's case; history rows are stored and
+ * never open anything, and each history chunk stamps the account's history_synced_at. Nothing here throws past the
+ * function: a failed event lands in `errors`, the rest of the batch goes on.
  */
 import { OPT_OUT_REPLY, isOptOut, shouldOpenInquiry, standInText, type WaEvent } from "@/lib/whatsapp/rules";
 import { phoneKey, whatsappPhone } from "@/lib/tours/cases";
@@ -18,10 +20,13 @@ export interface InboundDeps {
   now(): string;
   accountByPhoneId(phoneNumberId: string): Promise<WaAccount | null>;
   accountByWabaId(wabaId: string): Promise<WaAccount | null>;
-  patchAccount(id: string, patch: { qualityRating?: string | null; messagingLimit?: string | null }): Promise<void>;
+  patchAccount(id: string, patch: { qualityRating?: string | null; messagingLimit?: string | null; historySyncedAt?: string }): Promise<void>;
+  /** Which of these Meta ids are stored already - read once per batch, so a re-delivered batch costs no further read. */
+  knownMessageIds(waMessageIds: string[]): Promise<Set<string>>;
   insertMessage(row: WaMessageInsert): Promise<{ inserted: boolean; id: string | null }>;
   linkMessage(id: string, caseId: string | null, customerId: string | null): Promise<void>;
   updateStatus(waMessageId: string, status: string, at: string, error: string | null): Promise<boolean>;
+  /** The customer's newest LIVE inbound message (origin customer): the 24-hour gap and the conversation's case - a history row is neither. */
   lastInbound(companyId: string, phoneKey: string): Promise<{ at: string; caseId: string | null } | null>;
   findCustomers(companyId: string, phoneKey: string): Promise<WaCustomerLite[]>;
   setCustomerFields(customerId: string, patch: WaCustomerPatch): Promise<void>;
@@ -45,6 +50,19 @@ export interface InboundSummary {
   errors: string[];
 }
 
+/** What one batch shares: the ids already stored, and one customer lookup per phone. */
+type Batch = { known: Set<string>; customers: Map<string, Promise<WaCustomerLite[]>> };
+
+function customersOf(deps: InboundDeps, batch: Batch, companyId: string, key: string): Promise<WaCustomerLite[]> {
+  const cacheKey = `${companyId}|${key}`;
+  let pending = batch.customers.get(cacheKey);
+  if (!pending) {
+    pending = deps.findCustomers(companyId, key);
+    batch.customers.set(cacheKey, pending);
+  }
+  return pending;
+}
+
 /**
  * The customer a sender binds to: among the live rows holding the key, only those with a stored phone that
  * normalises to the sender's FULL international number (a last-9-digits key alone could collide across country
@@ -58,7 +76,12 @@ export function pickCustomer(candidates: readonly WaCustomerLite[], from: string
 
 type MessageEvent = Extract<WaEvent, { kind: "message" }>;
 
-async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSummary): Promise<void> {
+async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSummary, batch: Batch): Promise<void> {
+  // a re-delivered id costs nothing: no account read, no customer read, no media download
+  if (batch.known.has(ev.waMessageId)) {
+    out.skipped += 1;
+    return;
+  }
   const account = await deps.accountByPhoneId(ev.phoneNumberId);
   if (!account) {
     deps.log.warn(`message ${ev.waMessageId} for an unknown phone number id ${ev.phoneNumberId} - skipped`);
@@ -82,9 +105,9 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
   const live = ev.origin !== "history";
   const inboundFromCustomer = ev.direction === "in" && ev.origin === "customer";
 
-  const customer = pickCustomer(await deps.findCustomers(companyId, key), phone);
-  // read BEFORE this message is stored: the gap is measured against the previous inbound one
-  const previous = await deps.lastInbound(companyId, key);
+  const customer = pickCustomer(await customersOf(deps, batch, companyId, key), phone);
+  // read BEFORE this message is stored: the gap is measured against the previous LIVE inbound one; history opens nothing
+  const previous = live ? await deps.lastInbound(companyId, key) : null;
   const media = ev.media
     ? { ...ev.media, storage_path: live && ev.media.id ? await deps.storeMedia(account, ev.media.id, ev.media.mime) : null }
     : null;
@@ -127,7 +150,8 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
     return;
   }
 
-  if (!shouldOpenInquiry(previous?.at ?? null, ev.sentAt)) return;
+  // a new conversation (24 h of silence), or one that never got its case (the lead insert failed last time): open it now
+  if (!shouldOpenInquiry(previous?.at ?? null, ev.sentAt) && previous?.caseId) return;
 
   const lead = await deps.insertLead({
     companyId,
@@ -148,6 +172,16 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
     await deps.attachOrphans(companyId, phone, lead.customerId);
     if (!customer) await deps.setCustomerFields(lead.customerId, { waLastInAt: ev.sentAt, ...(ev.profileName ? { waProfileName: ev.profileName } : {}) });
   }
+}
+
+/** A chunk of the history sync arrived: the account's history_synced_at says when the last one came. */
+async function handleHistory(ev: Extract<WaEvent, { kind: "history" }>, deps: InboundDeps, out: InboundSummary): Promise<void> {
+  const account = await deps.accountByPhoneId(ev.phoneNumberId);
+  if (!account) {
+    out.skipped += 1;
+    return;
+  }
+  await deps.patchAccount(account.id, { historySyncedAt: deps.now() });
 }
 
 async function handleTemplate(ev: Extract<WaEvent, { kind: "template" }>, deps: InboundDeps, out: InboundSummary): Promise<void> {
@@ -176,13 +210,25 @@ async function handleAccount(ev: Extract<WaEvent, { kind: "account" }>, deps: In
 /** Every event of one webhook batch, each on its own: a failure is counted and named, never thrown. */
 export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps): Promise<InboundSummary> {
   const out: InboundSummary = { stored: 0, skipped: 0, inquiries: 0, optOuts: 0, statuses: 0, errors: [] };
+  const ids = events.flatMap((ev) => (ev.kind === "message" ? [ev.waMessageId] : []));
+  let known = new Set<string>();
+  if (ids.length > 0) {
+    try {
+      known = await deps.knownMessageIds(ids);
+    } catch (e) {
+      // the insert still ignores a duplicate - the batch only pays the reads it could have skipped
+      deps.log.warn(`known-id check failed (${e instanceof Error ? e.message : String(e)}) - every message is tried`);
+    }
+  }
+  const batch: Batch = { known, customers: new Map() };
   for (const ev of events) {
     try {
-      if (ev.kind === "message") await handleMessage(ev, deps, out);
+      if (ev.kind === "message") await handleMessage(ev, deps, out, batch);
       else if (ev.kind === "status") {
         await deps.updateStatus(ev.waMessageId, ev.status, ev.at, ev.error);
         out.statuses += 1;
-      } else if (ev.kind === "template") await handleTemplate(ev, deps, out);
+      } else if (ev.kind === "history") await handleHistory(ev, deps, out);
+      else if (ev.kind === "template") await handleTemplate(ev, deps, out);
       else if (ev.kind === "account") await handleAccount(ev, deps, out);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

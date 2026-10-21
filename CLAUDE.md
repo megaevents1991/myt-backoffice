@@ -117,11 +117,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `docs/superpowers/specs/2026-10-21-whatsapp-meta-setup-tom-he.md`. `POST /api/whatsapp/webhook` (the signature IS the
 > guard; `lib/services/whatsapp-webhook.ts` -> `whatsapp-inbound.ts` with its deps injected, selftests
 > `whatsapp-webhook` / `whatsapp-inbound`) stores every message in `wa_messages` (idempotent on `wa_message_id`), the
-> echoes of what reps write from the app (`smb_message_echoes`) and the 6-month history too; a customer message after
-> 24 h of silence inserts a `whatsapp` lead that `leads_fill` joins to the customer's newest open card (FULL-number
-> phone match, `public.whatsapp_phone`) or opens a case - never "to file". The thread sits on the case and customer pages
-> (`whatsapp-thread.tsx`, cut to the cards the viewer sees), unread inbound messages are the TODAY reason `whatsapp` and
-> a chip on the board, `leads.wa_seen_at` is stamped when the card's fold opens. Consent is `customers.wa_consent` (none /
+> echoes of what reps write from the app (`smb_message_echoes`) and the 6-month history too (each history chunk stamps
+> `wa_accounts.history_synced_at`; a batch's ids are pre-checked once, so a re-delivery costs no read); a customer
+> message after 24 h of silence - measured against LIVE inbound messages only, never a history row - or one whose
+> conversation never got its case inserts a `whatsapp` lead that `leads_fill` joins to the customer's newest open card
+> (FULL-number phone match, `public.whatsapp_phone`) or opens a case - never "to file". The thread sits on the case and
+> customer pages (`whatsapp-thread.tsx`, cut to the cards the viewer sees: a manager all, a rep their own / unassigned
+> ones and nothing of a customer whose cards are all another rep's), unread inbound messages are the TODAY reason
+> `whatsapp` and a chip on the board (`countUnseen`, paged), `leads.wa_seen_at` is stamped when the card's fold opens;
+> a card merge, a customer merge and a card move carry the `wa_messages` rows along (`relink*` in `whatsapp-db.ts`). Consent is `customers.wa_consent` (none /
 > `form` = a site-form claim, only on a customer the form itself created / opted_in / customer / opted_out): staff mark
 > it with a note (`whatsapp.consent`), an opt-out word gets one free reply; marketing sends need opted_in / customer
 > (phase 3, with double opt-in). Sending: `lib/services/whatsapp-cloud.ts` over `lib/whatsapp/meta-provider.ts` (Graph
@@ -1843,7 +1847,8 @@ NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY=
 NEXT_SECRET_WHATSAPP_LINK_TEMPLATE=
 # WhatsApp phase 1 (2026-10-21, coexistence with the WhatsApp Business app). Our Meta app ("Mega Tours Reporting"), for
 # the Embedded Signup on Settings > WhatsApp: the app id is public (the JS SDK needs it); the app secret also signs every
-# webhook batch (X-Hub-Signature-256) - unset, POST /api/whatsapp/webhook refuses everything with one error line.
+# webhook batch (X-Hub-Signature-256) - unset or wrong, POST /api/whatsapp/webhook refuses every batch (401) with a log
+# line per refusal naming the header's presence and the body length, never the body.
 NEXT_PUBLIC_WHATSAPP_APP_ID=
 NEXT_SECRET_WHATSAPP_APP_SECRET=
 # The Embedded Signup configuration id (Facebook Login for Business > Configurations) and the verify token we hand Meta

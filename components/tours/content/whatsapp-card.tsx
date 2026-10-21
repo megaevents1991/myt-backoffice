@@ -134,7 +134,9 @@ export function WhatsappCard({ initial }: { initial: WhatsappSettings }) {
           config_id: signup.configId,
           response_type: "code",
           override_default_response_type: true,
-          extras: { setup: {}, sessionInfoVersion: "3" },
+          // coexistence: the number stays in the WhatsApp Business app - without this feature the popup runs the
+          // new-number flow, which refuses a number that lives in the app
+          extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
         },
       );
     } catch (e) {

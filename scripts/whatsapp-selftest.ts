@@ -168,8 +168,11 @@ const FIXTURE_HISTORY = {
     ] }] },
   ] } }] }],
 };
-const history = parseWebhook(FIXTURE_HISTORY) as Extract<WaEvent, { kind: "message" }>[];
+const historyAll = parseWebhook(FIXTURE_HISTORY);
+const history = historyAll.filter((e) => e.kind === "message") as Extract<WaEvent, { kind: "message" }>[];
 assert.equal(history.length, 2);
+// the chunk's metadata says how far the sync is - the account's history_synced_at is stamped from it
+assert.deepEqual(historyAll.find((e) => e.kind === "history"), { kind: "history", phoneNumberId: "111", phase: 0, chunkOrder: 1, progress: 100 });
 assert.equal(history[0].origin, "history");
 assert.equal(history[0].direction, "in");
 assert.equal(history[0].to, null);

@@ -65,8 +65,10 @@ function makeDeps(opts: { customers?: WaCustomerLite[]; openCardId?: string | nu
       statusUpdates.push({ id, status, error });
       return true;
     },
+    knownMessageIds: async (ids) => new Set(ids.filter((id) => messages.some((m) => m.waMessageId === id))),
+    // the newest LIVE inbound message (origin customer) - a history row is not a conversation that is on
     lastInbound: async (companyId, key) => {
-      const rows = messages.filter((m) => m.companyId === companyId && m.phoneKey === key && m.direction === "in").sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+      const rows = messages.filter((m) => m.companyId === companyId && m.phoneKey === key && m.direction === "in" && m.origin === "customer").sort((a, b) => b.sentAt.localeCompare(a.sentAt));
       return rows[0] ? { at: rows[0].sentAt, caseId: rows[0].caseId } : null;
     },
     findCustomers: async (_companyId, key) => (opts.customers ?? []).filter((c) => c.phoneKey === key),
@@ -276,6 +278,75 @@ async function main(): Promise<void> {
   assert.equal(broken.leads.length, 0, "nothing is routed when the message could not be stored");
 }
 
+
+  // ---- review fixes (21.10)
+  // (1) a history chunk stamps the account's history_synced_at; an unknown number is skipped
+  {
+    const { deps } = makeDeps();
+    const patches: { id: string; patch: Record<string, unknown> }[] = [];
+    deps.patchAccount = async (id, patch) => {
+      patches.push({ id, patch });
+    };
+    const out = await handleWebhookEvents([{ kind: "history", phoneNumberId: "111", phase: 0, chunkOrder: 1, progress: 100 }], deps);
+    assert.equal(out.errors.length, 0);
+    assert.equal(patches.length, 1);
+    assert.equal(typeof patches[0].patch.historySyncedAt, "string");
+    const unknown = await handleWebhookEvents([{ kind: "history", phoneNumberId: "999", phase: 0, chunkOrder: 1, progress: 100 }], deps);
+    assert.equal(unknown.skipped, 1);
+  }
+  // (2) the gap is measured against the newest LIVE inbound: a history row yesterday is no reason to stay quiet today
+  {
+    const { deps, leads } = makeDeps();
+    await handleWebhookEvents([inbound("h1", "2026-10-20T12:00:00Z", "היי", { origin: "history" })], deps);
+    assert.equal(leads.length, 0, "history opens nothing");
+    await handleWebhookEvents([inbound("l1", "2026-10-21T09:00:00Z", "יש מקום?")], deps);
+    assert.equal(leads.length, 1, "the first live message after onboarding opens an inquiry even inside 24 h of a history row");
+  }
+  // (3) a history chunk pays no gap read and one customer lookup per phone; a re-delivered batch pays no read at all
+  {
+    const { deps, messages } = makeDeps();
+    let gapReads = 0;
+    let customerReads = 0;
+    const lastInbound = deps.lastInbound;
+    const findCustomers = deps.findCustomers;
+    deps.lastInbound = async (c, k) => {
+      gapReads += 1;
+      return lastInbound(c, k);
+    };
+    deps.findCustomers = async (c, k) => {
+      customerReads += 1;
+      return findCustomers(c, k);
+    };
+    const chunk = [
+      inbound("h1", "2026-09-01T10:00:00Z", "a", { origin: "history" }),
+      inbound("h2", "2026-09-01T10:01:00Z", "b", { origin: "history" }),
+      echo("h3", "2026-09-01T10:02:00Z", "c", "history"),
+    ];
+    const out = await handleWebhookEvents(chunk, deps);
+    assert.equal(out.stored, 3);
+    assert.equal(gapReads, 0, "history never opens an inquiry, so the gap is never read");
+    assert.equal(customerReads, 1, "one customer lookup per phone per batch");
+    gapReads = 0;
+    customerReads = 0;
+    const again = await handleWebhookEvents(chunk, deps);
+    assert.equal(again.skipped, 3);
+    assert.equal(customerReads, 0, "already-stored ids are known before any read");
+    assert.equal(messages.length, 3);
+  }
+  // (8) a message whose previous inbound has no case (the lead insert failed) opens the inquiry now, not in 24 h
+  {
+    const { deps, leads, messages } = makeDeps();
+    const real = deps.insertLead;
+    deps.insertLead = async () => {
+      throw new Error("leads_fill failed");
+    };
+    const first = await handleWebhookEvents([inbound("m1", "2026-10-21T09:00:00Z", "היי")], deps);
+    assert.equal(first.errors.length, 1);
+    deps.insertLead = real;
+    const second = await handleWebhookEvents([inbound("m2", "2026-10-21T10:00:00Z", "עוד שאלה")], deps);
+    assert.equal(second.inquiries, 1, "the previous inbound carries no case - the conversation is caseless, open it now");
+    assert.equal(messages.find((m) => m.waMessageId === "m2")?.caseId, leads[0].id);
+  }
 console.log("whatsapp-inbound-selftest ok");
 }
 

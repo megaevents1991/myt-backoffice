@@ -48,6 +48,7 @@ function makeDeps() {
     },
     linkMessage: async () => {},
     updateStatus: async () => true,
+    knownMessageIds: async () => new Set<string>(),
     lastInbound: async () => null,
     findCustomers: async () => [],
     setCustomerFields: never("setCustomerFields"),
@@ -107,6 +108,16 @@ async function main(): Promise<void> {
     assert.deepEqual(await handleWebhookPost(BATCH, null, ENV, deps), { status: 401, body: { ok: false, error: "unauthorized" } });
     assert.deepEqual(await handleWebhookPost(BATCH, sign(BATCH, "other-secret"), ENV, deps), { status: 401, body: { ok: false, error: "unauthorized" } });
     assert.deepEqual(stored, [], "nothing touched the deps");
+  }
+
+  // ---- POST: a refused signature is said in the log (a wrong secret in Vercel is otherwise invisible), never the body
+  {
+    const { deps, warnings } = makeDeps();
+    await handleWebhookPost(BATCH, "sha256=00", ENV, deps);
+    await handleWebhookPost(BATCH, null, ENV, deps);
+    const about = warnings.filter((w) => /signature/.test(w));
+    assert.equal(about.length, 2, warnings.join(" | "));
+    assert.ok(about.every((w) => !w.includes("wamid.A") && !w.includes("היי")), "never the body");
   }
 
   // ---- POST: a signed batch reaches the inbound flow
