@@ -6,17 +6,20 @@
  * (tsx rather than plain node: the agent files resolve `@/` paths from tsconfig.)
  */
 import assert from "node:assert/strict";
-import { AGENT_KEYS, agentFor, PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT } from "@/lib/agents";
+import Anthropic from "@anthropic-ai/sdk";
+import { AGENT_KEYS, agentFor, PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT, TOUR_UPLOADER_AGENT } from "@/lib/agents";
 import { interleave, memoryBlock, TAUGHT_BLOCK_MAX_CHARS } from "@/lib/agents/memory";
 import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
-import type { AuditLessonRow } from "@/lib/agents/types";
+import type { AgentKey, AuditLessonRow } from "@/lib/agents/types";
 import { AI_VERDICT_PARSER, coerceBool, coerceNum } from "@/lib/services/price-light-judge";
 import { adviceBlock, type PriceAdviceFact } from "@/lib/services/price-advice";
 import { numbersAreFromFacts, wordAdvice } from "@/lib/services/price-advisor";
+import { isTimeoutError, outcomeFromAnswer, parseBriefWithAgent } from "@/lib/services/tour-uploader-parse";
+import { FAR_VENUE_KM, MARKUP_MAX, NEAR_LOCATION_KM, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 // Relative ".ts" import, no "@/" alias (see lib/agents/maturity.ts's header) - keeps this pure
 // module importable by a plain-node runner too, the same way scripts/price-light-selftest.ts
 // imports lib/services/price-light.ts.
-import { maturityFrom } from "../lib/agents/maturity.ts";
+import { maturityFrom, rowBelongsToAgent } from "../lib/agents/maturity.ts";
 
 const def = PRICE_LIGHT_AGENT;
 const lessonFor = (action: string, metadata: Record<string, unknown>): string | null => {
@@ -228,7 +231,7 @@ assert.equal(maturityFrom([...eightAgreed, ...twoDisagreed]).rate, 0.8);
 assert.equal(maturityFrom([]).rate, null, "no decisions at all is also below the floor");
 
 // ---- AGENT #2 (price advisor): registered, declares itself, learns from its own sources -------
-assert.deepEqual(AGENT_KEYS, ["price-light", "price-advisor"]);
+assert.deepEqual(AGENT_KEYS, ["price-light", "price-advisor", "tour-uploader"]);
 const advisorDef = agentFor("price-advisor");
 assert.equal(advisorDef.key, "price-advisor");
 assert.equal(advisorDef.switchEnv, "PRICE_ADVISOR_AI");
@@ -275,11 +278,12 @@ assert.equal(advisorLessonFor("agent.feedback", { agent: "price-advisor", verdic
 
 // ---- AI Factory: a second agent's maturity must not inherit price-light's outcome actions ------
 // price_light.* rows carry no `agent` field at all (they predate agent #2) - only "price-light"
-// may count them; a second agent counts only `agent.feedback` tagged for itself. This mirrors the
-// filter in lib/services/ai-factory.ts's loadMaturity (not itself pure/DB-free, hence the mirror).
+// may count them; a second agent counts only `agent.feedback` tagged for itself. The rule is
+// `rowBelongsToAgent` (lib/agents/maturity.ts, pure) - the same function lib/services/ai-factory.ts's
+// loadMaturity filters with, so this tests the real thing rather than a copy of it.
 {
-  const relevantFor = (agentKey: string, rows: { action: string; metadata: Record<string, unknown> | null }[]) =>
-    rows.filter((r) => (r.action === "agent.feedback" ? (r.metadata as { agent?: string } | null)?.agent === agentKey : agentKey === "price-light"));
+  const relevantFor = (agentKey: AgentKey, rows: { action: string; metadata: Record<string, unknown> | null }[]) =>
+    rows.filter((r) => rowBelongsToAgent(agentKey, r));
   const rows = [
     { action: "price_light.repriced", metadata: null },
     { action: "agent.feedback", metadata: { agent: "price-advisor", verdict_ok: true } },
@@ -287,6 +291,7 @@ assert.equal(advisorLessonFor("agent.feedback", { agent: "price-advisor", verdic
   assert.equal(relevantFor("price-light", rows).length, 1, "price-light keeps its own repriced row, loses the advisor's feedback");
   assert.equal(relevantFor("price-advisor", rows).length, 1, "price-advisor keeps its own feedback row, never the repriced outcome");
   assert.equal(relevantFor("price-advisor", rows)[0].action, "agent.feedback");
+  assert.equal(relevantFor("tour-uploader", rows).length, 0, "the uploader inherits neither the price light's outcomes nor the advisor's feedback");
 }
 
 // ---- agent #2's own call: numbersAreFromFacts guard (pure, no network) -------------------------
@@ -296,6 +301,238 @@ const advisorFacts: PriceAdviceFact[] = [
 assert.equal(numbersAreFromFacts("קיצוץ של $40 יביא לכתום, ואפשר גם $60 שנשאר.", advisorFacts), true, "numbers that reuse the facts are accepted");
 assert.equal(numbersAreFromFacts("קיצוץ של $999 יביא לכתום.", advisorFacts), false, "an invented number is rejected");
 assert.equal(numbersAreFromFacts("אין כאן שום מספר.", advisorFacts), true, "no dollar figure at all is vacuously fine");
+
+// ---- AGENT #3 (tour uploader): registered, declares itself, learns from its own sources -------
+const uploaderDef = agentFor("tour-uploader");
+assert.equal(uploaderDef, TOUR_UPLOADER_AGENT, "the registry and the direct export are the same object");
+assert.equal(uploaderDef.key, "tour-uploader");
+assert.equal(uploaderDef.title, "Tour uploader");
+assert.equal(uploaderDef.switchEnv, "TOUR_UPLOADER_AI");
+assert.equal(uploaderDef.modelEnv, "TOUR_UPLOADER_AI_MODEL");
+assert.equal(uploaderDef.defaultModel, "claude-opus-5");
+assert.equal(uploaderDef.timeoutMs, 20_000);
+assert.equal(uploaderDef.callsPerRun, 3);
+assert.equal(uploaderDef.confidenceMin, 0);
+assert.equal(uploaderDef.usdPerMInput, PRICE_LIGHT_AGENT.usdPerMInput, "same token prices as the other agents");
+assert.equal(uploaderDef.usdPerMOutput, PRICE_LIGHT_AGENT.usdPerMOutput);
+assert.equal(uploaderDef.memoryMaxChars, 4_000);
+assert.equal(uploaderDef.lessonMax, 10);
+assert.equal(uploaderDef.lessonChars, 340);
+assert.equal(uploaderDef.lessonLookbackDays, 180);
+assert.deepEqual(
+  uploaderDef.learnsFrom.map((s) => s.action),
+  ["uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback"],
+  "the correction of the parse itself is the sharpest source, so it is declared first",
+);
+
+// Switch: opt-in, fails closed, and its own - no other agent's switch turns it on.
+{
+  const savedEnv = { ...process.env };
+  const savedWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
+  try {
+    delete process.env.AI_AGENTS;
+    delete process.env.TOUR_UPLOADER_AI;
+    delete process.env.TOUR_UPLOADER_AI_MODEL;
+    delete process.env.ANTHROPIC_API_KEY;
+    assert.equal(agentEnabled(uploaderDef), false, "unset = off");
+    process.env.TOUR_UPLOADER_AI = "on";
+    assert.equal(agentEnabled(uploaderDef), false, "switch on but no key = off");
+    assert.ok(warnings.some((w) => w.includes("TOUR_UPLOADER_AI=on")), "a closed gate says why, once");
+    process.env.ANTHROPIC_API_KEY = "sk-ant-synthetic-not-a-real-key";
+    assert.equal(agentEnabled(uploaderDef), true, "switch on + key shaped right = on");
+    process.env.PRICE_ADVISOR_AI = "on";
+    process.env.TOUR_UPLOADER_AI = "yes";
+    assert.equal(agentEnabled(uploaderDef), false, "another agent's switch, or anything but the literal \"on\", is not this one");
+    process.env.TOUR_UPLOADER_AI = "on";
+    process.env.AI_AGENTS = "off";
+    assert.equal(agentEnabled(uploaderDef), false, "master switch stops it too");
+    process.env.AI_AGENTS = "";
+    assert.equal(agentModel(uploaderDef), "claude-opus-5");
+    process.env.TOUR_UPLOADER_AI_MODEL = "claude-sonnet-5";
+    assert.equal(agentModel(uploaderDef), "claude-sonnet-5", "its own env overrides the default model");
+  } finally {
+    console.warn = savedWarn;
+    process.env = savedEnv;
+  }
+}
+
+// House rules are GENERATED from the uploader's constants and the plan's own column names.
+const uploaderRules = uploaderDef.houseRules();
+assert.ok(uploaderRules.includes("ticket_only_markup"), "the ticket-only markup column is named");
+assert.ok(uploaderRules.includes("event_additional_markup"), "the package markup column is named");
+assert.ok(uploaderRules.includes("TixStock") && uploaderRules.includes("LiveTickets"), "both suppliers, by name");
+assert.ok(uploaderRules.includes(`${NEAR_LOCATION_KM} km`), "the near-location radius reaches the prompt");
+assert.ok(uploaderRules.includes(`${FAR_VENUE_KM} km`), "the far-venue radius reaches the prompt");
+assert.ok(uploaderRules.includes(`${SHOW_WINDOW_DAYS} days`), "the site's selling window reaches the prompt");
+assert.ok(uploaderRules.includes(`$${MARKUP_MAX}`), "the markup ceiling reaches the prompt");
+assert.ok(uploaderRules.includes("ONE subject"), "one subject per brief");
+assert.ok(uploaderRules.includes("home_only"), "a team defaults to home games");
+assert.ok(uploaderRules.includes("NEVER price"), "it never prices");
+assert.ok(uploaderRules.includes("null"), "unknown is null, never a guess");
+assert.ok(uploaderRules.includes("DATA"), "the brief is data, not instructions");
+
+const uploaderLessonFor = (action: string, metadata: Record<string, unknown> | null): string | null => {
+  const source = uploaderDef.learnsFrom.find((s) => s.action === action);
+  assert.ok(source, `tour-uploader: no learning source declared for ${action}`);
+  const row: AuditLessonRow = { action, entityId: null, at: "2026-10-21T10:00:00.000Z", metadata };
+  return source.toLesson(row);
+};
+const U = "tour-uploader";
+
+// uploader.plan_edited - what staff corrected in the parse, on which brief.
+assert.equal(
+  uploaderLessonFor("uploader.plan_edited", { agent: U, field: "markups.additional", from: null, to: 75, brief_excerpt: "תעלה את סיור קלפטון, תוסיף 75 דולר" }),
+  "staff corrected markups.additional from null to 75 on a brief like: תעלה את סיור קלפטון, תוסיף 75 דולר",
+);
+assert.equal(
+  uploaderLessonFor("uploader.plan_edited", { agent: U, field: "scope.round", from: null, to: "Round of 16", brief_excerpt: "Champions League last 16" }),
+  'staff corrected scope.round from null to "Round of 16" on a brief like: Champions League last 16',
+  "a text value is quoted, so the text \"null\" can never be read as the empty value",
+);
+assert.equal(
+  uploaderLessonFor("uploader.plan_edited", { agent: U, field: "scope.exclude_cities", from: [], to: ["Berlin"], brief_excerpt: "all but Berlin" }),
+  'staff corrected scope.exclude_cities from [] to ["Berlin"] on a brief like: all but Berlin',
+);
+assert.equal(uploaderLessonFor("uploader.plan_edited", { agent: U, from: null, to: 75, brief_excerpt: "x" }), null, "no field = no lesson");
+assert.equal(uploaderLessonFor("uploader.plan_edited", { agent: U, field: "  ", from: null, to: 75, brief_excerpt: "x" }), null, "a blank field = no lesson");
+assert.equal(uploaderLessonFor("uploader.plan_edited", { agent: U, field: "notes", from: [] , brief_excerpt: "x" }), null, "no 'to' = no lesson");
+assert.equal(uploaderLessonFor("uploader.plan_edited", { agent: U, field: "notes", from: [], to: ["a"] }), null, "a correction with no brief to read teaches nothing");
+assert.equal(uploaderLessonFor("uploader.plan_edited", null), null, "no metadata at all");
+
+// uploader.answered - which option staff picked for a question the builder could not decide.
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "London", date: "2027-05-20", answer: "2027-05-21" }),
+  "for Eric Clapton in London on 2027-05-20 staff picked 2027-05-21 (pick_date)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "confirm_subject", subject: "Liverpool", answer: "Liverpool FC" }),
+  "for Liverpool staff picked Liverpool FC (confirm_subject)",
+  "a question about the subject has no city or date - the line just leaves them out",
+);
+assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "X", city: "Y", date: "2027-01-01" }), null, "no answer = no lesson");
+assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", city: "Y", date: "2027-01-01", answer: "a" }), null, "no subject = no lesson");
+
+// uploader.rejected - a built event staff turned down, and why (the reason is the lesson).
+assert.equal(
+  uploaderLessonFor("uploader.rejected", { agent: U, subject: "Liverpool v Brighton", city: "Liverpool", date: "2027-02-03", reason: "משחק גביע, לא ליגה" }),
+  "staff rejected Liverpool v Brighton in Liverpool on 2027-02-03: משחק גביע, לא ליגה",
+);
+assert.equal(uploaderLessonFor("uploader.rejected", { agent: U, subject: "X", city: "Y", date: "2027-01-01" }), null, "no reason = no lesson");
+assert.equal(uploaderLessonFor("uploader.rejected", { agent: U, subject: "X", city: "Y", date: "2027-01-01", reason: "   " }), null, "a blank reason = no lesson");
+assert.equal(uploaderLessonFor("uploader.rejected", { agent: U, city: "Y", date: "2027-01-01", reason: "r" }), null, "no subject = no lesson");
+
+// uploader.edited - fields staff fixed on an event after the build.
+assert.equal(
+  uploaderLessonFor("uploader.edited", { agent: U, subject: "Eric Clapton", city: "Berlin", fields: ["ticket_only_markup", "name"] }),
+  "staff edited ticket_only_markup, name on Eric Clapton in Berlin after the build",
+);
+assert.equal(uploaderLessonFor("uploader.edited", { agent: U, subject: "Eric Clapton", city: "Berlin", fields: [] }), null, "nothing edited = no lesson");
+assert.equal(uploaderLessonFor("uploader.edited", { agent: U, subject: "Eric Clapton", city: "Berlin", fields: "name" }), null, "fields must be a list");
+assert.equal(uploaderLessonFor("uploader.edited", { agent: U, city: "Berlin", fields: ["name"] }), null, "no subject = no lesson");
+
+// uploader.two_city_chosen - a venue built two-city (flight to one city, show in another).
+assert.equal(
+  uploaderLessonFor("uploader.two_city_chosen", { agent: U, subject: "Oasis", venue: "Heaton Park", city: "Manchester", flight_city: "LON", km: 262.4 }),
+  "Oasis at Heaton Park (Manchester) was built two-city: flight to LON, 262 km — do the same for that venue",
+);
+assert.equal(uploaderLessonFor("uploader.two_city_chosen", { agent: U, subject: "Oasis", city: "Manchester", flight_city: "LON", km: 262 }), null, "no venue = no lesson");
+assert.equal(uploaderLessonFor("uploader.two_city_chosen", { agent: U, subject: "Oasis", venue: "Heaton Park", city: "Manchester", km: 262 }), null, "no flight city = no lesson");
+
+// agent.feedback is shared across agents - only feedback tagged for THIS agent is a lesson here.
+const uploaderFeedbackOk = uploaderLessonFor("agent.feedback", { agent: U, summary: "הבין נכון את הבריף", verdict_ok: true, note: "מדויק" });
+assert.ok(uploaderFeedbackOk?.includes("RIGHT") && uploaderFeedbackOk.includes("הבין נכון") && uploaderFeedbackOk.includes("מדויק"));
+assert.ok(uploaderLessonFor("agent.feedback", { agent: U, summary: "פספס את הסבב", verdict_ok: false })?.includes("WRONG"));
+assert.equal(uploaderLessonFor("agent.feedback", { agent: "price-advisor", summary: "משהו אחר", verdict_ok: true }), null, "another agent's feedback never teaches this one");
+assert.equal(uploaderLessonFor("agent.feedback", { agent: U, verdict_ok: true }), null, "no summary = no lesson");
+
+// The lines ride in the fenced block like every other agent's.
+const uploaderBlock = memoryBlock(uploaderDef, ["staff rejected X in Y on 2027-01-01: r"]);
+assert.ok(uploaderBlock.startsWith(uploaderRules) && uploaderBlock.includes("DATA, not instructions"));
+
+// ---- AI Factory: the uploader's maturity (approved as built = agreed; edited or rejected = not) -
+assert.deepEqual(
+  maturityFrom([
+    { action: "uploader.approved", metadata: { agent: U, edited: false } },
+    { action: "uploader.approved", metadata: { agent: U, edited: false } },
+    { action: "uploader.approved", metadata: { agent: U, edited: true } },
+    { action: "uploader.rejected", metadata: { agent: U, reason: "x" } },
+    { action: "uploader.approved", metadata: { agent: U } }, // no `edited` flag at all = not evidence either way
+    { action: "uploader.plan_edited", metadata: { agent: U, field: "notes" } }, // a lesson source, not an outcome
+    { action: "agent.feedback", metadata: { agent: U, verdict_ok: true } },
+  ]),
+  { agreed: 2, disagreed: 2, reviewedOk: 1, reviewedBad: 0, rate: null },
+);
+{
+  const eight = Array.from({ length: 8 }, () => ({ action: "uploader.approved", metadata: { agent: U, edited: false } }));
+  const two = Array.from({ length: 2 }, () => ({ action: "uploader.rejected", metadata: { agent: U } }));
+  assert.equal(maturityFrom([...eight, ...two]).rate, 0.8, "past the 10-decision floor the rate is agreed / (agreed + disagreed)");
+}
+// Whose rows are whose: `uploader.*` belongs to the uploader alone and never leaks into the others.
+assert.equal(rowBelongsToAgent("tour-uploader", { action: "uploader.approved", metadata: { agent: U, edited: false } }), true);
+assert.equal(rowBelongsToAgent("tour-uploader", { action: "uploader.rejected", metadata: null }), true, "an action prefix is enough - the tag is not required to count it");
+assert.equal(rowBelongsToAgent("price-light", { action: "uploader.approved", metadata: { edited: false } }), false);
+assert.equal(rowBelongsToAgent("price-advisor", { action: "uploader.rejected", metadata: null }), false);
+assert.equal(rowBelongsToAgent("tour-uploader", { action: "price_light.repriced", metadata: null }), false);
+assert.equal(rowBelongsToAgent("tour-uploader", { action: "agent.feedback", metadata: { agent: "price-advisor" } }), false);
+assert.equal(rowBelongsToAgent("tour-uploader", { action: "agent.feedback", metadata: { agent: U } }), true);
+
+// ---- agent #3's call: how an answer becomes an outcome (pure, no network) -----------------------
+const goodPlan = {
+  subject: { kind: "artist", name_he: "אריק קלפטון", name_en: "Eric Clapton" },
+  scope: { date_from: "2027-05-01", date_to: null, home_only: true, round: null, exclude_cities: [], include_cities: [] },
+  rules: { with_location: "package", without_location: "skip" },
+  markups: { ticket_only: null, additional: 75 },
+  suppliers: ["tixstock", "livetickets"],
+  notes: [],
+};
+{
+  const ok = outcomeFromAnswer({ stop_reason: "tool_use", content: [{ type: "text" }, { type: "tool_use", name: "plan", input: goodPlan }] }, 0.0123);
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.plan.subject.name_en, "Eric Clapton");
+    assert.equal(ok.plan.markups.additional, 75);
+    assert.equal(ok.costUsd, 0.0123);
+    assert.equal(ok.raw, goodPlan, "the model's own answer rides along untouched, for the run's record");
+  }
+  const bad = outcomeFromAnswer({ stop_reason: "tool_use", content: [{ type: "tool_use", name: "plan", input: { ...goodPlan, markups: { ticket_only: null, additional: 99_999 } } }] }, 0.01);
+  assert.equal(bad.ok, false);
+  if (!bad.ok) {
+    assert.equal(bad.reason, "bad_output");
+    assert.equal(bad.plan?.subject.name_en, "Eric Clapton", "the salvaged plan keeps every field that WAS fine");
+    assert.equal(bad.plan?.markups.additional, null, "and blanks the one that was not");
+    assert.ok(bad.problems.some((p) => p.startsWith("markups.additional")), "and names it");
+  }
+  const cut = outcomeFromAnswer({ stop_reason: "max_tokens", content: [{ type: "tool_use", name: "plan", input: goodPlan }] }, 0.02);
+  assert.equal(cut.ok, false, "a cut-off answer is never trusted, even if a plan came out whole");
+  if (!cut.ok) {
+    assert.equal(cut.reason, "bad_output");
+    assert.equal(cut.plan, null);
+    assert.ok(cut.problems.some((p) => p.includes("max_tokens")));
+  }
+  for (const content of [[], [{ type: "text" }], [{ type: "tool_use", name: "other", input: goodPlan }], [{ type: "server_tool_use", name: "plan", input: goodPlan }]]) {
+    const none = outcomeFromAnswer({ stop_reason: "end_turn", content }, 0.01);
+    assert.equal(none.ok, false, "no `plan` tool call in the answer");
+    if (!none.ok) {
+      assert.equal(none.reason, "bad_output");
+      assert.equal(none.plan, null);
+      assert.equal(none.problems.length, 1);
+    }
+  }
+}
+
+// A timeout is told apart from every other failure (the SDK's class, or its name on a re-thrown copy).
+assert.equal(isTimeoutError(new Anthropic.APIConnectionTimeoutError()), true);
+{
+  const renamed = new Error("Request timed out.");
+  renamed.name = "APIConnectionTimeoutError";
+  assert.equal(isTimeoutError(renamed), true);
+}
+assert.equal(isTimeoutError(new Error("boom")), false);
+assert.equal(isTimeoutError(new Anthropic.APIConnectionError({ message: "socket hang up" })), false, "a dropped connection is an error, not a timeout");
+assert.equal(isTimeoutError("timeout"), false);
+assert.equal(isTimeoutError(null), false);
 
 // ---- agent #2's own call: OFF (no switch, no key) never touches the network --------------------
 // A named async function + a call at the bottom (not top-level `await`) - this file runs under
@@ -321,7 +558,41 @@ async function testWordAdviceOff(): Promise<void> {
   }
 }
 
+// ---- agent #3's call: every gate closes BEFORE the network (off, empty brief, spent budget) ------
+async function testParseBriefGates(): Promise<void> {
+  const savedEnv = { ...process.env };
+  const savedWarn = console.warn;
+  console.warn = () => {};
+  try {
+    delete process.env.AI_AGENTS;
+    delete process.env.TOUR_UPLOADER_AI;
+    delete process.env.ANTHROPIC_API_KEY;
+    const budget = newBudget(TOUR_UPLOADER_AGENT);
+    const off = await parseBriefWithAgent("תעלה את סיור אריק קלפטון", budget);
+    assert.deepEqual(off, { ok: false, reason: "off", plan: null, problems: [] }, "agent off -> reason off, no plan, no throw");
+    assert.equal(budget.remaining, TOUR_UPLOADER_AGENT.callsPerRun, "an agent that never ran never spent its budget");
+
+    process.env.TOUR_UPLOADER_AI = "on";
+    process.env.ANTHROPIC_API_KEY = "sk-ant-synthetic-not-a-real-key";
+    const empty = await parseBriefWithAgent("  \n ", budget);
+    assert.equal(empty.ok, false);
+    if (!empty.ok) {
+      assert.equal(empty.reason, "error");
+      assert.equal(empty.plan, null);
+      assert.ok(empty.problems[0]?.startsWith("brief"), "an empty brief names itself");
+    }
+    assert.equal(budget.remaining, TOUR_UPLOADER_AGENT.callsPerRun, "an empty brief costs no call");
+
+    const spent = await parseBriefWithAgent("תעלה את סיור אריק קלפטון", { remaining: 0 });
+    assert.deepEqual(spent, { ok: false, reason: "budget", plan: null, problems: [] }, "a spent run budget refuses the call");
+  } finally {
+    console.warn = savedWarn;
+    process.env = savedEnv;
+  }
+}
+
 testWordAdviceOff()
+  .then(testParseBriefGates)
   .then(() => console.log("agents selftest: all assertions passed"))
   .catch((e) => {
     console.error(e);

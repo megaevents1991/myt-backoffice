@@ -5,8 +5,8 @@
 // can be called from a client component.
 import {
   AGENT_KEYS, AGENTS_MASTER_SWITCH_ENV, agentFor, agentModel, agentsMasterSwitchOff, anthropicKey,
-  maturityFrom, MATURITY_MIN_DECISIONS, memoryBlock, TAUGHT_RULES_MAX, traceAgentLessons, type AgentDefinition, type AgentKey,
-  type MaturityRow,
+  maturityFrom, MATURITY_MIN_DECISIONS, memoryBlock, rowBelongsToAgent, TAUGHT_RULES_MAX, traceAgentLessons,
+  type AgentDefinition, type AgentKey, type MaturityRow,
 } from "@/lib/agents";
 import { aiCostThisMonth } from "@/lib/actions/price-light-actions";
 import { supabase } from "@/lib/supabase-server";
@@ -57,11 +57,43 @@ function settingsFor(def: AgentDefinition): AgentSettings {
   };
 }
 
-/** Only the price-light agent writes AI spend today - every other key reads as zero until it has
- *  its own call site. Keeps this file from needing to know each agent's cost table by name. */
+/** This calendar month's spend of an agent that audits each of its calls as `agent.call`
+ *  (`metadata: { agent, cost_usd, ... }`) - the tour uploader. One paged read of the month's
+ *  `agent.call` rows, the agent filtered in code (a jsonb `->>` filter is Postgrest's edge case,
+ *  and this is low volume). A failed read reads as zero and is logged, never thrown. */
+async function auditedCallCostThisMonth(agent: AgentKey): Promise<{ usd: number; calls: number }> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const { rows, error, truncated } = await fetchPaged<{ id: number; metadata: { agent?: unknown; cost_usd?: unknown } | null }>(
+    () =>
+      db
+        .from("audit_log")
+        .select("id,metadata")
+        .eq("action", "agent.call")
+        .gte("created_at", monthStart)
+        .order("id", { ascending: true }),
+    AUDIT_FETCH_MAX,
+  );
+  if (error) console.error("auditedCallCostThisMonth failed", JSON.stringify(error));
+  if (truncated) console.error(`auditedCallCostThisMonth: truncated at ${AUDIT_FETCH_MAX}`);
+  let usd = 0;
+  let calls = 0;
+  for (const row of rows) {
+    if (row.metadata?.agent !== agent) continue;
+    calls += 1;
+    const cost = row.metadata.cost_usd;
+    if (typeof cost === "number" && Number.isFinite(cost)) usd += cost;
+  }
+  return { usd: Math.round(usd * 10_000) / 10_000, calls };
+}
+
+/** Price light writes its AI spend on `competitor_matches`, the tour uploader audits each call;
+ *  every other key reads as zero until it has a call site of its own. Keeps this file from
+ *  needing to know each agent's cost table by name. */
 async function costAndCallsFor(key: AgentKey): Promise<{ usd: number; calls: number }> {
-  if (key !== "price-light") return { usd: 0, calls: 0 };
-  return aiCostThisMonth();
+  if (key === "price-light") return aiCostThisMonth();
+  if (key === "tour-uploader") return auditedCallCostThisMonth(key);
+  return { usd: 0, calls: 0 };
 }
 
 /** Per agent: identity basics, switch state, model, this month's AI spend, and its maturity rate.
@@ -284,6 +316,7 @@ function weeklySeriesFrom(rows: MaturityRow[], createdAtOf: Map<MaturityRow, str
 const MATURITY_ACTIONS = [
   "price_light.repriced", "price_light.removed", "price_light.sold_out",
   "price_light.silenced", "price_light.override", "price_light.corrected", "agent.feedback",
+  "uploader.approved", "uploader.rejected",
 ];
 const WEEKLY_WEEKS = 8;
 
@@ -311,11 +344,9 @@ export async function loadMaturity(agentKey: AgentKey, days = 30): Promise<Agent
   // one of them is recorded by the /price-light screen and is evidence about the price-light
   // JUDGE's verdicts specifically, so only that agent's maturity may include them - otherwise a
   // second agent with none of its own outcome actions yet (price-advisor) would inherit price
-  // light's agree/disagree counts wholesale.
-  const relevant = rows.filter((r) => {
-    if (r.action === "agent.feedback") return (r.metadata as { agent?: string } | null)?.agent === agentKey;
-    return agentKey === "price-light";
-  });
+  // light's agree/disagree counts wholesale. `uploader.*` is the tour uploader's alone. The rule
+  // is `rowBelongsToAgent` (lib/agents/maturity.ts, pure and selftested).
+  const relevant = rows.filter((r) => rowBelongsToAgent(agentKey, r));
   const createdAtOf = new Map(relevant.map((r) => [r as MaturityRow, r.created_at]));
 
   const cutoff = Date.now() - days * 86_400_000;
