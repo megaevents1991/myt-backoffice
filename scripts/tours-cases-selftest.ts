@@ -67,6 +67,20 @@ import {
   type TodayFacts,
   type TodayReason,
 } from "../lib/tours/cases";
+import {
+  BOARD_ORDER_MAX,
+  NOTE_LINE_MAX,
+  arrivalOf,
+  boardViewerOf,
+  canSeeCard,
+  cleanOrderIds,
+  moveInOrder,
+  noteLine,
+  orderBoard,
+  placeInOrder,
+  visibleCards,
+  writtenToday,
+} from "../lib/tours/board";
 
 const TODAY = "2026-10-14";
 const S = DEFAULT_STATUSES;
@@ -246,6 +260,8 @@ assert.ok(caseMatches(row, "1042"));
 assert.ok(caseMatches(row, "t10005"));
 assert.ok(caseMatches(row, "123456782"));
 assert.ok(!caseMatches(row, "לונדון"));
+assert.ok(caseMatches({ ...row, customerNo: 1004 } as CaseRow, "C-1004"), "the old C- label still finds the customer");
+assert.ok(caseMatches({ ...row, customerNo: 1004 } as CaseRow, "1004"), "the bare customer number too");
 
 // ---------------------------------------------------------------- cancellation terms as text (no HTML reaches the page)
 assert.equal(
@@ -494,7 +510,7 @@ assert.equal(knownFrom({ id: "k0", createdAt: "2026-10-05T09:00:00Z" }, earlier,
 assert.equal(knownFrom({ id: "k9", createdAt: "2026-11-01T00:00:00Z" }, [...earlier, { ...earlier[1], id: "k3", status: "paid", caseNo: 1013, createdAt: "2026-10-20T00:00:00Z" }], S)?.caseNo, 1013, "the newest: a paid trip");
 
 // the customer: C-number, phones
-assert.equal(customerLabel(1041), "C-1041");
+assert.equal(customerLabel(1041), "1041", "no C- prefix any more (Alon 21.10)");
 assert.equal(customerLabel(null), "");
 assert.deepEqual(cleanPhones([" 052-441-8820 ", "+972524418820", "", "03-555 0192"]), { ok: true, phones: ["052-441-8820", "03-555 0192"] }, "the same phone twice is one");
 assert.equal(cleanPhones(["12"]).ok, false, "not a phone");
@@ -555,5 +571,75 @@ const joined = inquiriesOf(
 assert.deepEqual(joined[0].sentAs, { name: "יוסי לוי", phone: "050-000 0000", email: null });
 assert.equal(joined[0].otherSender, true);
 assert.equal(inquiriesOf({ inquiries: [{ at: "x", name: "יוסי" }] })[0].otherSender, false, "no card given: never flagged");
+
+// ---------------------------------------------------------------- board (Alon 21.10): who sees what, the rep's own order, the note line
+const manager = boardViewerOf("u1", "editor", "admin");
+const rep = boardViewerOf("u2", "editor", "editor");
+assert.equal(manager.manager, true, "a company admin membership is a manager");
+assert.equal(boardViewerOf("u3", "admin", null).manager, true, "a global admin is a manager everywhere");
+assert.equal(rep.manager, false);
+assert.equal(boardViewerOf("u4", "superadmin", "editor").manager, true);
+assert.equal(boardViewerOf("u5", "editor", null).manager, false, "no membership row read = a rep");
+const seen = [
+  { id: "a", assignedTo: "u2" },
+  { id: "b", assignedTo: null },
+  { id: "c", assignedTo: "u9" },
+];
+assert.deepEqual(
+  visibleCards(seen, rep).map((c) => c.id),
+  ["a", "b"],
+  "a rep: own + unassigned",
+);
+assert.deepEqual(
+  visibleCards(seen, manager).map((c) => c.id),
+  ["a", "b", "c"],
+);
+assert.equal(canSeeCard({ assignedTo: "u9" }, rep), false);
+assert.equal(canSeeCard({ assignedTo: null }, rep), true);
+
+assert.equal(arrivalOf("2026-10-01T10:00:00Z", []), "2026-10-01T10:00:00Z");
+assert.equal(
+  arrivalOf("2026-10-01T10:00:00Z", ["2026-10-19T09:00:00Z", "2026-10-20T08:00:00Z"]),
+  "2026-10-20T08:00:00Z",
+  "the newest inquiry is the arrival",
+);
+assert.equal(arrivalOf("2026-10-21T10:00:00Z", ["2026-10-01T09:00:00Z"]), "2026-10-21T10:00:00Z", "never earlier than the card itself");
+
+const ordered = [
+  { id: "n", arrivedAt: "2026-10-21T08:00:00Z" },
+  { id: "o", arrivedAt: "2026-10-01T08:00:00Z" },
+  { id: "m", arrivedAt: "2026-10-10T08:00:00Z" },
+];
+assert.deepEqual(
+  orderBoard(ordered, []).map((r) => [r.row.id, r.position]),
+  [
+    ["o", 1],
+    ["m", 2],
+    ["n", 3],
+  ],
+  "default = arrival, oldest first",
+);
+assert.deepEqual(orderBoard(ordered, ["n", "gone", "n"]).map((r) => r.row.id), ["n", "o", "m"], "saved first; ids not on the list and repeats are ignored");
+assert.deepEqual(orderBoard(ordered, ["m", "n", "o"]).map((r) => r.position), [1, 2, 3], "no gaps");
+assert.deepEqual(orderBoard([], ["m"]), []);
+assert.deepEqual(moveInOrder(["a", "b", "c", "d"], "d", "b"), ["a", "d", "b", "c"]);
+assert.deepEqual(moveInOrder(["a", "b", "c", "d"], "b", "d"), ["a", "c", "d", "b"]);
+assert.deepEqual(moveInOrder(["a", "b"], "x", "a"), ["a", "b"], "an unknown id moves nothing");
+assert.deepEqual(placeInOrder(["a", "b", "c", "d"], "d", 1), ["d", "a", "b", "c"]);
+assert.deepEqual(placeInOrder(["a", "b", "c", "d"], "a", 99), ["b", "c", "d", "a"], "clamped to the end");
+assert.deepEqual(placeInOrder(["a", "b", "c", "d"], "c", 0), ["c", "a", "b", "d"], "clamped to the start");
+assert.deepEqual(placeInOrder(["a", "b"], "a", 1.5), ["a", "b"], "not a whole number: unchanged");
+const uuid = "123e4567-e89b-12d3-a456-426614174000";
+assert.deepEqual(cleanOrderIds([uuid, uuid.toUpperCase(), "junk", 7, null]), [uuid], "uuids only, case-folded, deduped");
+assert.equal(cleanOrderIds(Array.from({ length: 600 }, (_, i) => `123e4567-e89b-12d3-a456-${String(i).padStart(12, "0")}`)).length, BOARD_ORDER_MAX);
+
+assert.equal(noteLine("  \r\n\r\n  call back at 15:00 \r\nsecond line"), "call back at 15:00");
+assert.equal(noteLine(" \n \r\n"), "");
+assert.equal(noteLine(null), "");
+assert.equal(noteLine("x".repeat(100)), `${"x".repeat(NOTE_LINE_MAX - 1)}…`);
+assert.equal(writtenToday("2026-10-20T22:30:00Z", "2026-10-21"), true, "22:30Z is already the 21st in Israel");
+assert.equal(writtenToday("2026-10-20T12:00:00Z", "2026-10-21"), false);
+assert.equal(writtenToday(null, "2026-10-21"), false);
+assert.equal(writtenToday("not a date", "2026-10-21"), false);
 
 console.log("tours-cases selftest: ok");

@@ -417,7 +417,8 @@ export function knownFrom(
 }
 
 // ---------------------------------------------------------------- the customer
-export const customerLabel = (no: number | null | undefined): string => (no ? `C-${no}` : "");
+/** The customer number as the screens print it - bare since 21.10 (Alon: "להעיף את C לפני המספר לקוח"). */
+export const customerLabel = (no: number | null | undefined): string => (no ? String(no) : "");
 export const PHONES_MAX = 5;
 
 /** A customer's phones as staff typed them: each 7+ digits, no two with the same key, at most 5, the main one first. */
@@ -633,6 +634,8 @@ export interface CaseRow {
   caseNo: number;
   createdAt: string;
   updatedAt: string | null;
+  /** When the card last came to the rep: the newest joined inquiry, else createdAt (lib/tours/board.ts arrivalOf). */
+  arrivedAt: string;
   type: CaseType;
   /** The form that opened it (lead, contact, advisor, booking, manual, ...). */
   kind: string;
@@ -644,6 +647,8 @@ export interface CaseRow {
   idNumber: string | null;
   accNum: string | null;
   notes: string | null;
+  /** When the notes were last written (leads.notes_at, 21.10); null before the migration or for a note never written since. */
+  notesAt: string | null;
   message: string | null;
   assignedTo: string | null;
   followUpDate: string | null;
@@ -689,6 +694,8 @@ export const caseMatches = (row: CaseRow, q: string): boolean =>
     q,
     row.caseNo,
     customerLabel(row.customerNo),
+    // the C- label was printed until 21.10 - a hand still types it
+    row.customerNo ? `C-${row.customerNo}` : null,
     caseName(row),
     row.phone,
     row.email,
