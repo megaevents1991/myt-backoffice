@@ -30,7 +30,23 @@ import {
   planDiff,
   type PlanParse,
 } from "@/lib/uploader/plan";
-import type { UploaderPlan } from "@/types/uploader.types";
+import {
+  calendarDay,
+  existingEventFor,
+  groupRows,
+  liveMatchesSubject,
+  priorAnswerFor,
+  priorRejectionFor,
+  questionKey,
+  showKey,
+  tixMatchesSubject,
+  type ExistingEvent,
+  type LiveRow,
+  type PriorItem,
+  type Subject,
+  type TixRow,
+} from "@/lib/uploader/shows";
+import type { ShowIdentity, UploaderPlan } from "@/types/uploader.types";
 
 let checks = 0;
 /** A truthy check. */
@@ -488,6 +504,507 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const copy = applyPriorDefaults(bothNull, { ticket_only: 1, additional: 2 });
   copy.plan.notes.push("x");
   same(bothNull.notes, ["no hotel in Zurich"], "the returned plan does not share arrays with the input");
+}
+
+// ---- lib/uploader/shows.ts: find, group, ask, dedupe, remember --------------------------------
+{
+  // Rows shaped like the real catalogs (tixstock_events / live_events on 21.10). NOW puts the
+  // window floor at 2027-04-04 (today + SHOW_WINDOW_DAYS), so every fixture date is deterministic.
+  const NOW = new Date("2027-04-01T09:00:00Z");
+  const tixRow = (over: Partial<TixRow> & { event_id: string }): TixRow => ({
+    event_name: "Eric Clapton London",
+    show_date: "2027-05-20T19:30:00+00:00",
+    venue_name: "London Royal Albert Hall",
+    city_name: "London",
+    country_code: "GB",
+    performers: [{ name: "Eric Clapton" }],
+    category_name: "Rock & Pop",
+    sub_category_name: null,
+    ticket_count: 141,
+    venue_map_url: "https://tixstock.example/maps/royal-albert-hall.svg",
+    lat: 51.5009,
+    lon: -0.1774,
+    ...over,
+  });
+  const liveRow = (over: Partial<LiveRow> & { event_id: number }): LiveRow => ({
+    event_name: "Eric Clapton",
+    event_name_heb: "אריק קלפטון",
+    show_date: "2027-05-20T19:30:00+00:00",
+    city_name: "London",
+    country_name: "United Kingdom",
+    performers: [{ name: "Eric Clapton", hebName: "אריק קלפטון" }],
+    event_type: "music_live_event_dynamic",
+    sellable: 4,
+    ...over,
+  });
+  /** city, day and the two supplier ids - enough to tell every show of a fixture apart. */
+  const outline = (s: ShowIdentity) => [s.city, s.date, s.suppliers.tixstock?.event_id ?? null, s.suppliers.livetickets?.event_id ?? null];
+
+  const ericClapton: Subject = {
+    kind: "artist",
+    name_en: "Eric Clapton",
+    name_he: "אריק קלפטון",
+    aliases: ["Eric Clapton", "אריק קלפטון"],
+  };
+  const tBham = tixRow({
+    event_id: "tx-bham-0517",
+    event_name: "Eric Clapton Birmingham",
+    show_date: "2027-05-17T19:30:00+00:00",
+    venue_name: "Birmingham Utilita Arena",
+    city_name: "Birmingham",
+    ticket_count: 88,
+    venue_map_url: "https://tixstock.example/maps/utilita-arena.svg",
+    lat: 52.4797,
+    lon: -1.9149,
+  });
+  const tLon20 = tixRow({ event_id: "tx-lon-0520" });
+  const tLon23 = tixRow({ event_id: "tx-lon-0523", show_date: "2027-05-23T19:30:00+00:00", ticket_count: 97 });
+  const tTribute = tixRow({
+    event_id: "tx-skokie-tribute",
+    event_name: "Journeyman - A Tribute to Eric Clapton",
+    show_date: "2027-05-29T20:00:00+00:00",
+    venue_name: "Skokie North Shore Center",
+    city_name: "Skokie",
+    country_code: "US",
+    performers: [{ name: "Journeyman - A Tribute to Eric Clapton" }],
+    ticket_count: 40,
+    venue_map_url: null,
+    lat: 42.0334,
+    lon: -87.7334,
+  });
+  const lBham = liveRow({ event_id: 9001, show_date: "2027-05-17T19:30:00+00:00", city_name: "Birmingham" });
+  const lLon20 = liveRow({ event_id: 9002 });
+  const lLon21 = liveRow({ event_id: 9003, show_date: "2027-05-21T19:30:00+00:00" });
+  const claptonTix = [tBham, tLon20, tLon23, tTribute];
+  const claptonLive = [lBham, lLon20, lLon21];
+
+  // calendarDay / showKey
+  same(calendarDay("2027-05-20T23:30:00-05:00"), "2027-05-20", "calendarDay: the day the supplier prints, no timezone arithmetic");
+  same(calendarDay("2027-05-20"), "2027-05-20", "calendarDay: a bare day stays itself");
+  same(showKey("GB", " London ", "2027-05-20T19:30:00+00:00"), "london|2027-05-20", "showKey: normalized city + printed day");
+  same(
+    showKey(null, "LONDON", "2027-05-20"),
+    showKey("GB", "London", "2027-05-20T19:30:00+00:00"),
+    "showKey: a Live row (no country code) and a Tix row (GB) of the same city and day share the key",
+  );
+
+  // tixMatchesSubject / liveMatchesSubject - artist
+  const anyScope = emptyPlan().scope;
+  same(tixMatchesSubject(tLon20, ericClapton, anyScope), "match", "tix artist: the performer IS the subject");
+  same(tixMatchesSubject(tTribute, ericClapton, anyScope), "tribute", "tix artist: the name only in the title, another performer = tribute");
+  same(
+    tixMatchesSubject(tixRow({ event_id: "tx-oasis", event_name: "Oasis London", performers: [{ name: "Oasis" }] }), ericClapton, anyScope),
+    "no",
+    "tix artist: someone else entirely = no",
+  );
+  check(liveMatchesSubject(lLon20, ericClapton, anyScope), "live artist: the performer matches");
+  check(
+    liveMatchesSubject(liveRow({ event_id: 9020, performers: [] }), ericClapton, anyScope),
+    "live artist: no performers, but the event name IS the subject",
+  );
+
+  // Hebrew subject: the Hebrew alias carries the match
+  const hebrewClapton: Subject = { kind: "artist", name_en: "Eric Clapton", name_he: null, aliases: ["אריק קלפטון"] };
+  check(liveMatchesSubject(lLon20, hebrewClapton, anyScope), "hebrew: Live performer hebName 'אריק קלפטון' + name 'Eric Clapton' matches");
+  check(
+    liveMatchesSubject(
+      liveRow({ event_id: 9010, event_name: "E. Clapton Live", event_name_heb: null, performers: [{ name: "E. Clapton", hebName: "אריק קלפטון" }] }),
+      hebrewClapton,
+      anyScope,
+    ),
+    "hebrew: the Hebrew alias alone carries the match when the English spelling differs",
+  );
+  check(
+    !liveMatchesSubject(
+      liveRow({
+        event_id: 9011,
+        event_name: "Journeyman",
+        event_name_heb: "מחווה לאריק קלפטון",
+        performers: [{ name: "Journeyman", hebName: "ג'רנימן" }],
+      }),
+      hebrewClapton,
+      anyScope,
+    ),
+    "hebrew: a Hebrew title naming the artist with another performer is not a match",
+  );
+
+  // Clapton fixture: four shows, the tribute excluded, nothing to ask
+  {
+    const g = groupRows(claptonTix, claptonLive, ericClapton, clapton(), NOW);
+    same(
+      g.shows.map(outline),
+      [
+        ["Birmingham", "2027-05-17", "tx-bham-0517", 9001],
+        ["London", "2027-05-20", "tx-lon-0520", 9002],
+        ["London", "2027-05-21", null, 9003],
+        ["London", "2027-05-23", "tx-lon-0523", null],
+      ],
+      "clapton: Birmingham (both), London 20.05 (both), London 21.05 (Live only), London 23.05 (Tix only)",
+    );
+    same(
+      g.shows[0],
+      {
+        name_english: "Eric Clapton Birmingham",
+        city: "Birmingham",
+        country_code: "GB",
+        venue: "Birmingham Utilita Arena",
+        date: "2027-05-17",
+        lat: 52.4797,
+        lon: -1.9149,
+        suppliers: {
+          tixstock: {
+            event_id: "tx-bham-0517",
+            name: "Eric Clapton Birmingham",
+            ticket_count: 88,
+            venue_map_url: "https://tixstock.example/maps/utilita-arena.svg",
+          },
+          livetickets: { event_id: 9001, name_heb: "אריק קלפטון", sellable: 4 },
+        },
+        competition: null,
+        home_team: null,
+        away_team: null,
+        fallback: [],
+      },
+      "clapton: a paired show carries the Tix identity (venue, coords, GB) and both supplier refs",
+    );
+    const liveOnly = g.shows[2];
+    same(
+      [liveOnly.lat, liveOnly.lon, liveOnly.venue, liveOnly.country_code, liveOnly.name_english],
+      [null, null, null, null, "Eric Clapton"],
+      "clapton: a Live-only show has no coords, no venue and no country code",
+    );
+    same(g.excluded, [{ row: "tixstock", id: "tx-skokie-tribute", reason: "tribute" }], "clapton: the tribute act is excluded, named");
+    same(g.questions, [], "clapton: London 21.05 is one day off a London date that already has its exact pair - no question");
+  }
+
+  // Two Tix rows on one key: an empty twin is dropped, a selling twin is a question
+  {
+    const twin = (ticket_count: number) =>
+      tixRow({ event_id: "tx-lon-0520-b", event_name: "Eric Clapton - London (Extra)", ticket_count });
+    const zero = groupRows([...claptonTix, twin(0)], claptonLive, ericClapton, clapton(), NOW);
+    same(zero.questions, [], "zero twin: no question");
+    check(
+      zero.excluded.some((e) => e.row === "tixstock" && e.id === "tx-lon-0520-b" && e.reason === "zero_tickets_twin"),
+      "zero twin: the empty listing is excluded as zero_tickets_twin",
+    );
+    same(
+      zero.shows.map(outline)[1],
+      ["London", "2027-05-20", "tx-lon-0520", 9002],
+      "zero twin: London 20.05 keeps the selling listing and its Live pair",
+    );
+
+    const five = groupRows([...claptonTix, twin(5)], claptonLive, ericClapton, clapton(), NOW);
+    same(five.questions.length, 1, "selling twin: exactly one question");
+    const { show, question } = five.questions[0];
+    same(question.kind, "pick_show", "selling twin: pick_show");
+    same(
+      question.options,
+      [
+        { key: "tx-lon-0520", label: "Eric Clapton London · London Royal Albert Hall · 20.05.2027" },
+        { key: "tx-lon-0520-b", label: "Eric Clapton - London (Extra) · London Royal Albert Hall · 20.05.2027" },
+        { key: "skip", label: "דלג על ההופעה" },
+      ],
+      "selling twin: one option per listing (bigger first) + skip",
+    );
+    same(
+      question.text,
+      "TixStock מציג שתי הופעות ב-London ב-20.05.2027: Eric Clapton London / Eric Clapton - London (Extra) - איזו שייכת לטור?",
+      "selling twin: the question text names both listings",
+    );
+    same(
+      [question.free_text, question.key, question.asked_at, question.task_id],
+      [false, "eric clapton|london|2027-05-20", NOW.toISOString(), null],
+      "selling twin: closed options, key = subject|city|day, asked now, no task yet",
+    );
+    same(question.key, questionKey(show, "Eric Clapton"), "selling twin: the key is questionKey of the asked show");
+    same(outline(show), ["London", "2027-05-20", "tx-lon-0520", 9002], "selling twin: the asked show keeps the Live pair");
+    same(
+      five.shows.map((s) => s.date),
+      ["2027-05-17", "2027-05-21", "2027-05-23"],
+      "selling twin: the asked show is not also in shows",
+    );
+  }
+
+  // Live one day off the only Tix row of the city -> pick_date; two days off -> two shows
+  {
+    const g = groupRows([tLon20], [lLon21], ericClapton, clapton(), NOW);
+    same(g.shows, [], "pick_date: neither row is a show until the date is decided");
+    same(g.questions.length, 1, "pick_date: one question");
+    const { show, question } = g.questions[0];
+    same(question.kind, "pick_date", "pick_date: kind");
+    same(question.text, "ב-London: TixStock אומר 20.05.2027, LiveTickets 21.05.2027 - איזה תאריך נכון?", "pick_date: text");
+    same(
+      question.options,
+      [
+        { key: "tix:2027-05-20", label: "תאריך TixStock 20.05.2027" },
+        { key: "live:2027-05-21", label: "תאריך LiveTickets 21.05.2027" },
+        { key: "both", label: "שתי הופעות" },
+        { key: "skip", label: "דלג על ההופעה" },
+      ],
+      "pick_date: TixStock's day, LiveTickets' day, both, skip",
+    );
+    same([question.free_text, question.key], [false, "eric clapton|london|2027-05-20"], "pick_date: closed, keyed on the Tix day");
+    same(outline(show), ["London", "2027-05-20", "tx-lon-0520", 9003], "pick_date: the asked show holds both rows");
+
+    const apart = groupRows([tLon20], [liveRow({ event_id: 9005, show_date: "2027-05-22T19:30:00+00:00" })], ericClapton, clapton(), NOW);
+    same([apart.shows.length, apart.questions.length], [2, 0], "pick_date: two days apart = two shows, no question");
+  }
+
+  // Two Live rows on one key: the same pick_show, unless one sells nothing
+  {
+    const g = groupRows([], [lLon20, liveRow({ event_id: 9004, sellable: 2 })], ericClapton, clapton(), NOW);
+    same(g.questions.length, 1, "live twins: one question");
+    same(
+      g.questions[0].question.options.map((o) => o.key),
+      ["live:9002", "live:9004", "skip"],
+      "live twins: options keyed live:<event_id>",
+    );
+    check(g.questions[0].question.text.startsWith("LiveTickets מציג שתי הופעות ב-London"), "live twins: the text names LiveTickets");
+    const empty = groupRows([], [lLon20, liveRow({ event_id: 9004, sellable: 0 })], ericClapton, clapton(), NOW);
+    same([empty.questions.length, empty.shows.map(outline)], [0, [["London", "2027-05-20", null, 9002]]], "live twins: the empty one dropped");
+    same(empty.excluded, [{ row: "livetickets", id: "9004", reason: "zero_tickets_twin" }], "live twins: named as zero_tickets_twin");
+  }
+
+  // Same city name in two countries on the same day: two shows, not a question
+  {
+    const alabama = tixRow({
+      event_id: "tx-bham-al-0517",
+      event_name: "Eric Clapton Birmingham AL",
+      show_date: "2027-05-17T20:00:00+00:00",
+      venue_name: "Legacy Arena",
+      city_name: "Birmingham",
+      country_code: "US",
+      lat: 33.5207,
+      lon: -86.8025,
+    });
+    const g = groupRows([tBham, alabama], [], ericClapton, clapton(), NOW);
+    same([g.shows.length, g.questions.length], [2, 0], "country tie-break: GB and US Birmingham are two shows");
+  }
+
+  // The window and the cities
+  {
+    const open = emptyPlan();
+    open.subject = { kind: "artist", name_he: null, name_en: "Eric Clapton" };
+    const early = tixRow({ event_id: "tx-lon-0403", show_date: "2027-04-03T19:30:00+00:00" });
+    const floor = tixRow({ event_id: "tx-lon-0404", show_date: "2027-04-04T19:30:00+00:00" });
+    const g = groupRows([early, floor], [], ericClapton, open, NOW);
+    same(g.shows.map((s) => s.date), ["2027-04-04"], "window: opens today + SHOW_WINDOW_DAYS when date_from is empty");
+    same(g.excluded, [{ row: "tixstock", id: "tx-lon-0403", reason: "out_of_scope" }], "window: an earlier show is out_of_scope");
+    const before = emptyPlan();
+    before.scope.date_from = "2027-03-01";
+    same(
+      groupRows([early, floor], [], ericClapton, before, NOW).shows.map((s) => s.date),
+      ["2027-04-04"],
+      "window: a date_from earlier than today + SHOW_WINDOW_DAYS never reopens what the site hides",
+    );
+    const late = tixRow({ event_id: "tx-lon-0701", show_date: "2027-07-01T19:30:00+00:00" });
+    same(
+      groupRows([late], [], ericClapton, clapton(), NOW).excluded,
+      [{ row: "tixstock", id: "tx-lon-0701", reason: "out_of_scope" }],
+      "window: after date_to is out_of_scope",
+    );
+
+    const onlyLondon = clapton();
+    onlyLondon.scope.exclude_cities = [];
+    onlyLondon.scope.include_cities = ["london"];
+    const inc = groupRows(claptonTix, claptonLive, ericClapton, onlyLondon, NOW);
+    same([...new Set(inc.shows.map((s) => s.city))], ["London"], "include_cities: only London shows");
+    same(
+      inc.excluded.filter((e) => e.reason === "out_of_scope"),
+      [
+        { row: "tixstock", id: "tx-bham-0517", reason: "out_of_scope" },
+        { row: "livetickets", id: "9001", reason: "out_of_scope" },
+      ],
+      "include_cities: Birmingham's rows on both suppliers are out_of_scope",
+    );
+    const noBham = clapton();
+    noBham.scope.exclude_cities = ["Birmingham"];
+    same(
+      groupRows(claptonTix, claptonLive, ericClapton, noBham, NOW).shows.map((s) => s.city),
+      ["London", "London", "London"],
+      "exclude_cities: Birmingham is left out",
+    );
+  }
+
+  // Team: home games by default, every fixture when home_only is off
+  {
+    const liverpool: Subject = { kind: "team", name_en: "Liverpool FC", name_he: "ליברפול", aliases: ["ליברפול", "Liverpool"] };
+    const home = tixRow({
+      event_id: "tx-lfc-cpfc",
+      event_name: "Liverpool FC vs Crystal Palace FC",
+      show_date: "2027-04-24T14:00:00+00:00",
+      venue_name: "Anfield",
+      city_name: "Liverpool",
+      performers: [{ name: "Liverpool FC" }, { name: "Crystal Palace FC" }],
+      category_name: "English Premier League",
+      ticket_count: 230,
+      venue_map_url: "https://tixstock.example/maps/anfield.svg",
+      lat: 53.4308,
+      lon: -2.9608,
+    });
+    const away = tixRow({
+      event_id: "tx-afc-lfc",
+      event_name: "Arsenal FC vs Liverpool FC",
+      show_date: "2027-05-01T16:30:00+00:00",
+      venue_name: "Emirates Stadium",
+      city_name: "London",
+      performers: [{ name: "Arsenal FC" }, { name: "Liverpool FC" }],
+      category_name: "English Premier League",
+      ticket_count: 60,
+      venue_map_url: "https://tixstock.example/maps/emirates.svg",
+      lat: 51.555,
+      lon: -0.1086,
+    });
+    const teamPlan = (homeOnly: boolean): UploaderPlan => {
+      const p = emptyPlan();
+      p.subject = { kind: "team", name_he: "ליברפול", name_en: "Liverpool FC" };
+      p.scope.home_only = homeOnly;
+      return p;
+    };
+    same(tixMatchesSubject(home, liverpool, teamPlan(true).scope), "match", "team: a home fixture matches");
+    same(tixMatchesSubject(away, liverpool, teamPlan(true).scope), "away", "team: an away fixture with home_only = away");
+    same(tixMatchesSubject(away, liverpool, teamPlan(false).scope), "match", "team: every fixture when home_only is off");
+
+    const homeOnly = groupRows([home, away], [], liverpool, teamPlan(true), NOW);
+    same(homeOnly.shows.map(outline), [["Liverpool", "2027-04-24", "tx-lfc-cpfc", null]], "team home_only: 1 show");
+    same(
+      [homeOnly.shows[0].home_team, homeOnly.shows[0].away_team, homeOnly.shows[0].competition],
+      ["Liverpool FC", "Crystal Palace FC", "English Premier League"],
+      "team: the show names its sides and its league",
+    );
+    same(homeOnly.excluded, [{ row: "tixstock", id: "tx-afc-lfc", reason: "away" }], "team home_only: the away fixture is excluded as away");
+    const all = groupRows([home, away], [], liverpool, teamPlan(false), NOW);
+    same(all.shows.map((s) => s.date), ["2027-04-24", "2027-05-01"], "team all fixtures: 2 shows");
+    same(all.excluded, [], "team all fixtures: nothing excluded");
+
+    const liveHome = liveRow({
+      event_id: 9101,
+      event_name: "Liverpool vs Crystal Palace",
+      event_name_heb: "ליברפול נגד קריסטל פאלאס",
+      show_date: "2027-04-24T14:00:00+00:00",
+      city_name: "Liverpool",
+      performers: [
+        { name: "Liverpool", hebName: "ליברפול" },
+        { name: "Crystal Palace", hebName: "קריסטל פאלאס" },
+      ],
+      event_type: "sports_live_event_dynamic",
+    });
+    const liveAway = liveRow({
+      event_id: 9102,
+      event_name: "Arsenal vs Liverpool",
+      event_name_heb: "ארסנל נגד ליברפול",
+      show_date: "2027-05-01T16:30:00+00:00",
+      performers: [{ name: "Arsenal" }, { name: "Liverpool" }],
+      event_type: "sports_live_event_dynamic",
+    });
+    check(liveMatchesSubject(liveHome, liverpool, teamPlan(true).scope), "live team: the first performer is the team = home");
+    check(!liveMatchesSubject(liveAway, liverpool, teamPlan(true).scope), "live team: an away fixture is not a match with home_only");
+    check(liveMatchesSubject(liveAway, liverpool, teamPlan(false).scope), "live team: but is without it");
+    same(
+      groupRows([home], [liveHome], liverpool, teamPlan(true), NOW).shows.map(outline),
+      [["Liverpool", "2027-04-24", "tx-lfc-cpfc", 9101]],
+      "live team: the Live home fixture pairs with the Tix one",
+    );
+  }
+
+  // Competition: the category (or sub-category) names it, the round narrows it
+  {
+    const ucl: Subject = { kind: "competition", name_en: "UEFA Champions League", name_he: null, aliases: [] };
+    const r16 = tixRow({
+      event_id: "tx-rma-mci",
+      event_name: "Real Madrid vs Manchester City",
+      show_date: "2027-03-10T20:00:00+00:00",
+      venue_name: "Santiago Bernabeu",
+      city_name: "Madrid",
+      country_code: "ES",
+      performers: [{ name: "Real Madrid" }, { name: "Manchester City" }],
+      category_name: "UEFA Champions League",
+      sub_category_name: "Round of 16",
+      lat: 40.4531,
+      lon: -3.6883,
+    });
+    const europa = tixRow({ ...r16, event_id: "tx-europa", event_name: "AS Roma vs Real Betis", category_name: "UEFA Europa League" });
+    const quarter = tixRow({ ...r16, event_id: "tx-qf", sub_category_name: "Quarter Final" });
+    const r16Scope = { ...emptyPlan().scope, round: "Round of 16" };
+    same(tixMatchesSubject(r16, ucl, r16Scope), "match", "competition: category + round of 16 matches");
+    same(tixMatchesSubject(europa, ucl, r16Scope), "no", "competition: a Europa League row is not the Champions League");
+    same(tixMatchesSubject(quarter, ucl, r16Scope), "no", "competition: another round is not this run");
+    same(tixMatchesSubject(quarter, ucl, emptyPlan().scope), "match", "competition: no round = every round");
+    same(
+      tixMatchesSubject(r16, { ...ucl, name_en: "Champions League" }, r16Scope),
+      "match",
+      "competition: the supplier's longer category name contains the subject's",
+    );
+    const cPlan = emptyPlan();
+    cPlan.subject = { kind: "competition", name_he: null, name_en: "UEFA Champions League" };
+    cPlan.scope.round = "Round of 16";
+    const g = groupRows([{ ...r16, show_date: "2027-04-14T20:00:00+00:00" }, europa], [], ucl, cPlan, new Date("2027-04-01T09:00:00Z"));
+    same(
+      g.shows.map((s) => [s.home_team, s.away_team, s.competition]),
+      [["Real Madrid", "Manchester City", "UEFA Champions League"]],
+      "competition: one fixture, its sides and its competition",
+    );
+  }
+
+  // existingEventFor: an eid beats everything; else name + day (+ IATA once the build knows it)
+  {
+    const g = groupRows(claptonTix, claptonLive, ericClapton, clapton(), NOW);
+    const [bham, lon20, lon21, lon23] = g.shows;
+    const existing: ExistingEvent[] = [
+      { id: 501, name_english: "Eric Clapton London", date: "2027-05-20", city_iata: "LON", eids: ["tx-lon-0520"], is_hidden: true },
+      { id: 502, name_english: "Eric Clapton Birmingham", date: "2027-05-17", city_iata: "BHX", eids: [], is_hidden: false },
+      { id: 503, name_english: "Eric Clapton", date: "2027-05-21", city_iata: null, eids: ["9003"], is_hidden: false },
+    ];
+    same(existingEventFor(lon20, existing)?.id, 501, "existing: same TixStock eid, a hidden event included");
+    same(existingEventFor(lon21, existing)?.id, 503, "existing: same LiveTickets eid (stored as text)");
+    same(existingEventFor(bham, existing)?.id, 502, "existing: same name_english + day when no eid matches");
+    same(existingEventFor(bham, existing, "BHX")?.id, 502, "existing: name + day + the same IATA");
+    same(existingEventFor(bham, existing, "MAN"), null, "existing: name + day but another IATA is another event");
+    same(existingEventFor(lon23, existing), null, "existing: nothing for a show nobody built");
+    same(
+      existingEventFor(lon20, [
+        { id: 601, name_english: "Eric Clapton London", date: "2027-05-20", city_iata: "LON", eids: [], is_hidden: false },
+        { id: 602, name_english: "Clapton RAH (old)", date: "2027-05-20", city_iata: "LON", eids: ["tx-lon-0520"], is_hidden: true },
+      ])?.id,
+      602,
+      "existing: an eid match beats a name match listed before it",
+    );
+    same(
+      existingEventFor(lon20, [{ id: 701, name_english: "Eric Clapton London", date: "2027-05-23T00:00:00+00:00", city_iata: "LON", eids: [], is_hidden: false }]),
+      null,
+      "existing: the same name on another day is not the show",
+    );
+
+    // priorAnswerFor / priorRejectionFor: subject + kind + key, the newest run wins
+    const key20 = questionKey(lon20, "Eric Clapton");
+    same(key20, "eric clapton|london|2027-05-20", "questionKey: normalized subject | showKey");
+    const priors: PriorItem[] = [
+      { subject_en: "Eric Clapton", kind: "pick_show", key: key20, answer: { key: "tx-lon-0520", text: null }, run_no: 3, by: "Alon" },
+      { subject_en: "Eric Clapton", kind: "pick_show", key: key20, answer: { key: "tx-lon-0520-b", text: null }, run_no: 5, by: "Tom" },
+      { subject_en: "Eric Clapton", kind: "pick_show", key: key20, answer: null, run_no: 7, by: "Liz" },
+      { subject_en: "Eric Clapton", kind: "pick_date", key: key20, answer: { key: "both", text: null }, run_no: 6, by: "Alon" },
+      { subject_en: "Oasis", kind: "pick_show", key: key20, answer: { key: "x", text: null }, run_no: 9, by: "Alon" },
+      {
+        subject_en: "Eric Clapton",
+        kind: "rejected",
+        key: questionKey(lon23, "Eric Clapton"),
+        answer: null,
+        run_no: 4,
+        by: "Alon",
+        reason: "one Royal Albert Hall night is enough",
+      },
+    ];
+    const hit = priorAnswerFor({ subject_en: " eric CLAPTON ", kind: "pick_show", key: key20 }, priors);
+    same([hit?.run_no, hit?.answer?.key, hit?.by], [5, "tx-lon-0520-b", "Tom"], "priorAnswerFor: the newest ANSWERED item of that subject, kind and key");
+    same(
+      priorAnswerFor({ subject_en: "Eric Clapton", kind: "pick_show", key: questionKey(lon23, "Eric Clapton") }, priors),
+      null,
+      "priorAnswerFor: another key is a miss",
+    );
+    same(priorAnswerFor({ subject_en: "Eric Clapton", kind: "pick_location", key: key20 }, priors), null, "priorAnswerFor: another kind is a miss");
+    same(priorRejectionFor(lon23, "Eric Clapton", priors)?.reason, "one Royal Albert Hall night is enough", "priorRejectionFor: a final rejection is remembered");
+    same(priorRejectionFor(lon20, "Eric Clapton", priors), null, "priorRejectionFor: an answered question is not a rejection");
+  }
 }
 
 console.log(`tour uploader selftest: all ${checks} checks passed`);
