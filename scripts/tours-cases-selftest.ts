@@ -650,4 +650,22 @@ assert.deepEqual(afterSave(seenA, { id: "a", assignedTo: "u9" }, rep), { cards: 
 assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).handedTo, null, "a manager keeps every row");
 assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).cards[0].assignedTo, "u9");
 
+// ---- WhatsApp (2026-10-21): a message joins the newest open card whatever its tour, and is never filed
+{
+  const openA = { id: "a", packageId: "p1", status: "new", toFile: false, departureStart: null, createdAt: "2026-10-01", updatedAt: "2026-10-05" };
+  const openB = { id: "b", packageId: "p2", status: "offer_sent", toFile: false, departureStart: null, createdAt: "2026-10-03", updatedAt: "2026-10-02" };
+  assert.deepEqual(routeInquiry({ kind: "whatsapp", packageId: null }, [openA, openB], DEFAULT_STATUSES, "2026-10-21"), { kind: "join", cardId: "a" }, "newest by updatedAt, not createdAt");
+  assert.deepEqual(routeInquiry({ kind: "whatsapp", packageId: null }, [{ ...openA, status: "not_relevant" }], DEFAULT_STATUSES, "2026-10-21"), { kind: "new" });
+  assert.deepEqual(routeInquiry({ kind: "whatsapp", packageId: null }, [], DEFAULT_STATUSES, "2026-10-21"), { kind: "new" });
+  assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [openA], DEFAULT_STATUSES, "2026-10-21"), { kind: "file" }, "a tourless site form is still filed");
+  // TODAY: unseen WhatsApp beats a site payment, loses to "came back"
+  const base = { status: "new", followUpDate: null, toFile: false, paymentAnswer: null, confirmationPending: false, waUnseen: 0 };
+  assert.equal(todayReason({ ...base, waUnseen: 2 }, DEFAULT_STATUSES, "2026-10-21"), "whatsapp");
+  assert.equal(todayReason({ ...base, status: "returned", waUnseen: 2 }, DEFAULT_STATUSES, "2026-10-21"), "returned");
+  assert.equal(todayReason({ ...base, status: "pending_payment", paymentAnswer: "paid", waUnseen: 1 }, DEFAULT_STATUSES, "2026-10-21"), "whatsapp");
+  assert.equal(todayReason({ ...base, status: "not_relevant", waUnseen: 5 }, DEFAULT_STATUSES, "2026-10-21"), null, "a closed card never waits");
+  assert.equal(todayReason(base, DEFAULT_STATUSES, "2026-10-21"), "new");
+  assert.ok(todayRank("whatsapp") < todayRank("payment"));
+}
+
 console.log("tours-cases selftest: ok");

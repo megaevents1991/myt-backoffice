@@ -208,6 +208,7 @@ export function TypeBadge({ type }: { type: CaseType }) {
 /** Why a card waits for a rep (TODAY): the reason owns a hue, the words are always printed. */
 const REASON_CLASSES: Record<TodayReason, string> = {
   returned: "border-violet-500/35 bg-violet-500/10 text-violet-800 dark:text-violet-300",
+  whatsapp: "border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
   payment: "border-orange-500/35 bg-orange-500/10 text-orange-800 dark:text-orange-300",
   file: "border-amber-500/40 bg-amber-500/15 text-amber-900 dark:text-amber-300",
   new: "border-blue-500/35 bg-blue-500/10 text-blue-800 dark:text-blue-300",
@@ -222,6 +223,7 @@ const REASON_CLASSES: Record<TodayReason, string> = {
  */
 export const TODAY_ROW_CLASSES: Record<TodayReason, string> = {
   returned: "bg-violet-500/10 hover:bg-violet-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-violet-500",
+  whatsapp: "bg-emerald-500/10 hover:bg-emerald-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-emerald-500",
   payment: "bg-orange-500/10 hover:bg-orange-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-orange-500",
   file: "bg-amber-500/10 hover:bg-amber-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-amber-500",
   new: "bg-blue-500/10 hover:bg-blue-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-blue-500",

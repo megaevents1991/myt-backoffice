@@ -16,6 +16,7 @@ import type { BoardViewer } from "@/lib/tours/board";
 import type { BookingRow } from "@/components/tours/bookings/shared";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
 import type { CancellationRule } from "@/lib/tours/cancellation";
+import type { WaMessageType } from "@/lib/whatsapp/rules";
 
 // ---------------------------------------------------------------- TYPE
 export const CASE_TYPES = ["reservation", "lead", "potential"] as const;
@@ -274,10 +275,12 @@ export function validateStatuses(
  * The status IS the work now - there is no TASK column. TODAY lists every card a rep has to touch, with the
  * reason, in this order (Nir 19.10).
  */
-export const TODAY_REASONS = ["returned", "payment", "file", "new", "late", "today", "confirmation"] as const;
+export const TODAY_REASONS = ["returned", "whatsapp", "payment", "file", "new", "late", "today", "confirmation"] as const;
 export type TodayReason = (typeof TODAY_REASONS)[number];
 export const TODAY_REASON_LABELS: Record<TodayReason, string> = {
   returned: "Came back",
+  // an inbound WhatsApp message the card's rep has not seen yet (2026-10-21)
+  whatsapp: "הודעה חדשה בוואטסאפ",
   payment: "Site payment to confirm",
   file: "Inquiry to file",
   new: "New",
@@ -311,6 +314,8 @@ export interface TodayFacts {
   paymentAnswer: PaymentAnswer | null;
   /** A paid site booking whose confirmation was not sent yet. */
   confirmationPending: boolean;
+  /** Inbound WhatsApp messages since the rep last opened the card's thread (leads.wa_seen_at). */
+  waUnseen: number;
 }
 
 /** Why the card waits for a rep today, or null. First match wins. */
@@ -318,6 +323,7 @@ export function todayReason(c: TodayFacts, statuses: readonly CaseStatus[], toda
   if (c.toFile) return "file";
   if (isClosedStatus(c.status, statuses)) return null;
   if (c.status === "returned") return "returned";
+  if (c.waUnseen > 0) return "whatsapp";
   if (c.paymentAnswer) return "payment";
   if (c.status === "new") return "new";
   if (c.followUpDate && /^\d{4}-\d{2}-\d{2}$/.test(c.followUpDate)) {
@@ -359,6 +365,8 @@ export interface RouteCard {
   /** The card's departure's first day. */
   departureStart: string | null;
   createdAt: string;
+  /** When the card was last touched - a WhatsApp message joins the newest by this (2026-10-21). */
+  updatedAt?: string | null;
 }
 export function isOpenCard(card: RouteCard, statuses: readonly CaseStatus[], today: string): boolean {
   if (card.toFile || isClosedStatus(card.status, statuses)) return false;
@@ -370,8 +378,10 @@ const UNROUTED_KINDS = new Set(["booking", "advisor", "manual", "newsletter"]);
 export type InquiryRoute = { kind: "join"; cardId: string } | { kind: "file" } | { kind: "new" };
 
 /**
- * Where a SITE FORM of a known customer goes (SQL twin: public.leads_fill, 20261019180000). Its tour has an open
- * card -> it joins it (newest first); no tour while open cards exist -> the rep files it; else a new card.
+ * Where a SITE FORM of a known customer goes (SQL twin: public.leads_fill, 20261019180000 + 20261021172647). Its
+ * tour has an open card -> it joins it (newest first); no tour while open cards exist -> the rep files it; else a
+ * new card. A WHATSAPP message (2026-10-21) is the continuation of a conversation, not a form about a tour: it
+ * joins the customer's newest open card (by updatedAt) whatever its tour, and is never filed.
  */
 export function routeInquiry(
   form: { kind: string; packageId: string | null },
@@ -381,6 +391,11 @@ export function routeInquiry(
 ): InquiryRoute {
   if (UNROUTED_KINDS.has(form.kind)) return { kind: "new" };
   const open = cards.filter((c) => isOpenCard(c, statuses, today)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (form.kind === "whatsapp") {
+    const touched = (c: RouteCard) => c.updatedAt ?? c.createdAt;
+    const newest = [...open].sort((a, b) => touched(b).localeCompare(touched(a)))[0];
+    return newest ? { kind: "join", cardId: newest.id } : { kind: "new" };
+  }
   if (form.packageId) {
     const same = open.find((c) => c.packageId === form.packageId);
     return same ? { kind: "join", cardId: same.id } : { kind: "new" };
@@ -674,6 +689,9 @@ export interface CaseRow {
   /** What the card payment answered while the card waits for its money (the rep confirms). */
   paymentAnswer: PaymentAnswer | null;
   confirmationPending: boolean;
+  /** Inbound WhatsApp messages the card's rep has not seen (after leads.wa_seen_at); 0 before the migration. */
+  waUnseen: number;
+  waSeenAt: string | null;
   /** Travelers on the departure's seats (the sum of the case's sales rows). */
   travelers: number;
   /** Travelers of a settled booking that hold no seat (seatGap); 0 = nothing owed. */
@@ -868,6 +886,8 @@ export interface CustomerPageData {
   hiddenCards: number;
   /** The customer travelled with us on ANY card, hidden ones too. */
   travelled: boolean;
+  /** The customer's WhatsApp thread (2026-10-21). */
+  whatsapp: WaThread;
 }
 
 /** A customer as the merge / move pickers show it. */
@@ -969,7 +989,62 @@ export interface CaseDetail {
   known: KnownFrom | null;
   /** The tour's cancellation fee rules (tours.cancellation_rules) - each order reads its fee as of today from them. */
   cancellationRules: CancellationRule[];
+  /** The customer's WhatsApp thread with the company number, consent and the 24-hour window (2026-10-21). */
+  whatsapp: WaThread;
 }
+
+// ---------------------------------------------------------------- WhatsApp on the card (2026-10-21)
+
+/** One message of the customer's thread, as the card shows it. */
+export interface WaThreadMessage {
+  id: string;
+  waMessageId: string;
+  direction: "in" | "out";
+  /** customer | app (a rep in the WhatsApp app) | api | automation | broadcast | history */
+  origin: string;
+  type: WaMessageType;
+  text: string | null;
+  /** A signed URL of the stored media, or null. */
+  mediaUrl: string | null;
+  mediaMime: string | null;
+  template: { name: string; params: string[] } | null;
+  status: string;
+  error: string | null;
+  sentAt: string;
+  sentBy: string | null;
+  caseId: string | null;
+}
+
+/** The thread + what the card needs to know about sending. */
+export interface WaThread {
+  /** Newest last, at most WA_THREAD_PAGE; `hasMore` = older ones exist. */
+  messages: WaThreadMessage[];
+  hasMore: boolean;
+  consent: { state: string; source: string | null; at: string | null };
+  /** The customer's newest inbound message - the 24-hour window is measured from it. */
+  lastInAt: string | null;
+  windowOpen: boolean;
+  /** The company has a connected number (wa_accounts). */
+  connected: boolean;
+}
+
+export const WA_CONSENT_LABELS: Record<string, string> = {
+  none: "לא אישר/ה דיוור",
+  form: "סימן/ה בטופס באתר - טרם אושר",
+  opted_in: "אישר/ה דיוור",
+  customer: "לקוח/ה (תנאי הזמנה)",
+  opted_out: "ביקש/ה הסרה",
+};
+
+/** What a card reads before the migration / with no messages. */
+export const emptyWaThread = (): WaThread => ({
+  messages: [],
+  hasMore: false,
+  consent: { state: "none", source: null, at: null },
+  lastInAt: null,
+  windowOpen: false,
+  connected: false,
+});
 
 /** A case another one may be merged with - what the picker shows. */
 export interface CaseCandidate {

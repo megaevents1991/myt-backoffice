@@ -180,6 +180,8 @@ export const LEAD_KIND_LABELS: Record<string, string> = {
   // the Mega Family site (14.10): a page with no tour asks to be told when tours open; a tour's waiting list
   notify: "Notify me when tours open",
   waitlist: "Waiting list",
+  // an inbound WhatsApp message that opened or joined a case (2026-10-21)
+  whatsapp: "WhatsApp",
 };
 
 /** The numeric id the customer site uses for a departure (?product_id=). */

@@ -69,6 +69,7 @@ import {
   todayReason,
   whatsappAppLink,
   whatsappPhone,
+  emptyWaThread,
   type BoardOrder,
   type BoardPage,
   type CaseCandidate,
@@ -455,6 +456,9 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     bookingStatus: booking?.status ?? null,
     paymentAnswer: paymentAnswerOf(r.status, x.bookingStatuses.get(r.id) ?? []),
     confirmationPending: booking?.confirmationPending ?? false,
+    // filled by the thread read (Task 7 of the WhatsApp plan); 0 / null until then and before the migration
+    waUnseen: 0,
+    waSeenAt: null,
     travelers: x.travelers.get(r.id) ?? 0,
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
     closeReason: r.close_reason ?? null,
@@ -1147,6 +1151,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       payload,
       bookings: bookings.map((b) => ({ ...b, paymentLog: paymentLog.get(b.id) ?? [] })),
       cancellationRules,
+      whatsapp: emptyWaThread(),
       sales,
       departure: departure
         ? {
@@ -1849,6 +1854,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
       viewer,
       hiddenCards: all.length - cards.length,
       travelled,
+      whatsapp: emptyWaThread(),
     });
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the customer");
