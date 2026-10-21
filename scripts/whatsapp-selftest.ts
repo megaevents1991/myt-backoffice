@@ -17,6 +17,7 @@ import {
   verifySignature,
   type WaEvent,
 } from "../lib/whatsapp/rules";
+import { envKey, phoneIdFor, tokenFor } from "../lib/whatsapp/env";
 
 const NOW = "2026-10-21T10:00:00Z";
 
@@ -168,6 +169,16 @@ assert.deepEqual(parseWebhook({ entry: [{ changes: [{ field: "something_else", v
 assert.deepEqual(parseWebhook(null), []);
 assert.deepEqual(parseWebhook("not json"), []);
 assert.deepEqual(parseWebhook({ entry: [{ changes: [{ field: "messages", value: { metadata: { phone_number_id: "111" }, messages: [{ id: "wamid.X" }] } }] }] }), [], "a message with no sender is skipped");
+
+// ---- env: the sending token per company, the phone id key per slug
+assert.equal(tokenFor("mega-family", { NEXT_SECRET_WHATSAPP_TOKEN: "shared" }), "shared");
+assert.equal(tokenFor("mega-family", { NEXT_SECRET_WHATSAPP_TOKEN: "shared", NEXT_SECRET_WHATSAPP_TOKEN_MEGA_FAMILY: "own" }), "own", "a company's own token wins");
+assert.equal(tokenFor("mega-family", { NEXT_SECRET_WHATSAPP_TOKEN: "  " }), null, "blank is unset");
+assert.equal(tokenFor("mega-family", {}), null);
+assert.equal(envKey("mega-family"), "NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY");
+assert.equal(envKey("mega-events"), "NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_EVENTS");
+assert.equal(phoneIdFor("mega-family", { NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY: "123456789012" }), "123456789012");
+assert.equal(phoneIdFor("mega-family", { NEXT_SECRET_WHATSAPP_PHONE_ID_MEGA_FAMILY: "abc" }), null, "a phone id is digits");
 
 // ---- one line for chips
 assert.equal(previewText("שלום\nמה המחיר?", 10), "שלום מה ה…");
