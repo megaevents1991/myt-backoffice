@@ -30,6 +30,8 @@ import {
   resendInvite,
 } from "@/lib/actions/form-invite-actions";
 import { fieldAdminLabel } from "@/lib/forms/i18n";
+import type { TripLinkDeparture, TripLinkOptions } from "@/lib/actions/form-invite-actions";
+import { DeparturePicker } from "./departure-picker";
 import type {
   AnswerMap,
   FormField,
@@ -62,6 +64,8 @@ type Props = {
   /** Emailing personal invites is a staff tool; operators only mint trip links. */
   canEmail: boolean;
   initialInvites: FormInvite[];
+  /** Departures to pick a trip from + escort name suggestions. */
+  tripOptions: TripLinkOptions;
 };
 
 export function InvitesClient({
@@ -71,6 +75,7 @@ export function InvitesClient({
   staffFields,
   canEmail,
   initialInvites,
+  tripOptions,
 }: Props) {
   const { toast } = useToast();
   const [invites, setInvites] = useState(initialInvites);
@@ -80,10 +85,25 @@ export function InvitesClient({
   const [codeNum, setCodeNum] = useState("");
   const [totalTravelers, setTotalTravelers] = useState("");
   const [staffAnswers, setStaffAnswers] = useState<AnswerMap>({});
+  const [departure, setDeparture] = useState<TripLinkDeparture | null>(null);
   const [pending, startTransition] = useTransition();
 
   const isLive = formStatus === "live";
   const parsed = parseRecipients(raw, lang);
+  // The report reads the escort from the first staff short text and the departure from
+  // the first staff date - the same two boxes are the ones the picker / suggestions fill.
+  const escortField = staffFields.find((field) => field.type === "short_text") ?? null;
+  const dateField = staffFields.find((field) => field.type === "date") ?? null;
+
+  function pickDeparture(next: TripLinkDeparture | null) {
+    setDeparture(next);
+    if (!next) return;
+    setCodePrefix(next.prefix);
+    setCodeNum(next.num);
+    if (dateField) {
+      setStaffAnswers((prev) => ({ ...prev, [String(dateField.id)]: next.start_date }));
+    }
+  }
 
   function handleTripLink() {
     startTransition(async () => {
@@ -94,6 +114,7 @@ export function InvitesClient({
           lang,
           staffAnswers,
           totalTravelers: totalTravelers.trim() === "" ? null : totalTravelers.trim(),
+          departureId: departure?.id ?? null,
         });
         await navigator.clipboard.writeText(url);
         toast({ title: "Trip link copied - share it with the group", description: url });
@@ -101,6 +122,7 @@ export function InvitesClient({
         setCodeNum("");
         setTotalTravelers("");
         setStaffAnswers({});
+        setDeparture(null);
         window.location.reload();
       } catch (error) {
         toast({
@@ -213,6 +235,35 @@ export function InvitesClient({
             </p>
           </div>
 
+          {(tripOptions.departures.length > 0 || tripOptions.error) && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Departure
+                {tripOptions.series
+                  ? ` - series ${tripOptions.series.code}${tripOptions.series.name ? ` · ${tripOptions.series.name}` : ""}`
+                  : " - every series"}
+              </Label>
+              {tripOptions.departures.length > 0 && (
+                <DeparturePicker
+                  departures={tripOptions.departures}
+                  value={departure}
+                  onPick={pickDeparture}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                {tripOptions.error
+                  ? `Could not load the departures (${tripOptions.error}) - type the code by hand.`
+                  : "Fills the trip code and the departure date. Or type them by hand below."}
+              </p>
+              {departure && departure.links > 0 && (
+                <p className="text-xs text-amber-600">
+                  This departure already has a trip link on this form - a second one splits its
+                  answers between two links.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">
@@ -224,9 +275,11 @@ export function InvitesClient({
                   placeholder="BBC"
                   maxLength={8}
                   value={codePrefix}
-                  onChange={(e) =>
-                    setCodePrefix(e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase())
-                  }
+                  onChange={(e) => {
+                    // A typed code is no longer the picked departure's.
+                    setDeparture(null);
+                    setCodePrefix(e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase());
+                  }}
                 />
                 <span className="text-muted-foreground">-</span>
                 <Input
@@ -235,7 +288,10 @@ export function InvitesClient({
                   inputMode="numeric"
                   maxLength={8}
                   value={codeNum}
-                  onChange={(e) => setCodeNum(e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) => {
+                    setDeparture(null);
+                    setCodeNum(e.target.value.replace(/\D/g, ""));
+                  }}
                 />
               </div>
               <p className="text-xs text-muted-foreground">
@@ -278,6 +334,13 @@ export function InvitesClient({
                   type={field.type === "date" ? "date" : "text"}
                   dir={field.type === "date" ? "ltr" : "rtl"}
                   className={field.type === "date" ? undefined : "text-right"}
+                  // The escort box suggests names already used + the guides list, so one
+                  // escort keeps one spelling across every series' report.
+                  list={
+                    field.id === escortField?.id && tripOptions.escorts.length > 0
+                      ? "trip-escort-suggestions"
+                      : undefined
+                  }
                   value={String(staffAnswers[String(field.id)] ?? "")}
                   onChange={(e) =>
                     setStaffAnswers((prev) => ({
@@ -289,6 +352,14 @@ export function InvitesClient({
               </div>
             ))}
           </div>
+
+          {escortField && tripOptions.escorts.length > 0 && (
+            <datalist id="trip-escort-suggestions">
+              {tripOptions.escorts.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
+          )}
 
           <Button
             onClick={handleTripLink}

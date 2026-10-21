@@ -1,13 +1,17 @@
-import { getForms } from "@/lib/actions/form-actions";
+import { getForms, listFormSeries } from "@/lib/actions/form-actions";
 import { getSession } from "@/lib/auth/guards";
 import { FormsClient } from "./forms-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function FormsPage() {
-  const forms = await getForms();
   const session = await getSession();
   const isOperator = session?.role === "forms_operator";
+  const [forms, seriesOptions] = await Promise.all([
+    getForms(),
+    // Only staff make series forms; a failed tours read only hides the button.
+    isOperator ? Promise.resolve([]) : listFormSeries().catch(() => []),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -20,7 +24,7 @@ export default async function FormsPage() {
         </p>
       </div>
 
-      <FormsClient initialForms={forms} isOperator={isOperator} />
+      <FormsClient initialForms={forms} isOperator={isOperator} seriesOptions={seriesOptions} />
     </div>
   );
 }

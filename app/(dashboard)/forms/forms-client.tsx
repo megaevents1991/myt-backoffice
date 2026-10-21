@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
+  BedDouble,
   Copy,
+  Layers,
   Link2,
   Map,
   MoreHorizontal,
@@ -42,7 +44,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { createForm, duplicateForm, softDeleteForm } from "@/lib/actions/form-actions";
 import { adminLabel } from "@/lib/forms/i18n";
-import type { FormStatus, FormSummary } from "@/types/form.types";
+import type { FormSeries, FormStatus, FormSummary } from "@/types/form.types";
+import { NewSeriesFormDialog } from "./new-series-form-dialog";
 
 const STATUS_VARIANT: Record<FormStatus, "default" | "secondary" | "outline"> = {
   live: "default",
@@ -53,15 +56,19 @@ const STATUS_VARIANT: Record<FormStatus, "default" | "secondary" | "outline"> = 
 export function FormsClient({
   initialForms,
   isOperator = false,
+  seriesOptions = [],
 }: {
   initialForms: FormSummary[];
   /** forms_operator view: run forms (links/report/duplicate), never edit. */
   isOperator?: boolean;
+  /** Tours series a new series form can be made for (staff only). */
+  seriesOptions?: FormSeries[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [forms, setForms] = useState(initialForms);
   const [deleting, setDeleting] = useState<FormSummary | null>(null);
+  const [newSeries, setNewSeries] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function handleCreate() {
@@ -114,13 +121,34 @@ export function FormsClient({
 
   return (
     <>
-      {!isOperator && (
-        <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" asChild>
+          <Link href="/forms/hotels">
+            <BedDouble className="mr-2 h-4 w-4" />
+            Hotels report
+          </Link>
+        </Button>
+        {!isOperator && seriesOptions.length > 0 && (
+          <Button variant="outline" onClick={() => setNewSeries(true)} disabled={pending}>
+            <Layers className="mr-2 h-4 w-4" />
+            New series form
+          </Button>
+        )}
+        {!isOperator && (
           <Button onClick={handleCreate} disabled={pending}>
             <Plus className="mr-2 h-4 w-4" />
             New form
           </Button>
-        </div>
+        )}
+      </div>
+
+      {newSeries && (
+        <NewSeriesFormDialog
+          open={newSeries}
+          onOpenChange={setNewSeries}
+          forms={forms}
+          seriesOptions={seriesOptions}
+        />
       )}
 
       <div className="overflow-hidden rounded-lg border bg-card">
@@ -128,6 +156,7 @@ export function FormsClient({
           <TableHeader>
             <TableRow>
               <TableHead>Title</TableHead>
+              <TableHead>Series</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Questions</TableHead>
               <TableHead className="text-right">Responses</TableHead>
@@ -138,7 +167,7 @@ export function FormsClient({
           <TableBody>
             {forms.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
                   No forms yet. Create the first one.
                 </TableCell>
               </TableRow>
@@ -163,6 +192,20 @@ export function FormsClient({
                     </div>
                   )}
                   <div className="text-xs text-muted-foreground">/f/{form.slug}</div>
+                </TableCell>
+                <TableCell>
+                  {form.series ? (
+                    <div>
+                      <span className="font-mono text-sm font-semibold">{form.series.code}</span>
+                      {form.series.name && (
+                        <div className="text-xs text-muted-foreground" dir="auto">
+                          {form.series.name}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">General</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant={STATUS_VARIANT[form.status]}>{form.status}</Badge>

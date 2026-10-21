@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getForm } from "@/lib/actions/form-actions";
-import { getFormInvites } from "@/lib/actions/form-invite-actions";
+import { getFormInvites, getTripLinkOptions } from "@/lib/actions/form-invite-actions";
 import { getSession } from "@/lib/auth/guards";
 import { STAFF_ROLES } from "@/types/auth.types";
 import { adminLabel } from "@/lib/forms/i18n";
@@ -23,7 +23,10 @@ export default async function FormInvitesPage({
   const loaded = await getForm(formId);
   if (!loaded) notFound();
 
-  const invites = await getFormInvites(formId);
+  const [invites, tripOptions] = await Promise.all([
+    getFormInvites(formId),
+    getTripLinkOptions(formId),
+  ]);
   // Operators run trip links; emailing personal invites stays a staff tool.
   const session = await getSession();
   const canEmail = Boolean(session && STAFF_ROLES.includes(session.role));
@@ -55,6 +58,7 @@ export default async function FormInvitesPage({
         )}
         canEmail={canEmail}
         initialInvites={invites}
+        tripOptions={tripOptions}
       />
     </div>
   );

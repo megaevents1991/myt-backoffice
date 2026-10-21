@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { liveRowsQuery, softDeleteStamp } from "@/lib/forms/soft-delete";
 import { buildFieldSchema, isEmptyAnswer, validateAnswers } from "@/lib/forms/validation";
 import { fieldAdminLabel, strings } from "@/lib/forms/i18n";
+import { hotelSnapshots } from "@/lib/forms/series";
 import { STAFF_EDITABLE_TYPES, resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
@@ -370,14 +371,25 @@ export async function submitFormResponse(
     }
 
     const h = await headers();
-    const { error } = await responsesTable().insert({
+    const row = {
       form_id: formId,
       invite_id: inviteId,
       answers: result.values,
       lang,
       ip,
       user_agent: h.get("user-agent")?.slice(0, 500) ?? null,
-    });
+    };
+    // The hotel each hotel question named right now - a later change of hotel on the
+    // form must not move this answer (lib/forms/series.ts).
+    const hotels = hotelSnapshots(fields, result.values);
+    let { error } = await responsesTable().insert(
+      Object.keys(hotels).length > 0 ? { ...row, field_context: { hotels } } : row,
+    );
+    if (error && Object.keys(hotels).length > 0 && (error.code === "42703" || error.code === "PGRST204")) {
+      // The column's migration has not run yet: keep the answer, lose only the snapshot
+      // (the hotels report then reads the question's current hotel).
+      ({ error } = await responsesTable().insert(row));
+    }
 
     if (error) {
       console.error("submitFormResponse insert failed:", JSON.stringify(error));

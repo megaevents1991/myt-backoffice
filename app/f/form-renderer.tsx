@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState, useTransition } from "react";
-import { Check, Lock, Star } from "lucide-react";
+import { BedDouble, Check, Lock, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { submitFormResponse } from "@/lib/actions/form-response-actions";
 import type { StaffSummaryItem } from "@/lib/actions/form-response-actions";
@@ -26,6 +26,7 @@ import {
   strings,
 } from "@/lib/forms/i18n";
 import { isFieldVisible, validateAnswers } from "@/lib/forms/validation";
+import { hotelOf } from "@/lib/forms/series";
 import { CANVAS, DEFAULT_ACCENT, INK, hexToRgb, onAccent } from "@/lib/forms/brand";
 import { BrandGlow } from "./brand-glow";
 import { Wordmark } from "./wordmark";
@@ -550,6 +551,9 @@ function FieldBlock({
   const label = fieldLabel(field, lang);
   const help = fieldHelp(field, lang);
   const placeholder = fieldPlaceholder(field, lang);
+  // A hotel question names the hotel it asks about - "the hotel in London" alone leaves
+  // a traveller guessing which night it means.
+  const hotelName = hotelOf(field)?.name || "";
 
   // A conditional question mounts the moment its Yes/No flips - ease it in so
   // the form reads as opening up, not jumping.
@@ -596,6 +600,12 @@ function FieldBlock({
             </span>
           )}
         </label>
+        {hotelName && (
+          <p className="mt-1 flex items-center gap-1.5 text-[15px] font-semibold">
+            <BedDouble aria-hidden className="h-4 w-4 shrink-0" style={{ color: accent }} />
+            <bdi>{hotelName}</bdi>
+          </p>
+        )}
         {!field.required && (
           <span className="mt-0.5 block text-xs text-[var(--muted)]">{t.optional}</span>
         )}
@@ -792,30 +802,39 @@ function FieldBlock({
         const max = field.config.max ?? 5;
         const current = typeof value === "number" ? value : 0;
         return (
-          <div className="flex gap-1">
-            {Array.from({ length: max }, (_, i) => i + 1).map((star) => (
-              <button
-                key={star}
-                type="button"
-                aria-label={`${star}`}
-                aria-pressed={star <= current}
-                onClick={() => onChange(star === current ? null : star)}
-                className="group rounded-xl p-1.5 transition-transform duration-150 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-soft)] motion-reduce:transition-none motion-reduce:hover:scale-100"
-              >
-                <Star
-                  className={cn(
-                    "h-8 w-8 transition-all duration-150 sm:h-9 sm:w-9",
-                    star <= current && "drop-shadow-sm",
-                  )}
-                  strokeWidth={1.5}
-                  style={{
-                    color: star <= current ? accent : "var(--muted)",
-                    fill: star <= current ? accent : "transparent",
-                    opacity: star <= current ? 1 : 0.55,
-                  }}
-                />
-              </button>
-            ))}
+          // The ends of the row say which way is good: 1 = poor, max = excellent (Alon 21.10).
+          <div className="inline-flex flex-col">
+            <div className="flex gap-1">
+              {Array.from({ length: max }, (_, i) => i + 1).map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  aria-label={`${star}`}
+                  aria-pressed={star <= current}
+                  onClick={() => onChange(star === current ? null : star)}
+                  className="group rounded-xl p-1.5 transition-transform duration-150 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-soft)] motion-reduce:transition-none motion-reduce:hover:scale-100"
+                >
+                  <Star
+                    className={cn(
+                      "h-8 w-8 transition-all duration-150 sm:h-9 sm:w-9",
+                      star <= current && "drop-shadow-sm",
+                    )}
+                    strokeWidth={1.5}
+                    style={{
+                      color: star <= current ? accent : "var(--muted)",
+                      fill: star <= current ? accent : "transparent",
+                      opacity: star <= current ? 1 : 0.55,
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+            <div className="mt-1 flex justify-between gap-4 px-1.5 text-xs font-medium text-[var(--muted)]">
+              <span>1 = {t.ratingLow}</span>
+              <span>
+                {max} = {t.ratingHigh}
+              </span>
+            </div>
           </div>
         );
       }

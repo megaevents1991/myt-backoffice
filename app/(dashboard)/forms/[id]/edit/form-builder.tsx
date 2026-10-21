@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  BedDouble,
   ExternalLink,
   Image as ImageIcon,
   Link2,
@@ -32,7 +33,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { saveFormFields, setFormStatus, updateFormMeta } from "@/lib/actions/form-actions";
+import {
+  saveFormFields,
+  setFormSeries,
+  setFormStatus,
+  updateFormMeta,
+} from "@/lib/actions/form-actions";
 import { FormRenderer } from "@/app/f/form-renderer";
 import {
   CHOICE_TYPES,
@@ -41,6 +47,7 @@ import {
   enabledLangs,
 } from "@/types/form.types";
 import { adminLabel, hasAnyLang } from "@/lib/forms/i18n";
+import { hotelQuestionLabel } from "@/lib/forms/series";
 import { BRAND_ACCENTS, DEFAULT_ACCENT } from "@/lib/forms/brand";
 import { GOOGLE_REVIEW_LINKS } from "@/lib/forms/review-links";
 import { StorageImageBrowser } from "@/components/storage-image-browser";
@@ -51,11 +58,15 @@ import type {
   FormFieldType,
   FormLang,
   FormLanguages,
+  FormSeries,
   FormStatus,
   FormTheme,
 } from "@/types/form.types";
 import { FieldEditor } from "./field-editor";
 import { BilingualInput } from "./bilingual-input";
+import type { CopyTarget } from "./copy-field-dialog";
+
+const NO_SERIES = "none";
 
 /** Pick an image from Supabase Storage, or clear the one already chosen. */
 function ImageSlot({
@@ -176,11 +187,43 @@ function withOptionValues(field: FormFieldDraft): FormFieldDraft {
 type Props = {
   form: Form;
   initialFields: FormField[];
+  /** Every tours series a form can belong to. */
+  seriesOptions: FormSeries[];
+  /** The other forms: copy targets for a question, and which series already has a form. */
+  otherForms: (CopyTarget & { seriesId: string | null })[];
 };
 
-export function FormBuilder({ form, initialFields }: Props) {
+export function FormBuilder({ form, initialFields, seriesOptions, otherForms }: Props) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
+  const [seriesPending, startSeries] = useTransition();
+  const [seriesId, setSeriesId] = useState<string>(form.series_id ?? NO_SERIES);
+
+  /** Saved at once - a series is not a draft edit, it changes what the trip links offer. */
+  function handleSeries(next: string) {
+    const previous = seriesId;
+    setSeriesId(next);
+    startSeries(async () => {
+      try {
+        const series = await setFormSeries(form.id, next === NO_SERIES ? null : next);
+        toast({
+          title: series
+            ? `Form tied to series ${series.code}`
+            : "Form is no longer tied to a series",
+          description: series
+            ? "Its trip links now list this series' departures."
+            : undefined,
+        });
+      } catch (error) {
+        setSeriesId(previous);
+        toast({
+          title: "Could not change the series",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
+      }
+    });
+  }
 
   const [status, setStatus] = useState<FormStatus>(form.status);
   const [titleEn, setTitleEn] = useState(form.title_en);
@@ -253,6 +296,18 @@ export function FormBuilder({ form, initialFields }: Props) {
   function addField(type: FormFieldType) {
     setDirty(true);
     setFields((prev) => [...prev, newField(type, nextDraftId.current--, prev.length)]);
+  }
+
+  /** A star rating for one hotel of the route - the city and name are typed in the editor. */
+  function addHotelField() {
+    setDirty(true);
+    setFields((prev) => {
+      const field = newField("rating", nextDraftId.current--, prev.length);
+      field.config = { ...field.config, hotel: { city_he: "", city_en: null, name: "" } };
+      if (langs.includes("he")) field.label_he = hotelQuestionLabel("", "he");
+      if (langs.includes("en")) field.label_en = hotelQuestionLabel("", "en");
+      return [...prev, field];
+    });
   }
 
   function moveField(index: number, direction: -1 | 1) {
@@ -495,6 +550,32 @@ export function FormBuilder({ form, initialFields }: Props) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-4">
           <div className="space-y-4 rounded-lg border bg-card p-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground">Series</Label>
+              <Select value={seriesId} onValueChange={handleSeries} disabled={seriesPending}>
+                <SelectTrigger className="sm:w-[360px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-[50vh]">
+                  <SelectItem value={NO_SERIES}>No series - a general form</SelectItem>
+                  {seriesOptions.map((series) => {
+                    const taken = otherForms.filter((f) => f.seriesId === series.id);
+                    return (
+                      <SelectItem key={series.id} value={series.id}>
+                        <span className="font-mono font-semibold">{series.code}</span>
+                        {series.name ? ` · ${series.name}` : ""}
+                        {taken.length > 0 ? ` (also form #${taken.map((f) => f.id).join(", #")})` : ""}
+                        {series.is_active ? "" : " - inactive"}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                A series form asks the same questions on every trip of the series, and its
+                trip links pick that series&apos; departures. Saved at once.
+              </p>
+            </div>
             <BilingualInput
               label="Form title"
               required
@@ -764,6 +845,8 @@ export function FormBuilder({ form, initialFields }: Props) {
                 total={fields.length}
                 langs={langs}
                 conditionSources={conditionSources(index)}
+                copyTargets={otherForms}
+                formDirty={dirty}
                 onChange={(patch) => updateField(index, patch)}
                 onMove={(direction) => moveField(index, direction)}
                 onDuplicate={() => duplicateField(index)}
@@ -791,6 +874,10 @@ export function FormBuilder({ form, initialFields }: Props) {
                   {FIELD_TYPE_LABELS[type]}
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuItem onClick={addHotelField}>
+                <BedDouble className="mr-2 h-4 w-4" />
+                Hotel rating (city + hotel)
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

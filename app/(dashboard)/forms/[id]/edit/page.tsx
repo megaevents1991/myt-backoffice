@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
-import { getForm } from "@/lib/actions/form-actions";
+import { getForm, getForms, listFormSeries } from "@/lib/actions/form-actions";
+import { adminLabel } from "@/lib/forms/i18n";
 import { getSession } from "@/lib/auth/guards";
 import { FormBuilder } from "./form-builder";
 
@@ -21,8 +22,27 @@ export default async function EditFormPage({
     redirect(`/forms/${formId}/invites`);
   }
 
-  const loaded = await getForm(formId);
+  const [loaded, forms, seriesOptions] = await Promise.all([
+    getForm(formId),
+    getForms(),
+    // A failed tours read leaves the builder without the series picker, never broken.
+    listFormSeries().catch(() => []),
+  ]);
   if (!loaded) notFound();
 
-  return <FormBuilder form={loaded.form} initialFields={loaded.fields} />;
+  return (
+    <FormBuilder
+      form={loaded.form}
+      initialFields={loaded.fields}
+      seriesOptions={seriesOptions}
+      otherForms={forms
+        .filter((f) => f.id !== formId)
+        .map((f) => ({
+          id: f.id,
+          title: adminLabel(f.title_en, f.title_he) || `Form #${f.id}`,
+          series: f.series?.code ?? null,
+          seriesId: f.series_id ?? null,
+        }))}
+    />
+  );
 }

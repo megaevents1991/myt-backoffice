@@ -13,6 +13,10 @@ import { appOrigin, sendMail } from "@/lib/email";
 import { pickLang, fieldAdminLabel } from "@/lib/forms/i18n";
 import { buildFieldSchema, isEmptyAnswer } from "@/lib/forms/validation";
 import { liveRowsQuery, softDeleteStamp } from "@/lib/forms/soft-delete";
+import { departureTripCode, orderDepartures, type SeriesDeparture } from "@/lib/forms/series";
+import { escortKey } from "@/lib/forms/report";
+import { readDeparture, readGuideNames, readOneSeries, readSeriesDepartures } from "@/lib/services/form-series";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { resolveLang } from "@/types/form.types";
 import type {
   AnswerMap,
@@ -20,6 +24,7 @@ import type {
   FormField,
   FormInvite,
   FormLang,
+  FormSeries,
 } from "@/types/form.types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -130,6 +135,148 @@ export async function getFormInvites(formId: number): Promise<FormInvite[]> {
     throw error;
   }
   return (data ?? []) as FormInvite[];
+}
+
+export type TripLinkDeparture = SeriesDeparture & {
+  /** The trip code a link for it gets ("BBC" + "703"). */
+  prefix: string;
+  num: string;
+  /** Trip links of THIS form already made for it (picked, or typed with the same code). */
+  links: number;
+};
+
+export type TripLinkOptions = {
+  /** The series the form belongs to; null = a general form (every series is listed). */
+  series: FormSeries | null;
+  /** Recent departures first (newest first), then the coming ones (soonest first). */
+  departures: TripLinkDeparture[];
+  /** Escort names already used on trip links + the guides list, for the escort box. */
+  escorts: string[];
+  /** Set when the departures could not be read - the card still works by hand. */
+  error: string | null;
+};
+
+const ESCORTS_MAX = 500;
+
+/**
+ * What the trip-link card offers: the departures to pick from and the escort names to
+ * suggest - ONE action, so the invites page pays one guard and one round trip.
+ */
+export async function getTripLinkOptions(formId: number): Promise<TripLinkOptions> {
+  const actor = await requireFormsAccess();
+  await requireFormVisible(actor, formId);
+
+  const { data: form } = await liveRowsQuery((withSeries) =>
+    formsTable().select(withSeries ? "id,series_id" : "id").eq("id", formId).maybeSingle(),
+  );
+  const seriesId: string | null = form?.series_id ?? null;
+
+  const [seriesRes, departuresRes, linksRes, escorts] = await Promise.all([
+    seriesId ? readOneSeries(seriesId).catch(() => null) : Promise.resolve(null),
+    readSeriesDepartures(seriesId).then(
+      (rows) => ({ rows, error: null as string | null }),
+      (e: unknown) => ({
+        rows: [] as SeriesDeparture[],
+        error: e instanceof Error ? e.message : "Could not read the departures",
+      }),
+    ),
+    liveRowsQuery((withDeparture) =>
+      liveRowsQuery((filterDeleted) => {
+        let query = invitesTable()
+          .select(
+            withDeparture
+              ? "id,trip_code_prefix,trip_code_num,departure_id"
+              : "id,trip_code_prefix,trip_code_num",
+          )
+          .eq("form_id", formId)
+          .eq("multi_use", true);
+        if (filterDeleted) query = query.is("is_deleted", null);
+        return query;
+      }),
+    ),
+    escortSuggestions(actor.role === "forms_operator"),
+  ]);
+
+  const links = (linksRes.data ?? []) as {
+    trip_code_prefix: string | null;
+    trip_code_num: string | null;
+    departure_id?: string | null;
+  }[];
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+  const departures: TripLinkDeparture[] = [];
+  for (const d of orderDepartures(departuresRes.rows, today)) {
+    const code = departureTripCode(d);
+    if (!code) continue;
+    departures.push({
+      ...d,
+      prefix: code.prefix,
+      num: code.num,
+      links: links.filter(
+        (l) =>
+          l.departure_id === d.id ||
+          (!l.departure_id && l.trip_code_prefix === code.prefix && l.trip_code_num === code.num),
+      ).length,
+    });
+  }
+
+  return { series: seriesRes, departures, escorts, error: departuresRes.error };
+}
+
+/**
+ * Escort names already typed on any trip link (the first staff short-text answer - the
+ * report's escort rule) plus the guides list, one spelling per escort, A to Z. A hint only:
+ * a failed read suggests nothing.
+ */
+async function escortSuggestions(operatorOnly: boolean): Promise<string[]> {
+  try {
+    // An operator hears only the names on forms opened to them - the same rule as the list.
+    let visible: Set<number> | null = null;
+    if (operatorOnly) {
+      const { data, error } = await formsTable().select("id").eq("operator_visible", true);
+      if (error) throw error;
+      visible = new Set(((data ?? []) as { id: number }[]).map((f) => f.id));
+    }
+    const [fieldsRes, invites, guides] = await Promise.all([
+      (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .from("form_fields")
+        .select("id,form_id,position")
+        .eq("staff_only", true)
+        .eq("type", "short_text")
+        .order("form_id", { ascending: true })
+        .order("position", { ascending: true })
+        .limit(1000),
+      fetchPaged<{ id: number; form_id: number; prefill: AnswerMap | null }>(
+        () =>
+          invitesTable()
+            .select("id,form_id,prefill")
+            .eq("multi_use", true)
+            .order("id", { ascending: true }),
+        5000,
+      ),
+      readGuideNames(),
+    ]);
+    const escortField = new Map<number, number>();
+    for (const f of (fieldsRes.data ?? []) as { id: number; form_id: number }[]) {
+      if (!escortField.has(f.form_id)) escortField.set(f.form_id, f.id);
+    }
+    const byKey = new Map<string, string>();
+    const add = (name: unknown) => {
+      if (typeof name !== "string") return;
+      const clean = name.replace(/\s+/g, " ").trim();
+      const key = escortKey(clean);
+      if (key && !byKey.has(key)) byKey.set(key, clean);
+    };
+    for (const invite of invites.rows) {
+      if (visible && !visible.has(invite.form_id)) continue;
+      const fieldId = escortField.get(invite.form_id);
+      if (fieldId) add(invite.prefill?.[String(fieldId)]);
+    }
+    for (const name of guides) add(name);
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b, "he")).slice(0, ESCORTS_MAX);
+  } catch (e) {
+    console.error("escortSuggestions failed:", e);
+    return [];
+  }
 }
 
 export type InviteRecipient = {
@@ -324,15 +471,25 @@ export async function createTripLink(
     staffAnswers: AnswerMap;
     /** How many travellers are on the trip; optional, editable later. */
     totalTravelers?: number | string | null;
+    /**
+     * The tours departure picked from the list. Its OWN code and date win over what the
+     * client sent - the browser only names it.
+     */
+    departureId?: string | null;
   },
 ): Promise<{ url: string; invite: FormInvite }> {
   const actor = await requireFormsAccess();
   await requireFormVisible(actor, formId);
 
+  const departure = input.departureId ? await readDeparture(String(input.departureId)) : null;
+  if (input.departureId && !departure) throw new Error("Departure not found");
+  const fromDeparture = departure ? departureTripCode(departure) : null;
+  if (departure && !fromDeparture) throw new Error("This departure has no trip code - type it by hand");
+
   // Trip identity: free letters + digits, normalized once here so the report
   // groups "bbc-1" and "BBC-1" as the same trip.
-  const prefix = (input.tripCodePrefix ?? "").trim().toUpperCase();
-  const num = (input.tripCodeNum ?? "").trim();
+  const prefix = (fromDeparture?.prefix ?? input.tripCodePrefix ?? "").trim().toUpperCase();
+  const num = (fromDeparture?.num ?? input.tripCodeNum ?? "").trim();
   if (!/^[A-Z]{1,8}$/.test(prefix)) {
     throw new Error("Trip code letters: 1-8 English letters");
   }
@@ -361,10 +518,18 @@ export async function createTripLink(
 
   // Only staff-field ids may land in prefill, and each value must satisfy the
   // field's own schema - the same rules a client submission faces.
+  // A picked departure dates the trip: the first staff date question is the departure
+  // (the report reads it by the same rule) - filled when staff left it empty.
+  const staffAnswers: AnswerMap = { ...(input.staffAnswers ?? {}) };
+  const dateField = ((staffFields ?? []) as FormField[]).find((field) => field.type === "date");
+  if (departure && dateField && isEmptyAnswer(staffAnswers[String(dateField.id)])) {
+    staffAnswers[String(dateField.id)] = departure.start_date;
+  }
+
   const prefill: AnswerMap = {};
   for (const field of (staffFields ?? []) as FormField[]) {
     const key = String(field.id);
-    const value = input.staffAnswers?.[key];
+    const value = staffAnswers[key];
     if (isEmptyAnswer(value)) {
       if (field.required) {
         throw new Error(`Missing: ${fieldAdminLabel(field)}`);
@@ -387,19 +552,24 @@ export async function createTripLink(
   );
 
   const token = newToken();
-  const { data, error } = await invitesTable()
-    .insert({
-      form_id: formId,
-      token,
-      lang,
-      multi_use: true,
-      label: `${prefix}-${num}`,
-      trip_code_prefix: prefix,
-      trip_code_num: num,
-      total_travelers: totalTravelers,
-      prefill,
-    })
+  const row = {
+    form_id: formId,
+    token,
+    lang,
+    multi_use: true,
+    label: `${prefix}-${num}`,
+    trip_code_prefix: prefix,
+    trip_code_num: num,
+    total_travelers: totalTravelers,
+    prefill,
+  };
+  let { data, error } = await invitesTable()
+    .insert(departure ? { ...row, departure_id: departure.id } : row)
     .select(INVITE_COLUMNS);
+  if (departure && error && (error.code === "42703" || error.code === "PGRST204")) {
+    // departure_id waits for its migration; the link itself does not.
+    ({ data, error } = await invitesTable().insert(row).select(INVITE_COLUMNS));
+  }
 
   if (error) {
     console.error("createTripLink failed:", JSON.stringify(error));
@@ -410,7 +580,7 @@ export async function createTripLink(
     action: "create",
     entityType: "form_invite",
     entityId: (data[0] as FormInvite).id,
-    metadata: { trip_link: true, trip_code: `${prefix}-${num}` },
+    metadata: { trip_link: true, trip_code: `${prefix}-${num}`, departure_id: departure?.id ?? null },
   });
   revalidatePath(`/forms/${formId}/invites`);
   return {

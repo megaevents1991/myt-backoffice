@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import {
+  BedDouble,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   Copy,
+  CopyPlus,
   GripVertical,
   Plus,
   Trash2,
@@ -37,7 +39,9 @@ import type {
   FormLang,
 } from "@/types/form.types";
 import { adminLabel } from "@/lib/forms/i18n";
+import { hotelQuestionLabel } from "@/lib/forms/series";
 import { BilingualInput } from "./bilingual-input";
+import { CopyFieldDialog, type CopyTarget } from "./copy-field-dialog";
 
 /**
  * Option values are the strings stored in `form_responses.answers`, so they are
@@ -65,6 +69,10 @@ type Props = {
    * persisted fields qualify: a draft's negative id changes on insert.
    */
   conditionSources: { id: number; label: string }[];
+  /** Other forms a SAVED question can be copied into ("add it to every series"). */
+  copyTargets: CopyTarget[];
+  /** The builder has unsaved edits - a copy takes the saved question. */
+  formDirty: boolean;
   onChange: (patch: Partial<FormFieldDraft>) => void;
   onMove: (direction: -1 | 1) => void;
   onDuplicate: () => void;
@@ -77,6 +85,8 @@ export function FieldEditor({
   total,
   langs,
   conditionSources,
+  copyTargets,
+  formDirty,
   onChange,
   onMove,
   onDuplicate,
@@ -84,6 +94,38 @@ export function FieldEditor({
 }: Props) {
   const title = adminLabel(field.label_en, field.label_he);
   const [open, setOpen] = useState(title === "");
+  const [copying, setCopying] = useState(false);
+  const hotel = field.type === "rating" ? field.config.hotel : undefined;
+
+  /**
+   * A hotel question: its city + hotel name. The wording follows the city for as long as
+   * it is the generated one ("איך היה המלון ב<city>?"); once staff rewrite it, it stays theirs.
+   */
+  function setHotel(next: NonNullable<FormFieldDraft["config"]["hotel"]> | undefined) {
+    const config = { ...field.config };
+    if (!next) {
+      delete config.hotel;
+      onChange({ config });
+      return;
+    }
+    const before = hotel ?? { city_he: "", city_en: null, name: "" };
+    const patch: Partial<FormFieldDraft> = { config: { ...config, hotel: next } };
+    if (langs.includes("he")) {
+      const auto = hotelQuestionLabel(before.city_he || before.city_en || "", "he");
+      const current = (field.label_he ?? "").trim();
+      if (!hotel || !current || current === auto) {
+        patch.label_he = hotelQuestionLabel(next.city_he || next.city_en || "", "he");
+      }
+    }
+    if (langs.includes("en")) {
+      const auto = hotelQuestionLabel(before.city_en || before.city_he || "", "en");
+      const current = field.label_en.trim();
+      if (!hotel || !current || current === auto) {
+        patch.label_en = hotelQuestionLabel(next.city_en || next.city_he || "", "en");
+      }
+    }
+    onChange(patch);
+  }
 
   const isChoice = CHOICE_TYPES.includes(field.type);
   const isTextual = TEXTUAL_TYPES.includes(field.type);
@@ -171,6 +213,18 @@ export function FieldEditor({
           <Button type="button" variant="ghost" size="icon" onClick={onDuplicate} aria-label="Duplicate">
             <Copy className="h-4 w-4" />
           </Button>
+          {field.id > 0 && copyTargets.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setCopying(true)}
+              aria-label="Copy to other forms"
+              title="Copy to other forms"
+            >
+              <CopyPlus className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
@@ -435,6 +489,78 @@ export function FieldEditor({
             />
           )}
 
+          {field.type === "rating" && !field.staff_only && (
+            <div className="space-y-3 rounded-md border border-dashed p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Switch
+                  id={`hotel-${field.id}`}
+                  checked={Boolean(hotel)}
+                  onCheckedChange={(on) =>
+                    setHotel(on ? { city_he: "", city_en: null, name: "" } : undefined)
+                  }
+                />
+                <Label htmlFor={`hotel-${field.id}`} className="flex items-center gap-1.5 text-sm">
+                  <BedDouble className="h-4 w-4" />
+                  Hotel question
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  Rates one hotel of the route. The client sees the hotel name; the hotels
+                  report groups the answers by city + hotel.
+                </span>
+              </div>
+              {hotel && (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {langs.includes("he") && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          City (עברית)
+                        </Label>
+                        <Input
+                          dir="rtl"
+                          placeholder="לונדון"
+                          value={hotel.city_he}
+                          onChange={(e) => setHotel({ ...hotel, city_he: e.target.value })}
+                        />
+                      </div>
+                    )}
+                    {langs.includes("en") && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          City (English)
+                        </Label>
+                        <Input
+                          dir="ltr"
+                          placeholder="London"
+                          value={hotel.city_en ?? ""}
+                          onChange={(e) => setHotel({ ...hotel, city_en: e.target.value || null })}
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-muted-foreground">Hotel name</Label>
+                      <Input
+                        dir="auto"
+                        placeholder="DoubleTree by Hilton London"
+                        value={hotel.name}
+                        onChange={(e) => setHotel({ ...hotel, name: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  {!hotel.name.trim() && (
+                    <p className="text-xs text-amber-600">
+                      Add the hotel&apos;s name - the client and the hotels report both show it.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Hotel changed? Edit the name here and save: answers already in stay with the
+                    hotel they were given for.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
           {field.type === "scale" && (
             <div className="grid grid-cols-2 gap-4">
               <NumberConfig
@@ -487,6 +613,17 @@ export function FieldEditor({
             />
           )}
         </div>
+      )}
+
+      {copying && (
+        <CopyFieldDialog
+          open={copying}
+          onOpenChange={setCopying}
+          fieldId={field.id}
+          fieldLabel={title}
+          targets={copyTargets}
+          formDirty={formDirty}
+        />
       )}
     </div>
   );

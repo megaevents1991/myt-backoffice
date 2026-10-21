@@ -978,6 +978,26 @@ these tables.
   page 1 = summary (+ the escort comparison when one trip is exported), then `break-before-page`
   one sheet per response. `PrintBar` names the tab (= default file name) and opens the print
   dialog once fonts and the logo loaded. Language: Hebrew unless the form is English-only.
+- **A form per series + a question per hotel (2026-10-21, Alon's road-map tab `t.dbfsznumjv2e`; spec
+  `docs/superpowers/specs/2026-10-21-forms-series-hotels-design.md`, migration `20261021083328`).** Three
+  nullable columns: `forms.series_id` (-> `tours.series`; the trip codes BBC / FPAR... ARE Mega Family's series
+  codes, so the series reads are not company-scoped - `lib/services/form-series.ts`), `form_invites.departure_id`
+  (-> `tours.departures`), `form_responses.field_context` (`{ hotels: { "<fieldId>": { city, name } } }`). A
+  **hotel question** is an ordinary `rating` with `config.hotel = { city_he, city_en, name }` - averages, the
+  Google gate and the per-form report read it unchanged; the public form prints the hotel name under it.
+  Submit snapshots each answered hotel (`hotelSnapshots`) so editing a series' hotel never moves old answers
+  (older answers read the question's current hotel). `/forms`: "New series form" (`createSeriesForm` = copy a
+  base form, staff), "Series" in the builder (`setFormSeries`, saved at once), the copy-plus icon on a saved
+  question (`copyFieldToForms`, appended at the end, `show_if` dropped - no live template on purpose), and
+  **`/forms/hotels`** (`getHotelsReport`: raw answers, rolled up on the client by `buildHotelRows`, key =
+  `hotelKey` city + name letters/digits only, weakest first, the low answers with the response's long-text).
+  The trip-link card picks a departure (`getTripLinkOptions`: the series' departures, or every series' for a
+  general form; `departureTripCode` BBC703 -> BBC-703; the server re-reads the departure, the client only names
+  it) and suggests escort names (past links + `tours.instructors`). Every star row prints "1 = גרוע / max =
+  מצוין". Pure rules in `lib/forms/series.ts` (`scripts/forms-series-selftest.ts`); every read/write of a new
+  column falls back on 42703 / PGRST204 (`liveRowsQuery` doubles as the generic optional-column helper).
+  Form #5 and its answers are untouched. Not built: stage 2 (escort feedback per series - needs "who answers"
+  so the hotels report does not mix clients and escorts), a cross-series escorts view.
 
 ### Reservation Follow-up (2026-10-04)
 

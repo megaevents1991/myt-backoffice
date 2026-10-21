@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase-server";
 import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
 import { fieldAdminLabel } from "@/lib/forms/i18n";
 import { buildTripReport } from "@/lib/forms/report";
+import { hotelOf } from "@/lib/forms/series";
 import { liveRowsQuery } from "@/lib/forms/soft-delete";
 import type { TripReport } from "@/lib/forms/report";
 import type { AnswerMap, FormField } from "@/types/form.types";
@@ -99,7 +100,10 @@ export async function getFormTripReport(
     report,
     ratingFields: ratingFields.map((field) => ({
       id: field.id,
-      label: fieldAdminLabel(field),
+      // A hotel question names its hotel - "the hotel in London" alone hides which one.
+      label: hotelOf(field)?.name
+        ? `${fieldAdminLabel(field)} · ${hotelOf(field)?.name}`
+        : fieldAdminLabel(field),
       reviewScore: field.config.review_score === true,
       max: typeof field.config.max === "number" ? field.config.max : 5,
     })),

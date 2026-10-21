@@ -11,6 +11,7 @@ import type {
   FormFieldType,
   FormLang,
   FormLanguages,
+  FormSeries,
   FormStatus,
   FormSummary,
   FormTheme,
@@ -18,6 +19,8 @@ import type {
 import { FORM_FIELD_TYPES } from "@/types/form.types";
 import { DEFAULT_ACCENT } from "@/lib/forms/brand";
 import { liveRowsQuery } from "@/lib/forms/soft-delete";
+import { normalizeHotelConfig } from "@/lib/forms/series";
+import { readOneSeries, readSeries } from "@/lib/services/form-series";
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -72,35 +75,61 @@ async function uniqueSlug(base: string, ignoreId?: number): Promise<string> {
   return `${base}-${Date.now()}`;
 }
 
+/**
+ * The form columns, plus `series_id` while the database has it - migration
+ * 20261021083328 may land minutes after the deploy that reads it, and the forms area must
+ * not break in between (same rule as `liveRowsQuery`).
+ */
+const formColumns = (withSeries: boolean) =>
+  withSeries ? `${FORM_COLUMNS},series_id` : FORM_COLUMNS;
+
+/** Series code + tour name per series id; a failed tours read only drops the labels. */
+async function seriesById(ids: (string | null | undefined)[]): Promise<Map<string, FormSeries>> {
+  const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  if (wanted.length === 0) return new Map();
+  try {
+    return new Map((await readSeries(wanted)).map((s) => [s.id, s]));
+  } catch (e) {
+    console.error("forms series labels failed:", e);
+    return new Map();
+  }
+}
+
 export async function getForms(): Promise<FormSummary[]> {
   const actor = await requireFormsAccess();
-  const { data, error } = await liveRowsQuery((filterDeleted) => {
-    let query = formsTable()
-      .select(`${FORM_COLUMNS},form_fields(count),form_responses(count)`)
-      .is("is_deleted", null)
-      .order("created_at", { ascending: false });
-    // A response staff removed from the report does not count here either.
-    if (filterDeleted) query = query.is("form_responses.is_deleted", null);
-    // Operators see only forms explicitly opened to them.
-    if (actor.role === "forms_operator") {
-      query = query.eq("operator_visible", true);
-    }
-    return query;
-  });
+  const { data, error } = await liveRowsQuery((withSeries) =>
+    liveRowsQuery((filterDeleted) => {
+      let query = formsTable()
+        .select(`${formColumns(withSeries)},form_fields(count),form_responses(count)`)
+        .is("is_deleted", null)
+        .order("created_at", { ascending: false });
+      // A response staff removed from the report does not count here either.
+      if (filterDeleted) query = query.is("form_responses.is_deleted", null);
+      // Operators see only forms explicitly opened to them.
+      if (actor.role === "forms_operator") {
+        query = query.eq("operator_visible", true);
+      }
+      return query;
+    }),
+  );
 
   if (error) {
     console.error("getForms failed:", JSON.stringify(error));
     throw error;
   }
 
-  // PostgREST returns embedded counts as [{ count: n }].
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => {
+  const rows = (data ?? []) as any[];
+  const series = await seriesById(rows.map((row) => row.series_id));
+
+  // PostgREST returns embedded counts as [{ count: n }].
+  return rows.map((row) => {
     const { form_fields, form_responses, ...form } = row;
     return {
       ...(form as Form),
       field_count: form_fields?.[0]?.count ?? 0,
       response_count: form_responses?.[0]?.count ?? 0,
+      series: (form.series_id && series.get(form.series_id)) || null,
     };
   });
 }
@@ -110,11 +139,13 @@ export async function getForm(
 ): Promise<{ form: Form; fields: FormField[] } | null> {
   const actor = await requireFormsAccess();
 
-  const { data: form, error } = await formsTable()
-    .select(FORM_COLUMNS)
-    .eq("id", id)
-    .is("is_deleted", null)
-    .maybeSingle();
+  const { data: form, error } = await liveRowsQuery((withSeries) =>
+    formsTable()
+      .select(formColumns(withSeries))
+      .eq("id", id)
+      .is("is_deleted", null)
+      .maybeSingle(),
+  );
 
   if (error) {
     console.error("getForm failed:", JSON.stringify(error));
@@ -327,6 +358,8 @@ function normalizeConfig(config: FormFieldDraft["config"] | undefined) {
   }
   if (raw.review_score === true) out.review_score = true;
   if (raw.traveler_count === true) out.traveler_count = true;
+  const hotel = normalizeHotelConfig(raw.hotel);
+  if (hotel) out.hotel = hotel;
   return out;
 }
 
@@ -443,12 +476,58 @@ export async function duplicateForm(id: number): Promise<Form> {
   const loaded = await getForm(id);
   if (!loaded) throw new Error("Form not found");
 
-  const slug = await uniqueSlug(await slugify(`${loaded.form.title_en} copy`));
+  return copyForm(loaded, {
+    slugBase: `${loaded.form.title_en} copy`,
+    title_en: `${loaded.form.title_en} (copy)`,
+    title_he: loaded.form.title_he,
+    createdBy: actor.email ?? null,
+    audit: { duplicated_from: id },
+  });
+}
+
+/**
+ * A new draft form for one tours series, copied from a base form (its questions, design,
+ * Google gate and operator access) and tied to the series - every trip link of it then
+ * picks that series' departures. Staff only: the copy is meant to be edited.
+ */
+export async function createSeriesForm(baseFormId: number, seriesId: string): Promise<Form> {
+  const actor = await requireStaff();
+  const loaded = await getForm(baseFormId);
+  if (!loaded) throw new Error("Base form not found");
+  const series = await readOneSeries(String(seriesId ?? ""));
+  if (!series) throw new Error("Series not found");
+
+  const label = series.name ? `${series.code} ${series.name}` : series.code;
+  const titleHe = loaded.form.title_he ? `${loaded.form.title_he} · ${series.name ?? series.code}` : null;
+  return copyForm(loaded, {
+    slugBase: `${series.code} ${loaded.form.title_en || "feedback"}`,
+    title_en: `${loaded.form.title_en || "Feedback"} · ${series.code}`,
+    title_he: titleHe,
+    series_id: series.id,
+    createdBy: actor.email ?? null,
+    audit: { duplicated_from: baseFormId, series: label },
+  });
+}
+
+async function copyForm(
+  loaded: { form: Form; fields: FormField[] },
+  opts: {
+    slugBase: string;
+    title_en: string;
+    title_he: string | null;
+    /** Only a series form writes the column - a plain duplicate works before the migration. */
+    series_id?: string;
+    createdBy: string | null;
+    audit: Record<string, unknown>;
+  },
+): Promise<Form> {
+  const slug = await uniqueSlug(await slugify(opts.slugBase));
   const { data, error } = await formsTable()
     .insert({
       slug,
-      title_en: `${loaded.form.title_en} (copy)`,
-      title_he: loaded.form.title_he,
+      title_en: opts.title_en,
+      title_he: opts.title_he,
+      ...(opts.series_id ? { series_id: opts.series_id } : {}),
       description_en: loaded.form.description_en,
       description_he: loaded.form.description_he,
       thank_you_en: loaded.form.thank_you_en,
@@ -464,12 +543,15 @@ export async function duplicateForm(id: number): Promise<Form> {
       accent_color: loaded.form.accent_color,
       logo_url: loaded.form.logo_url,
       cover_image_url: loaded.form.cover_image_url,
-      created_by: actor.email ?? null,
+      created_by: opts.createdBy,
     })
     .select(FORM_COLUMNS);
 
   if (error) {
     console.error("duplicateForm failed:", JSON.stringify(error));
+    if (opts.series_id && (error.code === "42703" || error.code === "PGRST204")) {
+      throw new Error("Series forms arrive with the next system update - try again in a few minutes");
+    }
     throw error;
   }
 
@@ -526,7 +608,7 @@ export async function duplicateForm(id: number): Promise<Form> {
     action: "create",
     entityType: "form",
     entityId: created.id,
-    metadata: { duplicated_from: id },
+    metadata: opts.audit,
   });
   revalidatePath("/forms");
   return created;
@@ -557,4 +639,118 @@ export async function getFormResponseCount(formId: number): Promise<number> {
 
   if (error) throw error;
   return count ?? 0;
+}
+
+/** Every tours series a form can belong to, by code, with its tour's name. */
+export async function listFormSeries(): Promise<FormSeries[]> {
+  await requireFormsAccess();
+  return readSeries();
+}
+
+/**
+ * Tie a form to a series (or untie it with null). Its trip links then list that series'
+ * departures; nothing already collected changes.
+ */
+export async function setFormSeries(formId: number, seriesId: string | null): Promise<FormSeries | null> {
+  await requireStaff();
+  const series = seriesId ? await readOneSeries(String(seriesId)) : null;
+  if (seriesId && !series) throw new Error("Series not found");
+
+  const { error } = await formsTable()
+    .update({ series_id: series?.id ?? null, updated_at: new Date().toISOString() })
+    .eq("id", formId)
+    .is("is_deleted", null);
+  if (error) {
+    console.error("setFormSeries failed:", JSON.stringify(error));
+    if (error.code === "42703" || error.code === "PGRST204") {
+      throw new Error("Series forms arrive with the next system update - try again in a few minutes");
+    }
+    throw error;
+  }
+
+  await logAudit({
+    action: "update",
+    entityType: "form",
+    entityId: formId,
+    changes: { series_id: series?.id ?? null },
+    metadata: { series: series?.code ?? null },
+  });
+  revalidatePath("/forms");
+  revalidatePath(`/forms/${formId}/edit`);
+  return series;
+}
+
+const COPY_TARGETS_MAX = 100;
+
+/**
+ * Append a copy of one SAVED question to the end of other forms - "add this question to
+ * every series" without a template that edits them all behind staff's back. A condition is
+ * dropped (it points at a question of the source form); everything else, a hotel included,
+ * is copied as is and edited per form afterwards.
+ */
+export async function copyFieldToForms(
+  fieldId: number,
+  targetFormIds: number[],
+): Promise<{ copied: number[] }> {
+  await requireStaff();
+  const targets = [...new Set((targetFormIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (targets.length === 0) throw new Error("Pick at least one form");
+  if (targets.length > COPY_TARGETS_MAX) throw new Error(`At most ${COPY_TARGETS_MAX} forms at once`);
+
+  const { data: source, error: sourceError } = await fieldsTable()
+    .select(FIELD_COLUMNS)
+    .eq("id", fieldId)
+    .maybeSingle();
+  if (sourceError) {
+    console.error("copyFieldToForms read failed:", JSON.stringify(sourceError));
+    throw sourceError;
+  }
+  if (!source) throw new Error("Save the form first - this question is not saved yet");
+
+  const { data: forms, error: formsError } = await formsTable()
+    .select("id")
+    .in("id", targets)
+    .is("is_deleted", null);
+  if (formsError) {
+    console.error("copyFieldToForms forms failed:", JSON.stringify(formsError));
+    throw formsError;
+  }
+  const live = new Set(((forms ?? []) as { id: number }[]).map((f) => f.id));
+  live.delete((source as FormField).form_id);
+
+  const base = normalizeField(source as FormFieldDraft, 0);
+  const config = { ...base.config };
+  delete config.show_if;
+
+  const copied: number[] = [];
+  for (const formId of targets) {
+    if (!live.has(formId)) continue;
+    const { data: last, error: lastError } = await fieldsTable()
+      .select("position")
+      .eq("form_id", formId)
+      .order("position", { ascending: false })
+      .limit(1);
+    if (lastError) {
+      console.error("copyFieldToForms position failed:", JSON.stringify(lastError));
+      throw lastError;
+    }
+    const position = ((last?.[0] as { position: number } | undefined)?.position ?? -1) + 1;
+    const { error } = await fieldsTable().insert({ ...base, config, position, form_id: formId });
+    if (error) {
+      console.error("copyFieldToForms insert failed:", JSON.stringify(error));
+      throw error;
+    }
+    await formsTable().update({ updated_at: new Date().toISOString() }).eq("id", formId);
+    copied.push(formId);
+    revalidatePath(`/forms/${formId}/edit`);
+  }
+
+  await logAudit({
+    action: "update",
+    entityType: "form_fields",
+    entityId: (source as FormField).form_id,
+    metadata: { copied_field: fieldId, to_forms: copied },
+  });
+  revalidatePath("/forms");
+  return { copied };
 }

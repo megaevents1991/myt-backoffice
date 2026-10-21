@@ -110,7 +110,17 @@ export type FormFieldConfig = {
    * first number question.
    */
   traveler_count?: boolean;
+  /**
+   * Rating fields only: a HOTEL question - the city it stands for and the hotel's name.
+   * Still an ordinary star rating everywhere; the public form prints the hotel name under
+   * the question and the hotels report (/forms/hotels) groups answers by city + name.
+   * Rules in lib/forms/series.ts.
+   */
+  hotel?: { city_he: string; city_en?: string | null; name: string };
 };
+
+/** What a hotel question named when one answer came in (`form_responses.field_context`). */
+export type HotelSnapshot = { city: string; name: string };
 
 export type FormField = {
   id: number;
@@ -162,6 +172,11 @@ export type Form = {
   review_min_avg: number | null;
   /** Whether forms_operator accounts may see and run this form. */
   operator_visible: boolean;
+  /**
+   * The tours series (BBC, FPAR...) this form belongs to - its trip links pick that
+   * series' departures. null = a general form. Optional: absent before the migration.
+   */
+  series_id?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -172,6 +187,18 @@ export type Form = {
 export type FormSummary = Form & {
   field_count: number;
   response_count: number;
+  /** The series' code + tour name, when the form belongs to one. */
+  series: FormSeries | null;
+};
+
+/** A tours series a form can belong to, as the forms screens name it. */
+export type FormSeries = {
+  id: string;
+  /** "BBC" */
+  code: string;
+  /** The tour's name ("מראות ופלאים"), else the series label. */
+  name: string | null;
+  is_active: boolean;
 };
 
 export type FormInvite = {
@@ -199,6 +226,8 @@ export type FormInvite = {
    * never derived from the answers.
    */
   total_travelers: number | null;
+  /** The tours departure the link was made for, when picked from the list. */
+  departure_id?: string | null;
   prefill: Record<string, AnswerValue>;
   reservation_id: number | null;
   event_id: number | null;

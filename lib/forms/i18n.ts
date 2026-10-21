@@ -93,6 +93,8 @@ export const FILL_STRINGS = {
     staffBadge: "Staff only",
     tripDetails: "Trip details",
     tripCodeLabel: "Trip code",
+    ratingLow: "Poor",
+    ratingHigh: "Excellent",
   },
   he: {
     submit: "שליחה",
@@ -118,6 +120,8 @@ export const FILL_STRINGS = {
     staffBadge: "לצוות בלבד",
     tripDetails: "פרטי הטיול",
     tripCodeLabel: "קוד טיול",
+    ratingLow: "גרוע",
+    ratingHigh: "מצוין",
   },
 } as const;
 
