@@ -57,7 +57,8 @@ export function NewCaseDialog({
   onOpenChange: (open: boolean) => void;
   reps: readonly CaseRep[];
   currentUserId: string;
-  onCreated: (id: string) => void;
+  /** `handedTo` = the rep the card was given to when it is not the creator (null = the creator's or unassigned). */
+  onCreated: (id: string, handedTo: string | null) => void;
   customer?: CustomerInfo;
 }) {
   const run = useActionToast();
@@ -129,7 +130,7 @@ export function NewCaseDialog({
     setSaving(false);
     if (!result.success) return setError(result.error);
     onOpenChange(false);
-    onCreated(result.data.id);
+    onCreated(result.data.id, assignedTo && assignedTo !== currentUserId ? assignedTo : null);
   };
 
   return (

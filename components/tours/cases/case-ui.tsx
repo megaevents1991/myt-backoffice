@@ -5,7 +5,7 @@
  * tag, the TYPE and TASK badges, and the status / rep pickers.
  */
 import { useState, type MouseEvent, type ReactNode } from "react";
-import { ChevronDown, ExternalLink, Loader2, MessageCircle } from "lucide-react";
+import { ChevronDown, ExternalLink, Loader2, Mail, MessageCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,14 +43,15 @@ import {
   type CaseStatus,
   type CaseType,
   type FutureTour,
+  type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { fmtDate } from "@/lib/tours/format";
+import { EMPTY, fmtDate } from "@/lib/tours/format";
 
 /** Value of the rep picker for "nobody". */
 export const NOBODY = "nobody";
 
-/** Who a row is: the name, then the C-number and the phone (every board table). */
+/** Who a row is: the name over the bare customer number (every board table). The phone is its own column (Alon 21.10). */
 export function CardWho({ card, children }: { card: CaseRow; children?: ReactNode }) {
   return (
     <div className="min-w-0">
@@ -58,15 +59,79 @@ export function CardWho({ card, children }: { card: CaseRow; children?: ReactNod
         {caseName(card) || card.phone || card.email || "Customer"}
         {children}
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {card.customerNo && <span className="font-mono">{customerLabel(card.customerNo)}</span>}
-        {card.phone && (
-          <span dir="ltr" className="tabular">
-            {card.phone}
-          </span>
-        )}
-      </div>
+      {card.customerNo && <div className="font-mono text-xs text-muted-foreground">{customerLabel(card.customerNo)}</div>}
     </div>
+  );
+}
+
+/** The phone, readable and copyable on its own (Alon 21.10: "עמודת טלפון"). */
+export function PhoneCell({ phone }: { phone: string | null }) {
+  return phone ? (
+    <span dir="ltr" className="tabular whitespace-nowrap text-sm">
+      {phone}
+    </span>
+  ) : (
+    <span className="text-muted-foreground">{EMPTY}</span>
+  );
+}
+
+/**
+ * A mail shortcut: the rep's OWN mail app (mailto). Dor 21.10: an offer or support correspondence goes from the
+ * rep's mailbox; an order confirmation, a receipt or trip material goes from the company's with the rep in CC -
+ * those sends do not exist yet, so this is the rep side only.
+ */
+export function MailButton({ email, iconOnly }: { email: string | null; iconOnly?: boolean }) {
+  if (!email) return null;
+  if (iconOnly) {
+    return (
+      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+        <a href={`mailto:${email}`} aria-label="Email - opens your mail app" title={`Email ${email} from your mail app`}>
+          <Mail className="h-4 w-4" />
+        </a>
+      </Button>
+    );
+  }
+  return (
+    <Button variant="outline" size="sm" asChild>
+      <a href={`mailto:${email}`} title={`Email ${email} from your mail app`}>
+        <Mail className="h-4 w-4" />
+        Email
+      </a>
+    </Button>
+  );
+}
+
+/** "Known customer · was X · reason" - what a card knows of the customer's earlier deals (under the Card column since 21.10). */
+export function KnownLine({ known, statuses }: { known: KnownFrom; statuses: readonly CaseStatus[] }) {
+  return (
+    <div className="max-w-[16rem] text-xs font-medium text-violet-700 dark:text-violet-300">
+      Known customer · was <span dir="rtl">{statusOf(known.status, statuses)?.label ?? known.status}</span>
+      {known.closeReason && (
+        <>
+          {" "}
+          · <span dir="auto">{known.closeReason}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The bulk bar's "Set rep…" (managers only since 21.10). `null` = unassigned. */
+export function BulkAssignSelect({ reps, disabled, onAssign }: { reps: readonly CaseRep[]; disabled: boolean; onAssign: (id: string | null) => void }) {
+  return (
+    <Select disabled={disabled} onValueChange={(id) => onAssign(id === NOBODY ? null : id)}>
+      <SelectTrigger className="h-8 w-40 text-foreground" aria-label="Set rep">
+        <SelectValue placeholder="Set rep…" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NOBODY}>Unassigned</SelectItem>
+        {reps.map((p) => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -151,12 +216,26 @@ const REASON_CLASSES: Record<TodayReason, string> = {
   confirmation: "border-teal-500/35 bg-teal-500/10 text-teal-800 dark:text-teal-300",
 };
 
+/**
+ * A TODAY row wears its reason (Alon 21.10: "שהשורה תהיה צבועה בצבע מרקר אחר") - the badge's hue as a wash, and a
+ * marker bar on the first cell. Spelled out in full: Tailwind reads literals only.
+ */
+export const TODAY_ROW_CLASSES: Record<TodayReason, string> = {
+  returned: "bg-violet-500/10 hover:bg-violet-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-violet-500",
+  payment: "bg-orange-500/10 hover:bg-orange-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-orange-500",
+  file: "bg-amber-500/10 hover:bg-amber-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-amber-500",
+  new: "bg-blue-500/10 hover:bg-blue-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-blue-500",
+  late: "bg-red-500/10 hover:bg-red-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-red-500",
+  today: "bg-slate-500/10 hover:bg-slate-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-slate-500",
+  confirmation: "bg-teal-500/10 hover:bg-teal-500/15 [&>td:first-child]:border-s-4 [&>td:first-child]:border-s-teal-500",
+};
+
 export function TodayBadge({ reason, followUpDate, today }: { reason: TodayReason | null; followUpDate?: string | null; today?: string }) {
   if (!reason) return <span className="text-muted-foreground">-</span>;
   const late = reason === "late" && followUpDate && today ? daysLate(followUpDate, today) : 0;
   return (
     <span className={cn("inline-flex items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-xs font-semibold", REASON_CLASSES[reason])}>
-      {late ? `Follow-up ${late} ${late === 1 ? "day" : "days"} late` : TODAY_REASON_LABELS[reason]}
+      {late ? `Late ${late} ${late === 1 ? "day" : "days"}` : TODAY_REASON_LABELS[reason]}
     </span>
   );
 }

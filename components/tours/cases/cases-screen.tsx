@@ -16,6 +16,7 @@ import { useConfirm } from "@/components/confirm-provider";
 import { FOLLOW_UP_TONE } from "@/components/follow-up-widget";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import { useSessionState, useUrlState } from "@/hooks/use-view-state";
 import { downloadBase64 } from "@/lib/download";
 import { followUpLabel } from "@/lib/reservations/follow-up";
@@ -39,11 +40,13 @@ import {
 } from "@/lib/tours/cases";
 import {
   CardWhat,
+  BulkAssignSelect,
   CardWho,
   CloseReasonDialog,
   FollowUpInput,
   InRow,
   NOBODY,
+  PhoneCell,
   RepSelect,
   StageBar,
   StatusSelect,
@@ -77,6 +80,7 @@ const reasonOf = (row: CaseRow, statuses: readonly CaseStatus[], today: string) 
 export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const run = useActionToast();
+  const { toast } = useToast();
   const confirm = useConfirm();
   const { data, error, loading, reload, setData } = useActionData<CasesPage>(() => listCases(), []);
   const [view, setView] = useUrlState<View>("view", "all", VIEWS);
@@ -205,6 +209,7 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
           </CardWho>
         ),
       },
+      { id: "phone", accessorFn: (row) => row.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.phone} /> },
       {
         id: "what",
         accessorFn: (row) => row.departureDate ?? row.tourName ?? "",
@@ -448,19 +453,8 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
                     ))}
                 </SelectContent>
               </Select>
-              <Select disabled={bulkBusy} onValueChange={(id) => void bulk({ assignedTo: id === NOBODY ? null : id })}>
-                <SelectTrigger className="h-8 w-40 text-foreground" aria-label="Set rep">
-                  <SelectValue placeholder="Set rep…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NOBODY}>Unassigned</SelectItem>
-                  {reps.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* handing out cards in bulk is the manager's (Dor 21.10) */}
+              {data?.viewer.manager && <BulkAssignSelect reps={reps} disabled={bulkBusy} onAssign={(id) => void bulk({ assignedTo: id })} />}
               {bulkBusy && <Loader2 className="h-4 w-4 animate-spin" />}
             </>
           }
@@ -503,9 +497,11 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
             onOpenChange={setAdding}
             reps={reps}
             currentUserId={currentUserId}
-            onCreated={(id) => {
+            onCreated={(id, handedTo) => {
               void reload({ quiet: true });
-              router.push(`/tours/reservations/${id}`);
+              // a rep who opened a card for someone else does not see it: say so instead of landing on a refusal
+              if (handedTo && !data?.viewer.manager) toast({ title: `Card opened and handed to ${reps.find((p) => p.id === handedTo)?.name ?? "another rep"}` });
+              else router.push(`/tours/reservations/${id}`);
             }}
           />
           <StatusesDialog

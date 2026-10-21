@@ -2,14 +2,19 @@
 
 /**
  * /tours/reservations - TODAY | RESERVATIONS | LEADS | ALL (Nir Azulay 19.10; mockup
- * https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).
+ * https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1; Alon's TODAY round 21.10 - spec
+ * docs/superpowers/specs/2026-10-21-tours-board-round-design.md).
  *
- * - TODAY: every card a rep has to touch, with the reason (todayReason), in Nir's order - it replaces the TASK column.
+ * - TODAY: every card a rep has to touch, coloured by its reason (todayReason), numbered `#` in the VIEWER'S OWN
+ *   order - the default is arrival (the oldest first, the newest lead last), a drag or a typed place keeps it
+ *   (lib/tours/board.ts orderBoard / moveInOrder / placeInOrder, saved by saveBoardOrder). Phone, Notes (bold when
+ *   written today) and a mail shortcut sit on the row. A manager ticks rows and hands them out in bulk.
  * - RESERVATIONS: one row per order (a site booking or one a rep typed, each with its T number); a customer with two
  *   orders shows twice. Live / Past / Cancelled.
- * - LEADS: the cards with no order yet. Open / Closed.
+ * - LEADS: the cards with no order yet. Open / Closed. Bulk assign for a manager.
  * - ALL: the old table - bulk changes, export.
- * Every row opens its customer, with that card open. TODAY / RESERVATIONS / LEADS share one load (listBoard).
+ * The server already answers only the cards the viewer may see (a manager all, a rep their own + the unassigned).
+ * Every row opens its customer, with that card highlighted. TODAY / RESERVATIONS / LEADS share one load (listBoard).
  */
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,9 +30,10 @@ import { DataTable, DataTableSkeleton, SortableHeader } from "@/components/data-
 import { SearchInput } from "@/components/search-input";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
+import { useToast } from "@/hooks/use-toast";
 import { useSessionState } from "@/hooks/use-view-state";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
-import { listBoard, updateCase } from "@/lib/actions/tours-cases-actions";
+import { bulkUpdateCases, listBoard, saveBoardOrder, updateCase } from "@/lib/actions/tours-cases-actions";
 import { Chip, LoadError } from "@/components/tours/ui";
 import {
   BOOKING_PHASE_LABELS,
@@ -35,7 +41,6 @@ import {
   caseMatches,
   caseName,
   isClosedStatus,
-  knownFrom,
   sourceLabel,
   statusOf,
   todayRank,
@@ -48,7 +53,21 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { CardWhat, CardWho, InRow, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { moveInOrder, noteLine, orderBoard, placeInOrder, writtenToday, type BoardViewer } from "@/lib/tours/board";
+import {
+  BulkAssignSelect,
+  CardWhat,
+  CardWho,
+  InRow,
+  KnownLine,
+  MailButton,
+  PhoneCell,
+  StageBar,
+  StatusTag,
+  TODAY_ROW_CLASSES,
+  TodayBadge,
+  WhatsAppButton,
+} from "@/components/tours/cases/case-ui";
 import { CasesScreen } from "@/components/tours/cases/cases-screen";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
@@ -58,6 +77,9 @@ const PHASES: BookingPhase[] = ["active", "past", "cancelled"];
 const PHASE_TAB_LABELS: Record<BookingPhase, string> = { active: "Live", past: "Past", cancelled: "Cancelled" };
 const LEAD_VIEWS = ["open", "closed"] as const;
 type LeadView = (typeof LEAD_VIEWS)[number];
+/** TODAY is one page: a card is dragged from place 80 to place 3 in one move. */
+const TODAY_PAGE = 500;
+const NOBODY_VIEWER: BoardViewer = { id: "", manager: false };
 
 /** The day after today (YYYY-MM-DD): "No answer" calls again tomorrow. */
 const tomorrowOf = (today: string): string => new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
@@ -66,15 +88,20 @@ interface TodayRow {
   card: CaseRow;
   reason: TodayReason;
   known: KnownFrom | null;
+  /** The card's place in the viewer's FULL list (1..N) - kept under a search or "Mine". */
+  position: number;
 }
 interface OrderRow {
   order: BoardOrder;
   card: CaseRow;
 }
 
+const selectedOf = (selection: Record<string, boolean>): string[] => Object.keys(selection).filter((id) => selection[id]);
+
 export function BoardScreen() {
   const router = useRouter();
   const run = useActionToast();
+  const { toast } = useToast();
   const { data, error, loading, reload, setData } = useActionData<BoardPage>(() => listBoard(), []);
   const [q, setQ] = useSessionState<string>("board-q", "");
   const [mine, setMine] = useSessionState<boolean>("board-mine", false);
@@ -83,12 +110,17 @@ export function BoardScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingStatuses, setEditingStatuses] = useState(false);
+  const [todaySelection, setTodaySelection] = useState<Record<string, boolean>>({});
+  const [leadSelection, setLeadSelection] = useState<Record<string, boolean>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
   const today = todayIso();
 
   const statuses = useMemo(() => data?.statuses ?? [], [data]);
   const reps = useMemo(() => data?.reps ?? [], [data]);
   const repName = useCallback((id: string | null) => (id ? (reps.find((p) => p.id === id)?.name ?? "Another teammate") : ""), [reps]);
   const currentUserId = data?.currentUserId ?? "";
+  const viewer = data?.viewer ?? NOBODY_VIEWER;
+  const orderIds = useMemo(() => data?.order ?? [], [data]);
 
   // the search and "Mine" narrow every tab alike
   const cards = useMemo(
@@ -96,36 +128,24 @@ export function BoardScreen() {
     [data, mine, currentUserId, q],
   );
   const cardById = useMemo(() => new Map((data?.cards ?? []).map((c) => [c.id, c])), [data]);
-  const byCustomer = useMemo(() => {
-    const map = new Map<string, CaseRow[]>();
-    for (const c of data?.cards ?? []) if (c.customerId) map.set(c.customerId, [...(map.get(c.customerId) ?? []), c]);
-    return map;
-  }, [data]);
   const ordersByCard = useMemo(() => {
     const map = new Map<string, BoardOrder[]>();
     for (const o of data?.orders ?? []) map.set(o.cardId, [...(map.get(o.cardId) ?? []), o]);
     return map;
   }, [data]);
 
-  const todayRows = useMemo<TodayRow[]>(
-    () =>
-      cards
-        .map((card) => {
-          const reason = todayReason(card, statuses, today);
-          if (!reason) return null;
-          const history = (card.customerId ? byCustomer.get(card.customerId) : null) ?? [];
-          return { card, reason, known: knownFrom(card, history, statuses) };
-        })
-        .filter((r): r is TodayRow => !!r)
-        .sort(
-          (a, b) =>
-            todayRank(a.reason) - todayRank(b.reason) ||
-            (a.card.followUpDate ?? "").localeCompare(b.card.followUpDate ?? "") ||
-            a.card.createdAt.localeCompare(b.card.createdAt),
-        ),
-    [cards, statuses, today, byCustomer],
-  );
+  // TODAY, numbered over the viewer's WHOLE list first (the saved order, then arrival) - the search / "Mine" is applied
+  // after, so a card keeps its place while the list is narrowed
+  const todayAll = useMemo<TodayRow[]>(() => {
+    const waiting = (data?.cards ?? [])
+      .map((card) => ({ id: card.id, arrivedAt: card.arrivedAt, card, reason: todayReason(card, statuses, today) }))
+      .filter((r): r is typeof r & { reason: TodayReason } => !!r.reason);
+    return orderBoard(waiting, orderIds).map(({ row, position }) => ({ card: row.card, reason: row.reason, known: data?.known[row.card.id] ?? null, position }));
+  }, [data, statuses, today, orderIds]);
+  const fullIds = useMemo(() => todayAll.map((r) => r.card.id), [todayAll]);
   const shownIds = useMemo(() => new Set(cards.map((c) => c.id)), [cards]);
+  const todayRows = useMemo(() => todayAll.filter((r) => shownIds.has(r.card.id)), [todayAll, shownIds]);
+
   const orderRows = useMemo<OrderRow[]>(() => {
     const ref = q.trim().toUpperCase();
     return (data?.orders ?? [])
@@ -152,33 +172,60 @@ export function BoardScreen() {
     [run, setData],
   );
 
+  // the viewer's own order: shown at once, saved behind it (a failed save toasts and the screen keeps the order)
+  const commitOrder = useCallback(
+    async (ids: string[]) => {
+      setData((current) => current && { ...current, order: ids });
+      const result = await saveBoardOrder(ids);
+      if (!result.success) toast({ variant: "destructive", title: "The order was not saved", description: result.error });
+    },
+    [setData, toast],
+  );
+  const onMove = useCallback((activeId: string, overId: string) => void commitOrder(moveInOrder(fullIds, activeId, overId)), [commitOrder, fullIds]);
+  const onPlace = useCallback((id: string, place: number) => void commitOrder(placeInOrder(fullIds, id, place)), [commitOrder, fullIds]);
+
+  // a manager hands out cards in bulk (Dor 21.10); the server refuses anyone else
+  const bulkAssign = useCallback(
+    async (selection: Record<string, boolean>, clear: () => void, assignedTo: string | null) => {
+      const ids = selectedOf(selection);
+      if (ids.length === 0) return;
+      setBulkBusy(true);
+      const result = await run(
+        () => bulkUpdateCases(ids, { assignedTo }),
+        (answer) => `${answer.data.updated} ${answer.data.updated === 1 ? "card" : "cards"} handed to ${assignedTo ? repName(assignedTo) : "nobody"}`,
+      );
+      setBulkBusy(false);
+      if (result.success) {
+        clear();
+        void reload({ quiet: true });
+      }
+    },
+    [reload, repName, run],
+  );
+
   const todayColumns = useMemo<ColumnDef<TodayRow>[]>(
     () => [
+      {
+        id: "place",
+        accessorFn: (r) => r.position,
+        header: ({ column }) => <SortableHeader label="#" column={column} />,
+        cell: ({ row }) => <PlaceNumber value={row.original.position} onPlace={(place) => onPlace(row.original.card.id, place)} />,
+      },
       {
         id: "why",
         accessorFn: (r) => todayRank(r.reason),
         header: ({ column }) => <SortableHeader label="Why" column={column} />,
         cell: ({ row }) => (
-          <div className="space-y-1">
+          <div className="max-w-[9rem] space-y-1">
             <TodayBadge reason={row.original.reason} followUpDate={row.original.card.followUpDate} today={today} />
             {row.original.reason === "payment" && row.original.card.paymentAnswer && (
               <div className="text-xs text-muted-foreground">{PAYMENT_ANSWER_LABELS[row.original.card.paymentAnswer]}</div>
-            )}
-            {row.original.known && (
-              <div className="max-w-[16rem] text-xs font-medium text-violet-700 dark:text-violet-300">
-                Known customer · was <span dir="rtl">{statusOf(row.original.known.status, statuses)?.label ?? row.original.known.status}</span>
-                {row.original.known.closeReason && (
-                  <>
-                    {" "}
-                    · <span dir="auto">{row.original.known.closeReason}</span>
-                  </>
-                )}
-              </div>
             )}
           </div>
         ),
       },
       { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <CardWho card={row.original.card} /> },
+      { id: "phone", accessorFn: (r) => r.card.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.card.phone} /> },
       {
         id: "what",
         accessorFn: (r) => r.card.tourName ?? "",
@@ -192,7 +239,7 @@ export function BoardScreen() {
               </div>
             </div>
           ) : (
-            <CardWhat card={row.original.card} />
+            <CardWhat card={row.original.card}>{row.original.known && <KnownLine known={row.original.known} statuses={statuses} />}</CardWhat>
           ),
       },
       {
@@ -205,6 +252,27 @@ export function BoardScreen() {
             <StageBar status={row.original.card.status} hasOrder={!!ordersByCard.get(row.original.card.id)?.length} statuses={statuses} className="flex" />
           </div>
         ),
+      },
+      {
+        id: "notes",
+        accessorFn: (r) => noteLine(r.card.notes),
+        header: "Notes",
+        cell: ({ row }) => {
+          const line = noteLine(row.original.card.notes);
+          if (!line) return <span className="text-muted-foreground">{EMPTY}</span>;
+          // a note written today stands out: the rep wrote it this morning and the customer is still on the list
+          const fresh = writtenToday(row.original.card.notesAt, today);
+          return (
+            <div
+              dir="auto"
+              title={row.original.card.notes ?? undefined}
+              className={cn("max-w-[16rem] truncate text-sm", fresh ? "font-semibold text-foreground" : "text-muted-foreground")}
+            >
+              {fresh && <span className="me-1.5 inline-block h-1.5 w-1.5 rounded-full bg-primary align-middle" aria-label="Written today" />}
+              {line}
+            </div>
+          );
+        },
       },
       {
         id: "followUp",
@@ -244,6 +312,7 @@ export function BoardScreen() {
               ) : (
                 <>
                   <WhatsAppButton iconOnly phone={card.phone} message={`היי ${card.firstName ?? ""}`.trim()} />
+                  <MailButton iconOnly email={card.email} />
                   {["new", "no_answer", "returned", "offer_sent", "future"].includes(card.status) && (
                     <Button
                       size="sm"
@@ -261,7 +330,7 @@ export function BoardScreen() {
         },
       },
     ],
-    [busy, open, ordersByCard, repName, save, statuses, today],
+    [busy, onPlace, open, ordersByCard, repName, save, statuses, today],
   );
 
   const orderColumns = useMemo<ColumnDef<OrderRow>[]>(
@@ -278,6 +347,7 @@ export function BoardScreen() {
         ),
       },
       { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <CardWho card={row.original.card} /> },
+      { id: "phone", accessorFn: (r) => r.card.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.card.phone} /> },
       { id: "tour", accessorFn: (r) => r.card.tourName ?? "", header: "Tour", cell: ({ row }) => <span dir="auto">{row.original.card.tourName ?? EMPTY}</span> },
       {
         id: "departure",
@@ -336,6 +406,7 @@ export function BoardScreen() {
   const leadColumns = useMemo<ColumnDef<CaseRow>[]>(
     () => [
       { id: "who", accessorFn: (c) => caseName(c), header: "Customer", cell: ({ row }) => <CardWho card={row.original} /> },
+      { id: "phone", accessorFn: (c) => c.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.phone} /> },
       { id: "what", accessorFn: (c) => c.tourName ?? "", header: "Tour", cell: ({ row }) => <CardWhat card={row.original} /> },
       {
         id: "status",
@@ -415,12 +486,19 @@ export function BoardScreen() {
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2">
-      <SearchInput value={q} onValueChange={setQ} placeholder="Name, phone, C-number, T-number, tour..." />
+      <SearchInput value={q} onValueChange={setQ} placeholder="Name, phone, customer number, T-number, tour..." />
       <Button variant={mine ? "default" : "outline"} size="sm" onClick={() => setMine(!mine)} aria-pressed={mine}>
         Mine
       </Button>
     </div>
   );
+  const bulkBar = (selection: Record<string, boolean>, clear: () => void) =>
+    viewer.manager ? (
+      <>
+        <BulkAssignSelect reps={reps} disabled={bulkBusy} onAssign={(id) => void bulkAssign(selection, clear, id)} />
+        {bulkBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+      </>
+    ) : undefined;
 
   return (
     <div className="space-y-6">
@@ -471,12 +549,19 @@ export function BoardScreen() {
               dense
               grid
               getRowId={(r) => r.card.id}
-              defaultPageSize={50}
-              pageSizeOptions={[25, 50, 100]}
+              // one page, the viewer's own order first; the key changed with the round so a remembered page size of 50 is forgotten
+              defaultPageSize={TODAY_PAGE}
+              pageSizeOptions={[TODAY_PAGE]}
+              defaultSorting={[{ id: "place", desc: false }]}
+              stateKey="tours-board-today-v2"
+              rowReorder={{ enabled: !q.trim() && !mine, orderColumnId: "place", onMove }}
+              enableRowSelection={viewer.manager}
+              rowSelection={todaySelection}
+              onRowSelectionChange={setTodaySelection}
+              bulkActions={bulkBar(todaySelection, () => setTodaySelection({}))}
               filters={toolbar}
               onRowClick={(r) => open(r.card.id)}
-              getRowClassName={(row) => (row.original.reason === "late" ? "bg-destructive/5" : row.original.reason === "returned" ? "bg-violet-500/5" : "")}
-              stateKey="tours-board-today"
+              getRowClassName={(row) => TODAY_ROW_CLASSES[row.original.reason]}
               emptyState={{ title: "Nothing waits for you today", description: "New cards, customers who came back and calls due show up here by themselves." }}
             />
           ) : (
@@ -528,6 +613,10 @@ export function BoardScreen() {
               defaultPageSize={50}
               pageSizeOptions={[25, 50, 100]}
               defaultSorting={[{ id: "created", desc: true }]}
+              enableRowSelection={viewer.manager}
+              rowSelection={leadSelection}
+              onRowSelectionChange={setLeadSelection}
+              bulkActions={bulkBar(leadSelection, () => setLeadSelection({}))}
               filters={
                 <>
                   {segment(leadView, setLeadView, [
@@ -558,9 +647,11 @@ export function BoardScreen() {
             onOpenChange={setAdding}
             reps={reps}
             currentUserId={currentUserId}
-            onCreated={(id) => {
+            onCreated={(id, handedTo) => {
               void reload({ quiet: true });
-              router.push(`/tours/reservations/${id}`);
+              // a rep who opened a card for someone else does not see it: say so instead of landing on a refusal
+              if (handedTo && !viewer.manager) toast({ title: `Card opened and handed to ${repName(handedTo)}` });
+              else router.push(`/tours/reservations/${id}`);
             }}
           />
           <StatusesDialog
@@ -586,5 +677,46 @@ function CountPill({ count, urgent }: { count: number; urgent?: boolean }) {
     >
       {count}
     </span>
+  );
+}
+
+/** The card's place in the list: a number that is also a control - click it, type a place, Enter (the homepage board's way). */
+function PlaceNumber({ value, onPlace }: { value: number; onPlace: (place: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="tabular min-w-[2rem] rounded px-1.5 py-0.5 text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        title="Click to type a place"
+        onClick={() => {
+          setDraft(String(value));
+          setEditing(true);
+        }}
+      >
+        {value}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      inputMode="numeric"
+      aria-label="Place in the list"
+      className="tabular h-7 w-12 rounded border bg-background px-1 text-center text-sm"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value.replace(/\D/g, ""))}
+      onFocus={(event) => event.target.select()}
+      onBlur={() => setEditing(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          const place = Number(draft);
+          if (Number.isInteger(place) && place >= 1 && place !== value) onPlace(place);
+          setEditing(false);
+        }
+        if (event.key === "Escape") setEditing(false);
+      }}
+    />
   );
 }
