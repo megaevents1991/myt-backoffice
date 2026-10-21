@@ -670,6 +670,9 @@ export function FormBuilder({
                   dir="ltr"
                   placeholder="https://www.google.com/search?q=…"
                   value={reviewLink}
+                  // An operator picks one of our Google profiles below; the server keeps
+                  // any other URL out (updateFormMeta).
+                  readOnly={isOperator}
                   onChange={(e) => touch(setReviewLink)(e.target.value)}
                 />
                 {/* One click per business profile; any other URL still works. */}

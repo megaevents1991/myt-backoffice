@@ -19,6 +19,7 @@ import type {
 } from "@/types/form.types";
 import { FORM_FIELD_TYPES, audienceOf } from "@/types/form.types";
 import { DEFAULT_ACCENT } from "@/lib/forms/brand";
+import { GOOGLE_REVIEW_LINKS } from "@/lib/forms/review-links";
 import { liveRowsQuery } from "@/lib/forms/soft-delete";
 import { normalizeHotelConfig } from "@/lib/forms/series";
 import { readOneSeries, readSeries } from "@/lib/services/form-series";
@@ -264,9 +265,32 @@ export async function updateFormMeta(
   const slug = await uniqueSlug(requestedSlug, id);
 
   // Rendered as a plain <a href> on the thank-you screen - accept http(s) only.
-  const reviewLink = input.review_link_url?.trim() || null;
+  let reviewLink = input.review_link_url?.trim() || null;
   if (reviewLink && !/^https?:\/\//i.test(reviewLink)) {
     throw new Error("Review link must start with http:// or https://");
+  }
+
+  // An operator edits the questions and the words, never where the PUBLIC page points: the
+  // logo / cover stay what is stored (the Storage picker is a staff tool), and the review link
+  // is the stored one, one of our Google presets, or none - never a URL of their own.
+  let logoUrl = input.logo_url?.trim() || null;
+  let coverUrl = input.cover_image_url?.trim() || null;
+  if (isOperator(actor)) {
+    const { data: stored, error: storedError } = await formsTable()
+      .select("logo_url,cover_image_url,review_link_url")
+      .eq("id", id)
+      .maybeSingle();
+    if (storedError || !stored) {
+      console.error("updateFormMeta stored read failed:", JSON.stringify(storedError));
+      throw new Error("Could not save the form");
+    }
+    logoUrl = stored.logo_url ?? null;
+    coverUrl = stored.cover_image_url ?? null;
+    const allowed = new Set<string>([
+      ...GOOGLE_REVIEW_LINKS.map((preset) => preset.url as string),
+      ...(stored.review_link_url ? [stored.review_link_url as string] : []),
+    ]);
+    if (reviewLink && !allowed.has(reviewLink)) reviewLink = stored.review_link_url ?? null;
   }
 
   const patch = {
@@ -295,8 +319,8 @@ export async function updateFormMeta(
     accent_color: HEX_RE.test(input.accent_color ?? "")
       ? input.accent_color
       : DEFAULT_ACCENT,
-    logo_url: input.logo_url?.trim() || null,
-    cover_image_url: input.cover_image_url?.trim() || null,
+    logo_url: logoUrl,
+    cover_image_url: coverUrl,
     updated_at: new Date().toISOString(),
   };
 
