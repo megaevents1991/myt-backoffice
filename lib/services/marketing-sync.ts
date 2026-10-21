@@ -20,13 +20,14 @@
  *    backfill the budget cut short resumes where it stopped when it is run again.
  */
 import { isMissingRelation, mdb, readAll } from "@/lib/services/marketing-db";
+import { keepStoredDays, spendGuardNote } from "@/lib/marketing/spend-guard";
 import { fetchMetaEntities, fetchMetaSpend } from "@/lib/services/ads/meta";
 import { fetchGoogleClicks, fetchGoogleEntities, fetchGoogleSpend } from "@/lib/services/ads/google";
 import { fetchIgAccount, fetchIgMedia, fetchIgMediaInsights, fetchIgStories } from "@/lib/services/ads/instagram";
 import { fillTicketCosts } from "@/lib/services/reservation-cogs-fill";
 import { runMarketingAlerts } from "@/lib/services/marketing-alerts";
 import { invalidateMarketing } from "@/lib/services/marketing-cache";
-import type { AdEntityRow, IgMediaRow } from "@/types/marketing.types";
+import type { AdEntityRow, AdSpendRow, IgMediaRow } from "@/types/marketing.types";
 
 export type SyncStep = "meta" | "google" | "instagram" | "cogs" | "alerts" | "retention";
 export const SYNC_STEPS: readonly SyncStep[] = ["meta", "google", "instagram", "cogs", "alerts", "retention"];
@@ -109,6 +110,28 @@ async function afterSpend<T>(spendNote: string, what: string, fn: () => Promise<
   }
 }
 
+/**
+ * The spend write, guarded (lib/marketing/spend-guard.ts): a day the platform answered with no delivery at all
+ * while the stored rows of that day hold some is left as stored and named in the note (21.10: Meta answered
+ * 14-19.10 at zero and the re-read erased six days of spend). The stored read covers the window alone; a failed
+ * read fails the step - spend not written this tick, retried next - because writing blind is what the guard stops.
+ */
+async function writeSpend(platform: "meta" | "google", label: string, fetched: AdSpendRow[], since: string, until: string, dryRun: boolean): Promise<{ written: number; note: string }> {
+  const stored = await readAll<{ day: string; spend: number; impressions: number; campaign_id: string; adset_key: string }>(
+    "ad_spend_daily",
+    "day, spend, impressions, campaign_id, adset_key",
+    ["day", "campaign_id", "adset_key"],
+    50_000,
+    "marketingSync",
+    (q) => q.eq("platform", platform).gte("day", since).lte("day", until),
+  );
+  const { rows, kept } = keepStoredDays(fetched, stored);
+  const note = spendGuardNote(label, kept);
+  if (note) console.warn(`[marketingSync] ${platform}: ${note}`);
+  const written = await upsert("ad_spend_daily", rows, "platform,campaign_id,adset_key,day", dryRun);
+  return { written, note };
+}
+
 async function step(name: SyncStep, fn: () => Promise<{ rows: number; note?: string }>): Promise<StepResult> {
   const t0 = Date.now();
   try {
@@ -161,32 +184,36 @@ export async function runMarketingSync(opts: { dryRun: boolean; only?: SyncStep;
     const accountId = process.env.NEXT_SECRET_META_AD_ACCOUNT_ID?.trim();
     if (!accountId) throw new Error("NEXT_SECRET_META_AD_ACCOUNT_ID is not set");
     let a = 0;
+    let guardNote = "";
     if (!fxProblem) {
       const spend = await fetchMetaSpend({ accountId, since: daysAgo(window), until: daysAgo(0), currency: "ILS", fxRate: fxIls });
-      a = await upsert("ad_spend_daily", spend, "platform,campaign_id,adset_key,day", opts.dryRun);
+      ({ written: a, note: guardNote } = await writeSpend("meta", "Meta", spend, daysAgo(window), daysAgo(0), opts.dryRun));
     }
-    const spendNote = fxProblem ? fxNote : `${a} spend rows written`;
+    const withGuard = (s: string) => (guardNote ? `${s} (${guardNote})` : s);
+    const spendNote = fxProblem ? fxNote : withGuard(`${a} spend rows written`);
     // A 90-day backfill's spend read alone takes ~180 s (13 windows); the entity walk ~90 s more. When the walk no longer
     // fits, keep the spend (already written) and leave the entities to the next tick - every tick walks them anyway.
     const left = startedAt.getTime() + budgetMs - Date.now();
     if (left < META_ENTITIES_RESERVE_MS) {
       if (fxProblem) throw new Error(`${fxNote} · entities skipped (budget)`);
-      return { rows: a, note: `${a} spend rows, entities skipped (budget: ${Math.round(left / 1000)} s left, next tick walks them)` };
+      return { rows: a, note: `${withGuard(`${a} spend rows`)}, entities skipped (budget: ${Math.round(left / 1000)} s left, next tick walks them)` };
     }
     const b = await afterSpend(spendNote, "entities", async () => writeEntities(await fetchMetaEntities({ accountId }), "meta", opts.dryRun));
     if (fxProblem) throw new Error(`${fxNote} · ${b} entities`);
-    return { rows: a + b, note: `${a} spend rows, ${b} entities` };
+    return { rows: a + b, note: `${withGuard(`${a} spend rows`)}, ${b} entities` };
   });
 
   await run("google", async () => {
     const customerId = process.env.NEXT_SECRET_GOOGLE_ADS_CUSTOMER_ID?.trim();
     if (!customerId) throw new Error("NEXT_SECRET_GOOGLE_ADS_CUSTOMER_ID is not set");
     let a = 0;
+    let guardNote = "";
     if (!fxProblem) {
       const spend = await fetchGoogleSpend({ customerId, since: daysAgo(window), until: daysAgo(0), currency: "ILS", fxRate: fxIls });
-      a = await upsert("ad_spend_daily", spend, "platform,campaign_id,adset_key,day", opts.dryRun);
+      ({ written: a, note: guardNote } = await writeSpend("google", "Google", spend, daysAgo(window), daysAgo(0), opts.dryRun));
     }
-    const spendNote = fxProblem ? fxNote : `${a} spend rows written`;
+    const withGuard = (s: string) => (guardNote ? `${s} (${guardNote})` : s);
+    const spendNote = fxProblem ? fxNote : withGuard(`${a} spend rows written`);
     const b = await afterSpend(spendNote, "entities", async () => writeEntities(await fetchGoogleEntities({ customerId }), "google", opts.dryRun));
 
     // click_view, one day per call: the last CLICK_REFRESH_DAYS always, plus - on a backfill - every older day of
@@ -210,7 +237,7 @@ export async function runMarketingSync(opts: { dryRun: boolean; only?: SyncStep;
     const skippedOlder = older.length - missingOlder.length;
     const clickNote = `${clicks} clicks over ${walked} days${skippedOlder ? ` (${skippedOlder} older days already synced)` : ""}${remaining ? `, ${remaining} click days still missing - run the backfill again` : ""}`;
     if (fxProblem) throw new Error(`${fxNote} · ${b} entities, ${clickNote}`);
-    return { rows: a + b + clicks, note: `${a} spend rows, ${b} entities, ${clickNote}` };
+    return { rows: a + b + clicks, note: `${withGuard(`${a} spend rows`)}, ${b} entities, ${clickNote}` };
   });
 
   await run("instagram", async () => {
