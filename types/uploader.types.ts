@@ -100,6 +100,8 @@ export interface UploaderItem {
     latitude: number;
     longitude: number;
     km: number;
+    /** Beyond NEAR_LOCATION_KM: no package flies here by itself (ticket-only / skipped items carry it as the two-city offer). */
+    far: boolean;
   } | null;
   decisions: Decision[];
   warnings: Warning[];

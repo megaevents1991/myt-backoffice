@@ -53,11 +53,13 @@ import {
   type TixListing,
 } from "@/lib/uploader/tickets";
 import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploader/decisions";
-import { eventNames } from "@/lib/uploader/names";
+import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
+import { nameFragments, searchWindow, subjectPatterns, tixSlices } from "@/lib/services/uploader-search";
+import { decidePlace, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
 import type { EventTicket } from "@/types/app.types";
@@ -1507,7 +1509,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   check(warningsFor("artist", rows(artistRow()), facts({ suppliersUsed: ["livetickets"] }))[0].text.includes("LiveTickets"), "single_supplier names LiveTickets when that is the one");
   same(codes(warningsFor("artist", rows(artistRow()), facts({ hebrewName: false }))), ["no_hebrew_name"], "no Hebrew name found -> no_hebrew_name");
 
-  const far = warningsFor("artist", rows(artistRow()), facts({ farVenue: { city: "London", km: 312.4 } }));
+  const far = warningsFor("artist", rows(artistRow()), facts({ farVenue: { id: 4, city: "London", km: 312.4 } }));
   same(codes(far), ["far_venue"], "a far venue -> far_venue");
   check(far[0].text.includes('312 ק"מ'), "far_venue puts the (rounded) km in the text");
   check(far[0].text.includes('בנה כחבילה דרך London (312 ק"מ) עם פיצול מלון'), "far_venue carries the spec's offer text verbatim");
@@ -1523,7 +1525,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       suppliersUsed: ["tixstock"],
       unreachable: ["livetickets"],
       hebrewName: false,
-      farVenue: { city: "London", km: 400 },
+      farVenue: { id: 4, city: "London", km: 400 },
     }),
   );
   same(
@@ -1548,6 +1550,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "categories_dropped",
       "dates_smart",
       "duplicate_dropped",
+      "live_from_snapshot",
       "location_found",
       "location_missing_ticket_only",
       "lodging_from_memory",
@@ -1606,6 +1609,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     location_missing_ticket_only: {},
     tickets_tixstock: { count: 4 },
     tickets_livetickets: { count: 2 },
+    live_from_snapshot: { count: 2 },
     categories_dropped: { count: 2, reason: "restricted view" },
     zones_from_template: { zoned: 9, total: 12 },
     dates_smart: { depart: "18.05", ret: "21.05" },
@@ -1922,6 +1926,212 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     "no_ticket_only_markup: the blocker's text",
   );
   check(!!WARNING_TEXT.no_base_price && !!WARNING_TEXT.no_base_price_hotel, "no_base_price: flight and hotel blocker texts exist");
+}
+
+// ---- Task 7 search patterns + window (lib/services/uploader-search.ts) ------------------------
+{
+  const NOW = new Date("2026-10-21T09:00:00Z");
+  const artist = (name_en: string, name_he: string | null = null): Subject => ({ kind: "artist", name_en, name_he, aliases: [] });
+  same(subjectPatterns(artist("Jay-Z")).latin, ["%jay%z%"], "Jay-Z: the hyphen splits the name into fragments, nothing is glued");
+  same(subjectPatterns(artist("AC/DC")).latin, ["%ac%dc%"], "AC/DC: the slash splits");
+  same(subjectPatterns(artist("P!nk")).latin, ["%p%nk%"], "P!nk: the mark splits");
+  same(subjectPatterns(artist("O'Connor")).latin, ["%o%connor%"], "O'Connor: a Latin apostrophe splits");
+  same(subjectPatterns(artist("Beyoncé")).latin, ["%beyonc_%"], "an accented letter is one `_` (Beyonce / Beyoncé)");
+  same(subjectPatterns(artist("Chelsea", "צ'לסי")).hebrew, ["%צ_לסי%"], "a Hebrew geresh stays inside the word as `_` (matches ' and ׳)");
+  same(nameFragments("צ׳לסי - ברנטפורד"), ["צ_לסי", "ברנטפורד"], "the Hebrew geresh sign too; the dash splits");
+  same(subjectPatterns({ kind: "team", name_en: "Liverpool FC", name_he: "ליברפול", aliases: ["Liverpool"] }).latin, ["%liverpool%"], "a team searches by its club tokens");
+  const hostile = subjectPatterns(artist('Foo, (Bar) "Baz" % * \\ .'), ["x,y(z)", "%%", "*"]);
+  same(hostile.latin, ["%foo%bar%baz%", "%x%y%z%"], "a hostile name gives only its letter fragments");
+  check(
+    [...hostile.latin, ...hostile.hebrew].every((p) => /^[%_\p{L}\p{N}]+$/u.test(p)),
+    "every pattern holds letters, digits, % and _ only (nothing PostgREST .or() parses)",
+  );
+  same(nameFragments("!!!"), [], "a name with no letter has no fragment");
+
+  const scope = (date_from: string | null, date_to: string | null): UploaderPlan["scope"] => ({ ...emptyPlan().scope, date_from, date_to });
+  same(searchWindow(scope(null, null), NOW), { from: "2026-10-23", to: "2028-10-21" }, "open window: today+3 (one day wider) to today + 24 months");
+  same(searchWindow(scope("2027-05-01", "2027-06-30"), NOW), { from: "2027-04-30", to: "2027-07-02" }, "a dated window, one day wider each side (to exclusive)");
+  same(searchWindow(scope("2026-10-01", null), NOW).from, "2026-10-23", "a date_from before the floor starts at the floor");
+  same(
+    tixSlices({ from: "2026-10-23", to: "2027-03-01" }),
+    [
+      { from: "2026-10-23", to: "2027-02-20" },
+      { from: "2027-02-20", to: "2027-03-01" },
+    ],
+    "120-day slices, the last one cut at the window's end",
+  );
+  same(tixSlices(searchWindow(scope(null, null), NOW)).length, 7, "an open window = 7 slices (read 3 at a time)");
+}
+
+// ---- Task 7 place (lib/uploader/place.ts decidePlace) - every branch, in the spec's order ---------
+{
+  const NOW = new Date("2026-10-21T09:00:00Z");
+  const loc = (id: number, name: string, iata: string | null, lat: number, lon: number): LocationRow => ({
+    id,
+    name,
+    city_iata: iata,
+    latitude: lat,
+    longitude: lon,
+    country_code: null,
+  });
+  const london = loc(4, "לונדון, בריטניה", "LON", 51.509865, -0.118092);
+  const munich = loc(11, "מינכן, גרמניה", "MUC", 48.1549958, 11.6242359);
+  const liverpoolCity = loc(31, "ליברפול", null, 53.4084, -2.9916);
+  const manchester = loc(32, "מנצ'סטר", null, 53.4808, -2.2426);
+  const munichTwin = loc(30, "מינכן, גרמניה", "MUC", 48.1371775, 11.5629453);
+  const paris = loc(6, "Paris, France", "CDG", 48.864716, 2.349014);
+  const rows = [london, munich, liverpoolCity, manchester, munichTwin, paris];
+
+  const show = (over: Partial<ShowIdentity> = {}): ShowIdentity => ({
+    name_english: "Eric Clapton London",
+    city: "London",
+    country_code: "GB",
+    venue: "London Royal Albert Hall",
+    date: "2027-05-20",
+    lat: 51.501269,
+    lon: -0.177516,
+    suppliers: {
+      tixstock: { event_id: "tx-rah", name: "Eric Clapton London", ticket_count: 120, venue_map_url: "https://tixstock.example/rah.svg" },
+      livetickets: null,
+    },
+    competition: null,
+    home_team: null,
+    away_team: null,
+    fallback: [],
+    ...over,
+  });
+  const anfield = show({ name_english: "Liverpool FC vs FC Porto", city: "Liverpool", venue: "Anfield", lat: 53.4308, lon: -2.9608, home_team: "Liverpool FC", away_team: "FC Porto" });
+  const liveOnly = show({
+    venue: null,
+    lat: null,
+    lon: null,
+    suppliers: { tixstock: null, livetickets: { event_id: 2327792, name_heb: "אריק קלפטון", sellable: 3 } },
+  });
+  const tixNoCoords = show({ lat: null, lon: null });
+  const input = (over: Partial<PlaceInput> = {}): PlaceInput => ({
+    show: show(),
+    subject_en: "Eric Clapton",
+    rows,
+    withoutLocation: "ticket_only",
+    twoCity: null,
+    answer: null,
+    prior: null,
+    liveCity: null,
+    memory: null,
+    now: NOW,
+    ...over,
+  });
+  const codesOf = (r: ReturnType<typeof decidePlace>): string[] => (r.kind === "error" ? [] : r.decisions.map((d) => d.code));
+  const manchesterLodging = { event_location: { name: "מנצ'סטר", latitude: 53.4808, longitude: -2.2426 }, lodging_mode: "choice_split" as const, lodging_default: "event" as const, lodging_note: null, split_default_nights: 2 };
+
+  same(SPLIT_DEFAULT_NIGHTS, 2, "SPLIT_DEFAULT_NIGHTS is what lib/lodging.ts defaultSplit gives an unset value");
+
+  // 1. two-city chosen by staff
+  const two = decidePlace(input({ show: anfield, twoCity: { flightCityId: 4 } }));
+  check(two.kind === "placed" && two.mode === "package" && two.location.city_iata === "LON", "two-city: a package flying to the chosen row");
+  check(
+    two.kind === "placed" &&
+      two.lodging.lodging_mode === "choice_split" &&
+      two.lodging.lodging_default === "event" &&
+      two.lodging.split_default_nights === 2 &&
+      two.lodging.event_location?.name === "ליברפול",
+    "two-city: split lodging, the venue city in the site's own spelling (a location row with no IATA)",
+  );
+  check(two.kind === "placed" && two.itemLocation?.id === 4 && two.itemLocation.far === true, "two-city: item.location = the flight city, far");
+  same(codesOf(two), ["two_city_chosen"], "two-city: decision two_city_chosen");
+  same(decidePlace(input({ show: anfield, twoCity: { flightCityId: 31 } })).kind, "error", "two-city: a row with no IATA is an error, never a guess");
+  same(decidePlace(input({ show: liveOnly, twoCity: { flightCityId: 4 } })).kind, "error", "two-city: no venue coordinates is an error");
+
+  // 2. the item's own answer
+  const answered = decidePlace(input({ show: liveOnly, answer: { key: "4", text: null } }));
+  check(answered.kind === "placed" && answered.location.city_iata === "LON" && answered.itemLocation?.far === false, "answer: the chosen location is the package");
+  check(answered.kind === "placed" && answered.decisions[0]?.text === "מיקום: לונדון (LON)", "answer: location_found with no distance when the venue has no coordinates");
+  check(decidePlace(input({ show: liveOnly, answer: { key: "skip", text: null } })).kind === "skip", "answer skip -> skip");
+  const skippedAnswer = decidePlace(input({ show: liveOnly, answer: { key: "skip", text: null } }));
+  check(skippedAnswer.kind === "skip" && skippedAnswer.reason === "skipped_by_answer", "answer skip -> skipped_by_answer");
+  same(decidePlace(input({ show: liveOnly, answer: { key: "999", text: null } })).kind, "ask", "answer naming no location -> ask again (never throws)");
+  const typed = decidePlace(input({ show: liveOnly, answer: { key: null, text: "lon" } }));
+  check(typed.kind === "placed" && typed.location.city_iata === "LON", "answer: a typed IATA finds the row");
+
+  // 3. no venue coordinates
+  const tixMemory = decidePlace(input({ show: tixNoCoords, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" } }));
+  same(codesOf(tixMemory), ["two_city_from_memory"], "no coords, TixStock show: the venue memory's two-city setup first");
+  const byIata = decidePlace(input({ show: liveOnly, rows: [...rows, loc(90, "Heathrow", "LHR", 51.47, -0.45)], liveCity: { iata: "LHR", city: "London" } }));
+  check(byIata.kind === "placed" && byIata.location.city_iata === "LHR", "no coords: LiveTickets' 3-letter iata finds the row");
+  same(codesOf(byIata), ["location_found"], "no coords: a LiveTickets city match carries location_found");
+  const byCity = decidePlace(input({ show: liveOnly, liveCity: { iata: "FR", city: "Paris" } }));
+  check(byCity.kind === "placed" && byCity.location.city_iata === "CDG", "no coords: a 2-letter country code is not an airport - the city name matches");
+  const noCity = { iata: "GB", city: "London" }; // Hebrew location names: no match
+  const priorSkip = decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "skip", text: null, by: "Alon", run_no: 2 } }));
+  check(priorSkip.kind === "skip" && priorSkip.reason === "skipped_by_answer", "no coords: an earlier run's skip skips (skipped_by_answer)");
+  same(codesOf(priorSkip), ["prior_answer"], "no coords: the earlier answer is named");
+  const priorHit = decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "4", text: null, by: "Alon", run_no: 2 } }));
+  check(priorHit.kind === "placed" && priorHit.location.city_iata === "LON", "no coords: an earlier run's answer is applied");
+  same(codesOf(priorHit), ["prior_answer", "location_found"], "no coords: prior_answer + location_found");
+  same(decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "777", text: null, by: "Alon", run_no: 2 } })).kind, "ask", "no coords: an earlier answer naming no location -> ask");
+  const asked = decidePlace(input({ show: liveOnly, liveCity: noCity }));
+  check(asked.kind === "ask" && asked.question.kind === "pick_location" && asked.question.free_text, "no coords: otherwise ask pick_location, free text allowed");
+  check(asked.kind === "ask" && asked.question.text.includes("LiveTickets"), "a LiveTickets-only question names LiveTickets");
+  check(
+    asked.kind === "ask" &&
+      asked.question.options.filter((o) => o.label.includes("MUC")).length === 1 &&
+      asked.question.options.at(-1)?.key === "skip" &&
+      !asked.question.options.some((o) => o.key === "31"),
+    "pick_location options: rows with an IATA, a repeated row once, skip last",
+  );
+  const tixAsked = decidePlace(input({ show: tixNoCoords }));
+  check(tixAsked.kind === "ask" && !tixAsked.question.text.includes("LiveTickets"), "a TixStock show without coordinates is asked without claiming LiveTickets sells it");
+
+  // 4. nearest location within NEAR
+  const near = decidePlace(input());
+  check(near.kind === "placed" && near.mode === "package" && near.location.city_iata === "LON" && near.itemLocation?.far === false, "near: London is the package, not far");
+  same(codesOf(near), ["location_found"], "near: location_found");
+  check(near.kind === "placed" && near.decisions[0].text.includes('ק"מ'), "near: the distance is printed");
+  const nearMemory = decidePlace(input({ memory: { fromEventName: "Oasis RAH", lodging: manchesterLodging, flightIata: "LON" } }));
+  same(codesOf(nearMemory), ["location_found", "lodging_from_memory"], "near + a memory naming a real second city: its lodging is copied");
+  const sameCity = { ...manchesterLodging, event_location: { name: "לונדון", latitude: 51.509865, longitude: -0.118092 } };
+  same(codesOf(decidePlace(input({ memory: { fromEventName: "X", lodging: sameCity, flightIata: "LON" } }))), ["location_found"], "near + a memory whose event city IS the flight city: nothing copied");
+
+  // 5. memory two-city when no location is near
+  const memo = decidePlace(input({ show: anfield, memory: { fromEventName: "Liverpool - Everton", lodging: manchesterLodging, flightIata: "LON" } }));
+  check(memo.kind === "placed" && memo.mode === "package" && memo.lodging.lodging_mode === "choice_split", "memory: a two-city package like the last event at the venue");
+  same(codesOf(memo), ["two_city_from_memory"], "memory: decision two_city_from_memory");
+  same(
+    decidePlace(input({ show: anfield, memory: { fromEventName: "X", lodging: manchesterLodging, flightIata: "XXX" } })).kind,
+    "placed",
+    "memory whose flight city is no location falls through to the plan's rule",
+  );
+
+  // 6. the plan's rule, with the nearest location within FAR as the offer
+  const ticketOnly = decidePlace(input({ show: anfield }));
+  check(ticketOnly.kind === "placed" && ticketOnly.mode === "ticket_only" && ticketOnly.location.city_iata === "", "rule ticket_only: built ticket-only at the venue");
+  check(
+    ticketOnly.kind === "placed" && ticketOnly.itemLocation?.id === 4 && ticketOnly.itemLocation.far === true && ticketOnly.farVenue?.id === 4,
+    "ticket-only: item.location and farVenue hold the nearest location within FAR (the two-city default)",
+  );
+  same(codesOf(ticketOnly), ["location_missing_ticket_only"], "ticket-only: location_missing_ticket_only");
+  const skipRule = decidePlace(input({ show: anfield, withoutLocation: "skip" }));
+  check(skipRule.kind === "skip" && skipRule.reason === "no_location" && skipRule.itemLocation?.id === 4 && skipRule.farVenue?.city === "לונדון", "rule skip: no_location, with the far offer");
+  const reykjavik = decidePlace(input({ show: show({ city: "Reykjavik", lat: 64.1466, lon: -21.9426 }) }));
+  check(reykjavik.kind === "placed" && reykjavik.itemLocation === null && reykjavik.farVenue === null, "nothing within FAR: no offer, no item location");
+
+  // helpers
+  same(locationFromAnswer({ key: "11", text: null }, rows)?.id, 11, "locationFromAnswer: by id");
+  same(locationFromAnswer({ key: "31", text: null }, rows), null, "locationFromAnswer: a row with no IATA is no answer");
+  same(locationFromAnswer({ key: null, text: "מינכן" }, rows)?.id, 11, "locationFromAnswer: by the short name, first row");
+  same(locationFromAnswer({ key: null, text: "  " }, rows), null, "locationFromAnswer: blank text");
+  same(venueCity({ ...anfield, lat: 53.4308, lon: -2.9608 }, rows).name, "ליברפול", "venueCity: the nearest row of any kind within NEAR");
+  same(
+    venueCity({ ...anfield, city: "Reykjavik", lat: 64.1466, lon: -21.9426 }, rows),
+    { name: "Reykjavik", latitude: 64.1466, longitude: -21.9426, country_code: "GB" },
+    "venueCity: no row near -> the supplier's city at the venue coordinates",
+  );
+  same(
+    withSupplierSpellings({ liverpool: "ליברפול", "crystal palace fc": "קריסטל פאלאס" }, ["Liverpool FC", "Crystal Palace FC", null, "Ipswich Town FC"]),
+    { liverpool: "ליברפול", "crystal palace fc": "קריסטל פאלאס", "liverpool fc": "ליברפול" },
+    "withSupplierSpellings: a supplier spelling gets its club's Hebrew name; unknown sides stay out",
+  );
+  same(decision("live_from_snapshot", { count: 3 }).text, "LiveTickets לא ענה - 3 קטגוריות תומחרו מתמונת המצב השמורה; בדקו את המחיר לפני האישור", "live_from_snapshot: the text");
 }
 
 // ---- Task 8: server-action rules (lib/uploader/run-rules.ts) ------------------------------------

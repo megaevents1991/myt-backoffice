@@ -48,6 +48,19 @@ export function urlSpellings(url: string): string[] {
 }
 
 /**
+ * How a read failure is handled. Tolerant (every existing caller): log and degrade - the memory is
+ * a convenience. Strict (the tour uploader, `{ strict: true }`): THROW - an unreadable memory must
+ * never read as "no memory", or a known two-city venue silently becomes ticket-only.
+ */
+export type VenueMemoryOptions = { strict?: boolean };
+
+function strictFail(strict: boolean, label: string, error: unknown): void {
+  if (!strict) return;
+  console.error(`venue-memory: ${label} failed (strict)`, JSON.stringify(error));
+  throw new Error(`venue-memory: ${label} failed`);
+}
+
+/**
  * Whether a drawing is a football layout, by the TixStock events drawn on it:
  * most of them are "A vs B" fixtures. Pure. No events = not known to be one.
  */
@@ -64,6 +77,7 @@ export function isFixtureDrawing(eventNames: (string | null)[]): boolean {
  */
 async function drawingProfile(
   urls: string[],
+  strict = false,
 ): Promise<{ generic: boolean; fixtures: boolean }> {
   const { data, error } = await db
     .from("tixstock_events")
@@ -71,6 +85,7 @@ async function drawingProfile(
     .in("venue_map_url", urls)
     .limit(200);
   if (error) {
+    strictFail(strict, "tixstock_events read", error);
     console.warn("venue-memory: tixstock_events read failed", JSON.stringify(error));
     return { generic: false, fixtures: false };
   }
@@ -123,7 +138,7 @@ interface MemoryRow {
 }
 
 /** The other side of a drawing's `venue_maps` row: supplier drawing <-> our adopted copy. */
-async function adoptedTwins(mapUrl: string): Promise<string[]> {
+async function adoptedTwins(mapUrl: string, strict = false): Promise<string[]> {
   const urls: string[] = [];
   for (const column of ["source_url", "svg_url"] as const) {
     const { data, error } = await db
@@ -132,7 +147,8 @@ async function adoptedTwins(mapUrl: string): Promise<string[]> {
       .in(column, urlSpellings(mapUrl))
       .limit(5);
     if (error) {
-      // Table unreadable: the map URL alone still finds its events.
+      // Table unreadable: the map URL alone still finds its events (tolerant callers).
+      strictFail(strict, "venue_maps read", error);
       console.warn("venue-memory: venue_maps read failed", JSON.stringify(error));
       continue;
     }
@@ -145,13 +161,14 @@ async function adoptedTwins(mapUrl: string): Promise<string[]> {
 }
 
 /** Every FOOTBALL drawing TixStock uses for a venue, placeholders left out. */
-async function tixstockVenueFixtureMaps(venueName: string): Promise<string[]> {
+async function tixstockVenueFixtureMaps(venueName: string, strict = false): Promise<string[]> {
   const { data, error } = await db
     .from("tixstock_events")
     .select("venue_map_url,event_name")
     .eq("venue_name", venueName)
     .limit(500);
   if (error) {
+    strictFail(strict, "tixstock venue maps read", error);
     console.warn("venue-memory: tixstock venue maps read failed", JSON.stringify(error));
     return [];
   }
@@ -163,7 +180,7 @@ async function tixstockVenueFixtureMaps(venueName: string): Promise<string[]> {
   const kept: string[] = [];
   for (const [url, names] of namesByMap) {
     if (!isFixtureDrawing(names)) continue;
-    if (!(await drawingProfile(urlSpellings(url))).generic) kept.push(url);
+    if (!(await drawingProfile(urlSpellings(url), strict)).generic) kept.push(url);
   }
   return kept;
 }
@@ -184,16 +201,17 @@ async function tixstockVenueFixtureMaps(venueName: string): Promise<string[]> {
 async function sameVenueMapUrls(
   mapUrl: string,
   supplierVenueName: string | null,
+  strict = false,
 ): Promise<string[]> {
-  const primary = [...urlSpellings(mapUrl), ...(await adoptedTwins(mapUrl))];
-  const profile = await drawingProfile(primary);
+  const primary = [...urlSpellings(mapUrl), ...(await adoptedTwins(mapUrl, strict))];
+  const profile = await drawingProfile(primary, strict);
   if (profile.generic) return [];
   const urls = new Set(primary);
   const venue = supplierVenueName?.trim();
   if (venue && profile.fixtures) {
-    for (const drawing of await tixstockVenueFixtureMaps(venue)) {
+    for (const drawing of await tixstockVenueFixtureMaps(venue, strict)) {
       urlSpellings(drawing).forEach((url) => urls.add(url));
-      (await adoptedTwins(drawing)).forEach((url) => urls.add(url));
+      (await adoptedTwins(drawing, strict)).forEach((url) => urls.add(url));
     }
   }
   return [...urls];
@@ -209,12 +227,16 @@ async function sameVenueMapUrls(
  * only when both events draw the same map URL - a zone of our copy means
  * nothing on the supplier's drawing (the suppliers panel re-zones it from the
  * venue template).
+ *
+ * `{ strict: true }` (the tour uploader only) THROWS on any failed read instead of answering
+ * null / no memory; every other caller keeps the tolerant default.
  */
-export async function findVenueMemory(input: VenueMemoryInput): Promise<VenueMemory> {
+export async function findVenueMemory(input: VenueMemoryInput, options: VenueMemoryOptions = {}): Promise<VenueMemory> {
+  const strict = options.strict === true;
   const mapUrl = input.mapUrl.trim();
   if (!mapUrl) return null;
 
-  const urls = await sameVenueMapUrls(mapUrl, input.supplierVenueName ?? null);
+  const urls = await sameVenueMapUrls(mapUrl, input.supplierVenueName ?? null, strict);
   if (urls.length === 0) return null;
   const { data, error } = await db
     .from("events")
@@ -230,6 +252,7 @@ export async function findVenueMemory(input: VenueMemoryInput): Promise<VenueMem
     .order("date", { ascending: false })
     .limit(MEMORY_CANDIDATES);
   if (error) {
+    strictFail(strict, "events read", error);
     console.error("venue-memory: query failed", JSON.stringify(error));
     return null;
   }

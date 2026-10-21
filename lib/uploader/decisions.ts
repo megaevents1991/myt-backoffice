@@ -40,7 +40,7 @@ function withPrefix(prefix: string, name: string): string {
 
 /**
  * The text of each decision code. Params per code:
- *  location_found {city, iata, km} · tickets_tixstock / tickets_livetickets {count} ·
+ *  location_found {city, iata, km?} · tickets_tixstock / tickets_livetickets / live_from_snapshot {count} ·
  *  categories_dropped {count, reason} · zones_from_template {zoned, total} · dates_smart {depart, ret} ·
  *  base_prices {flight, hotel} · prior_answer {name, run} · lodging_from_memory {event} ·
  *  tribute_excluded {name} · duplicate_dropped {name, event_id} ·
@@ -48,10 +48,13 @@ function withPrefix(prefix: string, name: string): string {
  *  rejected_before {run, by, reason}
  */
 export const DECISION_TEXT = {
-  location_found: (p) => `מיקום: ${str(p, "city")} (${str(p, "iata")}), ${km(p)} ק"מ מהאולם`,
+  // No `km` = the venue has no coordinates (a LiveTickets-only show, an answered location): no distance is printed.
+  location_found: (p) =>
+    p.km === undefined ? `מיקום: ${str(p, "city")} (${str(p, "iata")})` : `מיקום: ${str(p, "city")} (${str(p, "iata")}), ${km(p)} ק"מ מהאולם`,
   location_missing_ticket_only: () => `אין מיקום עם טיסות בטווח ${NEAR_LOCATION_KM} ק"מ מהאולם - נבנה ככרטיס בלבד`,
   tickets_tixstock: (p) => `${categories(p)} מ-TixStock`,
   tickets_livetickets: (p) => `${categories(p)} מ-LiveTickets (ניתנות למכירה בלבד)`,
+  live_from_snapshot: (p) => `LiveTickets לא ענה - ${categories(p)} תומחרו מתמונת המצב השמורה; בדקו את המחיר לפני האישור`,
   categories_dropped: (p) =>
     Number(p.count) === 1 ? `קטגוריה אחת ${str(p, "reason")} הושמטה` : `${categories(p)} ${str(p, "reason")} הושמטו`,
   zones_from_template: (p) => `${str(p, "zoned")} מתוך ${str(p, "total")} כרטיסים שויכו לזונים מתבנית האולם`,

@@ -10,7 +10,7 @@
  *
  * Selftest: scripts/tour-uploader-selftest.ts. Spec: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md (9.6).
  */
-import { normalizeName } from "@/lib/on-tour";
+import { clubNamesMatch, normalizeName } from "@/lib/on-tour";
 import type { ShowIdentity, SubjectKind } from "@/types/uploader.types";
 
 /** The trimmed text, or null when there is none. */
@@ -41,4 +41,21 @@ export function eventNames(
   const away = side(show.away_team);
   if (home !== null && away !== null) return { name: `${home} - ${away}`, name_english: show.name_english, hebrew: true };
   return { name: show.name_english, name_english: show.name_english, hebrew: false };
+}
+
+/**
+ * `teamsHe` is keyed by `normalizeName(name_english)` ("liverpool"), which misses a supplier's
+ * spelling of the same club ("Liverpool FC"). Each fixture side that is not a key gets the Hebrew
+ * name of the team it is by the club rule (`clubNamesMatch`), so `eventNames` finds it. Returns a
+ * copy; the keying is unchanged.
+ */
+export function withSupplierSpellings(teamsHe: Record<string, string>, sides: (string | null)[]): Record<string, string> {
+  const out = { ...teamsHe };
+  for (const side of sides) {
+    const key = normalizeName(side);
+    if (!side || key === "" || out[key]) continue;
+    const match = Object.keys(teamsHe).find((k) => clubNamesMatch(k, side));
+    if (match) out[key] = teamsHe[match];
+  }
+  return out;
 }

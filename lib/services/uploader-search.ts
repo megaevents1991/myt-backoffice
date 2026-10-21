@@ -2,10 +2,9 @@
  * Tour uploader (agent #3) - the DB reads that feed the pure show rules (lib/uploader/shows.ts).
  * Spec: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md sections 8.1-8.4.
  *
- * Who the run is about (`resolveSubject`), which supplier rows are its shows (`findShows`), what
- * is already on `events` (`readExistingEvents` / `existingForShow`), what earlier runs answered or
- * rejected (`loadPriorItems`), the last run's markups (`priorMarkups`) and a supplier drawing's
- * venue template (`venueMapFor`).
+ * Who the run is about (`resolveSubject`), which supplier rows are its shows (`findShows`) and
+ * what is already on `events` (`readExistingEvents` / `existingForShow`). What earlier runs
+ * settled and the venue templates live in lib/services/uploader-prior.ts.
  *
  * Every read is NARROW and PAGED: the supplier tables are filtered by the plan's window first
  * (`tixstock_events` is indexed on `(show_date, event_id)`) and then by the subject's name words,
@@ -21,26 +20,22 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { clubKey, clubNamesMatch, normalizeName } from "@/lib/on-tour";
 import { findCategoryTwin, namesMatch, TWIN_HUB_SLUG, type TwinPerson } from "@/lib/services/category-twins";
 import { hasLibraryCrest } from "@/lib/services/creative-gaps";
-import { urlSpellings } from "@/lib/services/venue-memory";
 import { SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import {
   calendarDay,
   fixtureSidesOf,
   groupRows,
-  questionKey,
   showKey,
   type ExistingEvent,
   type Grouped,
   type LiveRow,
-  type PriorItem,
   type Subject,
   type TixRow,
 } from "@/lib/uploader/shows";
 import type { SubjectRows } from "@/lib/uploader/warnings";
 import type { RawLiveTicketsCategory } from "@/lib/services/livetickets-offers";
-import type { SupplierCategoryMap, VenueMap, VenueZone } from "@/lib/venue-maps/svg-zones";
 import type { Json } from "@/types/database.types";
-import type { ShowIdentity, SubjectKind, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
+import type { ShowIdentity, UploaderPlan } from "@/types/uploader.types";
 
 // `events.is_hidden` and the two uploader tables are newer than types/database.types.ts (regenerate
 // with `npm run db:types` once migration 20261021115818 is applied) - one boundary cast for them.
@@ -50,8 +45,6 @@ const db = supabase as any;
 const DAY_MS = 86_400_000;
 /** The most rows one search read may page through; past it the read THROWS rather than return a part. */
 const SEARCH_ROWS_MAX = 20_000;
-/** Ids per `.in()` filter - keeps the request line well inside URL limits. */
-const IN_CHUNK = 200;
 /** Name patterns per `.or()` filter (each pattern opens several columns). */
 const OR_PATTERNS_MAX = 30;
 /**
@@ -61,6 +54,10 @@ const OR_PATTERNS_MAX = 30;
  * keeps each statement small.
  */
 const TIX_SLICE_DAYS = 120;
+/** Slices read side by side. */
+const TIX_SLICES_AT_ONCE = 3;
+/** An open-ended plan searches this many months ahead: TixStock lists placeholder rows years out (2030). */
+const OPEN_WINDOW_MONTHS = 24;
 
 /** Postgres "canceling statement due to statement timeout". */
 const STATEMENT_TIMEOUT = "57014";
@@ -77,6 +74,9 @@ async function pagedOnceMore<T extends { id: number | string }>(
 
 // ---- window --------------------------------------------------------------------------------------
 
+/** A `[from, to)` window of calendar days (`to` exclusive). */
+export type SearchWindow = { from: string; to: string };
+
 const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
 /**
@@ -84,39 +84,58 @@ const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T
  * SHOW_WINDOW_DAYS) up to `date_to`, ONE DAY WIDER on each side - SQL compares instants while the
  * rules compare the day a supplier PRINTS ("2027-05-20T23:30:00-05:00" is the 20th), so the edge
  * rows are fetched and `groupRows` decides (listing them `out_of_scope` when they are). `to` is
- * exclusive; null = open-ended.
+ * exclusive. An open-ended plan (`date_to` null) ends OPEN_WINDOW_MONTHS from today.
  */
-export function searchWindow(scope: UploaderPlan["scope"], now: Date = new Date()): { from: string; to: string | null } {
-  const floor = addDays(now.toISOString().slice(0, 10), SHOW_WINDOW_DAYS);
+export function searchWindow(scope: UploaderPlan["scope"], now: Date = new Date()): SearchWindow {
+  const today = now.toISOString().slice(0, 10);
+  const floor = addDays(today, SHOW_WINDOW_DAYS);
   const start = scope.date_from !== null && scope.date_from > floor ? scope.date_from : floor;
-  return { from: addDays(start, -1), to: scope.date_to === null ? null : addDays(scope.date_to, 2) };
+  if (scope.date_to !== null) return { from: addDays(start, -1), to: addDays(scope.date_to, 2) };
+  const cap = new Date(`${today}T00:00:00Z`);
+  cap.setUTCMonth(cap.getUTCMonth() + OPEN_WINDOW_MONTHS);
+  return { from: addDays(start, -1), to: cap.toISOString().slice(0, 10) };
 }
 
 // ---- name patterns -------------------------------------------------------------------------------
 
 const isLatin = (name: string): boolean => /\p{Script=Latin}/u.test(name);
 
+/** A Hebrew geresh / gershayim between two Hebrew letters (צ'לסי, צ׳לסי, ארה"ב). */
+const HEBREW_GERESH = /(?<=\p{Script=Hebrew})['\u05F3\u2019`"\u05F4](?=\p{Script=Hebrew})/gu;
+/** Stands in for a kept geresh while the name is split (a control character no name carries). */
+const GERESH_MARK = "\u0001";
+
 /**
- * One word made safe for a PostgREST `.or()` ilike value: Latin words keep ASCII letters and
- * digits and turn any other letter into `_` (one-character wildcard - "Atlético" also finds
- * "Atletico"); other scripts keep their letters and digits. Punctuation is dropped, so no comma,
- * parenthesis, quote, `%` or `*` ever reaches the filter string.
+ * A name as the fragments a PostgREST `.or()` ilike value may carry: split on every run that is not
+ * a letter or a digit, so "Jay-Z" is `jay` + `z`, "AC/DC" `ac` + `dc`, "P!nk" `p` + `nk` - and no
+ * comma, parenthesis, quote, `%` or `*` ever reaches the filter string. Latin fragments keep ASCII
+ * letters and digits and turn any other letter into `_` (one character - "Atlético" also finds
+ * "Atletico"). A Hebrew geresh inside a word stays in place as `_` (PostgREST takes a raw `'`, but
+ * the catalogs spell it `'` or `׳`, and `_` matches both): "צ'לסי" -> `צ_לסי`.
  */
-function safeWord(word: string): string {
-  if (isLatin(word)) return [...word].map((c) => (/[A-Za-z0-9]/.test(c) ? c : /\p{L}/u.test(c) ? "_" : "")).join("");
-  return word.replace(/[^\p{L}\p{N}]/gu, "");
+export function nameFragments(name: string): string[] {
+  return name
+    .replace(HEBREW_GERESH, GERESH_MARK)
+    .split(/[^\p{L}\p{N}\u0001]+/u)
+    .map((fragment) =>
+      isLatin(fragment)
+        ? [...fragment].map((c) => (/[A-Za-z0-9]/.test(c) ? c : /\p{L}/u.test(c) ? "_" : "")).join("")
+        : fragment.split(GERESH_MARK).join("_"),
+    )
+    .filter((fragment) => fragment.replace(/_/g, "") !== "");
 }
 
-/** "%Eric%Clapton%": every word of the name, in order. null when the name has no word. */
+/** "%eric%clapton%": every fragment of the name, in order. null when the name has none. */
 function likePattern(name: string): string | null {
-  const words = name.split(/\s+/).map(safeWord).filter((w) => w.replace(/_/g, "") !== "");
-  return words.length === 0 ? null : `%${words.join("%")}%`;
+  const fragments = nameFragments(name);
+  return fragments.length === 0 ? null : `%${fragments.join("%")}%`;
 }
 
 /**
  * The patterns a subject is searched by, Latin and Hebrew apart (a Hebrew pattern only means
- * something on a Hebrew column). A team searches by its club tokens (`clubKey`), so "FC" or "AC"
- * never widens a read to every football row; an artist or a competition by its whole name.
+ * something on a Hebrew column). A team or a competition searches by its club tokens (`clubKey`
+ * drops "FC", "AC", ...), so a qualifier never widens a read to every football row; an artist by
+ * its whole name. One rule for every read: the show search, the competition lookup, duplicates.
  */
 export function subjectPatterns(subject: Subject, extraNames: (string | null)[] = []): { latin: string[]; hebrew: string[] } {
   const names = [subject.name_en, subject.name_he, ...subject.aliases, ...extraNames].filter((n): n is string => !!n?.trim());
@@ -330,7 +349,7 @@ export async function resolveSubject(plan: UploaderPlan): Promise<{
       };
     }
   } else {
-    competitionName = await resolveCompetition(plan.subject.name_en, plan.subject.name_he);
+    competitionName = await resolveCompetition(plan);
   }
 
   const subject: Subject = {
@@ -348,23 +367,16 @@ export async function resolveSubject(plan: UploaderPlan): Promise<{
  * sub-category contains the name (normalized containment, the `categoryIsCompetition` direction),
  * the category most rows carry. null = TixStock has no such competition.
  */
-async function resolveCompetition(nameEn: string, nameHe: string | null): Promise<string | null> {
-  const wanted = [nameEn, nameHe].map((n) => normalizeName(n)).filter((n) => n !== "");
-  const patterns = [nameEn].map(likePattern).filter((p): p is string => p !== null);
-  if (patterns.length === 0) return null;
-  const { rows, truncated, error } = await pagedOnceMore<{ id: string; category_name: string | null; sub_categories: Json | null }>(
-    () =>
-      supabaseTyped
-        .from("tixstock_events")
-        .select("id:event_id,category_name,sub_categories")
-        .eq("is_active", true)
-        .gte("show_date", new Date().toISOString())
-        .or(orIlike(["category_name", "sub_categories->>name"], patterns))
-        .order("show_date")
-        .order("event_id"),
-    SEARCH_ROWS_MAX,
+async function resolveCompetition(plan: UploaderPlan): Promise<string | null> {
+  const probe: Subject = { kind: "competition", name_en: plan.subject.name_en, name_he: plan.subject.name_he, aliases: [] };
+  const wanted = [plan.subject.name_en, plan.subject.name_he].map((n) => normalizeName(n)).filter((n) => n !== "");
+  const rows = await readTixRows<{ id: string; category_name: string | null; sub_categories: Json | null }>(
+    "id:event_id,category_name,sub_categories",
+    ["category_name", "sub_categories->>name"],
+    subjectPatterns(probe).latin,
+    searchWindow(plan.scope),
+    "competition read",
   );
-  if (error || truncated) fail("competition read", error ?? { message: "too many rows" });
   const counts = new Map<string, number>();
   for (const r of rows) {
     const fields = [r.category_name, subCategoryName(r.sub_categories)];
@@ -421,60 +433,61 @@ function toTixRow(r: TixDb): TixRow {
  * table's index), then by name - the event name and the first performers for an artist or a team,
  * the category / sub-category for a competition. `tixMatchesSubject` (inside `groupRows`) decides.
  */
-async function searchTixRows(subject: Subject, window: { from: string; to: string | null }): Promise<TixRow[]> {
-  const { latin } = subjectPatterns(subject);
-  if (latin.length === 0) return [];
+async function searchTixRows(subject: Subject, window: SearchWindow): Promise<TixRow[]> {
   const columns =
     subject.kind === "competition"
       ? ["category_name", "sub_categories->>name"]
       : ["event_name", "performers->0->>name", "performers->1->>name", "performers->2->>name"];
-  const out = new Map<string, TixRow>();
-  for (const slice of await tixSlices(window)) {
-    for (const part of chunks(latin, OR_PATTERNS_MAX)) {
-      const { rows, truncated, error } = await pagedOnceMore<TixDb>(
+  const rows = await readTixRows<TixDb>(TIX_COLUMNS, columns, subjectPatterns(subject).latin, window, "tixstock_events read");
+  return rows.map(toTixRow);
+}
+
+/** The window as `TIX_SLICE_DAYS` slices, each `[from, to)`, in order. Pure. */
+export function tixSlices(window: SearchWindow): SearchWindow[] {
+  const slices: SearchWindow[] = [];
+  for (let from = window.from; from < window.to; from = addDays(from, TIX_SLICE_DAYS)) {
+    const to = addDays(from, TIX_SLICE_DAYS);
+    slices.push({ from, to: to < window.to ? to : window.to });
+  }
+  return slices;
+}
+
+/**
+ * Active `tixstock_events` rows inside the window whose `filterColumns` match one of `patterns` -
+ * the ONE TixStock read of the uploader (shows and the competition lookup): by `show_date` first
+ * (the table's index), slice by slice, TIX_SLICES_AT_ONCE slices side by side, each statement
+ * retried once on a timeout, paged, deduped by event id. THROWS on a failed read.
+ */
+async function readTixRows<T extends { id: string }>(
+  select: string,
+  filterColumns: string[],
+  patterns: string[],
+  window: SearchWindow,
+  what: string,
+): Promise<T[]> {
+  if (patterns.length === 0) return [];
+  const out = new Map<string, T>();
+  const readSlice = async (slice: SearchWindow): Promise<void> => {
+    for (const part of chunks(patterns, OR_PATTERNS_MAX)) {
+      const { rows, truncated, error } = await pagedOnceMore<T>(
         () =>
           supabaseTyped
             .from("tixstock_events")
-            .select(TIX_COLUMNS)
+            .select(select)
             .eq("is_active", true)
             .gte("show_date", slice.from)
             .lt("show_date", slice.to)
-            .or(orIlike(columns, part))
+            .or(orIlike(filterColumns, part))
             .order("show_date")
             .order("event_id"),
         SEARCH_ROWS_MAX,
       );
-      if (error || truncated) fail("tixstock_events read", error ?? { message: "too many rows - narrow the plan's dates" });
-      for (const r of rows) out.set(r.event_id, toTixRow(r));
+      if (error || truncated) fail(what, error ?? { message: "too many rows - narrow the plan's dates" });
+      for (const r of rows) out.set(r.id, r);
     }
-  }
+  };
+  for (const group of chunks(tixSlices(window), TIX_SLICES_AT_ONCE)) await Promise.all(group.map(readSlice));
   return [...out.values()];
-}
-
-/**
- * The window as `TIX_SLICE_DAYS` slices, each `[from, to)`. An open-ended window ends the day after
- * TixStock's last active show (one read down the index).
- */
-async function tixSlices(window: { from: string; to: string | null }): Promise<{ from: string; to: string }[]> {
-  let end = window.to;
-  if (end === null) {
-    const { data, error } = await supabaseTyped
-      .from("tixstock_events")
-      .select("show_date")
-      .eq("is_active", true)
-      .order("show_date", { ascending: false })
-      .limit(1);
-    if (error) fail("tixstock_events (last show) read", error);
-    const last = data?.[0]?.show_date;
-    if (!last) return [];
-    end = addDays(calendarDay(last), 2);
-  }
-  const slices: { from: string; to: string }[] = [];
-  for (let from = window.from; from < end; from = addDays(from, TIX_SLICE_DAYS)) {
-    const to = addDays(from, TIX_SLICE_DAYS);
-    slices.push({ from, to: to < end ? to : end });
-  }
-  return slices;
 }
 
 type LiveDb = {
@@ -497,7 +510,7 @@ const LIVE_COLUMNS = "id:event_id,event_id,event_name,event_name_heb,show_date,c
  * `sellable` = the categories `toLiveTicketsCategory` would sell, counted on the stored snapshot.
  * A competition run reads none: `groupRows` never joins a LiveTickets row to one (shows.ts).
  */
-async function searchLiveRows(subject: Subject, window: { from: string; to: string | null }): Promise<LiveRow[]> {
+async function searchLiveRows(subject: Subject, window: SearchWindow): Promise<LiveRow[]> {
   if (subject.kind === "competition") return [];
   const { latin, hebrew } = subjectPatterns(subject);
   const terms = [
@@ -512,7 +525,7 @@ async function searchLiveRows(subject: Subject, window: { from: string; to: stri
     const filter = part.map(({ p, columns }) => orIlike(columns, [p])).join(",");
     const { rows, truncated, error } = await pagedOnceMore<LiveDb>(() => {
       let q = supabaseTyped.from("live_events").select(LIVE_COLUMNS).eq("is_active", true).gte("show_date", window.from);
-      if (window.to !== null) q = q.lt("show_date", window.to);
+      q = q.lt("show_date", window.to);
       return q.or(filter).order("show_date").order("event_id");
     }, SEARCH_ROWS_MAX);
     if (error || truncated) fail("live_events read", error ?? { message: "too many rows - narrow the plan's dates" });
@@ -561,16 +574,18 @@ function toExisting(r: EventDb): ExistingEvent {
 
 /**
  * Events already on `events` that a show of this run could be - LIVE AND HIDDEN (a hidden one an
- * earlier run built is a duplicate too), not deleted, not a QA test event (a rehearsal run must
- * not block the real one). NARROW: only names that carry one of the subject's patterns (English
+ * earlier run built is a duplicate too), not deleted. QA test events count only for a TEST run
+ * (`includeTest`): a rehearsal must not duplicate its own test events, and a lingering test event
+ * must not block a real build. NARROW: only names that carry one of the subject's patterns (English
  * on `name_english`, Hebrew on `name`, plus `extraNames` - a competition's fixtures are named by
  * their clubs, never by the competition) inside the window, with their tickets for the `eid`s.
  * Never the whole table: one read of every event's tickets is what killed a cron on 14.10.
  */
 export async function readExistingEvents(
   subject: Subject,
-  window: { from: string; to: string | null },
-  extraNames: (string | null)[] = [],
+  window: SearchWindow,
+  extraNames: (string | null)[],
+  includeTest: boolean,
 ): Promise<ExistingEvent[]> {
   const { latin, hebrew } = subjectPatterns(subject, extraNames);
   const terms = [...latin.map((p) => `name_english.ilike.${p}`), ...hebrew.map((p) => `name.ilike.${p}`)];
@@ -582,9 +597,9 @@ export async function readExistingEvents(
         .from("events")
         .select("id,name,name_english,date,location,tickets_and_rates,is_hidden")
         .is("is_deleted", null)
-        .not("is_test", "is", true)
-        .gte("date", window.from);
-      if (window.to !== null) q = q.lt("date", window.to);
+        .gte("date", window.from)
+        .lt("date", window.to);
+      if (!includeTest) q = q.not("is_test", "is", true);
       return q.or(part.join(",")).order("id");
     }, SEARCH_ROWS_MAX);
     if (error || truncated) fail("events (duplicates) read", error ?? { message: "too many rows" });
@@ -594,8 +609,8 @@ export async function readExistingEvents(
 }
 
 /** The existing events one show could be (its day ± 1, the subject's names and the show's own clubs) - the build's re-check. */
-export async function existingForShow(show: ShowIdentity, subject: Subject): Promise<ExistingEvent[]> {
-  return readExistingEvents(subject, { from: addDays(show.date, -1), to: addDays(show.date, 2) }, [show.home_team, show.away_team]);
+export async function existingForShow(show: ShowIdentity, subject: Subject, includeTest: boolean): Promise<ExistingEvent[]> {
+  return readExistingEvents(subject, { from: addDays(show.date, -1), to: addDays(show.date, 2) }, [show.home_team, show.away_team], includeTest);
 }
 
 // ---- fallback (XS2Event / P1, information only) ---------------------------------------------------
@@ -625,7 +640,7 @@ function fallbackIsSubject(row: FallbackRow, subject: Subject, scope: UploaderPl
 async function findFallback(
   subject: Subject,
   plan: UploaderPlan,
-  window: { from: string; to: string | null },
+  window: SearchWindow,
   shows: ShowIdentity[],
 ): Promise<Map<string, ("xs2event" | "p1")[]>> {
   const { latin } = subjectPatterns(subject);
@@ -642,7 +657,7 @@ async function findFallback(
           .from("xs2e_events")
           .select("id:event_id,event_name,date_start,city,iso_country,hometeam_name,visiting_name,tournament_name")
           .gte("date_start", window.from);
-        if (window.to !== null) q = q.lt("date_start", window.to);
+        q = q.lt("date_start", window.to);
         return q.or(orIlike(xsColumns, part)).order("date_start").order("event_id");
       }, SEARCH_ROWS_MAX),
       pagedOnceMore<{ id: string; title_english: string; date_start: string; venue_city: string; venue_country_code: string | null; category: string; series_name: string | null }>(() => {
@@ -651,7 +666,7 @@ async function findFallback(
           .select("id:event_id,title_english,date_start,venue_city,venue_country_code,category,series_name")
           .eq("is_active", true)
           .gte("date_start", window.from);
-        if (window.to !== null) q = q.lt("date_start", window.to);
+        q = q.lt("date_start", window.to);
         return q.or(orIlike(p1Columns, part)).order("date_start").order("event_id");
       }, SEARCH_ROWS_MAX),
     ]);
@@ -698,7 +713,7 @@ export type Candidates = Grouped & {
   fallback: Map<string, ("xs2event" | "p1")[]>;
   excludedInfo: ExcludedInfo;
   /** The SQL window the reads used (`searchWindow`). */
-  window: { from: string; to: string | null };
+  window: SearchWindow;
   /** The clubs of a competition's fixtures - the names its existing events are found by ([] otherwise). */
   clubs: (string | null)[];
 };
@@ -731,167 +746,15 @@ export async function findCandidates(plan: UploaderPlan, subject: Subject, now: 
 
 /**
  * The run's shows (spec 8.2-8.3): `findCandidates`, plus the events already on the site that a
- * show could be (`existing`, live and hidden - `existingEventFor` decides per show).
+ * show could be (`existing`, live and hidden - `existingEventFor` decides per show). Pass
+ * `includeTest: run.is_test` - a test run's duplicates include test events, a real run's do not.
  */
 export async function findShows(
   plan: UploaderPlan,
   subject: Subject,
-  now: Date = new Date(),
+  opts: { includeTest?: boolean; now?: Date } = {},
 ): Promise<Grouped & { existing: ExistingEvent[]; fallback: Map<string, ("xs2event" | "p1")[]>; excludedInfo: ExcludedInfo }> {
-  const found = await findCandidates(plan, subject, now);
-  const existing = await readExistingEvents(subject, found.window, found.clubs);
+  const found = await findCandidates(plan, subject, opts.now ?? new Date());
+  const existing = await readExistingEvents(subject, found.window, found.clubs, opts.includeTest === true);
   return { shows: found.shows, questions: found.questions, excluded: found.excluded, existing, fallback: found.fallback, excludedInfo: found.excludedInfo };
-}
-
-// ---- prior runs ----------------------------------------------------------------------------------
-
-type RunDb = { id: string; created_at: string; plan: UploaderPlan | null };
-type ItemDb = {
-  id: string;
-  run_id: string;
-  show: ShowIdentity;
-  question: UploaderQuestion | null;
-  rejected_final: boolean;
-  rejected_reason: string | null;
-};
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** Display names for answerers stored by user id (anything else is printed as it is). */
-async function displayNames(ids: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  const wanted = [...new Set(ids.filter((id) => UUID.test(id)))];
-  for (const part of chunks(wanted, IN_CHUNK)) {
-    const { data, error } = await db.from("user_profiles").select("id,email,display_name").in("id", part);
-    if (error) fail("user_profiles read", error);
-    for (const p of (data ?? []) as { id: string; email: string | null; display_name: string | null }[]) {
-      out.set(p.id, p.display_name || p.email || p.id);
-    }
-  }
-  return out;
-}
-
-/**
- * What earlier runs of this subject settled: every ANSWERED question (its kind, key and answer) and
- * every show rejected for good (`kind: "rejected"`, keyed by `questionKey` of the item's show), with
- * the run's number (1 = the first run ever, by creation) and who answered. The subject matches by
- * `normalizeName`, as `priorAnswerFor` / `priorRejectionFor` compare it.
- */
-export async function loadPriorItems(subject_en: string): Promise<PriorItem[]> {
-  const wanted = normalizeName(subject_en);
-  if (wanted === "") return [];
-  const runs = await fetchPaged<RunDb>(
-    () => db.from("uploader_runs").select("id,created_at,plan").order("created_at").order("id"),
-    SEARCH_ROWS_MAX,
-  );
-  if (runs.error || runs.truncated) fail("uploader_runs read", runs.error ?? { message: "too many rows" });
-  const runNo = new Map<string, number>();
-  const subjectOf = new Map<string, string>();
-  runs.rows.forEach((r, i) => {
-    runNo.set(r.id, i + 1);
-    const name = r.plan?.subject?.name_en ?? "";
-    if (normalizeName(name) === wanted) subjectOf.set(r.id, name);
-  });
-  const runIds = [...subjectOf.keys()];
-  if (runIds.length === 0) return [];
-
-  const items: ItemDb[] = [];
-  for (const part of chunks(runIds, IN_CHUNK)) {
-    const read = await fetchPaged<ItemDb>(
-      () =>
-        db
-          .from("uploader_items")
-          .select("id,run_id,show,question,rejected_final,rejected_reason")
-          .in("run_id", part)
-          .or("rejected_final.eq.true,question.not.is.null")
-          .order("id"),
-      SEARCH_ROWS_MAX,
-    );
-    if (read.error || read.truncated) fail("uploader_items read", read.error ?? { message: "too many rows" });
-    items.push(...read.rows);
-  }
-
-  const names = await displayNames(items.flatMap((i) => (i.question?.answer?.by ? [i.question.answer.by] : [])));
-  const out: PriorItem[] = [];
-  for (const item of items) {
-    const subject = subjectOf.get(item.run_id) ?? subject_en;
-    const run_no = runNo.get(item.run_id) ?? 0;
-    const answer = item.question?.answer;
-    if (item.question && answer && (answer.key !== null || answer.text !== null)) {
-      out.push({
-        subject_en: subject,
-        kind: item.question.kind,
-        key: item.question.key,
-        answer: { key: answer.key, text: answer.text },
-        run_no,
-        by: names.get(answer.by) ?? answer.by,
-      });
-    }
-    if (item.rejected_final) {
-      // The item row does not record who rejected it (the uploader.rejected audit row does).
-      out.push({ subject_en: subject, kind: "rejected", key: questionKey(item.show, subject), answer: null, run_no, by: "", reason: item.rejected_reason });
-    }
-  }
-  return out;
-}
-
-/** The markups of the newest real (not rehearsal) run about a subject of this kind - `applyPriorDefaults`' input. */
-export async function priorMarkups(kind: SubjectKind): Promise<{ ticket_only: number | null; additional: number | null } | null> {
-  const { data, error } = await db
-    .from("uploader_runs")
-    .select("plan")
-    .eq("plan->subject->>kind", kind)
-    .eq("is_test", false)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (error) fail("uploader_runs (markups) read", error);
-  const plan = ((data ?? []) as { plan: UploaderPlan | null }[])[0]?.plan;
-  if (!plan?.markups) return null;
-  return { ticket_only: plan.markups.ticket_only ?? null, additional: plan.markups.additional ?? null };
-}
-
-// ---- venue template ------------------------------------------------------------------------------
-
-function zonesOf(v: Json): VenueZone[] {
-  if (!Array.isArray(v)) return [];
-  const out: VenueZone[] = [];
-  for (const z of v) {
-    if (!isObject(z)) continue;
-    const id = text(z.id);
-    const label = text(z.label);
-    const sections = Array.isArray(z.sections) ? z.sections.filter((s): s is string => typeof s === "string") : [];
-    if (id && label) out.push({ id, label, sections });
-  }
-  return out;
-}
-
-function supplierCategoriesOf(v: Json): SupplierCategoryMap {
-  const out: SupplierCategoryMap = {};
-  if (!isObject(v)) return out;
-  for (const [supplier, map] of Object.entries(v)) {
-    if (!isObject(map)) continue;
-    const entries = Object.entries(map).filter((e): e is [string, string] => typeof e[1] === "string");
-    out[supplier] = Object.fromEntries(entries);
-  }
-  return out;
-}
-
-/**
- * The venue template (`venue_maps`) of a supplier drawing, matched on `source_url` in any of the
- * spellings a URL is stored under ("Royal Albert Hall" / "Royal%20Albert%20Hall"). null = a venue
- * we have no template for (the build warns `new_venue`).
- */
-export async function venueMapFor(sourceUrl: string | null): Promise<Pick<VenueMap, "svg_url" | "zones" | "supplier_categories"> | null> {
-  const url = (sourceUrl ?? "").trim();
-  if (url === "") return null;
-  const { data, error } = await supabaseTyped
-    .from("venue_maps")
-    .select("svg_url,zones,supplier_categories")
-    .in("source_url", urlSpellings(url))
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  if (error) fail("venue_maps read", error);
-  const row = data?.[0];
-  if (!row) return null;
-  return { svg_url: row.svg_url, zones: zonesOf(row.zones), supplier_categories: supplierCategoriesOf(row.supplier_categories) };
 }

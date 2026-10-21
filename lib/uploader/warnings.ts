@@ -57,9 +57,10 @@ export interface BuildFacts {
   /**
    * The nearest location when it is BEYOND `NEAR_LOCATION_KM` (no package was built) but WITHIN
    * `FAR_VENUE_KM` (a two-city package through that city is still sensible): the card offers that
-   * build. Null when a location is near enough, or when none is within `FAR_VENUE_KM`.
+   * build (`id` = that `locations` row - the two-city rebuild's default flight city). Null when a
+   * location is near enough, or when none is within `FAR_VENUE_KM`.
    */
-  farVenue: { city: string; km: number } | null;
+  farVenue: { id: number; city: string; km: number } | null;
 }
 
 /**

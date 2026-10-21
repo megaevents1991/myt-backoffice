@@ -71,20 +71,31 @@ async function main(): Promise<void> {
   console.log(`TEAMS_HE ${Object.keys(teamsHe).length} Hebrew team names`);
   console.log(`SCOPE    ${plan.scope.date_from ?? "today+3"} .. ${plan.scope.date_to ?? "open"} | home_only: ${plan.scope.home_only}`);
 
-  // Pre-migration prod has no events.is_hidden: findShows would (rightly) fail on it.
+  // The supplier side once (`findCandidates`), then the duplicates read as `findShows` does it for a
+  // real run (test events left out). Pre-migration prod has no events.is_hidden: the service would
+  // (rightly) fail on it, so the script reads the duplicates itself then.
+  const t1 = Date.now();
+  const found = await search.findCandidates(plan, subject);
+  const searchMs = Date.now() - t1;
   const probe = await supabase.from("events").select("is_hidden").limit(1);
   const preMigration = probe.error?.code === "42703";
-  const found = await search.findCandidates(plan, subject);
   let existing: ExistingEvent[];
   if (!preMigration) {
-    existing = (await search.findShows(plan, subject)).existing;
+    existing = await search.readExistingEvents(subject, found.window, found.clubs, false);
   } else {
     console.log("\n!! prod predates migration 20261021115818 (no events.is_hidden) - duplicates read WITHOUT it, every event read as listed (script stand-in only)");
     const { latin, hebrew } = search.subjectPatterns(subject, found.clubs);
     const terms = [...latin.map((p) => `name_english.ilike.${p}`), ...hebrew.map((p) => `name.ilike.${p}`)];
-    let q = supabase.from("events").select("id,name_english,date,location,tickets_and_rates").is("is_deleted", null).not("is_test", "is", true).gte("date", found.window.from);
-    if (found.window.to !== null) q = q.lt("date", found.window.to);
-    const { data, error } = await q.or(terms.join(",")).order("id").limit(1000);
+    const { data, error } = await supabase
+      .from("events")
+      .select("id,name_english,date,location,tickets_and_rates")
+      .is("is_deleted", null)
+      .not("is_test", "is", true)
+      .gte("date", found.window.from)
+      .lt("date", found.window.to)
+      .or(terms.join(","))
+      .order("id")
+      .limit(1000);
     if (error) throw new Error(`events read failed: ${JSON.stringify(error)}`);
     existing = ((data ?? []) as { id: number; name_english: string | null; date: string; location: { city_iata?: string } | null; tickets_and_rates: { eid?: string | number }[] | null }[]).map((r) => ({
       id: r.id,
@@ -121,7 +132,7 @@ async function main(): Promise<void> {
     console.log(`- ${pad(e.reason, 18)}${pad(e.row, 12)}${pad(e.id, 28)}${info ? `${info.date} ${info.city} · ${info.name}` : ""}`);
   }
 
-  console.log(`\nEXISTING EVENTS READ (${existing.length}) - window ${found.window.from} .. ${found.window.to ?? "open"}`);
+  console.log(`\nEXISTING EVENTS READ (${existing.length}) - window ${found.window.from} .. ${found.window.to}`);
   for (const e of existing) console.log(`- #${pad(e.id, 6)}${pad(e.date, 12)}${pad(e.city_iata, 5)}${pad(e.is_hidden ? "hidden" : "listed", 8)}${pad(e.name_english, 50)}eids: ${e.eids.join(", ")}`);
 
   const showKeys = new Set([...found.shows, ...found.questions.map((q) => q.show)].map((s) => showKey(s.country_code, s.city, s.date, s.home_team)));
@@ -129,7 +140,7 @@ async function main(): Promise<void> {
   console.log(`\nFALLBACK on a show: ${found.fallback.size - loose.length} · only XS2Event / P1 (${loose.length}):`);
   for (const [k, sources] of loose) console.log(`- ${k}: ${sources.join("+")}`);
 
-  console.log(`\ndone in ${((Date.now() - t0) / 1000).toFixed(1)} s - read only, nothing written`);
+  console.log(`\ndone in ${((Date.now() - t0) / 1000).toFixed(1)} s (supplier search ${(searchMs / 1000).toFixed(1)} s) - read only, nothing written`);
 }
 
 main().catch((e) => {
