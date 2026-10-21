@@ -162,8 +162,10 @@ function feedCategories(raw: unknown): string[] | null {
 
 /** One feed page is awaited at most this long - an AbortError is a failed fetch like any other (every caller catches it). */
 const FEED_PAGE_TIMEOUT_MS = 15_000;
-/** A show's feed is read in at most this many pages (50 listings each); past it the read THROWS rather than return a part. */
-const FEED_PAGES_MAX = 40;
+/** A show's feed is read in at most this many pages (50 listings each); past it the read THROWS rather than return a part.
+ *  Measured 21.10.2026: 62 future shows carry over 2,000 listings (every Man United / Arsenal home game; Joshua vs Fury 11,792),
+ *  so a cap of 40 pages would have failed their price sync on every run - 400 pages = 20,000 listings holds every show seen. */
+const FEED_PAGES_MAX = 400;
 
 async function fetchFeedForEvent(tixstockEventId: string): Promise<TixStockFeed> {
   if (!TIXSTOCK_TOKEN) throw new Error("TixStock API token is missing");
