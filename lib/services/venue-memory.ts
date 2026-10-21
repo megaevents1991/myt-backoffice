@@ -35,7 +35,7 @@ const GENERIC_MAP_VENUES = 3;
 
 /** The spellings one URL is stored under: events hold both "Arsenal - Emirates"
  *  and "Arsenal%20-%20Emirates" for the same drawing. */
-function urlSpellings(url: string): string[] {
+export function urlSpellings(url: string): string[] {
   const out = new Set([url]);
   try {
     const decoded = decodeURI(url);

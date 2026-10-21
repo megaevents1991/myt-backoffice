@@ -80,6 +80,9 @@ export const WARNING_TEXT: Record<string, string> = {
   single_supplier: "רק {supplier} מוכר את ההופעה (לידיעה)",
   no_hebrew_name: "לא נמצא שם בעברית - האירוע נבנה עם השם באנגלית",
   far_venue: "האולם רחוק מכל מיקום עם טיסות - {offer}",
+  // BLOCKERS (UploaderItem.blockers): approval is refused until fixed in the editor (#fix-price).
+  no_base_price: "אין מחיר בסיס לטיסה - מלאו בעורך לפני האישור",
+  no_base_price_hotel: "אין מחיר בסיס למלון - מלאו בעורך לפני האישור",
 };
 
 /** The far-venue offer, in the spec's words: the warning carries it and the board's action button wears it. */

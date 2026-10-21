@@ -185,7 +185,7 @@ type CrestLibraryRow = { name_english: string; name_hebrew: string | null };
  * "Tottenham Hotspur"). A team with a library row has a crest on the site even
  * when its own football_teams.logo_url is empty.
  */
-function hasLibraryCrest(
+export function hasLibraryCrest(
   team: { name: string | null; name_english: string | null },
   lib: CrestLibraryRow[],
 ): boolean {

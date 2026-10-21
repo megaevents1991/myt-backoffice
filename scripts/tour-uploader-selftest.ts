@@ -57,6 +57,7 @@ import { eventNames } from "@/lib/uploader/names";
 import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
+import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
 import type { EventTicket } from "@/types/app.types";
@@ -1777,6 +1778,47 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     eventNames("artist", festival, { name_en: "Eric Clapton", name_he: "  " }, teamsHe, " "),
     { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false },
     "music: blank strings are not names",
+  );
+}
+
+// ---- Task 7: nearest location (lib/services/nearest-location.ts findNearestLocation) ----------
+{
+  const loc = (id: number, name: string, iata: string | null, lat: number, lon: number): LocationRow => ({
+    id,
+    name,
+    city_iata: iata,
+    latitude: lat,
+    longitude: lon,
+    country_code: null,
+  });
+  // Royal Albert Hall; London (LON) ~4 km, Luton-ish (LTN) ~48 km, a named place with no iata ~1 km.
+  const venue = { lat: 51.501269, lon: -0.177516 };
+  const london = loc(4, "London", "LON", 51.509865, -0.118092);
+  const luton = loc(50, "Luton", "LTN", 51.8787, -0.4200);
+  const kensington = loc(60, "Kensington", null, 51.4990, -0.1938);
+  const blankIata = loc(61, "Chelsea", "", 51.4875, -0.1687);
+  const liverpool = loc(31, "Liverpool", null, 53.4084, -2.9916);
+
+  const near = findNearestLocation(venue.lat, venue.lon, [luton, london, kensington, blankIata], NEAR_LOCATION_KM);
+  same(near?.row.id, 4, "within 50 km the nearest row WITH an iata wins (London over Luton)");
+  check(near !== null && near.km > 3 && near.km < 6, `the distance comes back in km (${near?.km})`);
+  same(
+    findNearestLocation(venue.lat, venue.lon, [kensington, blankIata, luton], NEAR_LOCATION_KM)?.row.id,
+    50,
+    "a nearer row without an iata (null or blank) is skipped",
+  );
+  same(findNearestLocation(venue.lat, venue.lon, [kensington, liverpool], NEAR_LOCATION_KM), null, "no row with an iata in range -> null");
+  same(findNearestLocation(venue.lat, venue.lon, [], NEAR_LOCATION_KM), null, "no rows -> null");
+  same(findNearestLocation(venue.lat, venue.lon, [luton], 30), null, "a row beyond maxKm is not near");
+  same(findNearestLocation(venue.lat, venue.lon, [london, luton], FAR_VENUE_KM)?.row.id, 4, "a wider radius still picks the nearest");
+  // Anfield: London is ~280 km - beyond NEAR, within FAR (the far-venue offer's range).
+  const anfield = findNearestLocation(53.4308, -2.9608, [london, liverpool], FAR_VENUE_KM);
+  check(anfield?.row.id === 4 && anfield.km > NEAR_LOCATION_KM && anfield.km < FAR_VENUE_KM, `Anfield -> London ${anfield?.km} km, in the far-venue range`);
+  same(findNearestLocation(53.4308, -2.9608, [london, liverpool], NEAR_LOCATION_KM), null, "Anfield has no package location within 50 km");
+  same(
+    findNearestLocation(venue.lat, venue.lon, [loc(70, "Twin A", "AAA", 51.509865, -0.118092), loc(71, "Twin B", "BBB", 51.509865, -0.118092)], NEAR_LOCATION_KM)?.row.id,
+    70,
+    "two rows at the same distance -> the first listed (stable)",
   );
 }
 
