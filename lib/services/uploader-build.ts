@@ -43,7 +43,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { decision } from "@/lib/uploader/decisions";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { decidePlace, type PlaceInput } from "@/lib/uploader/place";
-import { existingEventFor, ownEventToClean, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
+import { buildDuplicateFor, existingEventFor, ownEventToClean, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
 import { ticketsFromLiveStock, ticketsFromTixStockFeed, type TixDropReason } from "@/lib/uploader/tickets";
 import { WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
@@ -299,7 +299,7 @@ async function readPlaceInput(run: UploaderRun, item: UploaderItem, show: ShowId
   let prior: PlaceInput["prior"] = null;
   if (noCoords && !answer && !ctx.twoCity) {
     const liveRef = show.suppliers.livetickets;
-    const [city, priors] = await Promise.all([liveRef ? readLiveCity(liveRef.event_id) : null, loadPriorItems(ctx.subject.name_en)]);
+    const [city, priors] = await Promise.all([liveRef ? readLiveCity(liveRef.event_id) : null, loadPriorItems(ctx.subject.name_en, { includeTest: run.is_test })]);
     liveCity = city;
     const hit = priorAnswerFor({ subject_en: ctx.subject.name_en, kind: "pick_location", key: questionKey(show, ctx.subject.name_en) }, priors);
     prior = hit?.answer ? { key: hit.answer.key, text: hit.answer.text, by: hit.by, run_no: hit.run_no } : null;
@@ -444,8 +444,10 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
   //    none) - under the convention name the event carries (music: "Eric Clapton") AND the supplier's
   //    own title ("Eric Clapton London"), so neither spelling of an existing event slips through.
   const names = eventNames(ctx.subject.kind, show, ctx.subject, withSupplierSpellings(ctx.teamsHe, [show.home_team, show.away_team]), liveRef?.name_heb ?? null);
+  //    An item a person split with "both" skips this check (`buildDuplicateFor`): its sibling's hidden
+  //    event shares the day, the city and - for an artist - the name, and is a different show.
   const iata = placed.location.city_iata || null;
-  const duplicate = existingEventFor({ ...show, name_english: names.name_english }, existing, iata) ?? existingEventFor(show, existing, iata);
+  const duplicate = buildDuplicateFor(show, names.name_english, existing, iata, item.question);
   if (duplicate) {
     return skipped(show, "exists", [...decisions, decision("duplicate_dropped", { name: duplicate.name_english ?? show.name_english, event_id: duplicate.id })]);
   }

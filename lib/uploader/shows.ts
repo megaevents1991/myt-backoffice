@@ -697,3 +697,108 @@ export function priorRejectionFor(show: ShowIdentity, subject_en: string, priors
   const key = questionKey(show, subject_en);
   return newest(priors.filter((p) => p.kind === "rejected" && p.key === key && normalizeName(p.subject_en) === subject));
 }
+
+// ---- which earlier runs a run may learn from (spec 8.4) -------------------------------------------
+
+/** An `uploader_runs` row as the prior read takes it - in creation order. */
+export type PriorRunRow = { id: string; plan: { subject?: { name_en?: string | null } | null } | null; is_test: boolean | null };
+
+/** An `uploader_items` row as the prior read takes it (answered questions and final rejections). */
+export type PriorItemRow = {
+  run_id: string;
+  show: ShowIdentity;
+  question: UploaderQuestion | null;
+  rejected_final: boolean;
+  rejected_reason: string | null;
+};
+
+/**
+ * The earlier runs of a subject whose answers and rejections count for this run: same subject
+ * (normalized English name), and - for a REAL run - real runs only. A test run rejects its own test
+ * events on purpose (the how-to says so), and the reject switch is on by default elsewhere, so a
+ * test run's "don't offer again" must never skip a show on a real run. A test run reads both (its
+ * rehearsal may lean on what real runs settled). `runNo` numbers EVERY run by creation (1 = the
+ * first run ever), test runs included, so "ריצה #N" always names the same run.
+ */
+export function priorRunScope(
+  runs: PriorRunRow[],
+  subject_en: string,
+  includeTest: boolean,
+): { runIds: string[]; runNo: Map<string, number>; subjectOf: Map<string, string> } {
+  const wanted = normalizeName(subject_en);
+  const runNo = new Map<string, number>();
+  const subjectOf = new Map<string, string>();
+  runs.forEach((r, i) => {
+    runNo.set(r.id, i + 1);
+    const name = r.plan?.subject?.name_en ?? "";
+    if (wanted === "" || normalizeName(name) !== wanted) return;
+    if (r.is_test === true && !includeTest) return;
+    subjectOf.set(r.id, name);
+  });
+  return { runIds: [...subjectOf.keys()], runNo, subjectOf };
+}
+
+/**
+ * The prior items of the runs in `scope` (`priorRunScope`): every ANSWERED question (its kind, key
+ * and answer, by `names.get(answer.by)`) and every show rejected for good (`kind: "rejected"`, keyed
+ * by `questionKey` of the item's show). An item of a run outside the scope is ignored - the read
+ * only asks for the scope's runs, this is the belt.
+ */
+export function priorItemsOf(
+  items: PriorItemRow[],
+  scope: { runNo: Map<string, number>; subjectOf: Map<string, string> },
+  names: Map<string, string>,
+): PriorItem[] {
+  const out: PriorItem[] = [];
+  for (const item of items) {
+    const subject = scope.subjectOf.get(item.run_id);
+    if (subject === undefined) continue;
+    const run_no = scope.runNo.get(item.run_id) ?? 0;
+    const answer = item.question?.answer;
+    if (item.question && answer && (answer.key !== null || answer.text !== null)) {
+      out.push({
+        subject_en: subject,
+        kind: item.question.kind,
+        key: item.question.key,
+        answer: { key: answer.key, text: answer.text },
+        run_no,
+        by: names.get(answer.by) ?? answer.by,
+      });
+    }
+    if (item.rejected_final) {
+      // The item row does not record who rejected it (the uploader.rejected audit row does).
+      out.push({ subject_en: subject, kind: "rejected", key: questionKey(item.show, subject), answer: null, run_no, by: "", reason: item.rejected_reason });
+    }
+  }
+  return out;
+}
+
+// ---- the build's name + day re-check ----------------------------------------------------------------
+
+/**
+ * An item that came out of a "both" answer (the answered item itself, `answer.key === "both"`, or
+ * one of the copies the split added, whose question key carries `#both:<n>`): a person said these
+ * listings are DIFFERENT shows. Its siblings are built on the same day in the same city, and an
+ * artist's event name collapses to the subject ("Eric Clapton"), so the name + day check would read
+ * the sibling's hidden event as this show and skip it `exists` - undoing the answer.
+ */
+export function carriesSplitAnswer(q: UploaderQuestion | null | undefined): boolean {
+  if (!q) return false;
+  return q.answer?.key === "both" || q.key.includes("#both:");
+}
+
+/**
+ * The build's duplicate re-check once the show has its names and its location's IATA (build step
+ * 3): under the convention name the event will carry AND the supplier's own title. An item carrying
+ * a split answer (`carriesSplitAnswer`) skips it - its supplier-id check (step 0) still ran.
+ */
+export function buildDuplicateFor(
+  show: ShowIdentity,
+  conventionName: string,
+  existing: ExistingEvent[],
+  iata: string | null,
+  question: UploaderQuestion | null | undefined,
+): ExistingEvent | null {
+  if (carriesSplitAnswer(question)) return null;
+  return existingEventFor({ ...show, name_english: conventionName }, existing, iata) ?? existingEventFor(show, existing, iata);
+}

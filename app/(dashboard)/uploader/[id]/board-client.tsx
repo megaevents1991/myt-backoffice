@@ -418,7 +418,7 @@ export function BoardClient({
         />
       </div>
 
-      <RejectDialog item={rejecting} onClose={() => setRejecting(null)} onConfirm={reject} />
+      <RejectDialog item={rejecting} isTest={board.run.is_test} onClose={() => setRejecting(null)} onConfirm={reject} />
       <RebuildConfirm
         item={rebuilding}
         onCancel={() => setRebuilding(null)}

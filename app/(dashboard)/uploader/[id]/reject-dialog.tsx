@@ -16,21 +16,25 @@ import { showDate } from "./board-words";
 // "דחה" on any card (spec §11): a reason - what the agent learns from, so it is required - and
 // whether this show may be offered again. The hidden event is soft deleted by the action. Mounted
 // once; every opening starts on an empty reason, and the show stays on screen through the closing
-// animation.
+// animation. On a TEST run the switch opens OFF: rehearsal events are rejected as a matter of course,
+// and a test run's "don't offer again" only ever reaches later test runs (a real run reads real runs).
 
 export function RejectDialog({
   item,
+  isTest,
   onClose,
   onConfirm,
 }: {
   /** The show being rejected; null = closed. */
   item: UploaderItem | null;
+  /** The run is a test run - the "don't offer again" switch opens off. */
+  isTest: boolean;
   onClose: () => void;
   /** Resolves true when the rejection was saved (the dialog then closes). */
   onConfirm: (item: UploaderItem, reason: string, final: boolean) => Promise<boolean>;
 }) {
   const [reason, setReason] = useState("");
-  const [final, setFinal] = useState(true);
+  const [final, setFinal] = useState(!isTest);
   const [saving, setSaving] = useState(false);
   // The show on screen - kept after `item` turns null so the dialog closes with its text, not blank.
   const [shown, setShown] = useState<UploaderItem | null>(item);
@@ -42,7 +46,7 @@ export function RejectDialog({
     if (item) {
       setShown(item);
       setReason("");
-      setFinal(true);
+      setFinal(!isTest);
     }
   }
 
@@ -134,6 +138,7 @@ export function RejectDialog({
               <span className="block text-sm font-medium">אל תציע את ההופעה הזו שוב</span>
               <span className="block text-xs text-muted-foreground">
                 {final ? "ריצה הבאה של הנושא תדלג עליה" : "ריצה הבאה תבנה אותה מחדש"}
+                {isTest && " · ריצת בדיקה: משפיע רק על ריצות בדיקה"}
               </span>
             </span>
             <Switch id="reject-final" checked={final} onCheckedChange={setFinal} disabled={saving} className="mt-0.5" />

@@ -64,6 +64,7 @@ import {
   readRun,
   readRunItems,
   readSubjectArt,
+  readSubjectCache,
   recomputeRun,
   removeUnbuiltItems,
   RUNS_LIST_MAX,
@@ -74,6 +75,7 @@ import {
   transitionItem,
   transitionRun,
   unhide,
+  writeSubjectCache,
 } from "@/lib/services/uploader-store";
 import { REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { editDiff } from "@/lib/uploader/decisions";
@@ -85,6 +87,7 @@ import {
   canResume,
   checkAnswer,
   cleanAnswerInput,
+  freshSubjectCache,
   hasBuiltEvent,
   isPositiveInt,
   isStaleBuild,
@@ -100,6 +103,7 @@ import {
   twoCityOf,
   withTwoCity,
   type StoredAnswer,
+  type SubjectCache,
 } from "@/lib/uploader/run-rules";
 import type {
   ApproveAllResult,
@@ -221,19 +225,21 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   }
 
   // Search first: a failed search leaves no half-made run behind.
-  let subject;
+  let resolved: Awaited<ReturnType<typeof resolveSubject>>;
   try {
-    subject = (await resolveSubject(plan)).subject;
+    resolved = await resolveSubject(plan);
   } catch (e) {
     console.error("uploader-actions: subject resolution failed", errorText(e));
     return fail("roster_read_failed");
   }
+  const subject = resolved.subject;
   let found: Awaited<ReturnType<typeof findShows>>;
   let priors: PriorItem[];
   try {
     found = await findShows(plan, subject, { includeTest: is_test });
     // Fails closed: without the priors a show rejected for good would be built again.
-    priors = await loadPriorItems(plan.subject.name_en);
+    // A real run learns only from real runs (a test run's rejections never skip a real show).
+    priors = await loadPriorItems(plan.subject.name_en, { includeTest: is_test });
   } catch (e) {
     console.error("uploader-actions: show search failed", errorText(e));
     return fail("search_failed");
@@ -260,6 +266,7 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
     at,
   });
   if (!run) return fail("db_error");
+  await writeSubjectCache(run.id, { at, ...resolved });
   const items = await insertDraftItems(run.id, drafts, at);
   if (!items) return fail("db_error");
 
@@ -304,6 +311,15 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   return { ok: true, runId: run.id };
 }
 
+/** The run's subject: the cached resolve when it is fresh (`freshSubjectCache`), else resolved now and cached. THROWS like `resolveSubject`. */
+async function resolvedSubjectOf(run: UploaderRun): Promise<SubjectCache> {
+  const cached = freshSubjectCache(await readSubjectCache(run.id), Date.now());
+  if (cached) return cached;
+  const fresh: SubjectCache = { at: nowIso(), ...(await resolveSubject(run.plan)) };
+  await writeSubjectCache(run.id, fresh);
+  return fresh;
+}
+
 /**
  * Build the run's next item - one per call; the board calls again until `done`. The claim is an
  * optimistic conditional update (`found` -> `building` only while it is still `found`), so two
@@ -331,8 +347,9 @@ export async function buildNextItem(runId: string): Promise<BuildStep> {
   let patch: Record<string, unknown>;
   let raisedTask: string | null = null;
   try {
-    // Fresh every call: the subject's pages may have been fixed since the last item.
-    const { subject, rows, teamsHe } = await resolveSubject(run.plan);
+    // Resolved once per run and cached on the run row for SUBJECT_CACHE_MS (a page fixed mid-run
+    // shows up within the hour): a competition's resolve is the whole sliced TixStock read.
+    const { subject, rows, teamsHe } = await resolvedSubjectOf(run);
     const twoCity = twoCityOf(item.show);
     const result = await buildItem(run, item, { subject, rows, teamsHe, ...(twoCity ? { twoCity } : {}) });
     status = result.status;

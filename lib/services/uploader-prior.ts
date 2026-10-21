@@ -12,10 +12,10 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { normalizeName } from "@/lib/on-tour";
 import { urlSpellings } from "@/lib/services/venue-memory";
-import { questionKey, type PriorItem } from "@/lib/uploader/shows";
+import { priorItemsOf, priorRunScope, type PriorItem, type PriorItemRow, type PriorRunRow } from "@/lib/uploader/shows";
 import type { SupplierCategoryMap, VenueMap, VenueZone } from "@/lib/venue-maps/svg-zones";
 import type { Json } from "@/types/database.types";
-import type { ShowIdentity, SubjectKind, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
+import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
 
 // `uploader_runs` / `uploader_items` are newer than types/database.types.ts (`npm run db:types`
 // after migration 20261021115818) - one boundary cast for them and `user_profiles`.
@@ -44,16 +44,6 @@ function fail(what: string, error: { message: string } | null): never {
 
 // ---- prior runs ----------------------------------------------------------------------------------
 
-type RunDb = { id: string; created_at: string; plan: UploaderPlan | null };
-type ItemDb = {
-  id: string;
-  run_id: string;
-  show: ShowIdentity;
-  question: UploaderQuestion | null;
-  rejected_final: boolean;
-  rejected_reason: string | null;
-};
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Display names for answerers stored by user id (anything else is printed as it is). */
@@ -74,29 +64,24 @@ async function displayNames(ids: string[]): Promise<Map<string, string>> {
  * What earlier runs of this subject settled: every ANSWERED question (its kind, key and answer) and
  * every show rejected for good (`kind: "rejected"`, keyed by `questionKey` of the item's show), with
  * the run's number (1 = the first run ever, by creation) and who answered. The subject matches by
- * `normalizeName`, as `priorAnswerFor` / `priorRejectionFor` compare it.
+ * `normalizeName`, as `priorAnswerFor` / `priorRejectionFor` compare it. `includeTest` = the asking
+ * run's own `is_test`: a REAL run learns from real runs only (a test run's rejections - the how-to
+ * tells staff to reject the test events - must never skip a show on a real run); a test run reads
+ * both. The scope and the mapping are the pure `priorRunScope` / `priorItemsOf` (lib/uploader/shows.ts).
  */
-export async function loadPriorItems(subject_en: string): Promise<PriorItem[]> {
-  const wanted = normalizeName(subject_en);
-  if (wanted === "") return [];
-  const runs = await fetchPaged<RunDb>(
-    () => db.from("uploader_runs").select("id,created_at,plan").order("created_at").order("id"),
+export async function loadPriorItems(subject_en: string, opts: { includeTest: boolean }): Promise<PriorItem[]> {
+  if (normalizeName(subject_en) === "") return [];
+  const runs = await fetchPaged<PriorRunRow & { created_at: string }>(
+    () => db.from("uploader_runs").select("id,created_at,plan,is_test").order("created_at").order("id"),
     ROWS_MAX,
   );
   if (runs.error || runs.truncated) fail("uploader_runs read", runs.error ?? { message: "too many rows" });
-  const runNo = new Map<string, number>();
-  const subjectOf = new Map<string, string>();
-  runs.rows.forEach((r, i) => {
-    runNo.set(r.id, i + 1);
-    const name = r.plan?.subject?.name_en ?? "";
-    if (normalizeName(name) === wanted) subjectOf.set(r.id, name);
-  });
-  const runIds = [...subjectOf.keys()];
-  if (runIds.length === 0) return [];
+  const scope = priorRunScope(runs.rows, subject_en, opts.includeTest);
+  if (scope.runIds.length === 0) return [];
 
-  const items: ItemDb[] = [];
-  for (const part of chunks(runIds, IN_CHUNK)) {
-    const read = await fetchPaged<ItemDb>(
+  const items: (PriorItemRow & { id: string })[] = [];
+  for (const part of chunks(scope.runIds, IN_CHUNK)) {
+    const read = await fetchPaged<PriorItemRow & { id: string }>(
       () =>
         db
           .from("uploader_items")
@@ -111,27 +96,7 @@ export async function loadPriorItems(subject_en: string): Promise<PriorItem[]> {
   }
 
   const names = await displayNames(items.flatMap((i) => (i.question?.answer?.by ? [i.question.answer.by] : [])));
-  const out: PriorItem[] = [];
-  for (const item of items) {
-    const subject = subjectOf.get(item.run_id) ?? subject_en;
-    const run_no = runNo.get(item.run_id) ?? 0;
-    const answer = item.question?.answer;
-    if (item.question && answer && (answer.key !== null || answer.text !== null)) {
-      out.push({
-        subject_en: subject,
-        kind: item.question.kind,
-        key: item.question.key,
-        answer: { key: answer.key, text: answer.text },
-        run_no,
-        by: names.get(answer.by) ?? answer.by,
-      });
-    }
-    if (item.rejected_final) {
-      // The item row does not record who rejected it (the uploader.rejected audit row does).
-      out.push({ subject_en: subject, kind: "rejected", key: questionKey(item.show, subject), answer: null, run_no, by: "", reason: item.rejected_reason });
-    }
-  }
-  return out;
+  return priorItemsOf(items, scope, names);
 }
 
 /** The markups of the newest real (not rehearsal) run about a subject of this kind - `applyPriorDefaults`' input. */

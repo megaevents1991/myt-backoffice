@@ -411,6 +411,24 @@ assert.equal(
   "for Liverpool staff picked Liverpool FC (confirm_subject)",
   "a question about the subject has no city or date - the line just leaves them out",
 );
+assert.equal(
+  uploaderLessonFor("uploader.answered", {
+    agent: U, kind: "pick_show", subject: "Eric Clapton", city: "London", date: "2027-05-20",
+    key: "live:123", answer: "live:123", label: "Eric Clapton - Royal Albert Hall (LiveTickets)", text: null,
+  }),
+  "for Eric Clapton in London on 2027-05-20 staff picked Eric Clapton - Royal Albert Hall (LiveTickets) (pick_show)",
+  "the option's LABEL is the lesson, never its key (`live:123` means nothing to the model)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_location", subject: "Eric Clapton", key: null, answer: "Basel", label: null, text: "Basel" }),
+  "for Eric Clapton staff picked Basel (pick_location)",
+  "no label (a free-text answer) = the person's own text",
+);
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", key: "tix:2027-05-21", label: null, text: null }),
+  "for Eric Clapton staff picked tix:2027-05-21 (pick_date)",
+  "neither label nor text = the stored key, the last resort",
+);
 assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "X", city: "Y", date: "2027-01-01" }), null, "no answer = no lesson");
 assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", city: "Y", date: "2027-01-01", answer: "a" }), null, "no subject = no lesson");
 

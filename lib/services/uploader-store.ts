@@ -36,6 +36,7 @@ import {
   type SplitShow,
   type SubjectArt,
   type SubjectArtRow,
+  type SubjectCache,
 } from "@/lib/uploader/run-rules";
 import type { ItemStatus, RunStatus, UploaderItem, UploaderPlan, UploaderQuestion, UploaderRun } from "@/types/uploader.types";
 
@@ -233,6 +234,36 @@ export async function insertDraftItems(runId: string, drafts: ItemDraft[], at: s
     return null;
   }
   return data ?? [];
+}
+
+/** Postgres "undefined column" / PostgREST "column not in the schema cache": a migration not applied yet. */
+const isMissingColumn = (error: DbError): boolean => error?.code === "42703" || error?.code === "PGRST204";
+let subjectCacheWarned = false;
+
+/**
+ * The run's stored `subject_cache` (raw - `freshSubjectCache` judges it), or null: none yet, or the
+ * column is not there yet (migration `tour_uploader_grants` not applied - logged once, the build then
+ * resolves per item exactly as before), or the read failed (logged). Never throws.
+ */
+export async function readSubjectCache(runId: string): Promise<unknown> {
+  const { data, error } = (await db.from("uploader_runs").select("subject_cache").eq("id", runId).maybeSingle()) as DbResult<{
+    subject_cache: unknown;
+  }>;
+  if (error) {
+    if (!isMissingColumn(error)) logDb("subject cache read", error);
+    else if (!subjectCacheWarned) {
+      subjectCacheWarned = true;
+      console.warn("uploader: uploader_runs.subject_cache is not there yet - resolving the subject per item");
+    }
+    return null;
+  }
+  return data?.subject_cache ?? null;
+}
+
+/** Store the run's resolved subject (`SubjectCache`). A failure (or the column not there yet) is logged only - the cache is a speed-up. */
+export async function writeSubjectCache(runId: string, cache: SubjectCache): Promise<void> {
+  const { error } = (await db.from("uploader_runs").update({ subject_cache: cache }).eq("id", runId)) as DbResult<null>;
+  if (error && !isMissingColumn(error)) logDb("subject cache write", error);
 }
 
 /** Store the question (with its task id) on the item; false = the write failed. */

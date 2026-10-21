@@ -30,13 +30,17 @@ import {
   type PlanParse,
 } from "@/lib/uploader/plan";
 import {
+  buildDuplicateFor,
   calendarDay,
+  carriesSplitAnswer,
   existingEventFor,
   ownEventToClean,
   groupRows,
   liveMatchesSubject,
   priorAnswerFor,
+  priorItemsOf,
   priorRejectionFor,
+  priorRunScope,
   questionKey,
   showKey,
   tixMatchesSubject,
@@ -2588,6 +2592,133 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   for (const bad of [null, "x", { two_city: null }, { two_city: { flight_city_id: "7" } }, { two_city: { flight_city_id: 0 } }, { two_city: { flight_city_id: 2.5 } }]) {
     same(R.twoCityOf(bad), null, `two-city: ${JSON.stringify(bad)} is no choice`);
   }
+}
+
+// ---- Task 15: the fix wave (final review + security review + ledger minors) ----------------------
+{
+  const R = runRules;
+  const AT = "2026-10-21T10:00:00.000Z";
+  const CLAPTON = "Eric Clapton";
+  const show15 = (city: string, date: string, tixId: string | null, liveId: number | null, over: Partial<ShowIdentity> = {}): ShowIdentity => ({
+    name_english: CLAPTON,
+    city,
+    country_code: "GB",
+    venue: `${city} Arena`,
+    date,
+    lat: 51.5,
+    lon: -0.17,
+    suppliers: {
+      tixstock: tixId === null ? null : { event_id: tixId, name: CLAPTON, ticket_count: 40, venue_map_url: null },
+      livetickets: liveId === null ? null : { event_id: liveId, name_heb: "אריק קלפטון", sellable: 3 },
+    },
+    competition: null,
+    home_team: null,
+    away_team: null,
+    fallback: [],
+    ...over,
+  });
+  const q15 = (kind: UploaderQuestion["kind"], show: ShowIdentity, keys: string[], over: Partial<UploaderQuestion> = {}): UploaderQuestion => ({
+    kind,
+    key: questionKey(show, CLAPTON),
+    text: "?",
+    options: keys.map((k) => ({ key: k, label: `label ${k}` })),
+    free_text: false,
+    asked_at: AT,
+    task_id: null,
+    ...over,
+  });
+
+  // C1: a test run's rejections never poison a real run (and a real run's still count on a test run).
+  const zurich = show15("Zurich", "2027-05-28", "tx-z", null, { country_code: "CH" });
+  const london = show15("London", "2027-05-20", "tx-l", null);
+  const runs: { id: string; plan: { subject: { name_en: string } }; is_test: boolean | null }[] = [
+    { id: "run-real-1", plan: { subject: { name_en: CLAPTON } }, is_test: false },
+    { id: "run-other", plan: { subject: { name_en: "Liverpool FC" } }, is_test: false },
+    { id: "run-test-1", plan: { subject: { name_en: "eric  CLAPTON" } }, is_test: true },
+    { id: "run-legacy", plan: { subject: { name_en: CLAPTON } }, is_test: null },
+  ];
+  const realScope = priorRunScope(runs, CLAPTON, false);
+  const testScope = priorRunScope(runs, CLAPTON, true);
+  same(realScope.runIds, ["run-real-1", "run-legacy"], "C1: a REAL run learns from real runs of the subject only (a null is_test is real)");
+  same(testScope.runIds, ["run-real-1", "run-test-1", "run-legacy"], "C1: a TEST run reads test and real runs");
+  same([realScope.runNo.get("run-test-1"), realScope.runNo.get("run-legacy")], [3, 4], "C1: every run keeps its number (test runs counted) - 'ריצה #N' names one run");
+  same(priorRunScope(runs, "  ", false).runIds, [], "C1: a blank subject reads nothing");
+  const itemRows = [
+    { run_id: "run-test-1", show: zurich, question: null, rejected_final: true, rejected_reason: "rehearsal" },
+    { run_id: "run-real-1", show: london, question: null, rejected_final: true, rejected_reason: "never in London" },
+    { run_id: "run-other", show: zurich, question: null, rejected_final: true, rejected_reason: "another subject" },
+  ];
+  const realPriors = priorItemsOf(itemRows, realScope, new Map());
+  const testPriors = priorItemsOf(itemRows, testScope, new Map());
+  same(realPriors.map((p) => [p.kind, p.reason, p.run_no]), [["rejected", "never in London", 1]], "C1: the real scope drops the test run's (and another subject's) rejections");
+  same(testPriors.map((p) => p.reason), ["rehearsal", "never in London"], "C1: the test scope keeps both");
+  const plan15 = (priors: PriorItem[]) =>
+    R.planRunItems({ shows: [london, zurich], questions: [], existing: [], priors, fallback: new Map(), subject_en: CLAPTON, at: AT }).map((d) => [
+      d.show.city,
+      d.status,
+      d.skip_reason,
+    ]);
+  same(plan15(realPriors), [["London", "skipped", "rejected_before"], ["Zurich", "found", null]], "C1: a REAL run builds the show only a test run rejected");
+  same(plan15(testPriors), [["London", "skipped", "rejected_before"], ["Zurich", "skipped", "rejected_before"]], "C1: a TEST run still skips it");
+  const answeredRow = {
+    run_id: "run-test-1",
+    show: london,
+    question: { ...q15("pick_show", london, ["tx-l", "live:7", "both", "skip"]), answer: { key: "live:7", text: null, by: "user-x", at: AT } },
+    rejected_final: false,
+    rejected_reason: null,
+  };
+  same(priorItemsOf([answeredRow], realScope, new Map()), [], "C1: a test run's ANSWER is not applied on a real run either");
+  same(
+    priorItemsOf([answeredRow], testScope, new Map([["user-x", "Alon"]])).map((p) => [p.kind, p.answer?.key, p.by, p.run_no]),
+    [["pick_show", "live:7", "Alon", 3]],
+    "C1: ... and is on a test run, with the answerer's name",
+  );
+
+  // C2: a "both" split builds both - the name + day + IATA re-check skips an item carrying the split.
+  const evening = show15("London", "2027-05-20", "tx-eve", null);
+  const askBoth = q15("pick_show", evening, ["tx-mat", "tx-eve", "both", "skip"]);
+  const answeredBoth: UploaderQuestion = { ...askBoth, answer: { key: "both", text: null, by: "u", at: AT } };
+  const copy: UploaderQuestion = { ...askBoth, key: `${askBoth.key}#both:2`, answer: { key: "tx-eve", text: null, by: "u", at: AT } };
+  check(carriesSplitAnswer(answeredBoth) && carriesSplitAnswer(copy), "C2: the answered item and the split's copy both carry the split");
+  check(
+    !carriesSplitAnswer(null) && !carriesSplitAnswer(askBoth) && !carriesSplitAnswer({ ...askBoth, answer: { key: "tx-eve", text: null, by: "u", at: AT } }),
+    "C2: no question / unanswered / a plain pick does not",
+  );
+  const sibling: ExistingEvent = { id: 1301, name_english: CLAPTON, date: "2027-05-20T15:00:00", city_iata: "LON", eids: ["tx-mat"], is_hidden: true };
+  same(buildDuplicateFor(evening, CLAPTON, [sibling], "LON", copy), null, "C2: the sibling's hidden event (same name, day, IATA) is not this split show");
+  same(buildDuplicateFor(evening, CLAPTON, [sibling], "LON", answeredBoth), null, "C2: ... nor the answered item's");
+  same(buildDuplicateFor(evening, CLAPTON, [sibling], "LON", null)?.id, 1301, "C2: without a split the name + day + IATA check still finds it");
+  same(buildDuplicateFor({ ...evening, name_english: "Eric Clapton London" }, "Eric Clapton x", [sibling], "LON", null), null, "C2: neither spelling matching = no duplicate");
+  same(buildDuplicateFor({ ...evening, name_english: CLAPTON }, "Eric Clapton London", [sibling], "LON", null)?.id, 1301, "C2: ... the supplier's own title still finds it");
+
+  // C3: the resolved subject is cached on the run for SUBJECT_CACHE_MS.
+  const now = Date.parse("2026-10-21T12:00:00.000Z");
+  const cache = {
+    at: "2026-10-21T11:30:00.000Z",
+    subject: { kind: "competition", name_en: "Premier League", name_he: null, aliases: ["Premier League", 5] },
+    rows: { artist: null, team: null },
+    teamsHe: { liverpool: "ליברפול", bad: 7 },
+    competitionName: "Premier League",
+  };
+  same(R.SUBJECT_CACHE_MS, 3_600_000, "C3: the cache stands one hour");
+  same(
+    R.freshSubjectCache(cache, now),
+    {
+      at: cache.at,
+      subject: { kind: "competition", name_en: "Premier League", name_he: null, aliases: ["Premier League"] },
+      rows: { artist: null, team: null },
+      teamsHe: { liverpool: "ליברפול" },
+      competitionName: "Premier League",
+    },
+    "C3: a fresh cache comes back whole (non-text aliases / names dropped)",
+  );
+  same(R.freshSubjectCache({ ...cache, at: "2026-10-21T10:59:59.000Z" }, now), null, "C3: older than an hour -> resolve again");
+  same(R.freshSubjectCache({ ...cache, at: "2026-10-21T12:05:00.000Z" }, now), null, "C3: a time in the future -> resolve again");
+  for (const bad of [null, undefined, "x", [], { ...cache, at: 5 }, { ...cache, subject: { ...cache.subject, kind: "band" } }, { ...cache, rows: { artist: null } }, { ...cache, teamsHe: [] }]) {
+    same(R.freshSubjectCache(bad, now), null, `C3: a malformed cache is no cache (${String(JSON.stringify(bad)).slice(0, 40)})`);
+  }
+
+  // @@MORE@@
 }
 
 console.log(`tour uploader selftest: all ${checks} checks passed`);

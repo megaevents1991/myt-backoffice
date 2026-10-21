@@ -10,7 +10,7 @@
 import { clubKey, normalizeName } from "@/lib/on-tour";
 import { decision } from "@/lib/uploader/decisions";
 import { applyPriorDefaults, planDiff } from "@/lib/uploader/plan";
-import { WARNING_TEXT } from "@/lib/uploader/warnings";
+import { WARNING_TEXT, type SubjectRows } from "@/lib/uploader/warnings";
 import {
   existingEventFor,
   priorAnswerFor,
@@ -18,6 +18,7 @@ import {
   showKey,
   type ExistingEvent,
   type PriorItem,
+  type Subject,
 } from "@/lib/uploader/shows";
 import {
   ITEM_STATUSES,
@@ -558,4 +559,52 @@ export function twoCityOf(show: unknown): { flightCityId: number } | null {
 /** The show with the two-city choice on it (a copy). */
 export function withTwoCity(show: ShowIdentity, flightCityId: number): ShowIdentity & { two_city: { flight_city_id: number } } {
   return { ...show, two_city: { flight_city_id: flightCityId } };
+}
+
+// ---- the run's resolved subject, cached on the run row ----------------------------------------------
+
+/** How long `uploader_runs.subject_cache` stands before `buildNextItem` resolves the subject again. */
+export const SUBJECT_CACHE_MS = 60 * 60_000;
+
+/** What `resolveSubject` answers, as `uploader_runs.subject_cache` stores it (`at` = when it was resolved). */
+export type SubjectCache = {
+  at: string;
+  subject: Subject;
+  rows: SubjectRows;
+  teamsHe: Record<string, string>;
+  competitionName: string | null;
+};
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * The stored subject cache when it is whole and younger than SUBJECT_CACHE_MS at `nowMs`, else null
+ * (= resolve again): a missing column or row, a malformed value, an unreadable or future time. A
+ * competition run used to resolve per ITEM - the whole sliced TixStock read plus `football_teams` per
+ * fixture; one resolve per run (refreshed hourly, so a page fixed mid-run still shows up) is enough.
+ */
+export function freshSubjectCache(raw: unknown, nowMs: number): SubjectCache | null {
+  if (!isRecord(raw) || typeof raw.at !== "string") return null;
+  const at = Date.parse(raw.at);
+  if (!Number.isFinite(at) || at > nowMs || nowMs - at > SUBJECT_CACHE_MS) return null;
+  const { subject, rows, teamsHe } = raw;
+  if (!isRecord(subject) || typeof subject.name_en !== "string" || !Array.isArray(subject.aliases)) return null;
+  const kind = subject.kind;
+  if (kind !== "artist" && kind !== "team" && kind !== "competition") return null;
+  const rowOk = (v: unknown): boolean => v === null || isRecord(v);
+  if (!isRecord(rows) || !rowOk(rows.artist) || !rowOk(rows.team)) return null;
+  if (!isRecord(teamsHe)) return null;
+  return {
+    at: raw.at,
+    subject: {
+      kind,
+      name_en: subject.name_en,
+      name_he: typeof subject.name_he === "string" ? subject.name_he : null,
+      aliases: subject.aliases.filter((a): a is string => typeof a === "string"),
+    },
+    // The rows are what `resolveSubject` wrote whole - one cast at the jsonb boundary (each is null or an object, checked above).
+    rows: rows as unknown as SubjectRows,
+    teamsHe: Object.fromEntries(Object.entries(teamsHe).filter((e): e is [string, string] => typeof e[1] === "string")),
+    competitionName: typeof raw.competitionName === "string" ? raw.competitionName : null,
+  };
 }

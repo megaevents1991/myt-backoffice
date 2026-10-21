@@ -91,7 +91,9 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       const m = metaOf(row);
       const kind = text(m?.kind);
       const subject = text(m?.subject);
-      const answer = text(m?.answer);
+      // What a person READ when they picked it: the option's label, else their own text, else the
+      // stored key (`live:123` / a TixStock id means nothing to the model on its own).
+      const answer = text(m?.label) ?? text(m?.text) ?? text(m?.answer) ?? text(m?.key);
       if (!m || !kind || !subject || !answer) return null;
       return `for ${subject}${where(m)} staff picked ${answer} (${kind})`;
     },
