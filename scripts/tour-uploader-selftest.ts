@@ -17,7 +17,6 @@ import {
   MARKUP_MAX,
   NAME_MAX,
   NEAR_LOCATION_KM,
-  PRICED_PARTY,
   REJECT_REASON_MIN,
   SHOW_WINDOW_DAYS,
   TOAST_POLL_MS,
@@ -63,6 +62,7 @@ import { nameFragments, searchWindow, subjectPatterns, tixSlices } from "@/lib/s
 import { decidePlace, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
+import { PRICED_PARTY } from "@/lib/tixstock-listings";
 import type { EventTicket } from "@/types/app.types";
 import type { ShowIdentity, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
 import * as runRules from "@/lib/uploader/run-rules";
@@ -115,7 +115,7 @@ same(
   "the spec's tuning constants",
 );
 same([MARKUP_MAX, NAME_MAX, LIST_MAX], [5000, 120, 20], "the plan's validation bounds");
-same(PRICED_PARTY, 2, "the priced party is the TixStock sync's own constant, re-exported");
+same(PRICED_PARTY, 2, "the priced party is the TixStock sync's own constant (lib/tixstock-listings)");
 
 // ---- lib/uploader/plan.ts: emptyPlan ---------------------------------------------------------
 {

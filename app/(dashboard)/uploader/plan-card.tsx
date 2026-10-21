@@ -1,7 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, RotateCw, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,10 +20,11 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { createRun, previewPlan } from "@/lib/actions/uploader-actions";
 import type { PlanPreview } from "@/lib/uploader/action-types";
-import { MARKUP_MAX } from "@/lib/uploader/constants";
+import { MARKUP_MAX, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import { parsePlanInput } from "@/lib/uploader/plan";
 import { cn } from "@/lib/utils";
 import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
+import { actionErrorText, AGENT_OFF_LINE, SUBJECT_KIND_HE } from "./copy";
 
 // The plan card ("מה הבנתי", spec §5.2): the parsed brief - or the manual form when the agent is
 // off - as editable fields, a live preview of what the plan finds, and "בנה את האירועים (N)".
@@ -36,12 +47,6 @@ export type PlanSeed = {
   problems: string[];
 };
 
-export const SUBJECT_KIND_HE: Record<SubjectKind, string> = {
-  artist: "אמן",
-  team: "קבוצה",
-  competition: "תחרות",
-};
-
 const SUBJECT_KINDS: SubjectKind[] = ["artist", "team", "competition"];
 
 const WITHOUT_LOCATION_HE: Record<UploaderPlan["rules"]["without_location"], string> = {
@@ -49,21 +54,7 @@ const WITHOUT_LOCATION_HE: Record<UploaderPlan["rules"]["without_location"], str
   skip: "לדלג",
 };
 
-const ERROR_TEXT: Record<string, string> = {
-  bad_input: "הבקשה לא תקינה - בדקו שהבריף לא ריק",
-  brief_too_long: "הבריף ארוך מהמותר - קצרו אותו",
-  bad_plan: "יש בתוכנית שדות לא תקינים",
-  roster_read_failed: "לא הצלחנו לקרוא את רשימת האמנים והקבוצות - נסו שוב",
-  subject_not_found: "לא הצלחנו לקרוא את רשימת האמנים והקבוצות - נסו שוב",
-  search_failed: "החיפוש אצל הספקים נכשל - נסו שוב",
-  db_error: "השמירה נכשלה - נסו שוב",
-};
-
-/** A server action's `kind` in the screen's words; anything unknown gets the generic line. */
-export function actionErrorText(kind: string): string {
-  return ERROR_TEXT[kind] ?? "משהו השתבש - נסו שוב";
-}
-
+/** Same name and value as the server's (lib/uploader/run-rules.ts) - kept local so the client never imports run-rules. */
 const EMPTY_PREVIEW: PlanPreview = { shows: 0, questions: 0, existing: 0, cities: [] };
 /** Quiet time after the last edit before the plan is searched again. */
 const PREVIEW_DEBOUNCE_MS = 600;
@@ -86,10 +77,12 @@ const markupText = (v: number | null): string => (v === null ? "" : String(v));
 
 type Check = {
   loading: boolean;
-  /** The failed preview's kind, worded - the last good numbers stay on screen. */
+  /** The failed preview's kind, worded. While set the counts read "—" and nothing can be built. */
   error: string | null;
   problems: string[];
 };
+
+const IDLE: Check = { loading: false, error: null, problems: [] };
 
 export function PlanCard({
   seed,
@@ -114,8 +107,12 @@ export function PlanCard({
   const [touched, setTouched] = useState<MarkupKey[]>([]);
   const [isTest, setIsTest] = useState(false);
   const [preview, setPreview] = useState<PlanPreview>(seed.preview ?? EMPTY_PREVIEW);
-  const [check, setCheck] = useState<Check>({ loading: false, error: null, problems: [] });
+  const [check, setCheck] = useState<Check>(IDLE);
   const [creating, setCreating] = useState(false);
+  /** "בדוק שוב" bumps it - the same plan is searched again, at once. */
+  const [retry, setRetry] = useState(0);
+  const [nameTouched, setNameTouched] = useState(false);
+  const [confirmBack, setConfirmBack] = useState(false);
 
   const busy = creating || navigating;
   const shapeOk = useMemo(() => parsePlanInput(plan).ok, [plan]);
@@ -123,18 +120,25 @@ export function PlanCard({
   const needsName = plan.subject.name_en.trim() === "";
   const invalidMarkup = (key: MarkupKey): boolean => markupValue(markupDraft[key]) === undefined;
   const anyInvalidMarkup = invalidMarkup("ticket_only") || invalidMarkup("additional");
+  const failed = check.error !== null;
+  /** Every show the run would start with - the ready ones and the ones waiting on a question. */
+  const total = preview.shows + preview.questions;
 
   // The newest plan, for the debounced search to read when it fires (a markup edit alone does not search).
   const planRef = useRef(plan);
   useEffect(() => {
     planRef.current = plan;
   }, [plan]);
-  // The search key whose answer is on screen - the parse's own preview, at first. Only a change of
-  // subject / scope / rules searches again, and only the newest search may write (`seq`).
+  // The search key whose answer is on screen - the parse's own preview, at first. Only a SUCCESS (or
+  // the blank-name state) sets it: after a failure nothing valid is on screen, so any key - the same
+  // one, or an edit back to an older one - searches again. Only the newest search may write (`seq`).
   const shownKey = useRef<string | null>(seed.preview ? searchKeyOf(seed.plan) : null);
   const seq = useRef(0);
+  const lastRetry = useRef(retry);
 
   useEffect(() => {
+    const immediate = retry !== lastRetry.current;
+    lastRetry.current = retry;
     if (searchKey === shownKey.current) {
       // Edited back to what is on screen: drop whatever was pending for the edits in between.
       seq.current += 1;
@@ -145,38 +149,41 @@ export function PlanCard({
     if (needsName) {
       shownKey.current = searchKey;
       setPreview(EMPTY_PREVIEW);
-      setCheck({ loading: false, error: null, problems: [] });
+      setCheck(IDLE);
       return;
     }
+    /** A failed check leaves nothing to trust: the counts go blank ("—") and the key is not marked shown. */
+    const fail = (error: string, problems: string[]) => {
+      if (mine !== seq.current) return;
+      shownKey.current = null;
+      setPreview(EMPTY_PREVIEW);
+      setCheck({ loading: false, error, problems });
+    };
     setCheck({ loading: true, error: null, problems: [] });
-    const timer = setTimeout(() => {
-      const shape = parsePlanInput(planRef.current);
-      if (!shape.ok) {
-        if (mine !== seq.current) return;
-        shownKey.current = searchKey;
-        setCheck({ loading: false, error: actionErrorText("bad_plan"), problems: shape.problems });
-        return;
-      }
-      previewPlan(shape.plan)
-        .then((res) => {
-          if (mine !== seq.current) return;
-          shownKey.current = searchKey;
-          if (res.ok) {
+    const timer = setTimeout(
+      () => {
+        const shape = parsePlanInput(planRef.current);
+        if (!shape.ok) {
+          fail(actionErrorText("bad_plan"), shape.problems);
+          return;
+        }
+        previewPlan(shape.plan)
+          .then((res) => {
+            if (!res.ok) {
+              fail(actionErrorText(res.kind), res.problems ?? []);
+              return;
+            }
+            if (mine !== seq.current) return;
+            shownKey.current = searchKey;
             setPreview(res.preview);
-            setCheck({ loading: false, error: null, problems: [] });
-          } else {
-            // The last good numbers stay; the line says the check failed and why. Never blocks editing.
-            setCheck({ loading: false, error: actionErrorText(res.kind), problems: res.problems ?? [] });
-          }
-        })
-        .catch(() => {
-          if (mine !== seq.current) return;
-          shownKey.current = searchKey;
-          setCheck({ loading: false, error: actionErrorText(""), problems: [] });
-        });
-    }, PREVIEW_DEBOUNCE_MS);
+            setCheck(IDLE);
+          })
+          .catch(() => fail(actionErrorText(""), []));
+      },
+      immediate ? 0 : PREVIEW_DEBOUNCE_MS,
+    );
     return () => clearTimeout(timer);
-  }, [searchKey, needsName]);
+  }, [searchKey, needsName, retry]);
 
   const setSubject = (patch: Partial<UploaderPlan["subject"]>) =>
     setPlan((p) => ({ ...p, subject: { ...p.subject, ...patch } }));
@@ -190,7 +197,15 @@ export function PlanCard({
   }
 
   const canBuild =
-    !busy && !check.loading && !needsName && shapeOk && !anyInvalidMarkup && preview.shows > 0;
+    !busy && !check.loading && !failed && !needsName && shapeOk && !anyInvalidMarkup && total > 0;
+
+  // Anything changed since the card opened - "ערוך את הבריף" then asks before throwing it away.
+  const seedJson = useMemo(() => JSON.stringify(seed.plan), [seed.plan]);
+  const edited =
+    isTest ||
+    JSON.stringify(plan) !== seedJson ||
+    markupDraft.ticket_only !== markupText(seed.plan.markups.ticket_only) ||
+    markupDraft.additional !== markupText(seed.plan.markups.additional);
 
   async function build() {
     if (!canBuild) return;
@@ -230,7 +245,7 @@ export function PlanCard({
           </h2>
           <p className="text-sm text-muted-foreground">
             {manual
-              ? "הסוכן כבוי - מלאו את התוכנית ידנית"
+              ? AGENT_OFF_LINE
               : seed.agent === "on"
                 ? "כך הסוכן קרא את הבריף - בדקו ותקנו לפני שבונים"
                 : null}
@@ -293,9 +308,13 @@ export function PlanCard({
                 dir="ltr"
                 maxLength={120}
                 value={plan.subject.name_en}
-                onChange={(e) => setSubject({ name_en: e.target.value })}
+                onChange={(e) => {
+                  setNameTouched(true);
+                  setSubject({ name_en: e.target.value });
+                }}
+                onBlur={() => setNameTouched(true)}
                 placeholder="Eric Clapton"
-                aria-invalid={needsName || undefined}
+                aria-invalid={(nameTouched && needsName) || undefined}
               />
             </Field>
             <Field label="שם בעברית" htmlFor="plan-name-he">
@@ -313,7 +332,7 @@ export function PlanCard({
 
         <Group title="אילו הופעות">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="מתאריך" htmlFor="plan-from" hint="ריק = בלי הגבלה">
+            <Field label="מתאריך" htmlFor="plan-from" hint={`ריק = מ-${SHOW_WINDOW_DAYS} ימים מהיום`}>
               <Input
                 id="plan-from"
                 type="date"
@@ -402,7 +421,7 @@ export function PlanCard({
                     value={markupDraft[key]}
                     onChange={(e) => onMarkup(key, e.target.value)}
                     placeholder="לא נקבע"
-                    aria-invalid={invalidMarkup(key) || undefined}
+                    aria-invalid={(touched.includes(key) && invalidMarkup(key)) || undefined}
                     className={cn("ps-7 tabular-nums", invalidMarkup(key) && "border-destructive focus-visible:ring-destructive")}
                   />
                 </div>
@@ -447,12 +466,12 @@ export function PlanCard({
             <p className="text-sm">הקלידו את שם הנושא באנגלית - החיפוש אצל הספקים רץ עליו</p>
           ) : (
             <p className={cn("text-sm transition-opacity", check.loading && "opacity-60")}>
-              נמצאו <Num>{preview.shows}</Num> הופעות · <Num>{preview.existing}</Num> קיימות ·{" "}
-              <Num>{preview.questions}</Num> שאלות
+              נמצאו <Num value={preview.shows} unknown={failed} /> הופעות · <Num value={preview.existing} unknown={failed} />{" "}
+              קיימות · <Num value={preview.questions} unknown={failed} /> שאלות
               {check.loading && <span className="ms-2 text-xs">בודק…</span>}
             </p>
           )}
-          {!needsName && preview.cities.length > 0 && (
+          {!needsName && !failed && preview.cities.length > 0 && (
             <p className="text-xs leading-relaxed text-sidebar-foreground/80">
               {/* One isolated run: the supplier's city names keep their own order and commas. */}
               <bdi>{preview.cities.slice(0, CITIES_SHOWN).join(", ")}</bdi>
@@ -461,10 +480,21 @@ export function PlanCard({
           )}
           {check.error && (
             <div className="text-xs text-brand-gold">
-              <p className="flex items-center gap-1.5">
-                <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
-                הבדיקה נכשלה: {check.error}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="flex items-center gap-1.5">
+                  <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
+                  הבדיקה נכשלה: {check.error}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setRetry((r) => r + 1)}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-sidebar-accent-foreground underline-offset-4 hover:bg-sidebar-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring disabled:opacity-50"
+                >
+                  <RotateCw aria-hidden className="h-3 w-3" />
+                  בדוק שוב
+                </button>
+              </div>
               {check.problems.length > 0 && (
                 <ul className="mt-0.5 ps-5">
                   {check.problems.map((p, i) => (
@@ -488,12 +518,16 @@ export function PlanCard({
               canBuild && "shadow-mint-glow",
             )}
           >
-            {navigating ? "פותח את הלוח…" : creating ? "יוצר את הריצה…" : `בנה את האירועים (${preview.shows})`}
+            {navigating
+              ? "פותח את הלוח…"
+              : creating
+                ? "יוצר את הריצה…"
+                : `בנה את האירועים (${failed ? "—" : total})`}
           </Button>
           <Button
             type="button"
             variant="ghost"
-            onClick={onEditBrief}
+            onClick={() => (edited ? setConfirmBack(true) : onEditBrief())}
             disabled={busy}
             className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-offset-sidebar"
           >
@@ -501,15 +535,30 @@ export function PlanCard({
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={confirmBack} onOpenChange={setConfirmBack}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader className="sm:text-start">
+            <AlertDialogTitle>לחזור לבריף?</AlertDialogTitle>
+            <AlertDialogDescription>
+              השינויים שעשיתם בתוכנית לא יישמרו. פענוח חוזר יבנה אותה מחדש מהבריף.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:space-x-0">
+            <AlertDialogCancel>הישארו בתוכנית</AlertDialogCancel>
+            <AlertDialogAction onClick={onEditBrief}>חזרה לבריף</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
 
-/** A count inside the preview sentence - left-to-right digits, a touch larger than the words. */
-function Num({ children }: { children: number }) {
+/** A count inside the preview sentence - left-to-right digits, a touch larger than the words; "—" when unknown. */
+function Num({ value, unknown }: { value: number; unknown: boolean }) {
   return (
     <span dir="ltr" className="font-display text-base font-semibold tabular-nums text-sidebar-accent-foreground">
-      {children}
+      {unknown ? "—" : value}
     </span>
   );
 }

@@ -33,8 +33,6 @@ export const NAME_MAX = 120;
 /** The most entries in any plan list (cities to include / exclude, notes). */
 export const LIST_MAX = 20;
 
-/**
- * The party a stored TixStock ticket price is for. Not redefined: the uploader prices a ticket
- * exactly like the price sync does, so it re-exports the sync's own constant.
- */
-export { PRICED_PARTY } from "@/lib/tixstock-listings";
+// The party a stored TixStock ticket price is for (`PRICED_PARTY`) is NOT re-exported here: the
+// /uploader screens import this file on the client, and the re-export dragged the supplier modules
+// into that bundle. Import it from "@/lib/tixstock-listings", the price sync's own constant.

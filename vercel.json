@@ -206,6 +206,9 @@
     },
     "app/(dashboard)/marketing/page.tsx": {
       "maxDuration": 300
+    },
+    "app/(dashboard)/uploader/**/page.tsx": {
+      "maxDuration": 60
     }
   },
   "routes": [

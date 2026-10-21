@@ -7,7 +7,7 @@ import { Check } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import type { RunStatus, SubjectKind, UploaderRun } from "@/types/uploader.types";
-import { SUBJECT_KIND_HE } from "./plan-card";
+import { SUBJECT_KIND_HE } from "./copy";
 
 // The runs already made (spec §5.1), newest first: who the tour is about, where it stands, and
 // how many of its shows are on the site / ready / waiting on a question / skipped. A row opens the
@@ -90,9 +90,13 @@ export function RunsList({ runs }: { runs: UploaderRun[] }) {
 
       <div className="overflow-hidden rounded-lg border bg-card">
         {runs.length === 0 ? (
-          <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-            עוד אין ריצות - כתבו בריף למעלה, או התחילו מאחת הדוגמאות.
-          </p>
+          <div className="space-y-1.5 px-4 py-10 text-center">
+            <p className="text-sm font-medium">עוד אין ריצות - כתבו בריף למעלה כדי להתחיל.</p>
+            <p className="mx-auto max-w-[60ch] text-sm text-muted-foreground">
+              בריף טוב אומר את מי מעלים (אמן, קבוצה או תחרות), באילו תאריכים, כמה מארק אפ להוסיף, ומה עושים
+              בהופעה בלי לוקיישן - כרטיס בלבד או לדלג.
+            </p>
+          </div>
         ) : (
           <Table look="list">
             <TableHeader>

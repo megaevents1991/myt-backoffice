@@ -8,7 +8,8 @@ import { parseBrief } from "@/lib/actions/uploader-actions";
 import { emptyPlan } from "@/lib/uploader/plan";
 import type { UploaderRun } from "@/types/uploader.types";
 import { BriefComposer } from "./brief-composer";
-import { actionErrorText, PlanCard, type PlanSeed } from "./plan-card";
+import { actionErrorText } from "./copy";
+import { PlanCard, type PlanSeed } from "./plan-card";
 import { RunsList } from "./runs-list";
 
 // /uploader's three stages: compose (the brief) -> plan (the "מה הבנתי" card) -> navigating (the

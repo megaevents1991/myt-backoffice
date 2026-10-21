@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Info, Mic, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { AGENT_OFF_LINE } from "./copy";
 
 // The brief box of /uploader (spec §5.1): one big textarea, two examples that fill it, and
-// "פענח". With the agent off the same box stays (its text is still the run's brief) and the
-// button opens the manual plan form instead.
+// "פענח". With the agent off the same box stays (its text is still the run's brief), the examples
+// go (nothing would parse them) and the button opens the manual plan form instead.
 
 /** The two briefs the spec names - an artist tour and a team's home games. Clicking one FILLS the box. */
 const EXAMPLES = [
@@ -48,6 +49,8 @@ export function BriefComposer({
   autoFocus: boolean;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
+  /** Typed in (or filled from an example) this visit - a draft restored from the session is not flagged invalid until then. */
+  const [touched, setTouched] = useState(false);
   const length = value.length;
   const tooLong = length > max;
   const empty = value.trim() === "";
@@ -64,6 +67,7 @@ export function BriefComposer({
   }, [autoFocus]);
 
   function fill(text: string) {
+    setTouched(true);
     onChange(text);
     box.current?.focus();
   }
@@ -85,7 +89,7 @@ export function BriefComposer({
           {!agentOn && (
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <Info aria-hidden className="h-3.5 w-3.5 shrink-0" />
-              הסוכן כבוי - מלאו את התוכנית ידנית
+              {AGENT_OFF_LINE}
             </p>
           )}
         </div>
@@ -99,10 +103,13 @@ export function BriefComposer({
           dir="auto"
           rows={7}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            setTouched(true);
+            onChange(e.target.value);
+          }}
           onKeyDown={onKeyDown}
           disabled={parsing}
-          aria-invalid={tooLong || undefined}
+          aria-invalid={(touched && tooLong) || undefined}
           aria-describedby="uploader-brief-count"
           placeholder="כתבו מה להעלות, כמו שהייתם כותבים לעמית"
           className={cn(
@@ -111,39 +118,48 @@ export function BriefComposer({
           )}
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">התחילו מדוגמה:</span>
-          {EXAMPLES.map(({ label, icon: Icon, text }) => (
-            <button
-              key={label}
-              type="button"
-              disabled={parsing}
-              onClick={() => fill(text)}
-              aria-pressed={value === text}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-xs font-medium text-foreground transition-colors",
-                "hover:border-solid hover:border-primary/40 hover:bg-accent hover:text-accent-foreground",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                "disabled:pointer-events-none disabled:opacity-50",
-                value === text && "border-solid border-primary/40 bg-accent text-accent-foreground",
-              )}
-            >
-              <Icon aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
-              {label}
-            </button>
-          ))}
-        </div>
+        {agentOn && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">התחילו מדוגמה:</span>
+            {EXAMPLES.map(({ label, icon: Icon, text }) => (
+              <button
+                key={label}
+                type="button"
+                disabled={parsing}
+                onClick={() => fill(text)}
+                aria-pressed={value === text}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-xs font-medium text-foreground transition-colors",
+                  "hover:border-solid hover:border-primary/40 hover:bg-accent hover:text-accent-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  "disabled:pointer-events-none disabled:opacity-50",
+                  value === text && "border-solid border-primary/40 bg-accent text-accent-foreground",
+                )}
+              >
+                <Icon aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-lg border-t bg-muted/40 px-5 py-3 sm:px-6">
-        <div id="uploader-brief-count" className="min-h-5 text-xs" aria-live="polite">
-          {parsing ? (
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-success animate-pulse motion-reduce:animate-none" />
-              קורא את הבריף…
-            </span>
-          ) : (
-            <span className={cn("tabular-nums", tooLong ? "font-medium text-destructive" : "text-muted-foreground")}>
+        <div className="min-h-5 text-xs">
+          {/* Announced: only the parse starting. The counter is read through the box's aria-describedby. */}
+          <span role="status" aria-live="polite">
+            {parsing && (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-success animate-pulse motion-reduce:animate-none" />
+                קורא את הבריף…
+              </span>
+            )}
+          </span>
+          {!parsing && (
+            <span
+              id="uploader-brief-count"
+              className={cn("tabular-nums", tooLong ? "font-medium text-destructive" : "text-muted-foreground")}
+            >
               <span dir="ltr">
                 {length.toLocaleString("en-US")} / {max.toLocaleString("en-US")}
               </span>
