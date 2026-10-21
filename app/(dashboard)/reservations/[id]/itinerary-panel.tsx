@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AlertTriangle, Plane, TrainFront } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -21,7 +21,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   formatIls,
-  itineraryChipLabel,
   type ItineraryGroup,
   type ItineraryLeg,
 } from "@/lib/itinerary/reservation-group";
@@ -37,12 +36,19 @@ function legLine(leg: ItineraryLeg): string {
     .join(" · ");
 }
 
+/** "הזמנה אחת" / "3 הזמנות". */
+function reservationsCount(n: number): string {
+  return n === 1 ? "הזמנה אחת" : `${n} הזמנות`;
+}
+
 /**
  * "יורו טריפ" - the trip this reservation belongs to ("Build Your Euro Trip": one reservation per
- * event, tied by itinerary_group). The sibling reservations with a link each, the trip total
- * (the sum of the rows' shares of final_purchase_price_ils), and every leg of the flight that
- * sits on the trip's first reservation, plus the moves the customer makes by train on their own.
- * The reservation's own flight block (outbound / inbound) is a separate card and unchanged.
+ * event, tied by itinerary_group). The sibling reservations with a link each, the trip price (the
+ * sum of the live rows' shares of final_purchase_price_ils - a deleted, Cancelled or Lost row is
+ * shown struck through and left out), and every leg of the flight that sits on the trip's first
+ * reservation, plus the moves the customer makes by train on their own. Nothing here says the trip
+ * was paid: that is each row's own status. The reservation's own flight block (outbound / inbound)
+ * is a separate card and unchanged.
  */
 export function ItineraryPanel({
   group,
@@ -52,35 +58,35 @@ export function ItineraryPanel({
   currentId: number;
 }) {
   const current = group.members.find((m) => m.id === currentId);
-  const chip = current ? itineraryChipLabel(current.seq, group.of) : null;
   const missing =
     group.of != null && group.members.length < group.of ? group.of - group.members.length : 0;
   const hasFlight = group.legs.length > 0 || group.trainLegs.length > 0;
+  const excludedAmount = group.excluded.totalIls;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2">
-          <span dir="auto">יורו טריפ</span>
-          {chip && (
-            <Badge variant="outline" dir="rtl" className="whitespace-nowrap">
-              {chip}
-            </Badge>
-          )}
-        </CardTitle>
+        <CardTitle dir="auto">יורו טריפ</CardTitle>
         <CardDescription dir="auto">
-          טיול של {group.of ?? group.members.length} אירועים - כל אירוע הוא הזמנה נפרדת, וסכום
-          ההזמנות הוא מה שהלקוח שילם על הטיול כולו.
+          טיול של {group.of ?? group.members.length} אירועים - כל אירוע הוא הזמנה נפרדת.
+          {current?.seq != null && group.of != null ? ` זו הזמנה ${current.seq} מתוך ${group.of}.` : ""}{" "}
+          מחיר הטיול הוא סכום ההזמנות, והסטטוס נקבע לכל הזמנה בנפרד.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
           <div>
-            <p className="text-sm font-medium" dir="auto">סה״כ הטיול</p>
+            <p className="text-sm font-medium" dir="auto">מחיר הטיול</p>
             <p className="text-2xl font-bold tabular-nums">{formatIls(group.totalIls)}</p>
             {group.totalPartial && (
               <p className="text-xs text-warning" dir="auto">
-                לפחות אחת ההזמנות בלי מחיר רשום - הסכום חלקי.
+                לפחות הזמנה אחת בלי מחיר רשום - הסכום חלקי.
+              </p>
+            )}
+            {group.excluded.count > 0 && (
+              <p className="text-xs text-muted-foreground" dir="auto">
+                לא נספרו: {reservationsCount(group.excluded.count)}
+                {excludedAmount != null ? ` (${formatIls(excludedAmount)})` : ""}
               </p>
             )}
           </div>
@@ -111,47 +117,71 @@ export function ItineraryPanel({
             <TableBody>
               {group.members.map((m) => {
                 const isCurrent = m.id === currentId;
+                const struck = m.excluded ? "line-through" : undefined;
                 return (
-                  <TableRow key={m.id} className={cn(isCurrent && "bg-muted/50")}>
+                  <TableRow
+                    key={m.id}
+                    aria-current={isCurrent ? "true" : undefined}
+                    className={cn(isCurrent && "bg-muted/50", m.excluded && "text-muted-foreground")}
+                  >
                     <TableCell className="text-muted-foreground tabular-nums">{m.seq ?? "-"}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {isCurrent ? (
-                        <span className="font-semibold">
-                          #{m.id}
-                          <Badge variant="secondary" className="ms-2" dir="auto">
-                            זו ההזמנה הנוכחית
-                          </Badge>
+                      {m.redacted ? (
+                        // A deleted sibling this viewer may not open (the list hides it from them too).
+                        <span className={cn(badgeVariants({ variant: "outline" }), "text-muted-foreground")} dir="auto">
+                          נמחקה
                         </span>
                       ) : (
-                        <Link
-                          href={`/reservations/${m.id}`}
-                          className="font-medium text-primary underline-offset-4 hover:underline"
-                        >
-                          #{m.id}
-                        </Link>
-                      )}
-                      {m.deleted && (
-                        <Badge variant="destructive" className="ms-2" dir="auto">
-                          נמחקה
-                        </Badge>
+                        <>
+                          {isCurrent ? (
+                            <span className={cn("font-semibold", struck)}>#{m.id}</span>
+                          ) : (
+                            <Link
+                              href={`/reservations/${m.id}`}
+                              aria-label={`פתיחת הזמנה ${m.id}`}
+                              className={cn(
+                                "font-medium text-primary underline-offset-4 hover:underline",
+                                struck,
+                              )}
+                            >
+                              #{m.id}
+                            </Link>
+                          )}
+                          {isCurrent && (
+                            <span className={cn(badgeVariants({ variant: "secondary" }), "ms-2")} dir="auto">
+                              זו ההזמנה הנוכחית
+                            </span>
+                          )}
+                          {m.deleted && (
+                            <span className={cn(badgeVariants({ variant: "destructive" }), "ms-2")} dir="auto">
+                              נמחקה
+                            </span>
+                          )}
+                        </>
                       )}
                     </TableCell>
                     <TableCell>
-                      <p className="text-left font-medium" dir="auto">
-                        {m.eventName ?? (m.eventId != null ? `אירוע #${m.eventId}` : "-")}
-                      </p>
-                      {(m.eventDate || m.hotelName) && (
-                        <p className="text-left text-xs text-muted-foreground" dir="auto">
-                          {[m.eventDate, m.hotelName ? `מלון: ${m.hotelName}` : null]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
+                      {m.redacted ? (
+                        "-"
+                      ) : (
+                        <>
+                          <p className={cn("text-left font-medium", struck)} dir="auto">
+                            {m.eventName ?? (m.eventId != null ? `אירוע #${m.eventId}` : "-")}
+                          </p>
+                          {(m.eventDate || m.hotelName) && (
+                            <p className="text-left text-xs text-muted-foreground" dir="auto">
+                              {[m.eventDate, m.hotelName ? `מלון: ${m.hotelName}` : null]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          )}
+                        </>
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {m.status ? <Badge variant="outline">{m.status}</Badge> : "-"}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    <TableCell className={cn("whitespace-nowrap text-right tabular-nums", struck)}>
                       {m.priceIls != null ? formatIls(m.priceIls) : "-"}
                     </TableCell>
                   </TableRow>
@@ -173,6 +203,7 @@ export function ItineraryPanel({
                       רשומות בהזמנה{" "}
                       <Link
                         href={`/reservations/${group.flightHolderId}`}
+                        aria-label={`פתיחת הזמנה ${group.flightHolderId}`}
                         className="font-medium text-primary underline-offset-4 hover:underline"
                       >
                         #{group.flightHolderId}

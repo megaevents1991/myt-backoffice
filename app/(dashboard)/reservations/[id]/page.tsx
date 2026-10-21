@@ -54,7 +54,7 @@ import {
 import { getRoomsByReservationId } from "@/lib/actions/offline-hotel-room-actions";
 import type { OfflineHotelRoom } from "@/types/offline-hotel.types";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
-import type { ItineraryGroup } from "@/lib/itinerary/reservation-group";
+import { otherHotelHolders, type ItineraryGroup } from "@/lib/itinerary/reservation-group";
 import { ItineraryPanel } from "./itinerary-panel";
 import { israelDate } from "@/lib/tasks/reminders";
 import { followUpLabel, isFollowUpStatus } from "@/lib/reservations/follow-up";
@@ -549,10 +549,6 @@ export default function ReservationDetailsPage({
         </Card>
       </div>
 
-      {itineraryGroup && (
-        <ItineraryPanel group={itineraryGroup} currentId={reservation.id} />
-      )}
-
       <Card>
         <CardHeader>
           <CardTitle>Event Information</CardTitle>
@@ -933,12 +929,19 @@ export default function ReservationDetailsPage({
               <div className="text-center py-8 text-muted-foreground">
                 <p className="text-lg font-medium">No Flight Included</p>
                 <p className="text-sm mt-2">This reservation does not include a flight.</p>
-                {reservation.itinerary_group && (
-                  <p className="text-sm mt-1">
-                    Part of a Euro Trip - the trip&apos;s flights are on its first reservation
-                    (see the Euro Trip panel).
-                  </p>
-                )}
+                {itineraryGroup?.flightHolderId != null &&
+                  itineraryGroup.flightHolderId !== reservation.id && (
+                    <p className="text-sm mt-1">
+                      Euro Trip - the trip&apos;s flights are on reservation{" "}
+                      <Link
+                        href={`/reservations/${itineraryGroup.flightHolderId}`}
+                        className="font-medium text-primary underline-offset-4 hover:underline"
+                      >
+                        #{itineraryGroup.flightHolderId}
+                      </Link>
+                      .
+                    </p>
+                  )}
               </div>
             )}
           </CardContent>
@@ -1089,10 +1092,22 @@ export default function ReservationDetailsPage({
               <div className="text-center py-8 text-muted-foreground">
                 <p className="text-lg font-medium">No Hotel Included</p>
                 <p className="text-sm mt-2">This reservation does not include hotel accommodation.</p>
-                {reservation.itinerary_group && (
+                {itineraryGroup && otherHotelHolders(itineraryGroup, reservation.id).length > 0 && (
                   <p className="text-sm mt-1">
-                    Part of a Euro Trip - a stay&apos;s hotel is kept on the first reservation of
-                    that stay (see the Euro Trip panel).
+                    Euro Trip - the trip&apos;s hotels are on reservation{" "}
+                    {otherHotelHolders(itineraryGroup, reservation.id).map((m, i) => (
+                      <span key={m.id}>
+                        {i > 0 && ", "}
+                        <Link
+                          href={`/reservations/${m.id}`}
+                          className="font-medium text-primary underline-offset-4 hover:underline"
+                        >
+                          #{m.id}
+                        </Link>
+                        {m.hotelName ? ` (${m.hotelName})` : ""}
+                      </span>
+                    ))}
+                    .
                   </p>
                 )}
               </div>
@@ -1167,6 +1182,12 @@ export default function ReservationDetailsPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* The Euro Trip panel arrives after the page (its own read), so it sits below the cards the
+          reader is already on - nothing above it jumps when it lands. */}
+      {itineraryGroup && (
+        <ItineraryPanel group={itineraryGroup} currentId={reservation.id} />
+      )}
 
       {/* Attribution is reference info, not daily-workflow data - it lives
           collapsed at the bottom so it's there when a "מאיפה הוא הגיע?"

@@ -13,12 +13,17 @@
  *     (= the panel stays hidden) and is never called for a reservation without a group.
  * Both take the Supabase client as an argument so this is testable without a database
  * (scripts/reservation-itinerary-selftest.ts).
+ *
+ * AUTH: these loaders run on the service-role client and check nothing themselves - THE CALLER MUST
+ * HAVE RUN `requireStaff()` FIRST (reservation-actions.ts does, in `getReservations` and
+ * `getItineraryGroup`, which also passes the viewer's `revealDeleted`). Never call them from a route
+ * or action that has not.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { isMissingColumn } from "@/lib/services/reservation-follow-ups";
+import { MAX_TRIP_EVENTS } from "@/lib/itinerary/settings";
 import {
-  MAX_TRIP_EVENTS,
   buildItineraryGroup,
   markOf,
   type ItineraryGroup,
@@ -39,8 +44,14 @@ const GROUP_COLUMNS =
 /**
  * The sibling reservations of one trip. Null - never a throw - when the group is not a uuid, is
  * unknown, when the columns are not migrated yet, or on any other failure: the panel stays hidden.
+ * Caller must have run `requireStaff()`; `revealDeleted` = the viewer is a superadmin (only they can
+ * see deleted reservations in the list, so for anyone else a deleted sibling comes back blanked).
  */
-export async function loadItineraryGroup(db: ReservationsDb, group: string): Promise<ItineraryGroup | null> {
+export async function loadItineraryGroup(
+  db: ReservationsDb,
+  group: string,
+  opts: { revealDeleted: boolean },
+): Promise<ItineraryGroup | null> {
   if (!UUID.test(group)) return null;
   try {
     const { data, error } = await db
@@ -55,7 +66,7 @@ export async function loadItineraryGroup(db: ReservationsDb, group: string): Pro
       if (!isMissingColumn(error)) console.error("loadItineraryGroup:", JSON.stringify(error));
       return null;
     }
-    return buildItineraryGroup(group, (data ?? []) as unknown as ItineraryGroupDbRow[]);
+    return buildItineraryGroup(group, (data ?? []) as unknown as ItineraryGroupDbRow[], opts);
   } catch (error) {
     console.error("loadItineraryGroup:", error);
     return null;
@@ -71,6 +82,7 @@ const MARKS_MAX = 5000;
  * Best effort by design (see the header): the list's own select does not name these columns, so a
  * database that has not run the migration still lists every reservation. Any failure - a missing
  * column, a network blip, a thrown error - returns an EMPTY map: no chips, nothing else changes.
+ * Caller must have run `requireStaff()`.
  */
 export async function loadItineraryMarks(db: ReservationsDb): Promise<Map<number, ItineraryMark>> {
   try {

@@ -12,6 +12,7 @@ import {
   itineraryChipLabel,
   legsOf,
   markOf,
+  otherHotelHolders,
   trainLegsOf,
   type ItineraryGroupDbRow,
 } from "../lib/itinerary/reservation-group";
@@ -20,6 +21,7 @@ import {
   loadItineraryMarks,
   type ReservationsDb,
 } from "../lib/itinerary/reservation-group-db";
+import { MAX_TRIP_EVENTS } from "../lib/itinerary/settings";
 
 // ── a fake Supabase client ──────────────────────────────────────────────────────────────────────
 type Reply = { data?: unknown; error?: { code?: string; message: string } | null; throws?: unknown };
@@ -62,9 +64,12 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
   assert.equal(itineraryChipLabel(1, 2), "יורו טריפ 1/2");
   assert.equal(itineraryChipLabel(3, 3), "יורו טריפ 3/3");
   assert.equal(itineraryChipLabel("2", "3"), "יורו טריפ 2/3", "numeric strings read too");
-  for (const [s, o] of [[0, 2], [3, 2], [null, 2], [1, null], [undefined, undefined], [1.5, 2], ["x", 2]] as const) {
+  for (const [s, o] of [[0, 2], [3, 2], [null, 2], [1, null], [undefined, undefined], [1.5, 2], ["x", 2], [1, 1]] as const) {
     assert.equal(itineraryChipLabel(s, o), null, `no chip for seq=${String(s)} of=${String(o)}`);
   }
+  // ONE size rule (settings MAX_TRIP_EVENTS) for the chip and the panel: a size above it gets neither.
+  assert.equal(MAX_TRIP_EVENTS, 3);
+  assert.equal(itineraryChipLabel(1, MAX_TRIP_EVENTS + 1), null, "of above the cap: no chip...");
 
   // ── formatters ──────────────────────────────────────────────────────────────────────────────────
   assert.equal(formatDmy("2027-05-13T16:00:00"), "13/05/2027");
@@ -74,7 +79,10 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
   assert.equal(formatDmy("garbage"), null);
   assert.equal(formatDmy(undefined), null);
   assert.equal(formatIls(1000), "₪1,000");
-  assert.equal(formatIls(2200.6), "₪2,200.6");
+  assert.equal(formatIls(2200.6), "₪2,200.60", "two decimals whenever there are agorot");
+  assert.equal(formatIls(1500.25), "₪1,500.25");
+  assert.equal(formatIls(0.1 + 0.2), "₪0.30", "float noise is rounded away");
+  assert.equal(formatIls(0), "₪0");
 
   // ── legs ────────────────────────────────────────────────────────────────────────────────────────
   const flight = {
@@ -105,6 +113,8 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
   assert.deepEqual(trainLegsOf({ trainLegs: [null, {}, { from: "A", to: "B", date: "soon" }] }), [{ from: "A", to: "B", date: "soon" }]);
 
   // ── the group ───────────────────────────────────────────────────────────────────────────────────
+  const SHOW = { revealDeleted: true };
+  const HIDE = { revealDeleted: false };
   const row = (patch: Partial<ItineraryGroupDbRow> & { id: number }): ItineraryGroupDbRow => ({
     itinerary_seq: 1, itinerary_of: 3, status: "Pending", final_purchase_price_ils: 0, event_id: null,
     event_order_info: {}, flight_order_info: {}, hotel_order_info: {}, is_deleted: null, ...patch,
@@ -117,12 +127,13 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
     row({ id: 102, itinerary_seq: 2, final_purchase_price_ils: 500.2, event_id: 702, status: "Paid",
       event_order_info: { events: [{ name: "Event B", date: "2027-05-15" }] } }),
   ];
-  const g = buildItineraryGroup(GROUP, rows);
+  const g = buildItineraryGroup(GROUP, rows, SHOW);
   assert.ok(g);
   assert.deepEqual(g.members.map((m) => m.id), [101, 102, 103], "siblings come in trip order whatever order they were read in");
   assert.equal(g.of, 3);
-  assert.equal(g.totalIls, 2200.6, "total = sum of the rows' shares, without float noise (1000.1 + 500.2 + '700.30')");
+  assert.equal(g.totalIls, 2200.6, "trip price = sum of the rows' shares, without float noise (1000.1 + 500.2 + '700.30')");
   assert.equal(g.totalPartial, false);
+  assert.deepEqual(g.excluded, { count: 0, totalIls: 0 });
   assert.equal(g.flightHolderId, 101, "the flight is read from seq 1");
   assert.equal(g.legs.length, 3);
   assert.equal(g.trainLegs.length, 1);
@@ -135,31 +146,96 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
     ],
     "the event is read from either shape of event_order_info; a `{}` hotel is no hotel",
   );
-  // a row with no price: the total is a lower bound and says so
-  const partial = buildItineraryGroup(GROUP, [row({ id: 1, final_purchase_price_ils: null }), row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 50 })]);
+  // a COUNTED row with no price: the total is a lower bound and says so
+  const partial = buildItineraryGroup(GROUP, [row({ id: 1, final_purchase_price_ils: null }), row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 50 })], SHOW);
   assert.equal(partial?.totalIls, 50);
   assert.equal(partial?.totalPartial, true);
-  // a soft-deleted sibling is listed, flagged, and still counted in the trip total
-  const withDeleted = buildItineraryGroup(GROUP, [row({ id: 1, final_purchase_price_ils: 10 }), row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 5, is_deleted: "10-21-2026" })]);
-  assert.deepEqual(withDeleted?.members.map((m) => m.deleted), [false, true]);
-  assert.equal(withDeleted?.totalIls, 15);
+
+  // ── what counts toward the trip price ──────────────────────────────────────────────────────────
+  // a soft-deleted sibling is listed (to a superadmin), flagged, and NOT counted
+  const withDeleted = buildItineraryGroup(GROUP, [row({ id: 1, final_purchase_price_ils: 10 }), row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 5, is_deleted: "10-21-2026" })], SHOW);
+  assert.deepEqual(withDeleted?.members.map((m) => [m.deleted, m.excluded]), [[false, null], [true, "deleted"]]);
+  assert.equal(withDeleted?.totalIls, 10, "a deleted row is left out of the price");
+  assert.deepEqual(withDeleted?.excluded, { count: 1, totalIls: 5 }, "...and reported on its own line");
+  // Cancelled / Lost are left out whatever their case or padding; a 24Save hold still counts
+  const statuses = buildItineraryGroup(
+    GROUP,
+    [
+      row({ id: 1, status: "Cancelled", final_purchase_price_ils: 100 }),
+      row({ id: 2, itinerary_seq: 2, status: " lost ", final_purchase_price_ils: 200 }),
+      row({ id: 3, itinerary_seq: 3, status: "24Save", final_purchase_price_ils: 400 }),
+    ],
+    SHOW,
+  );
+  assert.deepEqual(statuses?.members.map((m) => m.excluded), ["status", "status", null]);
+  assert.equal(statuses?.totalIls, 400, "a held (24Save) trip still has a price");
+  assert.deepEqual(statuses?.excluded, { count: 2, totalIls: 300 });
+  const allHeld = buildItineraryGroup(GROUP, [row({ id: 1, status: "24Save", final_purchase_price_ils: 7 }), row({ id: 2, itinerary_seq: 2, status: "24Save", final_purchase_price_ils: 8 })], SHOW);
+  assert.equal(allHeld?.totalIls, 15);
+  // a deleted (or cancelled) row with no price NEVER flips "partial"; a counted one does
+  const deletedNoPrice = buildItineraryGroup(GROUP, [row({ id: 1, final_purchase_price_ils: 10 }), row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: null, is_deleted: "10-21-2026" })], SHOW);
+  assert.equal(deletedNoPrice?.totalPartial, false);
+  assert.equal(deletedNoPrice?.totalIls, 10);
+  assert.deepEqual(deletedNoPrice?.excluded, { count: 1, totalIls: null }, "the amount of an excluded row with no price is unknown, not 0");
+  assert.equal(buildItineraryGroup(GROUP, [row({ id: 1, status: "Cancelled", final_purchase_price_ils: null }), row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 5 })], SHOW)?.totalPartial, false);
+
+  // ── a deleted sibling the viewer may not see is blanked on the SERVER ─────────────────────────
+  const hidden = buildItineraryGroup(
+    GROUP,
+    [
+      row({ id: 1, final_purchase_price_ils: 10, hotel_order_info: { name: "Live hotel" } }),
+      row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 5, status: "Paid", event_id: 702, is_deleted: "10-21-2026",
+        event_order_info: { name: "Secret event" }, hotel_order_info: { name: "Secret hotel" }, flight_order_info: flight }),
+    ],
+    HIDE,
+  );
+  assert.ok(hidden);
+  const secret = hidden.members[1];
+  assert.deepEqual(
+    [secret.redacted, secret.deleted, secret.excluded, secret.status, secret.priceIls, secret.eventName, secret.eventId, secret.eventDate, secret.hotelName, secret.hasHotel],
+    [true, true, "deleted", "", null, null, null, null, null, false],
+    "no status, price, event or hotel of a deleted reservation reaches a non-superadmin",
+  );
+  assert.equal(JSON.stringify(hidden).includes("Secret"), false, "nothing of the deleted row is anywhere in the payload");
+  assert.equal(hidden.legs.length, 0, "a deleted row never supplies the flight");
+  assert.equal(hidden.flightHolderId, null);
+  assert.equal(hidden.totalIls, 10);
+  assert.deepEqual(hidden.excluded, { count: 1, totalIls: null }, "its amount is withheld too");
+  assert.equal(hidden.members[0].redacted, false);
+  // the same kind of row for a superadmin
+  const shown = buildItineraryGroup(GROUP, [row({ id: 2, itinerary_seq: 2, final_purchase_price_ils: 5, is_deleted: "10-21-2026", event_order_info: { name: "Visible" } })], SHOW);
+  assert.equal(shown?.members[0].eventName, "Visible");
+  assert.equal(shown?.members[0].redacted, false);
+
+  // ── hotel pointers: the OTHER visible rows that keep a hotel ───────────────────────────────────
+  assert.deepEqual(otherHotelHolders(g, 102).map((m) => m.id), [101, 103]);
+  assert.deepEqual(otherHotelHolders(g, 101).map((m) => m.id), [103], "never the row itself");
+  assert.deepEqual(otherHotelHolders(hidden, 2).map((m) => m.id), [1]);
+  assert.deepEqual(otherHotelHolders(hidden, 1), [], "a hidden deleted row is never pointed at");
+
   // no flight anywhere -> no legs, no holder
-  const noFlight = buildItineraryGroup(GROUP, [row({ id: 1 }), row({ id: 2, itinerary_seq: 2 })]);
+  const noFlight = buildItineraryGroup(GROUP, [row({ id: 1 }), row({ id: 2, itinerary_seq: 2 })], SHOW);
   assert.equal(noFlight?.flightHolderId, null);
   assert.deepEqual(noFlight?.legs, []);
   // a flight that sits on a row other than seq 1 (a hand-edited trip) is still shown
-  const moved = buildItineraryGroup(GROUP, [row({ id: 1 }), row({ id: 2, itinerary_seq: 2, flight_order_info: flight })]);
+  const moved = buildItineraryGroup(GROUP, [row({ id: 1 }), row({ id: 2, itinerary_seq: 2, flight_order_info: flight })], SHOW);
   assert.equal(moved?.flightHolderId, 2);
   assert.equal(moved?.legs.length, 3);
-  assert.equal(buildItineraryGroup(GROUP, []), null);
+  assert.equal(buildItineraryGroup(GROUP, [], SHOW), null);
   assert.equal(g.of === 3 && g.members.length < g.of, false, "complete trip");
-  const lone = buildItineraryGroup(GROUP, [row({ id: 5, itinerary_of: 2 })]);
+  const lone = buildItineraryGroup(GROUP, [row({ id: 5, itinerary_of: 2 })], SHOW);
   assert.equal(lone?.of, 2, "a trip with a missing sibling still says how many it should have");
   assert.equal(lone?.members.length, 1);
+  // chip and panel read the size through ONE rule: above the cap, both say nothing
+  const tooBig = MAX_TRIP_EVENTS + 1;
+  assert.equal(buildItineraryGroup(GROUP, [row({ id: 6, itinerary_of: tooBig })], SHOW)?.of, null);
+  assert.equal(markOf({ id: 6, itinerary_group: GROUP, itinerary_seq: 1, itinerary_of: tooBig }), null);
+  assert.equal(itineraryChipLabel(1, tooBig), null);
 
   // ── marks: a well-formed trip row only ─────────────────────────────────────────────────────────
   assert.equal(markOf({ id: 1, itinerary_group: null, itinerary_seq: null, itinerary_of: null }), null);
   assert.equal(markOf({ id: 1, itinerary_group: GROUP, itinerary_seq: 3, itinerary_of: 2 }), null, "seq > of is not a chip");
+  assert.equal(markOf({ id: 1, itinerary_group: GROUP, itinerary_seq: 1, itinerary_of: 1 }), null, "a one-event trip is not a trip");
   assert.deepEqual(markOf({ id: 1, itinerary_group: GROUP, itinerary_seq: 2, itinerary_of: 3 }), {
     itinerary_group: GROUP, itinerary_seq: 2, itinerary_of: 3,
   });
@@ -210,12 +286,12 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
   // ── the detail read: null on anything, never a throw ───────────────────────────────────────────
   {
     const { db, calls } = fakeDb({ data: [] });
-    assert.equal(await loadItineraryGroup(db, "not-a-uuid"), null);
+    assert.equal(await loadItineraryGroup(db, "not-a-uuid", SHOW), null);
     assert.equal(calls.length, 0, "a non-uuid group never reaches the database");
   }
   {
     const { db, calls } = fakeDb({ data: rows });
-    const out = await loadItineraryGroup(db, GROUP);
+    const out = await loadItineraryGroup(db, GROUP, SHOW);
     assert.deepEqual(out?.members.map((m) => m.id), [101, 102, 103]);
     assert.equal(out?.totalIls, 2200.6);
     assert.ok(calls.includes(`eq itinerary_group ${GROUP}`));
@@ -223,25 +299,25 @@ const GROUP = "3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b";
   }
   {
     const { db } = fakeDb({ error: MISSING });
-    const { value, errors } = await capturingErrors(() => loadItineraryGroup(db, GROUP));
+    const { value, errors } = await capturingErrors(() => loadItineraryGroup(db, GROUP, SHOW));
     assert.equal(value, null, "columns missing: the panel is hidden, the page is fine");
     assert.equal(errors.length, 0);
   }
   {
     const { db } = fakeDb({ error: { code: "XX000", message: "boom" } });
-    const { value, errors } = await capturingErrors(() => loadItineraryGroup(db, GROUP));
+    const { value, errors } = await capturingErrors(() => loadItineraryGroup(db, GROUP, SHOW));
     assert.equal(value, null);
     assert.equal(errors.length, 1);
   }
   {
     const { db } = fakeDb({ throws: new Error("fetch failed") });
-    const { value, errors } = await capturingErrors(() => loadItineraryGroup(db, GROUP));
+    const { value, errors } = await capturingErrors(() => loadItineraryGroup(db, GROUP, SHOW));
     assert.equal(value, null);
     assert.equal(errors.length, 1);
   }
   {
     const { db } = fakeDb({ data: [] });
-    assert.equal(await loadItineraryGroup(db, GROUP), null, "a group with no rows is no group");
+    assert.equal(await loadItineraryGroup(db, GROUP, SHOW), null, "a group with no rows is no group");
   }
 
   console.log("reservation-itinerary-selftest: ok");

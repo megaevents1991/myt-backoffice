@@ -95,14 +95,18 @@ export async function getReservations(): Promise<ReservationListRow[]> {
 
 /**
  * The reservations of one Euro Trip (the detail page's panel): the siblings in trip order, the
- * trip total and the flight's legs. Null - never a throw - when the group is unknown or the
- * itinerary columns are not migrated yet; the detail page then just has no panel.
+ * trip price (live rows only) and the flight's legs. Null - never a throw - when the group is
+ * unknown or the itinerary columns are not migrated yet; the detail page then just has no panel.
+ * Like the list's "Show deleted" toggle, a deleted sibling is revealed to a superadmin only; for
+ * everyone else it comes back blanked (see buildItineraryGroup).
  */
 export async function getItineraryGroup(
   group: string,
 ): Promise<ItineraryGroup | null> {
-  await requireStaff();
-  return loadItineraryGroup(supabase, group);
+  const session = await requireStaff();
+  return loadItineraryGroup(supabase, group, {
+    revealDeleted: session.role === "superadmin",
+  });
 }
 
 /** Row count only (head request, no payload) - for the new-reservations poll. */

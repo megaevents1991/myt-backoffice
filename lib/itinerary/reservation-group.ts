@@ -4,18 +4,19 @@
  * components and import it; the Supabase reads live next to it in `reservation-group-db.ts`.
  *
  * A trip is one `reservations` row per event, tied by `itinerary_group` (uuid) with `itinerary_seq`
- * (1..of, date order) and `itinerary_of` (2 or 3) - written by myt-main POST /api/itinerary/confirm
- * (migration 20261021193309_itinerary_core.sql). The whole multi-city flight (an `ItineraryFlight`:
- * a regular Flight plus `legs` and `trainLegs`) sits on seq 1's `flight_order_info`, the other rows
- * hold `{}`; each stay's hotel sits on the stay's first event; `final_purchase_price_ils` is split
- * across the rows (their sum is the trip total).
+ * (1..of, date order) and `itinerary_of` (2..MAX_TRIP_EVENTS) - written by myt-main
+ * POST /api/itinerary/confirm (migration 20261021193309_itinerary_core.sql). The whole multi-city
+ * flight (an `ItineraryFlight`: a regular Flight plus `legs` and `trainLegs`) sits on seq 1's
+ * `flight_order_info`, the other rows hold `{}`; each stay's hotel sits on the stay's first event;
+ * `final_purchase_price_ils` is split across the rows (the sum of the live rows is the trip price).
+ * Whether a row was PAID is its own `status` - nothing here says the trip is paid.
  */
+import { MAX_TRIP_EVENTS } from "@/lib/itinerary/settings";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import type { ItineraryFlight } from "@/types/app.types";
 import type { ReservationEventOrderInfo } from "@/types/reservation.types";
 
-/** A trip has two or three events (itinerary_settings max_events caps it at 3). */
-export const MAX_TRIP_EVENTS = 3;
+export { MAX_TRIP_EVENTS };
 
 /** A trimmed, non-empty string, or "". */
 function text(value: unknown): string {
@@ -30,11 +31,20 @@ export function wholeNumber(value: unknown): number | null {
 
 // ── Chip ────────────────────────────────────────────────────────────────────────────────────────
 
-/** "יורו טריפ 1/2" - the list chip. Null unless seq and of are whole numbers with 1 <= seq <= of. */
+/** A trip has 2..MAX_TRIP_EVENTS events (the migration's CHECK) - the one size rule of chip and panel. */
+function tripSize(of: unknown): number | null {
+  const o = wholeNumber(of);
+  return o != null && o >= 2 && o <= MAX_TRIP_EVENTS ? o : null;
+}
+
+/**
+ * "יורו טריפ 1/2" - the list chip. Null unless `of` is a trip size and 1 <= seq <= of. The detail
+ * panel reads the size through the same rule, so a row either has a chip AND a panel size, or neither.
+ */
 export function itineraryChipLabel(seq: unknown, of: unknown): string | null {
   const s = wholeNumber(seq);
-  const o = wholeNumber(of);
-  if (s == null || o == null || s < 1 || o < 1 || s > o) return null;
+  const o = tripSize(of);
+  if (s == null || o == null || s < 1 || s > o) return null;
   return `יורו טריפ ${s}/${o}`;
 }
 
@@ -56,9 +66,11 @@ export function formatHm(value: unknown): string | null {
   return m && m[4] != null ? `${m[4]}:${m[5]}` : null;
 }
 
-/** "₪1,234.5" - whole shekels when there are no agorot. */
+/** "₪2,200.60" / "₪1,000" - whole shekels when there are no agorot, always two decimals when there are. */
 export function formatIls(amount: number): string {
-  return `₪${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  const rounded = Math.round(amount * 100) / 100;
+  const digits = Number.isInteger(rounded) ? 0 : 2;
+  return `₪${rounded.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
 // ── Flight legs ─────────────────────────────────────────────────────────────────────────────────
@@ -138,11 +150,21 @@ export type ItineraryGroupDbRow = {
   is_deleted: unknown;
 };
 
+/**
+ * Statuses whose row does not count toward the trip price: the booking was dropped. (24Save is NOT
+ * here: a held trip has every row on 24Save and its price is the quote the customer was given.)
+ * Compared trimmed and lower-case, like the inventory views' `dropReleased`.
+ */
+const NOT_COUNTED_STATUSES: ReadonlySet<string> = new Set(["cancelled", "lost"]);
+
+/** Why a row is left out of the trip price: it was deleted, or its booking was cancelled / lost. */
+export type ItineraryExclusion = "deleted" | "status";
+
 export type ItineraryMember = {
   id: number;
   seq: number | null;
   status: string;
-  /** This row's share of the trip price; null when the row has none recorded. */
+  /** This row's share of the trip price; null when the row has none recorded (or it is hidden). */
   priceIls: number | null;
   eventId: number | null;
   eventName: string | null;
@@ -150,18 +172,29 @@ export type ItineraryMember = {
   eventDate: string | null;
   /** The hotel kept on this row (the first event of a stay), if any. */
   hotelName: string | null;
+  /** The row holds a hotel (`hotel_order_info` is not `{}`), named or not. */
+  hasHotel: boolean;
   deleted: boolean;
+  /** Left out of the trip price, and why; null = counted. */
+  excluded: ItineraryExclusion | null;
+  /**
+   * A deleted row the viewer may not see (only a superadmin can reveal deleted reservations, as in
+   * the list): everything but its place in the trip is blanked HERE, on the server.
+   */
+  redacted: boolean;
 };
 
 export type ItineraryGroup = {
   group: string;
-  /** How many events the trip has (itinerary_of), null when no row says. */
+  /** How many events the trip has (itinerary_of), null when no row says (or it is out of range). */
   of: number | null;
   members: ItineraryMember[];
-  /** Sum of the rows' shares = what the customer was charged for the whole trip. */
+  /** Trip price: the sum of the COUNTED rows' shares (not deleted, not Cancelled / Lost). */
   totalIls: number;
-  /** A row has no price recorded, so `totalIls` is a lower bound. */
+  /** A counted row has no price recorded, so `totalIls` is a lower bound. */
   totalPartial: boolean;
+  /** The rows left out of `totalIls`; `totalIls` here is null when any of them has no visible price. */
+  excluded: { count: number; totalIls: number | null };
   /** The row that carries the flight (seq 1), or null when none does. */
   flightHolderId: number | null;
   legs: ItineraryLeg[];
@@ -177,65 +210,101 @@ function hasOwnKeys(value: unknown): boolean {
   return !!value && typeof value === "object" && Object.keys(value).length > 0;
 }
 
-function memberOf(row: ItineraryGroupDbRow): ItineraryMember {
+function memberOf(row: ItineraryGroupDbRow, revealDeleted: boolean): ItineraryMember {
+  const deleted = !!row.is_deleted;
+  const seq = wholeNumber(row.itinerary_seq);
+  if (deleted && !revealDeleted) {
+    return {
+      id: row.id, seq, status: "", priceIls: null, eventId: null, eventName: null, eventDate: null,
+      hotelName: null, hasHotel: false, deleted: true, excluded: "deleted", redacted: true,
+    };
+  }
   const event = normalizeReservationEventOrderInfo(row.event_order_info as ReservationEventOrderInfo)[0];
   const hotel = row.hotel_order_info as { name?: unknown } | null | undefined;
   const dateText = event?.date != null ? String(event.date) : "";
+  const status = text(row.status);
   return {
     id: row.id,
-    seq: wholeNumber(row.itinerary_seq),
-    status: text(row.status),
+    seq,
+    status,
     priceIls: priceOf(row.final_purchase_price_ils),
     eventId: wholeNumber(row.event_id),
     eventName: text(event?.name) || null,
     eventDate: formatDmy(dateText) ?? (dateText.trim() || null),
     hotelName: hasOwnKeys(hotel) ? text(hotel?.name) || null : null,
-    deleted: !!row.is_deleted,
+    hasHotel: hasOwnKeys(hotel),
+    deleted,
+    excluded: deleted ? "deleted" : NOT_COUNTED_STATUSES.has(status.toLowerCase()) ? "status" : null,
+    redacted: false,
   };
 }
 
 /**
- * The trip as ops read it: the sibling rows in trip order, the total, and the flight of seq 1.
+ * The trip as ops read it: the sibling rows in trip order, the trip price and the flight of seq 1.
  * Pure - `rows` are the reservations that share the group. Null when there are none.
+ *
+ * `revealDeleted` = the viewer may see deleted reservations (a superadmin). When false, a deleted
+ * row is returned blanked (no id link, price, event, status or hotel) and never supplies the flight.
  */
-export function buildItineraryGroup(group: string, rows: ItineraryGroupDbRow[]): ItineraryGroup | null {
+export function buildItineraryGroup(
+  group: string,
+  rows: ItineraryGroupDbRow[],
+  opts: { revealDeleted: boolean },
+): ItineraryGroup | null {
   if (rows.length === 0) return null;
   const sorted = [...rows].sort((a, b) => {
     const sa = wholeNumber(a.itinerary_seq) ?? Number.MAX_SAFE_INTEGER;
     const sb = wholeNumber(b.itinerary_seq) ?? Number.MAX_SAFE_INTEGER;
     return sa - sb || a.id - b.id;
   });
-  const members = sorted.map(memberOf);
+  const members = sorted.map((r) => memberOf(r, opts.revealDeleted));
 
   // Summed in agorot so three shares never add up to 1234.5600000000002.
-  let agorot = 0;
+  let counted = 0;
   let totalPartial = false;
+  let excludedCount = 0;
+  let excludedAgorot = 0;
+  let excludedKnown = true;
   for (const m of members) {
-    if (m.priceIls == null) totalPartial = true;
-    else agorot += Math.round(m.priceIls * 100);
+    if (m.excluded) {
+      excludedCount += 1;
+      if (m.priceIls == null) excludedKnown = false;
+      else excludedAgorot += Math.round(m.priceIls * 100);
+    } else if (m.priceIls == null) {
+      // Only a row that counts can make the price a lower bound - a deleted one never does.
+      totalPartial = true;
+    } else {
+      counted += Math.round(m.priceIls * 100);
+    }
   }
 
   // The flight is on seq 1; a row that is not seq 1 but holds one (a hand-edited trip) still shows it.
+  // A deleted row the viewer cannot see never supplies it.
+  const readable = sorted.filter((r) => opts.revealDeleted || !r.is_deleted);
   const holder =
-    sorted.find((r) => wholeNumber(r.itinerary_seq) === 1 && legsOf(r.flight_order_info).length > 0) ??
-    sorted.find((r) => legsOf(r.flight_order_info).length > 0) ??
-    sorted.find((r) => wholeNumber(r.itinerary_seq) === 1 && trainLegsOf(r.flight_order_info).length > 0) ??
+    readable.find((r) => wholeNumber(r.itinerary_seq) === 1 && legsOf(r.flight_order_info).length > 0) ??
+    readable.find((r) => legsOf(r.flight_order_info).length > 0) ??
+    readable.find((r) => wholeNumber(r.itinerary_seq) === 1 && trainLegsOf(r.flight_order_info).length > 0) ??
     null;
 
-  const declared = sorted
-    .map((r) => wholeNumber(r.itinerary_of))
-    .filter((n): n is number => n != null && n >= 2 && n <= MAX_TRIP_EVENTS);
+  const declared = sorted.map((r) => tripSize(r.itinerary_of)).filter((n): n is number => n != null);
 
   return {
     group,
     of: declared.length > 0 ? Math.max(...declared) : null,
     members,
-    totalIls: agorot / 100,
+    totalIls: counted / 100,
     totalPartial,
+    excluded: { count: excludedCount, totalIls: excludedKnown ? excludedAgorot / 100 : null },
     flightHolderId: holder ? holder.id : null,
     legs: holder ? legsOf(holder.flight_order_info) : [],
     trainLegs: holder ? trainLegsOf(holder.flight_order_info) : [],
   };
+}
+
+/** The OTHER visible rows of the trip that keep a hotel (a stay's hotel sits on the stay's first event). */
+export function otherHotelHolders(group: ItineraryGroup, currentId: number): ItineraryMember[] {
+  return group.members.filter((m) => m.hasHotel && !m.redacted && !m.deleted && m.id !== currentId);
 }
 
 // ── The chips (list page) ───────────────────────────────────────────────────────────────────────

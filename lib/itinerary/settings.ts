@@ -38,6 +38,13 @@ export type ItinerarySettings = {
   maxAutoRoutes: number;
 };
 
+/**
+ * The most events ONE trip can have. The single number behind the top of the `max_events` range below,
+ * the migration's `itinerary_of` CHECK (2..3) and the reservations list chip / detail panel
+ * (lib/itinerary/reservation-group.ts) - raise it in all of those together, never in one.
+ */
+export const MAX_TRIP_EVENTS = 3;
+
 export const DEFAULT_ITINERARY_SETTINGS: ItinerarySettings = {
   enabled: false,
   paymentsEnabled: false,
@@ -87,7 +94,7 @@ export const ITINERARY_SPECS: readonly ItinerarySpec[] = [
   { key: "payments_enabled", field: "paymentsEnabled", kind: "bool", label: "תשלום פעיל" },
   num("tier_2_pct", "tier2Pct", "אירוע שני: % הנחה על דמי השירות", 0, 90, false),
   num("tier_3_pct", "tier3Pct", "אירוע שלישי: % הנחה על דמי השירות", 0, 90, false),
-  num("max_events", "maxEvents", "מספר אירועים מקסימלי בטריפ", 2, 3, true),
+  num("max_events", "maxEvents", "מספר אירועים מקסימלי בטריפ", 2, MAX_TRIP_EVENTS, true),
   num("max_km", "maxKm", "מרחק מקסימלי בין ערים (ק״מ)", 50, 5000, false),
   num("best_km", "bestKm", "מרחק 'מומלץ' בין ערים (ק״מ)", 50, 5000, false),
   num("ok_gap_days", "okGapDays", "ימים 'נוחים' בין אירועים", 1, 30, true),
