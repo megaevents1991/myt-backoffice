@@ -1406,167 +1406,126 @@ build on without this task's screen changes.
 ... ואם כפתור אישור לכל אירוע - שמעלה אותו לאתר"). Spec
 `docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md`, plan
 `docs/superpowers/plans/2026-10-21-tour-uploader-agent.md`, migration `20261021115818_tour_uploader.sql`,
-Hebrew how-to for Alon `docs/superpowers/guides/2026-10-21-tour-uploader-how-to-he.md`. **What it is:** a
-staff member types ONE free-text brief ("יצא טור של אריק קלפטון באירופה ... מארק אפ לכרטיס בלבד 250,
-אדישנל 75"), the agent parses it into a plan, a person confirms the plan ("מה הבנתי"), code finds every
-show at TixStock + LiveTickets and builds one **hidden** event per show (all tickets, one pricing rule),
-and a review board lays them out with the decisions taken, the warnings and an Approve per event.
-Admins only: nav "AI Uploader" `/uploader` (`ADMIN_ROLES`, group Products), every action
-`requireAdmin()`; `/factory` redirects there. Screens: `app/(dashboard)/uploader/` (`BriefComposer` ->
-`PlanCard` -> `RunsList`) and `uploader/[id]/` (the board: a card per show, filters, the sticky "אשר הכל
-(N)" bar, a keyboard layer; both `maxDuration` 60). The board drives the build from the client - the
-loop calls `buildNextItem(runId)` one show per server action (a 20-show tour is minutes), polls every
-`BOARD_POLL_MS` 2.5 s, "עצור" / "המשך" stop and resume it, and a closed board resumes when reopened.
+Hebrew how-to for Alon `docs/superpowers/guides/2026-10-21-tour-uploader-how-to-he.md`. **Flow:** a staff
+member types ONE free-text brief, the agent parses it into a plan, a person confirms it ("מה הבנתי"), code
+finds every show at TixStock + LiveTickets and builds one **hidden** event per show, and a review board
+shows the decisions taken, the warnings and an Approve per event. Admins only: nav "AI Uploader"
+`/uploader`, every action `requireAdmin()`; `/factory` redirects there. Screens are
+`app/(dashboard)/uploader/` (composer -> plan card -> runs list) and `uploader/[id]/` (the board), both
+`maxDuration` 60. The board's own loop calls `buildNextItem(runId)` one show per server action and
+refetches after every step; idle, it polls every `BOARD_IDLE_POLL_MS` 15 s. The waiting toast polls every
+`TOAST_POLL_MS` 60 s.
 
-**One AI call; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`)
-is the only place a model is called: a forced, NON-strict tool `plan`, `callsPerRun` 3 (a parse + two
-"ערוך את הבריף" re-parses), `timeoutMs` 20 s, `maxRetries: 0`, `max_tokens` 2000, default model
-`claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). The schema is only the model's guide - `parsePlanInput`
-(`lib/uploader/plan.ts`) enforces every field and salvages what it can, and a bad answer, a timeout or
-an off agent lands on the SAME plan card as an empty manual form (so with the switch off the whole
-feature still works; the agent is the parser, nothing else). The brief is DATA inside the fence like
-every staff text. Everything after the plan is deterministic and pure in `lib/uploader/*` (`plan`,
-`shows`, `tickets`, `place`, `warnings`, `decisions`, `names`, `run-rules`, `constants`: `NEAR_LOCATION_KM`
-50, `FAR_VENUE_KM` 300, `SHOW_WINDOW_DAYS` 3 = main's availability window, `MARKUP_MAX` 5000,
-`REJECT_REASON_MIN` 3, `TOAST_POLL_MS` 60_000, `BOARD_POLL_MS` 2_500), with the DB reads in
-`lib/services/uploader-search.ts` / `uploader-prior.ts` / `uploader-store.ts` and the builder in
-`uploader-build.ts`. **The AI never writes a price:** tickets are priced by the syncs' own functions
-(`tixstockTicketPriceUsd` over `listingsTheSiteSells`, `liveTicketsPriceUsd`), the flight and hotel bases
-by `price-quote.ts` (`quoteFlight` / `quoteHotel`, the ONE rule), markups only from the plan card.
-Suppliers are TixStock + LiveTickets and no others: XS2Event / P1 appear only as "נמצא ב-... (מידע בלבד)"
-on a grey card. A row is a show for the subject by performer (an artist's tribute act that only carries
-the name in its title is excluded), `isHomeGame` (a team: home games unless the plan says all), or the
-TixStock `category_name` (a competition); rows of the two suppliers with the same country + city +
-calendar day are ONE show, two shows on one day or a one-day gap are a question, a show already on
-`events` is skipped `exists`; an open-ended window is capped at today + 24 months (TixStock lists junk
-to 2030). `buildItem`, one show per call, cheapest checks first: tickets (zero = skipped `no_tickets`,
-"אין כרטיסים אין אירוע"; a supplier that never answered = `supplier_unreachable`, never a quiet zero),
-location (`decidePlace`, below), duplicate, map + zones (`zoneFromTemplate`, moved to
-`lib/venue-maps/zone-from-template.ts`; `calculateSmartDates` moved to `lib/` too), bases (a null quote
-= the blocker `no_base_price`; a ticket-only build with no markup = `no_ticket_only_markup`), then
-`createEvent({ is_hidden: true, ... })` with `event_id` written onto the item AT ONCE (an action cut off
-mid-build never leaves a hidden event no item points at; a retry soft-deletes a still-hidden orphan
-first, audit `uploader.orphan_cleaned`). Tickets carry `rgb(5, 32, 60)` like every other writer of a
-supplier ticket (the lib's `TX_TICKET_COLOR` is a CSS variable the editor would rewrite).
+**One AI call; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
+the only model call: a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
+`claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). `callsPerRun` 3 is the agent layer's per-run ceiling, but every
+`parseBrief` call gets a fresh budget - a re-parse ("ערוך את הבריף") is just another call.
+`parsePlanInput` (`lib/uploader/plan.ts`) enforces every field and salvages what it can; a bad answer, a
+timeout or an off agent lands on the SAME plan card as an empty manual form, so with the switch off
+everything but the parse still works. The brief is DATA inside the fence. The rest is pure code in
+`lib/uploader/*` (`constants`: `NEAR_LOCATION_KM` 50, `FAR_VENUE_KM` 300, `SHOW_WINDOW_DAYS` 3 = main's
+availability window, `MARKUP_MAX` 5000, `REJECT_REASON_MIN` 3), DB reads in `uploader-search.ts` /
+`uploader-prior.ts` / `uploader-store.ts`, and the builder `uploader-build.ts` (its header and spec
+section 9 hold the build order). **The AI never writes a price:** tickets go through the syncs' own
+functions (`tixstockTicketPriceUsd` over `listingsTheSiteSells`, `liveTicketsPriceUsd`), bases through
+`price-quote.ts`, markups come only from the plan card. Suppliers are TixStock + LiveTickets only;
+XS2Event / P1 appear as "מידע בלבד" on a grey card. **One show = one city on one printed day, plus the
+home side for a football subject** (`showKey`: the country is NOT in the key - TixStock prints a code,
+LiveTickets a name - it only separates two TixStock rows); two shows on a key, or a one-day gap between the
+suppliers, are a question; a show already on `events` is skipped `exists`. Zero tickets = skipped
+`no_tickets` ("אין כרטיסים אין אירוע"); zero because a supplier never answered is an `error` item ("did
+not answer (after a retry) - build again later", retried with "נסה שוב"), never read as "sells nothing";
+`supplier_unreachable` is the WARNING on a built event whose other supplier did sell. A missing base quote
+or ticket-only markup builds hidden with a BLOCKER (`no_base_price` / `no_ticket_only_markup`), and
+`event_id` is written onto the item at once.
 
-**Tables.** `uploader_runs` (`brief`, `plan`, `plan_ai` = what the model first answered, `status`
-`planned | building | waiting | review | done | stopped | error`, `counts`, `is_test`, `asker_id`) and
-`uploader_items` (one per show: `show` = the supplier identity, `status` `found | building | question |
-skipped | ready | approved | rejected | error`, `mode`, `location`, `decisions` / `warnings` /
-`blockers` as `{ code, text, fix_url? }[]`, `question`, `event_id` with no FK, `payload` = the event as
-written = the baseline of the edit diff, `rejected_final`). RLS on, no policies, service role only;
-read through the repo's `db = supabase as any` boundary cast until `npm run db:types` runs after the
-migration applies (it has not been regenerated yet). The same migration DROPPED `event_drafts`;
-`factory-actions.ts`, `draft-builder.ts`, `types/factory.types.ts` and the four provider tables' "Send
-to factory" buttons are gone (the batch wizard `/events/new?batch=1` stays, a different manual path).
-`uploader_runs.ai_cost_usd` is NOT written - the cost lives in the `agent.call` audit rows, which AI
-Factory sums (`auditedCallCostThisMonth`).
+**Tables.** `uploader_runs` (`brief`, `plan`, `plan_ai`, `status`, `counts`, `is_test`, `asker_id`) and
+`uploader_items` (one per show: `show`, `status`, `mode`, `location`, `decisions` as `{ code, text }[]`, `warnings` / `blockers` as `{ code,
+text, fix_url? }[]`, `question`, `event_id` with no FK, `payload` = the event as written = the baseline of
+the edit diff, `rejected_final`). RLS on, no policies; read through the repo's `db = supabase as any`
+boundary cast until `npm run db:types` runs after the migration applies. The same migration DROPPED
+`event_drafts` (with `factory-actions.ts`, `draft-builder.ts`, `types/factory.types.ts` and the provider
+tables' "Send to factory" buttons gone; the batch wizard stays). `uploader_runs.ai_cost_usd` is NOT written
+- cost lives in the `agent.call` audit rows, which AI Factory sums.
 
-**`events.is_hidden` = "uploaded, not yet approved".** `boolean not null default false` + a partial
-index where true. Not `is_test` (QA events, a different meaning on the events table) and not
-`deactivated_reason` (the TixStock sync's, shown as sold out). Only the uploader writes it: the build
-sets it, approve flips it with a direct one-column update; `updateEvent` and `bulkUpdateEvents` strip
-it (a form opened before an approve would hide the event again) and `duplicateEvent` resets it (a
-copy has no item to approve it). **Backoffice readers that must not see a hidden event** (each got an
-`is_hidden` filter, T9): the creative cron and `lib/creative/auto.ts`, the `/meta-feed` picker (hidden
-events are OUT of it, and the editor's push button answers "מוסתר - ממתין לאישור ב-AI Uploader"),
-`creative-gaps.ts`, the Mega Family feed (`tours-events-feed-sync.ts`) and its search, the homepage
-pins and the portal / quote pickers, stadium memory (never a source), the price-light queues (nightly,
-crawl detail queue, ours, alternatives, `listPriceLight`, the task rule), `base-price-sync`, the
-ready-package refresh. **The TixStock price sync is the one exception, on purpose:** it KEEPS pricing a
-hidden event (one approved a week after its build must carry today's prices) but never writes
-`deactivated_reason` and never opens a `supplier_gap` task on it (a 20-show run must not be a burst of
-tasks nobody asked for); approve re-runs the availability plan for that event right after un-hiding.
-Events table: a "מוסתר" badge and a "מוסתרים" filter. **myt-main** (c05f8a4, f1746a2, 0863fbc, LIVE
-21.10): `isListedEvent` and `lib/events/hidden.ts` (`isHiddenForCheckout`, one predicate), the feed
-read (`lib/feed/feedData.ts`; `/product-feed` names a "hidden" skip reason), `getNavCategories` (listed
-rows only, so an empty hub never leaks an unapproved tour's existence), `noindex` on the page, and
-**`confirm-order` refuses** (`EVENT_NOT_OPEN`, "האירוע עדיין לא פתוח להזמנה" - it fails open only on
-42703 / PGRST204, the pre-migration window, and CLOSED on any other DB error: its one job is "never
-purchasable"). `/order/{id}` stays reachable by direct link - that is the admin's preview - but nobody
-completes an order on it.
+**`events.is_hidden` = "uploaded, not yet approved".** `boolean not null default false` + a partial index.
+Not `is_test` (QA events), not `deactivated_reason` (the TixStock sync's, shown as sold out). Only the
+uploader writes it: the build sets it, approve flips it with a one-column update; `updateEvent` /
+`bulkUpdateEvents` strip it and `duplicateEvent` resets it. **Backoffice readers that skip a hidden event**
+(each got an `is_hidden` filter): the creative cron, the `/meta-feed` picker (the push button answers
+"מוסתר - ממתין לאישור ב-AI Uploader"), `creative-gaps.ts`, the Mega Family feed and search, homepage pins
+and portal / quote pickers, stadium memory, the price-light queues, `base-price-sync`, the ready-package
+refresh. **The TixStock price sync is the one exception, on purpose:** it KEEPS pricing a hidden event (one
+approved a week later must carry today's prices) but never writes `deactivated_reason` or opens a
+`supplier_gap` task on it; approve re-runs the availability plan for that event right after un-hiding.
+Events table: a "מוסתר" badge and a "מוסתרים" filter. **myt-main** (c05f8a4, f1746a2, 0863fbc, LIVE 21.10):
+`isListedEvent` + `lib/events/hidden.ts`, the feed (`/product-feed` names a "hidden" skip reason),
+`getNavCategories` (listed rows only), `noindex`, and **`confirm-order` refuses** (`EVENT_NOT_OPEN`,
+"האירוע עדיין לא פתוח להזמנה"; fails open only on 42703 / PGRST204, the pre-migration window, CLOSED on any
+other DB error). `/order/{id}` stays reachable by direct link - the admin's preview.
 
 **Approve, edit, reject** (`lib/actions/uploader-actions.ts`, 16 actions; each starts with
-`requireAdmin()`, validates its input before any read and RETURNS `{ ok: false, kind }` - Next masks a
-thrown action error in production; the exported actions stay in this one file, their reads and writes
-are in the non-server `uploader-store.ts`, the rules in `run-rules.ts`). **Approve order:** un-hide ->
-record (`uploader.approved`, and `uploader.edited` when `editDiff` between the item's `payload` and the
-event row over `EDIT_EVENT_COLUMNS` is not empty) -> a bounded availability re-check (`APPROVE_SYNC_MS`
-20 s, a race: the sync may finish after the action returned) -> `revalidateMain` -> `invalidatePriceLight("rows")`.
-The record comes BEFORE the slow step, so a hung supplier never leaves a live event with no approval on
-file. Blockers are RE-JUDGED at approve time against the live row (`liveBlockers`: staff may have filled
-the base in the editor); `approveAll` does the same per `ready` item, soonest first, with one re-check
-and one revalidate at the end and `APPROVE_ALL_BUDGET_MS` 50 s (the rest answer `time_budget`). "ערוך" is
-a link to `/events/[id]`; a card whose event differs from its payload wears "נערך". **Reject** soft
-deletes the hidden event FIRST (a failure answers `event_not_deleted` and changes nothing - a surviving
-hidden event would block the next run as `exists`; `rebuildTwoCity` deletes first the same way), needs a
-reason of `REJECT_REASON_MIN`+ characters and has the switch "אל תציע את ההופעה הזו שוב" (`rejected_final`):
-a later run of the same subject skips that show as `rejected_before` without a supplier call. The spec's
-"בנה בכל זאת" override is NOT built - a show rejected for good comes back by hand ("צור ידנית"). A second
-run for a subject still building or waiting is refused (`run_in_progress`); a TEST run's duplicate read
-includes `is_test` events, a real run's does not.
+`requireAdmin()`, validates input before any read and RETURNS `{ ok: false, kind }` - Next masks a thrown
+action error in production). **Approve order:** un-hide -> record (`uploader.approved`, plus
+`uploader.edited` when `editDiff` between `payload` and the event row is not empty) -> a bounded
+availability re-check (`APPROVE_SYNC_MS` 20 s) -> `revalidateMain` -> `invalidatePriceLight("rows")`; the
+record comes BEFORE the slow step, so a hung supplier never leaves a live event with no approval on file.
+Blockers are RE-JUDGED against the live row at approve time (`liveBlockers`); `approveAll` does the same per
+`ready` item with one re-check at the end (`APPROVE_ALL_BUDGET_MS` 50 s). **Reject** soft deletes the
+hidden event FIRST (a failure answers `event_not_deleted`, nothing changes - a surviving hidden event would
+block the next run as `exists`), needs a reason, and the switch "אל תציע את ההופעה הזו שוב"
+(`rejected_final`) makes a later run of the subject skip the show `rejected_before`. The spec's "בנה בכל
+זאת" override is NOT built - such a show comes back by hand ("צור ידנית"). A second run for a subject still
+building or waiting is refused (`run_in_progress`); a TEST run's duplicate read includes `is_test` events,
+a real run's does not.
 
-**Questions are tasks.** A show the code cannot decide (`pick_show`, `pick_date`, `pick_location`,
-`confirm_subject`) goes `question` and stops ALONE - the run goes on. The question is a task
-(`lib/services/uploader-questions.ts`: source `uploader`, board `ops`, priority `high`, assignee = the
-run's asker = the sender, `created_by: null` like a rule-made task so `notifyTaskAssigned` mails the
-asker even when they started the run, `source_ref.url` = the board anchor); `answerQuestion` records the
-answer, closes the task and re-queues the item with the answer applied ("דלג" = skipped
-`skipped_by_answer`). A repeat is answered from memory, no model: `priorAnswerFor` finds an answered
-question of the same kind + key (subject + city + date) in an earlier run and applies it with the
-decision "לפי תשובה קודמת". The waiting toast (`components/uploader-waiting-toast.tsx`, mounted in the
-dashboard layout for admins) calls `countOpenQuestionsFor()` every `TOAST_POLL_MS` (not while the tab
-is hidden) and shows "🟠 ה-AI מחכה לתשובה" when the count ROSE - never on that run's own board; it is
-the `@/hooks/use-toast` store (the one the mounted Toaster reads; `components/ui/use-toast` is a dead
-second store). The menu BADGE the spec also names is NOT built.
+**Questions are tasks.** A show the code cannot decide (`pick_show`, `pick_date`, `pick_location`;
+`confirm_subject` is reserved, never raised) goes `question` and stops ALONE. The question is a task
+(`uploader-questions.ts`: source `uploader`, board `ops`, priority `high`, assignee = the run's asker = the
+sender, `created_by: null` so `notifyTaskAssigned` mails the asker even when they started the run);
+`answerQuestion` closes it and re-queues the item ("דלג" = `skipped_by_answer`), and `priorAnswerFor`
+answers an exact repeat from an earlier run with no model. The toast
+(`components/uploader-waiting-toast.tsx`, admins, store `@/hooks/use-toast` - `components/ui/use-toast` is
+a dead second store) fires when the count ROSE, never on that run's own board, and fires again on a full
+reload for any open question. The menu BADGE the spec names is NOT built.
 
-**What it learns from** (`learnsFrom`, every row tagged `metadata.agent: "tour-uploader"`, 180 days, 10
-lessons): `uploader.plan_edited` (a field, from -> to, a brief excerpt - measured from what the card
-SHOWED, so a "מהפעם הקודמת" markup nobody touched is not a lesson), `uploader.answered`,
-`uploader.rejected` (the reason), `uploader.edited` (the fields staff changed before approving),
-`uploader.two_city_chosen`, and `agent.feedback` tagged for it. Also audited, not taught:
-`uploader.run_created`, `.built`, `.asked`, `.approved` (always; its `edited` flag is the maturity
-signal - approved untouched = agreed, rejected or edited first = disagreed), `.item_retried`,
-`.run_resumed`, `.orphan_cleaned`. **`purgeAuditLog` exempts `uploader.%`** - the 30-day purge would cap
-a 180-day memory at a month, like `price_light.%` and `agent.%` before it. Taught rules
-(`agent_instructions`, key `tour-uploader`) ride with the house rules as in the other agents.
+**What it learns from** (`learnsFrom`, rows tagged `metadata.agent: "tour-uploader"`): `uploader.plan_edited`
+(measured from what the card SHOWED, so an untouched "מהפעם הקודמת" markup is no lesson),
+`uploader.answered`, `.rejected` (the reason), `.edited`, `.two_city_chosen`, and `agent.feedback` (AI
+Factory has no thumbs UI for this agent yet; it offers taught rules, `agent_instructions` key
+`tour-uploader`). Also audited: `uploader.run_created`, `.built`, `.asked`, `.approved` (always; its
+`edited` flag is the maturity signal: untouched = agreed, rejected or edited first = disagreed),
+`.item_retried`, `.run_resumed`, `.orphan_cleaned`. **`purgeAuditLog` exempts `uploader.%`** - the 30-day
+purge would cap a 180-day memory at a month.
 
-**Far venue = the "learn slowly" path (Dor, decision 9).** A show with no location within
-`NEAR_LOCATION_KM` goes through stadium memory FIRST (`findVenueMemory` with `{ strict: true }`, which
-THROWS on a read error - a two-city venue must never silently become ticket-only): when the last event
-at that venue was built two-city it is built the same way (`two_city_from_memory`: `event_location`,
-`lodging_mode`, `lodging_default`, `split_default_nights` copied). With no memory the plan's
-`rules.without_location` decides (ticket only, or skipped `no_location`) and, when the nearest location
-is within `FAR_VENUE_KM`, the card offers "בנה כחבילה דרך <city> עם פיצול מלון" (`far_venue`):
-`rebuildTwoCity` deletes the ticket-only event, re-queues the show with the choice and audits
-`uploader.two_city_chosen` - from then on stadium memory carries that venue's setup into every later run
-by itself, and the lesson teaches the parser a brief like "ליברפול - טיסה למנצ'סטר". Never a guessed
-flight city. `item.location` always holds the nearest location within `FAR_VENUE_KM` so the one-click
-rebuild has a default.
+**Far venue = the "learn slowly" path (Dor, decision 9).** No location within `NEAR_LOCATION_KM` goes
+through stadium memory FIRST (`findVenueMemory` with `{ strict: true }`, which THROWS on a read error). Memory
+carries a two-city setup only from an APPROVED event (live, non-test, not hidden) - never from the same run
+or a test run, so the first far show of a run is always a human's click. With no memory the plan's
+`rules.without_location` decides, and when the nearest location is within `FAR_VENUE_KM` the card offers
+"בנה כחבילה דרך <city> (N ק"מ) עם פיצול מלון": `rebuildTwoCity` deletes the ticket-only event, re-queues
+the show and audits `uploader.two_city_chosen`; once approved, memory carries it into later runs. Never a
+guessed flight city.
 
-**Test run, dry run, selftest.** The plan card's "ריצת בדיקה" switch sets `uploader_runs.is_test` AND
-marks every event of the run `is_test` - use it for the first run of a new kind of brief, then reject
-the test events. `npx tsx scripts/uploader-dryrun.ts "<name>" [artist|team|competition] [--he "<name>"]
-[--from --to] [--all]` is a READ-ONLY dry run of the search against the real database (shows,
-questions, what was left out, existing events; it builds nothing, calls no supplier API and no model).
-`scripts/tour-uploader-selftest.ts` is pure (synthetic Clapton with a tribute act and a two-London-dates
-case, Liverpool home and away, a competition round, the place tree, the run rules);
-`scripts/agents-selftest.ts` asserts the registry holds three keys; `scripts/multi-supplier-selftest.ts`
-covers the moved `zoneFromTemplate`.
+**Test run, dry run, selftest.** The plan card's "ריצת בדיקה" switch sets `uploader_runs.is_test` AND marks
+every event of the run `is_test` - use it for the first run of a new kind of brief, then reject the test
+events. `npx tsx scripts/uploader-dryrun.ts "<name>" [artist|team|competition] [--he "<name>"] [--from --to]
+[--all]` is a READ-ONLY dry run of the search against the real database (no build, no supplier API, no
+model). `scripts/tour-uploader-selftest.ts` is pure and synthetic (also covers `zoneFromTemplate`);
+`scripts/agents-selftest.ts` asserts the registry holds three keys.
 
-**Deploy order (21.10).** (1) The backoffice push to master carries the migration (`events.is_hidden`,
-the two tables, `drop table event_drafts` - first `select status, count(*) from event_drafts group by 1`:
-pending drafts are lost; push away from the :15 / :20 crons) -> confirm "Apply DB Migrations" green.
-(2) myt-main with the gate is ALREADY live (push 7c6024b..4d952b2, confirmed on the site) and MUST be
-before the switch: until then a built event, hidden here, would be listed. (3) Vercel env
-`TOUR_UPLOADER_AI=on` (the key and `AI_AGENTS` are the shared ones). (4) The first run is a TEST run on
-a small subject: approve one event, check it on the site and, after the next hourly creative tick, in the
-feed. Then `npm run db:types`. **BLOCKER for the first real run (Dor's call, outside this build): the
-`mondial` branch site (mondial2026.mega-events.co.il, the same database) has no `isListedEvent` /
-`is_test` / `is_hidden` handling and no checkout gate - an unapproved or test event is listed and
-purchasable there, and a test run is no safer than a real one. Decommission it (plan
-`docs/superpowers/plans/2026-09-01-mondial-decommission-plan.md`, still planned) or port the gate
-before the first hidden row exists.** `revalidateMain` also pings that site.
+**Deploy order (21.10).** (1) The backoffice push to master carries the migration (`events.is_hidden`, the two
+tables, `drop table event_drafts` - first `select status, count(*) from event_drafts group by 1`: pending
+drafts are lost; push away from the :15 / :20 crons) -> confirm "Apply DB Migrations" green. (2) myt-main
+with the gate is ALREADY live (push 7c6024b..4d952b2) and MUST be before the switch: until then a built
+event, hidden here, would be listed. (3) Vercel env `TOUR_UPLOADER_AI=on`. (4) The first run is a TEST run
+on a small subject: approve one event, check it on the site and, after the next hourly creative tick, in
+the feed; then `npm run db:types`. **BLOCKER for the first real run (Dor's call, outside this build): the
+`mondial` branch site (mondial2026.mega-events.co.il, the same database) has no `isListedEvent` / `is_test`
+/ `is_hidden` handling and no checkout gate - an unapproved or test event is listed and purchasable there,
+and a test run is no safer than a real one. Decommission it (plan
+`../myt-main/docs/superpowers/plans/2026-09-01-mondial-decommission-plan.md`, in myt-main, untracked there,
+still planned) or port the gate before the first hidden row exists.** `revalidateMain` also pings that site.
 
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,

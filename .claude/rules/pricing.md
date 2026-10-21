@@ -10,7 +10,7 @@ every customer price is wrong.
   for 2 adults for the whole stay - divide by `QUOTE_HOTEL_ADULTS` first) +$120; rounded to
   whole tens. `base_hotel_price` is PER PERSON - main compares `hotel.price / persons` to it;
   writing the room total doubles the base (prod bug 2026-09-07). Form buttons, wizard
-  auto-fill, the nightly `base-price-sync` cron and the factory ALL quote through it - never
+  auto-fill, the nightly `base-price-sync` cron and the AI Uploader ALL quote through it - never
   compute a base price anywhere else, never change a margin outside that file's constants.
 - **Nightly sync thresholds:** deviation ≥ $20 per component rewrites the base (both
   directions - the base IS the rule, $20 only absorbs rounding); a change > $400 is frozen
