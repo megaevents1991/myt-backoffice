@@ -52,6 +52,9 @@ import {
   ticketsFromTixStockFeed,
   type TixListing,
 } from "@/lib/uploader/tickets";
+import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploader/decisions";
+import { eventNames } from "@/lib/uploader/names";
+import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
@@ -1375,6 +1378,396 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
 
   // calculateSmartDates, moved to lib/.
   same(calculateSmartDates("2027-05-20"), { departure: "2027-05-18", return: "2027-05-21" }, "calculateSmartDates: two days before, one after");
+}
+
+// ---- Task 5: warnings, decisions, names ------------------------------------------------------
+{
+  // -- warnings.ts ---------------------------------------------------------------------------
+  const artistRow = (over: Partial<NonNullable<SubjectRows["artist"]>> = {}): NonNullable<SubjectRows["artist"]> => ({
+    id: 7,
+    name: "Eric Clapton",
+    image_url: "https://img.example/clapton.jpg",
+    art_image_url: "https://img.example/clapton-cut.png",
+    event_gallery: ["https://img.example/g1.jpg"],
+    bio: { text: "guitarist" },
+    hasTwin: true,
+    ...over,
+  });
+  const teamRow = (over: Partial<NonNullable<SubjectRows["team"]>> = {}): NonNullable<SubjectRows["team"]> => ({
+    id: 9,
+    name: "Liverpool FC",
+    logo_url: "https://img.example/lfc.png",
+    crestInLibrary: true,
+    image_url: null,
+    art_image_url: null,
+    bio: { text: "club" },
+    hasTwin: true,
+    ...over,
+  });
+  const rows = (artist: SubjectRows["artist"], team: SubjectRows["team"] = null): SubjectRows => ({ artist, team });
+  const facts = (over: Partial<BuildFacts> = {}): BuildFacts => ({
+    newVenue: false,
+    unzoned: 0,
+    totalTickets: 12,
+    suppliersUsed: ["tixstock", "livetickets"],
+    unreachable: [],
+    hebrewName: true,
+    farVenue: null,
+    ...over,
+  });
+  const codes = (ws: { code: string }[]): string[] => ws.map((w) => w.code);
+
+  // The brief's Clapton case: a flat photo (no cut-out) and an empty event gallery - and no "page missing".
+  const clapton5 = warningsFor("artist", rows(artistRow({ art_image_url: null, event_gallery: [] })), facts());
+  same(codes(clapton5), ["no_cutout", "no_event_gallery"], "Clapton: image but no art image + empty event gallery -> no_cutout + no_event_gallery");
+  same(
+    clapton5.map((w) => w.fix_url),
+    ["/templates/artists/7/edit#fix-image", "/templates/artists/7/edit#fix-gallery"],
+    "the artist warnings deep-link the gaps radar's own anchors",
+  );
+  check(clapton5.every((w) => w.text.length > 0 && !w.text.includes("{")), "every warning carries a filled-in text");
+  same(codes(warningsFor("artist", rows(artistRow()), facts())), [], "a complete artist on a clean build has nothing to warn about");
+  same(
+    codes(warningsFor("artist", rows(artistRow({ image_url: null, art_image_url: null })), facts())),
+    [],
+    "no_cutout is for an artist WITH a photo and no cut-out; no photo at all is not that warning",
+  );
+
+  // An artist with no page: that single warning, no cut-out / gallery noise.
+  const noArtist = warningsFor("artist", rows(null), facts());
+  same(codes(noArtist), ["no_artist_page"], "artist row null -> no_artist_page only");
+  same(noArtist[0].fix_url, "/templates/artists", "no_artist_page links the artists list (there is no row id to open)");
+
+  // Bio and category twin.
+  const bare = warningsFor("artist", rows(artistRow({ bio: null, hasTwin: false })), facts());
+  same(codes(bare), ["no_bio", "no_category_twin"], "no bio + no /c/ twin");
+  same(bare[0].fix_url, "/templates/artists/7/edit#fix-bio", "no_bio deep-links #fix-bio");
+  check(bare[1].fix_url === undefined, "no_category_twin is information only - no fix_url");
+  for (const empty of ["", "   ", [], {}]) {
+    same(codes(warningsFor("artist", rows(artistRow({ bio: empty })), facts())), ["no_bio"], `an empty bio (${JSON.stringify(empty)}) counts as no bio`);
+  }
+
+  // Teams.
+  same(
+    codes(warningsFor("team", rows(null, teamRow({ logo_url: null, crestInLibrary: false })), facts())),
+    ["no_crest"],
+    "team without logo and not in the library -> no_crest",
+  );
+  same(
+    warningsFor("team", rows(null, teamRow({ name: "Atlético Madrid", logo_url: null, crestInLibrary: false })), facts())[0].fix_url,
+    "/assets?q=Atl%C3%A9tico%20Madrid",
+    "no_crest links the assets library, searched by the team name",
+  );
+  same(codes(warningsFor("team", rows(null, teamRow({ logo_url: null, crestInLibrary: true })), facts())), [], "a crest that is in the library is not missing");
+  same(codes(warningsFor("team", rows(null, teamRow({ logo_url: "  " , crestInLibrary: true })), facts())), [], "a blank logo with the crest in the library is fine");
+  const noTeam = warningsFor("team", rows(null, null), facts());
+  same(codes(noTeam), ["no_team_page"], "team row null -> no_team_page only");
+  same(noTeam[0].fix_url, "/templates/football", "no_team_page links the football list");
+  const teamBare = warningsFor("team", rows(null, teamRow({ bio: null, hasTwin: false })), facts());
+  same(codes(teamBare), ["no_bio", "no_category_twin"], "a team without bio / twin");
+  same(teamBare[0].fix_url, "/templates/football/9/edit#fix-bio", "a team's bio deep-links the football form");
+  same(codes(warningsFor("team", rows(artistRow({ art_image_url: null }), teamRow()), facts())), [], "a team run reads the team row, never the artist row");
+  same(codes(warningsFor("artist", rows(artistRow(), teamRow({ logo_url: null, crestInLibrary: false })), facts())), [], "an artist run reads the artist row, never the team row");
+
+  // A competition has no page of its own: nothing to warn about unless the caller hands a team row.
+  same(codes(warningsFor("competition", rows(null, null), facts())), [], "competition with no team row -> no subject warnings (no page to be missing)");
+  same(
+    codes(warningsFor("competition", rows(null, teamRow({ logo_url: null, crestInLibrary: false })), facts())),
+    ["no_crest"],
+    "competition with a team row is checked like a team",
+  );
+
+  // Facts.
+  const venue = warningsFor("artist", rows(artistRow()), facts({ newVenue: true, unzoned: 3 }));
+  same(codes(venue), ["new_venue"], "newVenue + unzoned 3 -> new_venue only (the unzoned tickets are implied)");
+  same(venue[0].text, "אולם חדש - אין תבנית זונים; הכרטיסים יעלו בלי זונים", "new_venue uses the spec's text");
+  const unzoned = warningsFor("artist", rows(artistRow()), facts({ unzoned: 3, totalTickets: 12 }));
+  same(codes(unzoned), ["unzoned_tickets"], "a known venue with unzoned tickets -> unzoned_tickets");
+  check(unzoned[0].text.includes("3") && unzoned[0].text.includes("12"), "unzoned_tickets names how many of how many");
+  same(codes(warningsFor("artist", rows(artistRow()), facts({ unzoned: 0 }))), [], "nothing unzoned, nothing said");
+
+  const unreach = warningsFor("artist", rows(artistRow()), facts({ suppliersUsed: ["tixstock"], unreachable: ["livetickets"] }));
+  same(codes(unreach), ["supplier_unreachable"], "unreachable livetickets -> supplier_unreachable (and not single_supplier: the other supplier never answered)");
+  same(unreach[0].text, "LiveTickets לא ענה - האירוע נבנה בלי Live; צרפו ידנית", "supplier_unreachable uses the spec's LiveTickets text");
+  same(
+    warningsFor("artist", rows(artistRow()), facts({ suppliersUsed: ["livetickets"], unreachable: ["tixstock"] }))[0].text,
+    "TixStock לא ענה - האירוע נבנה בלי TixStock; צרפו ידנית",
+    "the same line for TixStock",
+  );
+  same(
+    codes(warningsFor("artist", rows(artistRow()), facts({ suppliersUsed: [], unreachable: ["tixstock", "livetickets"] }))),
+    ["supplier_unreachable", "supplier_unreachable"],
+    "one warning per supplier that did not answer",
+  );
+  const single = warningsFor("artist", rows(artistRow()), facts({ suppliersUsed: ["tixstock"] }));
+  same(codes(single), ["single_supplier"], "only TixStock sells it -> single_supplier");
+  check(single[0].text.includes("TixStock") && !single[0].text.includes("LiveTickets"), "single_supplier names the supplier that sells it");
+  check(warningsFor("artist", rows(artistRow()), facts({ suppliersUsed: ["livetickets"] }))[0].text.includes("LiveTickets"), "single_supplier names LiveTickets when that is the one");
+  same(codes(warningsFor("artist", rows(artistRow()), facts({ hebrewName: false }))), ["no_hebrew_name"], "no Hebrew name found -> no_hebrew_name");
+
+  const far = warningsFor("artist", rows(artistRow()), facts({ farVenue: { city: "London", km: 312.4 } }));
+  same(codes(far), ["far_venue"], "a far venue -> far_venue");
+  check(far[0].text.includes('312 ק"מ'), "far_venue puts the (rounded) km in the text");
+  check(far[0].text.includes('בנה כחבילה דרך London (312 ק"מ) עם פיצול מלון'), "far_venue carries the spec's offer text verbatim");
+  same(farVenueOffer("London", 312.4), 'בנה כחבילה דרך London (312 ק"מ) עם פיצול מלון', "farVenueOffer is the spec's button text");
+  check(far[0].fix_url === undefined, "far_venue has no fix_url - the board gives it its own action button");
+
+  // Order: the subject's own pages first, then what the build found.
+  const everything = warningsFor(
+    "artist",
+    rows(artistRow({ art_image_url: null, event_gallery: [], bio: null, hasTwin: false })),
+    facts({
+      newVenue: true,
+      suppliersUsed: ["tixstock"],
+      unreachable: ["livetickets"],
+      hebrewName: false,
+      farVenue: { city: "London", km: 400 },
+    }),
+  );
+  same(
+    codes(everything),
+    ["no_cutout", "no_event_gallery", "no_bio", "no_category_twin", "new_venue", "supplier_unreachable", "no_hebrew_name", "far_venue"],
+    "warnings come subject first, then the build's facts",
+  );
+  check(codes(everything).every((c) => c in WARNING_TEXT), "every code warningsFor emits has an entry in WARNING_TEXT");
+  const allCodes = [
+    ...codes(warningsFor("artist", rows(null), facts())),
+    ...codes(warningsFor("team", rows(null), facts())),
+    ...codes(warningsFor("team", rows(null, teamRow({ logo_url: null, crestInLibrary: false })), facts({ unzoned: 2, suppliersUsed: ["livetickets"] }))),
+    ...codes(everything),
+  ];
+  check(allCodes.every((c) => typeof WARNING_TEXT[c] === "string" && WARNING_TEXT[c] !== ""), "WARNING_TEXT has a non-empty text for each of them");
+
+  // -- decisions.ts --------------------------------------------------------------------------
+  same(
+    Object.keys(DECISION_TEXT).sort(),
+    [
+      "base_prices",
+      "categories_dropped",
+      "dates_smart",
+      "duplicate_dropped",
+      "location_found",
+      "location_missing_ticket_only",
+      "lodging_from_memory",
+      "prior_answer",
+      "rejected_before",
+      "tickets_livetickets",
+      "tickets_tixstock",
+      "tribute_excluded",
+      "two_city_chosen",
+      "two_city_from_memory",
+      "zones_from_template",
+    ],
+    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before",
+  );
+  same(decision("dates_smart", { depart: "18.05", ret: "21.05" }), { code: "dates_smart", text: "טיסות 18.05 → 21.05" }, "dates_smart: the spec's text");
+  same(decision("base_prices", { flight: 310, hotel: 290 }).text, "בסיס מהכלל: טיסה $310 · מלון $290", "base_prices: the spec's text");
+  same(
+    decision("categories_dropped", { count: 3, reason: "restricted view" }),
+    { code: "categories_dropped", text: "3 קטגוריות restricted view הושמטו" },
+    "categories_dropped: the spec's text",
+  );
+  same(decision("categories_dropped", { count: 1, reason: "restricted view" }).text, "קטגוריה אחת restricted view הושמטה", "categories_dropped: one category reads as one");
+  same(decision("prior_answer", { name: "דור", run: 3 }).text, "לפי תשובה קודמת של דור (ריצה #3)", "prior_answer: the spec's 8.4 text");
+  same(
+    decision("two_city_from_memory", { event: "Oasis - Manchester", show_city: "מנצ'סטר", flight_city: "לונדון" }).text,
+    "דו-עירוני כמו Oasis - Manchester: הופעה במנצ'סטר, טיסה ללונדון, פיצול מלון",
+    "two_city_from_memory: the spec's text",
+  );
+  same(
+    decision("two_city_from_memory", { event: "Oasis - Manchester", show_city: "Manchester", flight_city: "London" }).text,
+    "דו-עירוני כמו Oasis - Manchester: הופעה ב-Manchester, טיסה ל-London, פיצול מלון",
+    "two_city_from_memory: a Latin city name takes a hyphen after the Hebrew prefix",
+  );
+  same(
+    decision("two_city_from_memory", { event: "E", show_city: "Manchester", flight_city: "London", lodging: "בחירת עיר לינה" }).text,
+    "דו-עירוני כמו E: הופעה ב-Manchester, טיסה ל-London, בחירת עיר לינה",
+    "two_city_from_memory: the lodging words follow the memory when the caller names them",
+  );
+  same(
+    decision("two_city_chosen", { show_city: "Manchester", flight_city: "London", km: 262 }).text,
+    'דו-עירוני לפי בחירת צוות: הופעה ב-Manchester, טיסה ל-London (262 ק"מ), פיצול מלון',
+    "two_city_chosen: show city, flight city and the distance staff accepted",
+  );
+  const samples: Record<keyof typeof DECISION_TEXT, Record<string, string | number>> = {
+    location_found: { city: "London", iata: "LON", km: 12 },
+    location_missing_ticket_only: {},
+    tickets_tixstock: { count: 4 },
+    tickets_livetickets: { count: 2 },
+    categories_dropped: { count: 2, reason: "restricted view" },
+    zones_from_template: { zoned: 9, total: 12 },
+    dates_smart: { depart: "18.05", ret: "21.05" },
+    base_prices: { flight: 310, hotel: 290 },
+    prior_answer: { name: "דור", run: 2 },
+    lodging_from_memory: { event: "Oasis - Manchester" },
+    tribute_excluded: { name: "Journeyman - A Tribute to Eric Clapton" },
+    duplicate_dropped: { name: "Eric Clapton", event_id: 812 },
+    two_city_from_memory: { event: "Oasis", show_city: "Manchester", flight_city: "London" },
+    two_city_chosen: { show_city: "Manchester", flight_city: "London", km: 262 },
+    rejected_before: { run: 3, by: "Alon", reason: "מחיר שגוי" },
+  };
+  for (const code of Object.keys(DECISION_TEXT) as (keyof typeof DECISION_TEXT)[]) {
+    const d = decision(code, samples[code]);
+    check(d.code === code && d.text.length > 0, `${code}: a decision with its own code and a text`);
+    check(!/[{}]|undefined|NaN|null/.test(d.text), `${code}: the text is fully filled in ("${d.text}")`);
+    check(!/[{}]|undefined|NaN|null/.test(decision(code).text), `${code}: a missing param never prints "undefined"`);
+  }
+  check(decision("location_found", samples.location_found).text.includes("London") && decision("location_found", samples.location_found).text.includes("12"), "location_found names the city and the distance");
+  check(decision("tickets_tixstock", { count: 1 }).text.includes("קטגוריה אחת"), "tickets_tixstock: one category reads as one");
+  check(decision("rejected_before", { run: 3, by: "Alon", reason: "מחיר שגוי" }).text.includes("מחיר שגוי"), "rejected_before quotes the reason staff gave");
+
+  // editDiff.
+  same(
+    [...EDIT_WHITELIST],
+    [
+      "name",
+      "name_english",
+      "date",
+      "def_date_depart",
+      "def_date_return",
+      "base_flight_price",
+      "base_hotel_price",
+      "event_additional_markup",
+      "ticket_only_markup",
+      "package_mode",
+      "location",
+      "event_location",
+      "lodging_mode",
+      "lodging_default",
+      "split_default_nights",
+      "tickets_count",
+    ],
+    "the edit whitelist is the brief's",
+  );
+  const built = {
+    name: "ליברפול - קריסטל פאלאס",
+    name_english: "Liverpool FC vs Crystal Palace FC",
+    description: "built text",
+    is_hidden: true,
+    base_flight_price: 310,
+    base_hotel_price: 290,
+    location: { name: "London", city_iata: "LON", latitude: 51.5, longitude: -0.12 },
+    tickets_and_rates: Array.from({ length: 12 }, (_, i) => ({ id: `t${i}` })),
+  };
+  same(editDiff(built, { ...built, description: "staff text", is_hidden: false, id: 5 }), [], "fields outside the whitelist are not edits");
+  same(
+    editDiff(built, { ...built, tickets_and_rates: built.tickets_and_rates.slice(0, 11) }),
+    [{ field: "tickets_count", from: 12, to: 11 }],
+    "tickets_count: 12 -> 11 when staff removed a category",
+  );
+  same(
+    editDiff(built, { ...built, base_flight_price: 350, name: "ליברפול נגד קריסטל פאלאס" }),
+    [
+      { field: "name", from: "ליברפול - קריסטל פאלאס", to: "ליברפול נגד קריסטל פאלאס" },
+      { field: "base_flight_price", from: 310, to: 350 },
+    ],
+    "several edits come back in whitelist order",
+  );
+  same(
+    editDiff(built, { ...built, location: { latitude: 51.5, longitude: -0.12, city_iata: "LON", name: "London" } }),
+    [],
+    "a location stored by jsonb (other key order) is the same location",
+  );
+  same(
+    editDiff(built, { ...built, location: { ...built.location, city_iata: "MAN" } }),
+    [{ field: "location", from: built.location, to: { ...built.location, city_iata: "MAN" } }],
+    "an object field that really changed is reported whole",
+  );
+  same(
+    editDiff({ ...built, event_location: null }, { ...built, event_location: { name: "Manchester" } }),
+    [{ field: "event_location", from: null, to: { name: "Manchester" } }],
+    "event_location null -> set is an edit",
+  );
+  same(editDiff({ ...built, event_location: null }, { ...built, event_location: null }), [], "null against null is no edit");
+  same(editDiff(built, null), [], "no live row (deleted?) -> nothing to diff");
+  same(editDiff(null, built), [], "no stored payload -> nothing to diff against");
+  same(
+    editDiff(built, { ...built, lodging_mode: "flight_city", split_default_nights: 1 }),
+    [],
+    "a column the builder never set (DB default on the row) is not an edit",
+  );
+  same(
+    editDiff({ ...built, tickets_and_rates: null }, { ...built, tickets_and_rates: [] }),
+    [],
+    "tickets_count: no list and an empty list are both zero",
+  );
+
+  // -- names.ts ------------------------------------------------------------------------------
+  const match = (over: Partial<ShowIdentity> = {}): ShowIdentity => ({
+    name_english: "Liverpool FC vs Crystal Palace FC",
+    city: "Liverpool",
+    country_code: "GB",
+    venue: "Anfield",
+    date: "2027-03-06",
+    lat: 53.43,
+    lon: -2.96,
+    suppliers: { tixstock: null, livetickets: null },
+    competition: "Premier League",
+    home_team: "Liverpool FC",
+    away_team: "Crystal Palace FC",
+    fallback: [],
+    ...over,
+  });
+  const teamsHe = { "liverpool fc": "ליברפול", "crystal palace fc": "קריסטל פאלאס", "atletico madrid": "אתלטיקו מדריד" };
+  const noSubject = { name_en: "Liverpool FC", name_he: "ליברפול" };
+  same(
+    eventNames("team", match(), noSubject, teamsHe, null),
+    { name: "ליברפול - קריסטל פאלאס", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: true },
+    "football: Hebrew names of both sides, TixStock's English name",
+  );
+  same(
+    eventNames("team", match({ away_team: "Brighton & Hove Albion FC" }), noSubject, teamsHe, null),
+    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false },
+    "football with one side unknown -> the English name, hebrew false",
+  );
+  same(
+    eventNames("team", match({ home_team: null, away_team: null }), noSubject, teamsHe, null),
+    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false },
+    "football with no sides read -> the English name",
+  );
+  same(
+    eventNames("team", match({ home_team: "Atlético Madrid", away_team: "Liverpool FC", name_english: "Atlético Madrid vs Liverpool FC" }), noSubject, teamsHe, null).name,
+    "אתלטיקו מדריד - ליברפול",
+    "the lookup is by normalizeName: accents do not break it",
+  );
+  same(
+    eventNames("team", match(), noSubject, { ...teamsHe, "crystal palace fc": "  " }, null),
+    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false },
+    "a blank Hebrew name in the table is not a name",
+  );
+  same(
+    eventNames("competition", match(), { name_en: "Premier League", name_he: null }, teamsHe, null),
+    { name: "ליברפול - קריסטל פאלאס", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: true },
+    "a competition run names its fixtures like a team run",
+  );
+
+  const clapton = { name_en: "Eric Clapton", name_he: "אריק קלפטון" };
+  const festival = match({ name_english: "Eric Clapton Live 2027", home_team: null, away_team: null });
+  same(
+    eventNames("artist", festival, clapton, teamsHe, null),
+    { name: "אריק קלפטון", name_english: "Eric Clapton", hebrew: true },
+    "music: the artist row's Hebrew name and the performer's English name (not the supplier's title)",
+  );
+  same(
+    eventNames("artist", festival, { name_en: "Eric Clapton", name_he: null }, teamsHe, "אריק קלפטון (לייב)"),
+    { name: "אריק קלפטון (לייב)", name_english: "Eric Clapton", hebrew: true },
+    "music: no Hebrew on the row -> LiveTickets' hebName",
+  );
+  same(
+    eventNames("artist", festival, clapton, teamsHe, "שם אחר"),
+    { name: "אריק קלפטון", name_english: "Eric Clapton", hebrew: true },
+    "music: the artist row's Hebrew name beats Live's",
+  );
+  same(
+    eventNames("artist", festival, { name_en: "Eric Clapton", name_he: null }, teamsHe, null),
+    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false },
+    "music: no Hebrew anywhere -> the English name, hebrew false",
+  );
+  same(
+    eventNames("artist", festival, { name_en: "Eric Clapton", name_he: "  " }, teamsHe, " "),
+    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false },
+    "music: blank strings are not names",
+  );
 }
 
 console.log(`tour uploader selftest: all ${checks} checks passed`);
