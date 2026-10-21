@@ -19,7 +19,7 @@
  * Pure - no DB, no network, no clock except the `now` a caller hands in. Selftest:
  * scripts/tour-uploader-selftest.ts.
  */
-import { clubNamesMatch, normalizeName } from "@/lib/on-tour";
+import { clubKey, clubNamesMatch, fixtureSides, normalizeName } from "@/lib/on-tour";
 import { isHomeGame } from "@/lib/tixstock-home";
 import { SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import type { QuestionKind, ShowIdentity, SubjectKind, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
@@ -123,18 +123,49 @@ function titleNamesSubject(title: string | null | undefined, s: Subject): boolea
 }
 
 /**
- * A home game: the event name opens with the team (`isHomeGame`), tried with the supplier's own
- * spelling of the performer first, then with every name of the subject.
+ * Does `name` open the fixture (= the home side)? When the event name parses as "A vs B"
+ * (`fixtureSides`, which also drops a "League: " prefix) the A side decides - by `isHomeGame` or
+ * the club rule ("Arsenal" opens "Arsenal FC vs ..."); a name that is no fixture must simply
+ * start with it (`isHomeGame`).
  */
-function isHomeFixture(eventName: string, performerName: string, s: Subject): boolean {
-  return [performerName, s.name_en, ...s.aliases].some((name) => isHomeGame(eventName, name));
+function opensFixture(eventName: string, name: string): boolean {
+  const sides = fixtureSides(eventName);
+  if (!sides) return isHomeGame(eventName, name);
+  return isHomeGame(sides[0], name) || clubNamesMatch(sides[0], name);
 }
 
-/** The round text (when the plan names one) appears in the title or the sub-category. No round = every round. */
+/**
+ * A home game: the team opens the fixture, tried with the supplier's own spelling of the
+ * performer first, then with every name of the subject.
+ */
+function isHomeFixture(eventName: string, performerName: string, s: Subject): boolean {
+  return [performerName, s.name_en, ...s.aliases].some((name) => opensFixture(eventName, name));
+}
+
+/**
+ * A fixture's sides, `homeTeamOf`-style: home = the performer that opens the event name; failing
+ * that, the A side of a name that parses as "A vs B" (the name decides, never performer order);
+ * only for a name that is no fixture, the first performer. Away = the other one.
+ */
+function fixtureTeams(eventName: string, performers: { name: string }[]): { home: string | null; away: string | null } {
+  const sides = fixtureSides(eventName);
+  const opener = performers.find((p) => opensFixture(eventName, p.name));
+  if (opener) return { home: opener.name, away: performers.find((p) => p !== opener)?.name ?? sides?.[1]?.trim() ?? null };
+  if (sides) return { home: sides[0].trim(), away: sides[1]?.trim() ?? null };
+  return { home: performers[0]?.name ?? null, away: performers[1]?.name ?? null };
+}
+
+/**
+ * The round, when the plan names one. A row WITH a sub-category must be that round exactly
+ * (normalized equality) - containment would let "Final" take the "Semi Final" and the "Quarter
+ * Final". A row without one (every LiveTickets row) falls back to the round text inside the
+ * title. No round = every round.
+ */
 function roundMatches(title: string, subCategory: string | null, round: string | null): boolean {
   const r = normalizeName(round);
   if (r === "") return true;
-  return normalizeName(title).includes(r) || normalizeName(subCategory).includes(r);
+  const sub = normalizeName(subCategory);
+  return sub !== "" ? sub === r : normalizeName(title).includes(r);
 }
 
 /**
@@ -155,9 +186,9 @@ function categoryIsCompetition(row: TixRow, s: Subject): boolean {
  *   performer -> "tribute" ("Journeyman - A Tribute to Eric Clapton"): excluded, but listed, so a
  *   person sees what was left out and why. An artist rule only (spec 8.2) - for a team the
  *   title test would flag every concert in a city that shares the club's name.
- * - team: a performer is the team (and the round, when the plan names one, is in the title or
- *   sub-category); with `home_only`, a fixture the team does not open -> "away".
- * - competition: the category or sub-category names it, plus the round when the plan names one.
+ * - team: a performer is the team (and the row is the plan's round, when it names one - see
+ *   `roundMatches`); with `home_only`, a fixture the team does not open -> "away".
+ * - competition: the category or sub-category names it, and the row is the plan's round.
  * Anything else -> "no": not about the subject, dropped without a word (it is search noise).
  */
 export function tixMatchesSubject(row: TixRow, s: Subject, scope: UploaderPlan["scope"]): Verdict {
@@ -180,7 +211,11 @@ export function tixMatchesSubject(row: TixRow, s: Subject, scope: UploaderPlan["
  * tribute or away row too.
  * - artist: a performer's `name` or `hebName` is the subject, or the event's English / Hebrew name
  *   IS the subject -> "match"; a title that only contains it -> "tribute".
- * - team: a performer is the team; home = the team is the FIRST performer or opens the event name.
+ * - team: a performer is the team. Home = the team opens the event name when the name parses as
+ *   "A vs B" - the name decides, because LiveTickets does not list the home side first
+ *   ("Arsenal vs Liverpool" with performers [Liverpool, Arsenal]); performer order (first = home)
+ *   is only the fallback for a name that is no fixture. (`groupRows` also excludes a Live row on
+ *   the day and city of a TixStock row it excluded as away.)
  * - competition: always "no" - a LiveRow carries no category to judge by, so a competition run is
  *   TixStock-led (spec 8.2).
  */
@@ -194,7 +229,7 @@ function liveVerdict(row: LiveRow, s: Subject, scope: UploaderPlan["scope"]): Ve
     case "team": {
       const index = row.performers.findIndex((p) => nameIsSubject(p.name, s) || nameIsSubject(p.hebName, s));
       if (index === -1 || !roundMatches(row.event_name, null, scope.round)) return "no";
-      const home = index === 0 || isHomeFixture(row.event_name, row.performers[index].name, s);
+      const home = fixtureSides(row.event_name) ? isHomeFixture(row.event_name, row.performers[index].name, s) : index === 0;
       return scope.home_only && !home ? "away" : "match";
     }
     case "competition":
@@ -260,6 +295,10 @@ const inScope = (showDate: string, city: string | null, scope: UploaderPlan["sco
 
 /**
  * One show = one city on one printed day: `<normalized city>|<YYYY-MM-DD>` ("london|2027-05-20").
+ * A football show (team / competition subject) adds its HOME side: `london|2027-05-08|arsenal` -
+ * one city holds several fixtures on a Saturday, and they are different shows, not a question.
+ * The home side is keyed by `clubKey` (the `clubNamesMatch` rule), so TixStock's "Arsenal FC" and
+ * LiveTickets' "Arsenal" share the key; a name with no Latin token falls back to `normalizeName`.
  *
  * The country is deliberately NOT in the key, although it is taken: TixStock prints a code ("GB")
  * and LiveTickets a name ("United Kingdom"), so a key holding the country would never pair the two
@@ -267,14 +306,19 @@ const inScope = (showDate: string, city: string | null, scope: UploaderPlan["sco
  * in two countries (Birmingham GB / Birmingham US) are two shows, not a question (`groupRows`) -
  * and the ShowIdentity keeps the code from whichever side has one.
  */
-export function showKey(countryCode: string | null, city: string | null, dateISO: string): string {
+export function showKey(countryCode: string | null, city: string | null, dateISO: string, homeTeam?: string | null): string {
   void countryCode; // part of the identity callers hold, not of the key - see above
-  return `${normalizeName(city)}|${calendarDay(dateISO)}`;
+  const base = `${normalizeName(city)}|${calendarDay(dateISO)}`;
+  const home = homeTeam ? clubKey(homeTeam) || normalizeName(homeTeam) : "";
+  return home === "" ? base : `${base}|${home}`;
 }
 
-/** The key a question (and a rejection) is remembered under across runs: `<subject>|<showKey>`. */
+/**
+ * The key a question (and a rejection) is remembered under across runs: `<subject>|<showKey>` -
+ * with the home side for a football show (its `home_team`; null for an artist's show).
+ */
 export function questionKey(show: ShowIdentity, subject_en: string): string {
-  return `${normalizeName(subject_en)}|${showKey(show.country_code, show.city, show.date)}`;
+  return `${normalizeName(subject_en)}|${showKey(show.country_code, show.city, show.date, show.home_team)}`;
 }
 
 const tixRef = (row: TixRow): NonNullable<ShowIdentity["suppliers"]["tixstock"]> => ({
@@ -293,12 +337,11 @@ const liveRef = (row: LiveRow): NonNullable<ShowIdentity["suppliers"]["liveticke
 /**
  * A show as TixStock lists it, with its LiveTickets twin when there is one. TixStock's identity
  * wins (venue, coordinates, country code - LiveTickets has none of them). Football shows name
- * their sides the way `homeTeamOf` does: the performer that opens the event name is home.
+ * their sides by `fixtureTeams` - the same home side the show key uses.
  */
 function tixShow(row: TixRow, live: LiveRow | null, s: Subject): ShowIdentity {
   const football = s.kind !== "artist";
-  const home = football ? (row.performers.find((p) => isHomeGame(row.event_name, p.name)) ?? row.performers[0] ?? null) : null;
-  const away = football ? (row.performers.find((p) => p !== home) ?? null) : null;
+  const sides = football ? fixtureTeams(row.event_name, row.performers) : { home: null, away: null };
   return {
     name_english: row.event_name,
     city: (row.city_name ?? "").trim(),
@@ -309,8 +352,8 @@ function tixShow(row: TixRow, live: LiveRow | null, s: Subject): ShowIdentity {
     lon: row.lon,
     suppliers: { tixstock: tixRef(row), livetickets: live ? liveRef(live) : null },
     competition: football ? row.category_name : null,
-    home_team: home?.name ?? null,
-    away_team: away?.name ?? null,
+    home_team: sides.home,
+    away_team: sides.away,
     fallback: [],
   };
 }
@@ -318,6 +361,7 @@ function tixShow(row: TixRow, live: LiveRow | null, s: Subject): ShowIdentity {
 /** A show only LiveTickets sells: no venue, no coordinates, no country code - the build resolves a location later. */
 function liveShow(row: LiveRow, s: Subject): ShowIdentity {
   const football = s.kind !== "artist";
+  const sides = football ? fixtureTeams(row.event_name, row.performers) : { home: null, away: null };
   return {
     name_english: row.event_name,
     city: (row.city_name ?? "").trim(),
@@ -328,8 +372,8 @@ function liveShow(row: LiveRow, s: Subject): ShowIdentity {
     lon: null,
     suppliers: { tixstock: null, livetickets: liveRef(row) },
     competition: null,
-    home_team: football ? (row.performers[0]?.name ?? null) : null,
-    away_team: football ? (row.performers[1]?.name ?? null) : null,
+    home_team: sides.home,
+    away_team: sides.away,
     fallback: [],
   };
 }
@@ -390,14 +434,35 @@ function question(kind: QuestionKind, show: ShowIdentity, s: Subject, text: stri
 
 const howMany = (n: number): string => (n === 2 ? "שתי" : String(n));
 
-/** "TixStock lists two shows in London on 20.05.2027: A / B - which one is the tour's?" One option per listing + skip. */
+/** The HH:MM a supplier prints in its ISO string ("2027-05-20T14:00:00+00:00" -> "14:00"), or "" for a bare day. */
+const timeOf = (iso: string): string => {
+  const hhmm = iso.trim().slice(11, 16);
+  return /^\d{2}:\d{2}$/.test(hhmm) ? hhmm : "";
+};
+/** "20.05.2027 14:00" - the day and the time, so a matinee and an evening show tell apart. */
+const whenLabel = (iso: string): string => `${dayLabel(calendarDay(iso))} ${timeOf(iso)}`.trim();
+
+/**
+ * "Keep them all": two listings on one key can be two real shows (a matinee and an evening show),
+ * not a duplicate - the person keeps every listing as its own event.
+ */
+const keepAllOption = (n: number): UploaderQuestion["options"][number] => ({
+  key: "both",
+  label: n === 2 ? "שתיהן - שני אירועים" : `כולן - ${n} אירועים`,
+});
+
+/**
+ * "TixStock lists two shows in London on 20.05.2027: A / B - which one is the tour's?" One option
+ * per listing (keyed by its TixStock id, labelled with venue, day and time), then `both` (keep
+ * every listing as its own event), then `skip`.
+ */
 function pickShowTix(show: ShowIdentity, rows: TixRow[], s: Subject, now: Date): UploaderQuestion {
   const text = `TixStock מציג ${howMany(rows.length)} הופעות ב-${show.city} ב-${dayLabel(show.date)}: ${rows.map((r) => r.event_name).join(" / ")} - איזו שייכת לטור?`;
   const options = rows.map((r) => ({
     key: r.event_id,
-    label: [r.event_name, r.venue_name, dayLabel(calendarDay(r.show_date))].filter((part) => !!part).join(" · "),
+    label: [r.event_name, r.venue_name, whenLabel(r.show_date)].filter((part) => !!part).join(" · "),
   }));
-  return question("pick_show", show, s, text, [...options, SKIP_OPTION], now);
+  return question("pick_show", show, s, text, [...options, keepAllOption(rows.length), SKIP_OPTION], now);
 }
 
 /** The same question about LiveTickets rows; options are keyed `live:<event_id>` and labelled with the id (Live names repeat). */
@@ -405,9 +470,9 @@ function pickShowLive(show: ShowIdentity, rows: LiveRow[], s: Subject, now: Date
   const text = `LiveTickets מציג ${howMany(rows.length)} הופעות ב-${show.city} ב-${dayLabel(show.date)}: ${rows.map((r) => r.event_name).join(" / ")} - איזו שייכת לטור?`;
   const options = rows.map((r) => ({
     key: `live:${r.event_id}`,
-    label: `${r.event_name} · ${dayLabel(calendarDay(r.show_date))} · LiveTickets #${r.event_id}`,
+    label: `${r.event_name} · ${whenLabel(r.show_date)} · LiveTickets #${r.event_id}`,
   }));
-  return question("pick_show", show, s, text, [...options, SKIP_OPTION], now);
+  return question("pick_show", show, s, text, [...options, keepAllOption(rows.length), SKIP_OPTION], now);
 }
 
 /** TixStock and LiveTickets disagree by a day: TixStock's day, LiveTickets' day, two shows, or skip. Keyed on the Tix day. */
@@ -435,10 +500,14 @@ const oneDayApart = (a: string, b: string): boolean => Math.abs(dayNumber(calend
  *    "tribute" / "away" are listed in `excluded`; a matching row outside the window
  *    (`date_from` ?? today + SHOW_WINDOW_DAYS, never earlier than that floor, up to `date_to`) or
  *    the plan's cities is listed `out_of_scope`. Who first, then when and where - a tribute act
- *    in an excluded city is still named a tribute.
- * 2. Rows are keyed by `showKey`. Per key, TixStock rows split by country (the tie-breaker) and
- *    each site settles to one row or a `pick_show` question (`settle`: an empty twin is dropped as
- *    `zero_tickets_twin`); LiveTickets rows settle the same way (`sellable === 0` = empty).
+ *    in an excluded city is still named a tribute. A Live row on the city and day of a TixStock
+ *    row excluded as `away` is excluded `away` too: on a team run that day's fixture is the away
+ *    game, whatever order LiveTickets lists the performers in.
+ * 2. Rows are keyed by `showKey` - with the home side for a football subject, so two fixtures in
+ *    one city on one day are two shows. Per key, TixStock rows split by country (the tie-breaker)
+ *    and each site settles to one row or a `pick_show` question (`settle`: an empty twin is
+ *    dropped as `zero_tickets_twin`); LiveTickets rows settle the same way (`sellable === 0` =
+ *    empty).
  * 3. A settled Tix row and a settled Live row on the same key (one country only) are ONE show.
  *    When a key holds TixStock rows in two countries, its Live row cannot tell which it is and
  *    stays a show of its own.
@@ -460,16 +529,19 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
   const questions: Grouped["questions"] = [];
 
   const keptTix: TixRow[] = [];
+  const awayDays = new Set<string>(); // city|day of every TixStock fixture excluded as away
   for (const row of tix) {
     const verdict = tixMatchesSubject(row, s, plan.scope);
     if (verdict === "no") continue;
+    if (verdict === "away") awayDays.add(showKey(row.country_code, row.city_name, row.show_date));
     if (verdict !== "match") excluded.push({ row: "tixstock", id: row.event_id, reason: verdict });
     else if (!inScope(row.show_date, row.city_name, plan.scope, now)) excluded.push({ row: "tixstock", id: row.event_id, reason: "out_of_scope" });
     else keptTix.push(row);
   }
   const keptLive: LiveRow[] = [];
   for (const row of live) {
-    const verdict = liveVerdict(row, s, plan.scope);
+    const judged = liveVerdict(row, s, plan.scope);
+    const verdict = judged === "match" && awayDays.has(showKey(null, row.city_name, row.show_date)) ? "away" : judged;
     if (verdict === "no") continue;
     const id = String(row.event_id);
     if (verdict !== "match") excluded.push({ row: "livetickets", id, reason: verdict });
@@ -477,8 +549,11 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
     else keptLive.push(row);
   }
 
-  const tixByKey = bucket(keptTix, (r) => showKey(r.country_code, r.city_name, r.show_date));
-  const liveByKey = bucket(keptLive, (r) => showKey(null, r.city_name, r.show_date));
+  const football = s.kind !== "artist";
+  const homeOf = (row: { event_name: string; performers: { name: string }[] }): string | null =>
+    football ? fixtureTeams(row.event_name, row.performers).home : null;
+  const tixByKey = bucket(keptTix, (r) => showKey(r.country_code, r.city_name, r.show_date, homeOf(r)));
+  const liveByKey = bucket(keptLive, (r) => showKey(null, r.city_name, r.show_date, homeOf(r)));
   const dropTix = (r: TixRow) => excluded.push({ row: "tixstock", id: r.event_id, reason: "zero_tickets_twin" });
   const dropLive = (r: LiveRow) => excluded.push({ row: "livetickets", id: String(r.event_id), reason: "zero_tickets_twin" });
 

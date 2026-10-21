@@ -68,10 +68,20 @@ export function clubNamesMatch(a: string, b: string): boolean {
   return tokensEqual(significantTokens(a), significantTokens(b));
 }
 
+/**
+ * The club part of a name as text - exactly what `clubNamesMatch` compares, so two names match
+ * there iff their non-empty keys are equal here ("Arsenal FC" and "Arsenal" -> "arsenal"). Empty
+ * for a name with no Latin token (a Hebrew name). For keying rows by club (tour uploader).
+ */
+export function clubKey(name: string): string {
+  return significantTokens(name).join(" ");
+}
+
 const VS_SPLIT = /\s+vs\.?\s+/i;
 const COMPETITION_TAIL = /\s+[-–—]\s+.*$/;
 
-function fixtureSides(eventName: string): string[] | null {
+/** "A vs B" -> its sides (a "League: " prefix and a " - Competition" tail dropped), or null when the name is not a fixture. */
+export function fixtureSides(eventName: string): string[] | null {
   const noPrefix = eventName.replace(/^[^:]+:\s*/, "");
   const parts = noPrefix.split(VS_SPLIT);
   if (parts.length < 2) return null;

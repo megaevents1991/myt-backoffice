@@ -679,8 +679,9 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
 
   // Two Tix rows on one key: an empty twin is dropped, a selling twin is a question
   {
+    // A matinee on the same day: a real second show or a duplicate - only a person can say.
     const twin = (ticket_count: number) =>
-      tixRow({ event_id: "tx-lon-0520-b", event_name: "Eric Clapton - London (Extra)", ticket_count });
+      tixRow({ event_id: "tx-lon-0520-b", event_name: "Eric Clapton - London (Extra)", show_date: "2027-05-20T14:00:00+00:00", ticket_count });
     const zero = groupRows([...claptonTix, twin(0)], claptonLive, ericClapton, clapton(), NOW);
     same(zero.questions, [], "zero twin: no question");
     check(
@@ -700,11 +701,12 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     same(
       question.options,
       [
-        { key: "tx-lon-0520", label: "Eric Clapton London · London Royal Albert Hall · 20.05.2027" },
-        { key: "tx-lon-0520-b", label: "Eric Clapton - London (Extra) · London Royal Albert Hall · 20.05.2027" },
+        { key: "tx-lon-0520", label: "Eric Clapton London · London Royal Albert Hall · 20.05.2027 19:30" },
+        { key: "tx-lon-0520-b", label: "Eric Clapton - London (Extra) · London Royal Albert Hall · 20.05.2027 14:00" },
+        { key: "both", label: "שתיהן - שני אירועים" },
         { key: "skip", label: "דלג על ההופעה" },
       ],
-      "selling twin: one option per listing (bigger first) + skip",
+      "selling twin: one option per listing (bigger first, with its time), then both, then skip",
     );
     same(
       question.text,
@@ -748,6 +750,32 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
 
     const apart = groupRows([tLon20], [liveRow({ event_id: 9005, show_date: "2027-05-22T19:30:00+00:00" })], ericClapton, clapton(), NOW);
     same([apart.shows.length, apart.questions.length], [2, 0], "pick_date: two days apart = two shows, no question");
+
+    // No double use: a Live row between two Tix days, or a Tix day between two Live rows, asks nothing.
+    const tLon22 = tixRow({ event_id: "tx-lon-0522", show_date: "2027-05-22T19:30:00+00:00" });
+    const between = groupRows([tLon20, tLon22], [lLon21], ericClapton, clapton(), NOW);
+    same(between.questions, [], "pick_date: a Live day with a Tix neighbour on each side is no single question");
+    same(
+      between.shows.map(outline),
+      [
+        ["London", "2027-05-20", "tx-lon-0520", null],
+        ["London", "2027-05-21", null, 9003],
+        ["London", "2027-05-22", "tx-lon-0522", null],
+      ],
+      "pick_date: Tix 20 + Live 21 + Tix 22 = three shows, the Live one on its own",
+    );
+    const lLon19 = liveRow({ event_id: 9006, show_date: "2027-05-19T19:30:00+00:00" });
+    const shared = groupRows([tLon20], [lLon19, lLon21], ericClapton, clapton(), NOW);
+    same(shared.questions, [], "pick_date: a Tix day wanted by two Live neighbours is no single question");
+    same(
+      shared.shows.map(outline),
+      [
+        ["London", "2027-05-19", null, 9006],
+        ["London", "2027-05-20", "tx-lon-0520", null],
+        ["London", "2027-05-21", null, 9003],
+      ],
+      "pick_date: Live 19 + Tix 20 + Live 21 = three shows, nothing merged",
+    );
   }
 
   // Two Live rows on one key: the same pick_show, unless one sells nothing
@@ -756,8 +784,13 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     same(g.questions.length, 1, "live twins: one question");
     same(
       g.questions[0].question.options.map((o) => o.key),
-      ["live:9002", "live:9004", "skip"],
-      "live twins: options keyed live:<event_id>",
+      ["live:9002", "live:9004", "both", "skip"],
+      "live twins: options keyed live:<event_id>, then both, then skip",
+    );
+    same(
+      g.questions[0].question.options[0].label,
+      "Eric Clapton · 20.05.2027 19:30 · LiveTickets #9002",
+      "live twins: the label carries the day, the time and the Live id",
     );
     check(g.questions[0].question.text.startsWith("LiveTickets מציג שתי הופעות ב-London"), "live twins: the text names LiveTickets");
     const empty = groupRows([], [lLon20, liveRow({ event_id: 9004, sellable: 0 })], ericClapton, clapton(), NOW);
@@ -905,6 +938,47 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       [["Liverpool", "2027-04-24", "tx-lfc-cpfc", 9101]],
       "live team: the Live home fixture pairs with the Tix one",
     );
+
+    // An away game must not come back through LiveTickets, which lists Liverpool first here.
+    const liveAwayLfcFirst = liveRow({
+      event_id: 9103,
+      event_name: "Arsenal vs Liverpool",
+      event_name_heb: "ארסנל נגד ליברפול",
+      show_date: "2027-05-01T16:30:00+00:00",
+      performers: [
+        { name: "Liverpool", hebName: "ליברפול" },
+        { name: "Arsenal", hebName: "ארסנל" },
+      ],
+      event_type: "sports_live_event_dynamic",
+    });
+    check(
+      !liveMatchesSubject(liveAwayLfcFirst, liverpool, teamPlan(true).scope),
+      "live team: 'Arsenal vs Liverpool' is away although Liverpool is the first performer - the name decides",
+    );
+    const awayPair = groupRows([away], [liveAwayLfcFirst], liverpool, teamPlan(true), NOW);
+    same(awayPair.shows, [], "away pair: no show from either supplier");
+    same(
+      awayPair.excluded,
+      [
+        { row: "tixstock", id: "tx-afc-lfc", reason: "away" },
+        { row: "livetickets", id: "9103", reason: "away" },
+      ],
+      "away pair: both rows excluded as away",
+    );
+    // A Live name that is no fixture falls back to performer order - and the Tix away row still rules it out.
+    const liveNoFixtureName = liveRow({ ...liveAwayLfcFirst, event_id: 9104, event_name: "Arsenal – Liverpool", event_name_heb: null });
+    check(
+      liveMatchesSubject(liveNoFixtureName, liverpool, teamPlan(true).scope),
+      "live team: a name that is no fixture falls back to performer order (Liverpool first = home)",
+    );
+    same(
+      groupRows([away], [liveNoFixtureName], liverpool, teamPlan(true), NOW).excluded,
+      [
+        { row: "tixstock", id: "tx-afc-lfc", reason: "away" },
+        { row: "livetickets", id: "9104", reason: "away" },
+      ],
+      "away pair: a Live row on the day and city of a Tix away fixture is away too",
+    );
   }
 
   // Competition: the category (or sub-category) names it, the round narrows it
@@ -944,6 +1018,70 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       [["Real Madrid", "Manchester City", "UEFA Champions League"]],
       "competition: one fixture, its sides and its competition",
     );
+
+    // A sub-category must BE the round: "Final" is not the semi or the quarter final.
+    const finalScope = { ...emptyPlan().scope, round: "Final" };
+    same(
+      ["Final", "Semi Final", "Quarter Final"].map((sub) =>
+        tixMatchesSubject(tixRow({ ...r16, event_id: `tx-${sub}`, sub_category_name: sub }), ucl, finalScope),
+      ),
+      ["match", "no", "no"],
+      "competition: round 'Final' matches only the sub-category 'Final'",
+    );
+    same(
+      tixMatchesSubject(tixRow({ ...r16, event_id: "tx-nosub", event_name: "Champions League Final 2027", sub_category_name: null }), ucl, finalScope),
+      "match",
+      "competition: without a sub-category, the round text in the title is enough",
+    );
+
+    // Two Premier League fixtures in London on one Saturday are two shows; a true twin is still a question.
+    const epl: Subject = { kind: "competition", name_en: "English Premier League", name_he: null, aliases: [] };
+    const eplPlan = emptyPlan();
+    eplPlan.subject = { kind: "competition", name_he: null, name_en: "English Premier League" };
+    const fixture = (over: Partial<TixRow> & { event_id: string }): TixRow =>
+      tixRow({ show_date: "2027-05-08T14:00:00+00:00", city_name: "London", category_name: "English Premier League", ...over });
+    const arsChe = fixture({
+      event_id: "tx-ars-che",
+      event_name: "Arsenal FC vs Chelsea FC",
+      venue_name: "Emirates Stadium",
+      performers: [{ name: "Chelsea FC" }, { name: "Arsenal FC" }],
+    });
+    const totFul = fixture({
+      event_id: "tx-tot-ful",
+      event_name: "Tottenham Hotspur FC vs Fulham FC",
+      venue_name: "Tottenham Hotspur Stadium",
+      performers: [{ name: "Tottenham Hotspur FC" }, { name: "Fulham FC" }],
+      show_date: "2027-05-08T16:30:00+00:00",
+    });
+    const saturday = groupRows([arsChe, totFul], [], epl, eplPlan, NOW);
+    same(saturday.questions, [], "football key: two fixtures in one city on one day ask nothing");
+    same(
+      saturday.shows.map((s) => [s.date, s.home_team, s.away_team, s.suppliers.tixstock?.event_id]),
+      [
+        ["2027-05-08", "Arsenal FC", "Chelsea FC", "tx-ars-che"],
+        ["2027-05-08", "Tottenham Hotspur FC", "Fulham FC", "tx-tot-ful"],
+      ],
+      "football key: two shows, home side from the fixture name (not performer order)",
+    );
+    same(
+      questionKey(saturday.shows[0], "English Premier League"),
+      "english premier league|london|2027-05-08|arsenal",
+      "football key: a football question is remembered per home side",
+    );
+    same(
+      showKey(null, "London", "2027-05-08", "Arsenal"),
+      showKey("GB", "London", "2027-05-08T14:00:00+00:00", "Arsenal FC"),
+      "football key: LiveTickets' 'Arsenal' and TixStock's 'Arsenal FC' share the key",
+    );
+    const arsCheAgain = fixture({ ...arsChe, event_id: "tx-ars-che-2", ticket_count: 12 });
+    const trueTwin = groupRows([arsChe, arsCheAgain, totFul], [], epl, eplPlan, NOW);
+    same(trueTwin.questions.length, 1, "football key: two listings of the SAME fixture are still a pick_show");
+    same(
+      trueTwin.questions[0].question.options.map((o) => o.key),
+      ["tx-ars-che", "tx-ars-che-2", "both", "skip"],
+      "football key: the twin's options",
+    );
+    same(trueTwin.shows.map((s) => s.home_team), ["Tottenham Hotspur FC"], "football key: the other fixture is untouched");
   }
 
   // existingEventFor: an eid beats everything; else name + day (+ IATA once the build knows it)
