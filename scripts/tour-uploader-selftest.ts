@@ -457,6 +457,31 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(priorHalf.plan.markups, { ticket_only: null, additional: 90 }, "a null in the prior fills nothing");
   same(priorHalf.fromPrior, ["additional"], "and is not reported");
 
+  // A prior comes out of a jsonb row: a missing key, a string or an out-of-range number are all realistic.
+  const loose = (prior: unknown) => applyPriorDefaults(bothNull, prior as { ticket_only: number | null; additional: number | null });
+  const missingKey = loose({ ticket_only: undefined, additional: 75 });
+  same(missingKey.plan.markups, { ticket_only: null, additional: 75 }, "a prior with an undefined key fills only the other markup");
+  same(missingKey.fromPrior, ["additional"], "and does not report the undefined one as filled");
+  const noKey = loose({ additional: 75 });
+  same(noKey.plan.markups, { ticket_only: null, additional: 75 }, "a prior with a missing key behaves the same");
+  same(noKey.fromPrior, ["additional"], "and reports only what was filled");
+  const garbage = loose({ ticket_only: "250", additional: -1 });
+  same(garbage.plan.markups, { ticket_only: null, additional: null }, "a string / negative prior fills nothing");
+  same(garbage.fromPrior, [], "and reports nothing");
+  const outOfRange = loose({ ticket_only: MARKUP_MAX + 1, additional: 250.5 });
+  same(outOfRange.plan.markups, { ticket_only: null, additional: null }, "an over-range / fractional prior fills nothing");
+  same(outOfRange.fromPrior, [], "and reports nothing");
+  const edges = loose({ ticket_only: 0, additional: MARKUP_MAX });
+  same(edges.plan.markups, { ticket_only: 0, additional: MARKUP_MAX }, "the 0 and MARKUP_MAX edges are valid priors");
+  same(edges.fromPrior, ["ticket_only", "additional"], "and both are reported");
+  const empty = loose({});
+  same(empty.plan.markups, { ticket_only: null, additional: null }, "an empty prior object fills nothing");
+  same(empty.fromPrior, [], "and reports nothing");
+  check(
+    Object.values(missingKey.plan.markups).every((v) => v === null || typeof v === "number"),
+    "no markup is ever undefined after a fill",
+  );
+
   const none = applyPriorDefaults(bothNull, null);
   same(none.plan, bothNull, "no prior = the plan unchanged");
   same(none.fromPrior, [], "no prior = nothing reported");

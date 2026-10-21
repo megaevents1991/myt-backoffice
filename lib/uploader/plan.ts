@@ -38,7 +38,8 @@ export function emptyPlan(): UploaderPlan {
 /**
  * The tool schema the model must answer with (a forced tool call). It mirrors `UploaderPlan`
  * key for key - the selftest compares the two, so a field added to the type cannot be forgotten
- * here. The bounds are hints to the model; `parsePlanInput` is what enforces them.
+ * here. Used as a forced, non-strict tool call - the min/max/pattern fields are hints to the
+ * model; `parsePlanInput` enforces them.
  */
 export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
   type: "object",
@@ -214,10 +215,13 @@ function readBool(v: unknown, field: string, fallback: boolean, problems: string
   return fallback;
 }
 
+/** The one test for a markup value: a whole number of dollars from 0 to MARKUP_MAX. Shared by the parser and the prior defaults. */
+const isMarkup = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MARKUP_MAX;
+
 /** A markup is a whole number of dollars, 0..MARKUP_MAX, or null (= the brief says nothing). */
 function readMarkup(v: unknown, field: string, problems: string[]): number | null {
   if (v === undefined || v === null) return null;
-  if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MARKUP_MAX) return v || 0; // `|| 0` turns a JSON "-0" into 0
+  if (isMarkup(v)) return v || 0; // `|| 0` turns a JSON "-0" into 0
   problems.push(`${field}: must be a whole number from 0 to ${MARKUP_MAX}, or null`);
   return null;
 }
@@ -328,8 +332,11 @@ export function planDiff(before: UploaderPlan, after: UploaderPlan): { field: st
 
 /**
  * Fill the markups the brief left empty from the last confirmed run's. Only a null markup is
- * filled (a 0 is a choice), and a null in `prior` fills nothing. `fromPrior` names what was
- * filled so the card can say where each number came from. Returns a copy; the input is untouched.
+ * filled (a 0 is a choice), and only from a prior value that is itself a valid markup (the same
+ * whole number 0..MARKUP_MAX test as the parser) - `prior` comes out of a jsonb row, so a missing
+ * key, a string or an out-of-range number fills nothing and is not reported. `fromPrior` names
+ * what was filled so the card can say where each number came from. Returns a copy; the input is
+ * untouched.
  */
 export function applyPriorDefaults(
   plan: UploaderPlan,
@@ -339,9 +346,9 @@ export function applyPriorDefaults(
   const fromPrior: ("ticket_only" | "additional")[] = [];
   if (!prior) return { plan: out, fromPrior };
   for (const key of ["ticket_only", "additional"] as const) {
-    const value = prior[key];
-    if (out.markups[key] === null && value !== null) {
-      out.markups[key] = value;
+    const value: unknown = prior[key];
+    if (out.markups[key] === null && isMarkup(value)) {
+      out.markups[key] = value || 0;
       fromPrior.push(key);
     }
   }
