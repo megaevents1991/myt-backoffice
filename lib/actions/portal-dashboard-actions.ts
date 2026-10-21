@@ -255,6 +255,8 @@ export async function getPortalDashboard(
       .from("events")
       .select("id,name,date,location,card_image_url,art_image_url,created_at")
       .is("is_deleted", null)
+      // Hidden = uploader event nobody approved yet: not on a partner's "what's new" rail.
+      .eq("is_hidden", false)
       .gte("date", today)
       .gte("created_at", newSince)
       .order("created_at", { ascending: false })
@@ -669,6 +671,8 @@ export async function getPortalDashboard(
       .from("events")
       .select("id,name,date,location,card_image_url,art_image_url,created_at")
       .is("is_deleted", null)
+      // Hidden = uploader event nobody approved yet: not offered a tracking link.
+      .eq("is_hidden", false)
       .gte("date", today)
       .gte("created_at", olderSince)
       .lt("created_at", newSince)

@@ -314,6 +314,7 @@ async function listingIdsWorthDetail(competitor: CompetitorKey, ids: number[]): 
   // across a page boundary mid-pagination must not be counted twice.
   const { rows: events, error: eventsError, truncated } = await fetchPaged<{ id: number; name: string; name_english: string | null; date: string }>(
     () => db.from("events").select("id,name,name_english,date").is("is_deleted", null)
+      .eq("is_hidden", false) // hidden = uploader event nobody approved yet: no competitor page is opened for it
       .gte("date", new Date().toISOString().slice(0, 10)).order("date", { ascending: true }),
     EVENTS_LOAD_MAX_ROWS,
   );

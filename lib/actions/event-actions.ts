@@ -292,6 +292,8 @@ export async function duplicateEvent(
     name: `${source.name} (Copy)`,
     name_english: `${source.name_english} (Copy)`,
     is_deleted: null, // Ensure the copy is not deleted
+    // A copy has no uploader item to approve it: it must never be born hidden.
+    is_hidden: false,
     // The price-light state describes the ORIGINAL's comparison - a copy (usually for another
     // date) must earn its own. Carried over, a manual override would be re-applied to the copy
     // every night, a mute would hide its reds, and the price-drop tag would show on a price
@@ -355,8 +357,12 @@ export async function duplicateEvent(
   return created;
 }
 
-export async function bulkUpdateEvents(ids: number[], update: Partial<Event>) {
+export async function bulkUpdateEvents(ids: number[], input: Partial<Event>) {
   await requireStaff();
+  // "Hidden" is owned by the uploader's Approve - the same strip as updateEvent, so a bulk
+  // payload built from a stale row can never hide (or un-hide) events.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { is_hidden: _ih, ...update } = input;
   const { data, error } = await supabase
     .from("events")
     .update(update as never)

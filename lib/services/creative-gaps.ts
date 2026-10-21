@@ -39,6 +39,8 @@ export function feedEvents() {
     .from("events")
     .select("id", { count: "exact", head: true })
     .is("is_deleted", null)
+    // A hidden event (uploader, not approved yet) has no creative until approved: not a gap, not counted.
+    .eq("is_hidden", false)
     .gte("date", todayISO());
 }
 
@@ -232,6 +234,7 @@ export async function listGapsOfKind(
           .from("events")
           .select("id,name,date,campaign_skip_reason")
           .is("is_deleted", null)
+          .eq("is_hidden", false)
           .gte("date", todayISO())
           .is("campaign_image_url", null)
           .order("date", { ascending: true })
@@ -266,6 +269,7 @@ export async function listGapsOfKind(
           .from("events")
           .select("id,name,date")
           .is("is_deleted", null)
+          .eq("is_hidden", false)
           .gte("date", todayISO())
           .is("card_image_url", null)
           .order("date", { ascending: true })

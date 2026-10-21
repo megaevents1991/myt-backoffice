@@ -1134,6 +1134,8 @@ async function loadListedEvents(onlyRed: boolean): Promise<ListedEvent[]> {
         .from("events")
         .select(LIST_EVENT_COLUMNS)
         .is("is_deleted", null)
+        // Hidden = uploader event nobody approved yet: no light, so not on this screen.
+        .eq("is_hidden", false)
         .gte("date", today);
       return (onlyRed ? q.or("light_package.eq.red,light_ticket.eq.red") : q).order("id", { ascending: true });
     },

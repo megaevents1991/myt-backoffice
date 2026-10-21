@@ -79,6 +79,8 @@ async function loadEvents(): Promise<EventLightRow[]> {
           "id,name,type,is_test,light_package,light_ticket,light_red_since,light_silenced_until,light_detail",
         )
         .is("is_deleted", null)
+        // Hidden = uploader event nobody approved yet: no light, so no rule candidate.
+        .eq("is_hidden", false)
         .gte("date", today)
         .order("id", { ascending: true }),
     EVENTS_MAX,
