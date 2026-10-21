@@ -3515,6 +3515,7 @@ export type Database = {
           type?: string
           updated_at?: string | null
           utm?: Json
+          wa_seen_at?: string | null
         }
         Update: {
           customer_id?: string | null
@@ -3553,6 +3554,7 @@ export type Database = {
           type?: string
           updated_at?: string | null
           utm?: Json
+          wa_seen_at?: string | null
         }
         Relationships: [
           {
@@ -3602,6 +3604,11 @@ export type Database = {
           is_deleted: string | null
           created_at: string
           updated_at: string
+          wa_consent: string
+          wa_consent_source: string | null
+          wa_consent_at: string | null
+          wa_last_in_at: string | null
+          wa_profile_name: string | null
         }
         Insert: {
           id?: string
@@ -3619,6 +3626,11 @@ export type Database = {
           is_deleted?: string | null
           created_at?: string
           updated_at?: string
+          wa_consent?: string
+          wa_consent_source?: string | null
+          wa_consent_at?: string | null
+          wa_last_in_at?: string | null
+          wa_profile_name?: string | null
         }
         Update: {
           id?: string
@@ -3636,6 +3648,11 @@ export type Database = {
           is_deleted?: string | null
           created_at?: string
           updated_at?: string
+          wa_consent?: string
+          wa_consent_source?: string | null
+          wa_consent_at?: string | null
+          wa_last_in_at?: string | null
+          wa_profile_name?: string | null
         }
         Relationships: []
       }
