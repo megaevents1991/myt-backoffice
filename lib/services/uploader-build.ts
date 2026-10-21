@@ -43,7 +43,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { decision } from "@/lib/uploader/decisions";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { decidePlace, type PlaceInput } from "@/lib/uploader/place";
-import { existingEventFor, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
+import { existingEventFor, ownEventToClean, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
 import { ticketsFromLiveStock, ticketsFromTixStockFeed, type TixDropReason } from "@/lib/uploader/tickets";
 import { WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
@@ -293,7 +293,8 @@ async function readMemory(show: ShowIdentity): Promise<PlaceInput["memory"]> {
 async function readPlaceInput(run: UploaderRun, item: UploaderItem, show: ShowIdentity, ctx: BuildContext): Promise<PlaceInput> {
   const noCoords = typeof show.lat !== "number" || typeof show.lon !== "number";
   const answer = item.question?.kind === "pick_location" ? (item.question.answer ?? null) : null;
-  const [rows, memory] = await Promise.all([loadLocations(), readMemory(show)]);
+  // A two-city rebuild names its flight city itself: the memory is not read (a transient failure must not fail it).
+  const [rows, memory] = await Promise.all([loadLocations(), ctx.twoCity ? null : readMemory(show)]);
   let liveCity: PlaceInput["liveCity"] = null;
   let prior: PlaceInput["prior"] = null;
   if (noCoords && !answer && !ctx.twoCity) {
@@ -315,6 +316,38 @@ async function readPlaceInput(run: UploaderRun, item: UploaderItem, show: ShowId
     memory,
     now: new Date(),
   };
+}
+
+// ---- a retried item's own earlier event ----------------------------------------------------------
+
+/**
+ * A retried item (an action cut off after `createEvent`, a post-create failure) still points at the
+ * hidden event its earlier build made. That event is soft-deleted FIRST (audit
+ * `uploader.orphan_cleaned`) so the rebuild never leaves it hidden with nothing pointing at it; a
+ * failed read or delete THROWS - the build then stops as an error rather than make a second event.
+ */
+async function cleanOwnEvent(run: UploaderRun, item: UploaderItem): Promise<void> {
+  const eventId = item.event_id;
+  if (eventId === null) return;
+  const { data, error } = await db.from("events").select("id,is_hidden,is_deleted").eq("id", eventId).maybeSingle();
+  if (error) {
+    console.error("uploader-build: own event read failed", JSON.stringify(error));
+    throw new Error(`could not read the item's earlier event #${eventId}: ${error.message}`);
+  }
+  const row = (data ?? null) as { id: number; is_hidden: boolean | null; is_deleted: string | null } | null;
+  if (!ownEventToClean(row)) return;
+  try {
+    const { softDeleteEvent } = await import("@/lib/actions/event-actions");
+    await softDeleteEvent(eventId);
+  } catch (e) {
+    throw new Error(`could not remove the earlier hidden event #${eventId} - not building a second one: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  await logAudit({
+    action: "uploader.orphan_cleaned",
+    entityType: "uploader_item",
+    entityId: item.id,
+    metadata: { agent: "tour-uploader", run_id: run.id, item_id: item.id, event_id: eventId },
+  });
 }
 
 // ---- bases ---------------------------------------------------------------------------------------
@@ -342,13 +375,16 @@ function pushUnique(list: Decision[], more: Decision[]): void {
 }
 
 async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): Promise<BuildResult> {
+  // A retry first removes the hidden event its earlier build left (never a second event beside it).
+  await cleanOwnEvent(run, item);
   const decisions: Decision[] = (item.decisions ?? []).filter((d) => SEARCH_DECISIONS.has(d.code));
   if (item.question?.answer?.key === "skip") return skipped(item.show, "skipped_by_answer", decisions);
   const show = await applyShowAnswer(item.show, item.question);
 
   // 0. Already on the site by a supplier id (definitive, and cheaper than the supplier calls)? The
   //    name + day check waits for the names and the location's IATA (step 3). The item's own earlier
-  //    event (a rebuild) is not a duplicate of itself. A test run's duplicates include test events.
+  //    event is not a duplicate of itself (a belt: `cleanOwnEvent` already removed it when hidden).
+  //    A test run's duplicates include test events.
   const existing = (await existingForShow(show, ctx.subject, run.is_test)).filter((e) => e.id !== item.event_id);
   const byEid = existingEventFor({ ...show, name_english: "" }, existing); // a blank name = the eid check alone
   if (byEid) {

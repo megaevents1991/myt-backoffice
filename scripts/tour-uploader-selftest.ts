@@ -33,6 +33,7 @@ import {
 import {
   calendarDay,
   existingEventFor,
+  ownEventToClean,
   groupRows,
   liveMatchesSubject,
   priorAnswerFor,
@@ -1949,7 +1950,13 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(nameFragments("!!!"), [], "a name with no letter has no fragment");
 
   const scope = (date_from: string | null, date_to: string | null): UploaderPlan["scope"] => ({ ...emptyPlan().scope, date_from, date_to });
-  same(searchWindow(scope(null, null), NOW), { from: "2026-10-23", to: "2028-10-21" }, "open window: today+3 (one day wider) to today + 24 months");
+  same(searchWindow(scope(null, null), NOW), { from: "2026-10-23", to: "2028-10-24" }, "open window: today+3 (one day wider) to its start + 24 months");
+  same(
+    searchWindow(scope("2029-03-01", null), NOW),
+    { from: "2029-02-28", to: "2031-03-01" },
+    "a date_from more than 24 months ahead with no date_to: the cap counts from the start, never an empty window",
+  );
+  check(tixSlices(searchWindow(scope("2029-03-01", null), NOW)).length > 0, "...so it has slices to read");
   same(searchWindow(scope("2027-05-01", "2027-06-30"), NOW), { from: "2027-04-30", to: "2027-07-02" }, "a dated window, one day wider each side (to exclusive)");
   same(searchWindow(scope("2026-10-01", null), NOW).from, "2026-10-23", "a date_from before the floor starts at the floor");
   same(
@@ -2055,7 +2062,29 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
 
   // 3. no venue coordinates
   const tixMemory = decidePlace(input({ show: tixNoCoords, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" } }));
-  same(codesOf(tixMemory), ["two_city_from_memory"], "no coords, TixStock show: the venue memory's two-city setup first");
+  same(codesOf(tixMemory), ["two_city_from_memory"], "no coords, TixStock show, no LiveTickets city: the venue memory's two-city setup");
+  // The no-coordinates order, pinned: LiveTickets' city -> memory two-city -> earlier answer -> ask.
+  const heathrow = loc(90, "Heathrow", "LHR", 51.47, -0.45);
+  const liveFirst = decidePlace(
+    input({ show: tixNoCoords, rows: [...rows, heathrow], liveCity: { iata: "LHR", city: "London" }, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" }, prior: { key: "11", text: null, by: "Alon", run_no: 2 } }),
+  );
+  check(liveFirst.kind === "placed" && liveFirst.location.city_iata === "LHR" && liveFirst.lodging.lodging_mode === "choice_split", "order 1: LiveTickets' city is the package, the memory adds its lodging only");
+  same(codesOf(liveFirst), ["location_found", "lodging_from_memory"], "order 1: location_found + lodging_from_memory (as on the with-coordinates path)");
+  const memorySecond = decidePlace(
+    input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" }, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" }, prior: { key: "11", text: null, by: "Alon", run_no: 2 } }),
+  );
+  same(codesOf(memorySecond), ["two_city_from_memory"], "order 2: no LiveTickets city match -> the memory two-city beats an earlier answer");
+  const priorThird = decidePlace(input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" }, prior: { key: "11", text: null, by: "Alon", run_no: 2 } }));
+  check(priorThird.kind === "placed" && priorThird.location.city_iata === "MUC", "order 3: no city, no memory -> the earlier answer");
+  same(decidePlace(input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" } })).kind, "ask", "order 4: nothing -> ask");
+
+  // A retried item's own earlier event (lib/uploader/shows.ts ownEventToClean).
+  check(ownEventToClean({ is_hidden: true, is_deleted: null }), "own event: hidden and not deleted -> clean it before rebuilding");
+  check(ownEventToClean({ is_hidden: true, is_deleted: "" }), "own event: an empty is_deleted is not deleted");
+  check(!ownEventToClean({ is_hidden: true, is_deleted: "10-21-2026" }), "own event: already deleted -> leave it");
+  check(!ownEventToClean({ is_hidden: false, is_deleted: null }), "own event: live (approved) -> never deleted by a rebuild");
+  check(!ownEventToClean({ is_hidden: null, is_deleted: null }), "own event: is_hidden unknown -> leave it");
+  check(!ownEventToClean(null), "own event: gone -> nothing to clean");
   const byIata = decidePlace(input({ show: liveOnly, rows: [...rows, loc(90, "Heathrow", "LHR", 51.47, -0.45)], liveCity: { iata: "LHR", city: "London" } }));
   check(byIata.kind === "placed" && byIata.location.city_iata === "LHR", "no coords: LiveTickets' 3-letter iata finds the row");
   same(codesOf(byIata), ["location_found"], "no coords: a LiveTickets city match carries location_found");

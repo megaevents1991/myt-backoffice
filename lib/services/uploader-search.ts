@@ -84,14 +84,15 @@ const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T
  * SHOW_WINDOW_DAYS) up to `date_to`, ONE DAY WIDER on each side - SQL compares instants while the
  * rules compare the day a supplier PRINTS ("2027-05-20T23:30:00-05:00" is the 20th), so the edge
  * rows are fetched and `groupRows` decides (listing them `out_of_scope` when they are). `to` is
- * exclusive. An open-ended plan (`date_to` null) ends OPEN_WINDOW_MONTHS from today.
+ * exclusive. An open-ended plan (`date_to` null) ends OPEN_WINDOW_MONTHS after the window's START
+ * (a `date_from` years ahead still gets a full window, never an empty one).
  */
 export function searchWindow(scope: UploaderPlan["scope"], now: Date = new Date()): SearchWindow {
   const today = now.toISOString().slice(0, 10);
   const floor = addDays(today, SHOW_WINDOW_DAYS);
   const start = scope.date_from !== null && scope.date_from > floor ? scope.date_from : floor;
   if (scope.date_to !== null) return { from: addDays(start, -1), to: addDays(scope.date_to, 2) };
-  const cap = new Date(`${today}T00:00:00Z`);
+  const cap = new Date(`${start}T00:00:00Z`);
   cap.setUTCMonth(cap.getUTCMonth() + OPEN_WINDOW_MONTHS);
   return { from: addDays(start, -1), to: cap.toISOString().slice(0, 10) };
 }

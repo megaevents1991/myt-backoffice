@@ -10,8 +10,9 @@
  *   2. the item's own answered `pick_location`: "skip" skips; a known location is the package; an
  *      answer naming no location asks again (never throws - a rebuild must not fail on it).
  *   3. no venue coordinates (a LiveTickets-only show, or a TixStock row without coordinates):
- *      the venue memory's two-city setup -> LiveTickets' own city fields -> an earlier run's answer
- *      ("skip" skips) -> ask.
+ *      LiveTickets' own city fields (a found location is the package, the memory adds its lodging -
+ *      as on the with-coordinates path) -> the venue memory's two-city setup -> an earlier run's
+ *      answer ("skip" skips) -> ask.
  *   4. the nearest location with an IATA within NEAR_LOCATION_KM (+ the memory's lodging when it
  *      is a real second city).
  *   5. the venue memory's two-city setup (decision 9: memory before the brief's fallback).
@@ -205,6 +206,13 @@ export function pickLocationQuestion(show: ShowIdentity, subject_en: string, row
   };
 }
 
+/** A found flight city keeps the venue memory's lodging when it names a real second city (decision `lodging_from_memory`). */
+function memoryLodging(input: PlaceInput, location: Event["location"]): { lodging: LodgingFields; decisions: Decision[] } {
+  const memory = input.memory;
+  if (!memory?.lodging?.event_location || !hasEventCity({ location, event_location: memory.lodging.event_location })) return { lodging: {}, decisions: [] };
+  return { lodging: { ...memory.lodging }, decisions: [decision("lodging_from_memory", { event: memory.fromEventName })] };
+}
+
 /** The memory's two-city setup as a placement, when its flight city is a location with an IATA and the event city is a real second city. */
 function memoryTwoCity(input: PlaceInput, kmFrom: (row: LocationRow) => number | null): PlaceResult | null {
   const m = input.memory;
@@ -276,12 +284,15 @@ export function decidePlace(input: PlaceInput): PlaceResult {
     return ask(); // names no location we can fly to: ask again
   }
 
-  // 3. No venue coordinates: memory, LiveTickets' city, an earlier answer - then ask.
+  // 3. No venue coordinates: LiveTickets' city, memory, an earlier answer - then ask.
   if (!coords) {
+    const byLiveCity = input.liveCity ? liveCityLocation(input.liveCity, rows) : null;
+    if (byLiveCity) {
+      const { lodging, decisions } = memoryLodging(input, flightCity(byLiveCity));
+      return { kind: "placed", mode: "package", location: flightCity(byLiveCity), lodging, itemLocation: itemLocationOf(byLiveCity, null), farVenue: null, decisions: [foundLine(byLiveCity, null), ...decisions] };
+    }
     const fromMemory = memoryTwoCity(input, kmFrom);
     if (fromMemory) return fromMemory;
-    const byLiveCity = input.liveCity ? liveCityLocation(input.liveCity, rows) : null;
-    if (byLiveCity) return package_(byLiveCity, [foundLine(byLiveCity, null)]);
     const prior = input.prior;
     if (prior) {
       const by = decision("prior_answer", { name: prior.by, run: prior.run_no });
@@ -296,14 +307,8 @@ export function decidePlace(input: PlaceInput): PlaceResult {
   const near = findNearestLocation(coords.lat, coords.lon, rows, NEAR_LOCATION_KM);
   if (near) {
     const location = flightCity(near.row);
-    const decisions = [foundLine(near.row, near.km)];
-    let lodging: LodgingFields = {};
-    const memory = input.memory;
-    if (memory?.lodging?.event_location && hasEventCity({ location, event_location: memory.lodging.event_location })) {
-      lodging = { ...memory.lodging };
-      decisions.push(decision("lodging_from_memory", { event: memory.fromEventName }));
-    }
-    return { kind: "placed", mode: "package", location, lodging, itemLocation: itemLocationOf(near.row, near.km), farVenue: null, decisions };
+    const { lodging, decisions } = memoryLodging(input, location);
+    return { kind: "placed", mode: "package", location, lodging, itemLocation: itemLocationOf(near.row, near.km), farVenue: null, decisions: [foundLine(near.row, near.km), ...decisions] };
   }
 
   // 5. Memory before the brief's fallback (decision 9).

@@ -664,6 +664,16 @@ export function existingEventFor(show: ShowIdentity, existing: ExistingEvent[], 
   );
 }
 
+/**
+ * A retried item still points at the event an earlier build created (`item.event_id`): when that
+ * event is still HIDDEN and not deleted, nobody approved it - the rebuild removes it first (soft
+ * delete), or the retry would leave it hidden with nothing pointing at it. A live (approved) or
+ * already deleted event, or none at all, is left alone.
+ */
+export function ownEventToClean(row: { is_hidden: boolean | null; is_deleted: string | null } | null): boolean {
+  return row !== null && row.is_hidden === true && (row.is_deleted ?? "").trim() === "";
+}
+
 // ---- remember -----------------------------------------------------------------------------------
 
 /** The item of the newest run among `items` (the first one listed when two share a run). */
