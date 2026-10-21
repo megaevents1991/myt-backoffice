@@ -244,6 +244,7 @@ export async function syncTixStockPrices(
       | "tickets_and_rates"
       | "tx_excluded_sections"
       | "deactivated_reason"
+      | "is_hidden"
     >;
     // Upcoming events only: a show that already happened has no price to keep
     // and nothing to take off the site. They were a quarter of the run (138 of
@@ -265,12 +266,12 @@ export async function syncTixStockPrices(
     // sync, only the event-level switch waits.
     let canDeactivate = true;
     let { data, error } = await loadEvents(
-      "id,name,date,tickets_and_rates,tx_excluded_sections,deactivated_reason",
+      "id,name,date,tickets_and_rates,tx_excluded_sections,deactivated_reason,is_hidden",
     );
     if ((error as { code?: string } | null)?.code === "42703") {
       canDeactivate = false;
       ({ data, error } = await loadEvents(
-        "id,name,date,tickets_and_rates,tx_excluded_sections",
+        "id,name,date,tickets_and_rates,tx_excluded_sections,is_hidden",
       ));
     }
 
@@ -393,11 +394,18 @@ export async function syncTixStockPrices(
         // nothing left to sell is deactivated, and both come back by
         // themselves when listings return.
         const currentReason = event.deactivated_reason ?? null;
+        // A hidden event (built by the uploader, not approved yet) is priced like any other, but
+        // this sync never switches it off the site and never opens a supplier_gap task for it:
+        // a 20-show upload must not be a burst of tasks and mails nobody asked for. Approve
+        // un-hides it first and then re-runs this sync for that one event, which judges it.
+        const hidden = event.is_hidden === true;
         let plan = planTixstockAvailability(updatedTicketsAndRates, "tx_event", {
           categories: feed.categories,
           listed: sourceTickets.map((t) => t.seat_details?.category ?? ""),
         });
-        let reason = canDeactivate
+        // Guard 1: a hidden event keeps its reason as it is, so the deactivated_reason /
+        // deactivated_at write below, its audit row and the deactivation counters never fire.
+        let reason = canDeactivate && !hidden
           ? nextDeactivation(currentReason, plan)
           : currentReason;
 
@@ -486,7 +494,8 @@ export async function syncTixStockPrices(
           }
           // A task while the event is off by this sync, or carries a category
           // the supplier does not have; closed once neither is true.
-          if (openTasks) {
+          // Guard 2: never for a hidden event - openSupplierGapTask is not called for it.
+          if (openTasks && !hidden) {
             const openTaskId = openTasks.get(event.id);
             const needsTask = isTxDeactivation(reason) || plan.missing.length > 0;
             if (needsTask && !openTaskId) {

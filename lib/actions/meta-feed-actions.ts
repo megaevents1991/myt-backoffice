@@ -78,6 +78,9 @@ export type PushEventToFeedResult =
 /** Days before an event the site stops selling it - main's AVAILABILITY_WINDOW_DAYS. */
 const FEED_BOOKING_WINDOW_DAYS = 3;
 
+/** The per-row answer for a hidden event: built by the uploader, waiting for staff approval. */
+const HIDDEN_EVENT_REASON = "מוסתר - ממתין לאישור ב-AI Uploader";
+
 /**
  * One event into the Meta feed now, without waiting for the crons or running
  * "sync everything": make its creative (the feed skips an event with none),
@@ -96,6 +99,17 @@ export async function pushEventToFeedAction(
   try {
     const event = await loadFeedEvent(eventId);
     if (!event) return { ok: false, error: "Event not found" };
+    // A hidden event goes nowhere near the feed - answer before drawing or publishing anything.
+    if (event.is_hidden === true) {
+      return {
+        ok: true,
+        creative: "skipped",
+        creativeNote: HIDDEN_EVENT_REASON,
+        inFeed: false,
+        whyNot: [HIDDEN_EVENT_REASON],
+        activityRows: 0,
+      };
+    }
 
     const creative = await generateCampaignForEvent(event);
     const result = await publishMetaFeeds();
@@ -163,6 +177,17 @@ export async function renderEventCreativeAction(
   try {
     const event = await loadFeedEvent(eventId);
     if (!event) return { ok: false, error: "Event not found" };
+    // Even a forced redraw never renders a hidden event: it answers the row with the reason.
+    if (event.is_hidden === true) {
+      return {
+        ok: true,
+        id: eventId,
+        name: event.name || event.name_english || `#${eventId}`,
+        creative: "skipped",
+        creativeNote: HIDDEN_EVENT_REASON,
+        blockers: [HIDDEN_EVENT_REASON],
+      };
+    }
 
     const creative = await generateCampaignForEvent(event, undefined, { force });
     await logAudit({
@@ -221,6 +246,8 @@ export async function listFeedPickerEvents(): Promise<FeedPickerEvent[]> {
         .from("events")
         .select("id,name,name_english,date,campaign_image_url,campaign_skip_reason,is_test")
         .is("is_deleted", null)
+        // Hidden events (uploader, not approved yet) are not offered for a push.
+        .eq("is_hidden", false)
         .gte("date", todayISO)
         .order("date", { ascending: true })
         .order("id", { ascending: true }),
@@ -349,11 +376,13 @@ export async function getSyncHealth(): Promise<SyncHealth> {
       .from("events")
       .select("id", { count: "exact", head: true })
       .is("is_deleted", null)
+      .eq("is_hidden", false)
       .gte("date", todayISO),
     db
       .from("events")
       .select("id", { count: "exact", head: true })
       .is("is_deleted", null)
+      .eq("is_hidden", false)
       .gte("date", todayISO)
       .not("campaign_image_url", "is", null),
   ]);

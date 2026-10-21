@@ -1261,7 +1261,9 @@ export async function runReadyPackageRefresh(opts: {
     .select("id, name, ready_package_token, ready_package_mode")
     .not("ready_package_token", "is", null)
     .in("ready_package_mode", ["preview", "live"])
-    .is("is_deleted", null);
+    .is("is_deleted", null)
+    // Hidden = uploader event nobody approved yet: no refresh, no "broken live package" mail.
+    .eq("is_hidden", false);
   if (eventsError) {
     console.error("ready-package: refresh targets failed", JSON.stringify(eventsError));
     throw new Error("Could not load the events with a ready package");

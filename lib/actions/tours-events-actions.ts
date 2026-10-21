@@ -214,6 +214,8 @@ export async function searchMegaEvents(query: string): Promise<ActionResult<Mega
       .from("events")
       .select(EVENT_COLUMNS)
       .is("is_deleted", null)
+      // A hidden event (uploader, not approved yet) cannot be picked for a company's list.
+      .eq("is_hidden", false)
       .gte("date", cutoff)
       .or(filter)
       .order("date", { ascending: true })

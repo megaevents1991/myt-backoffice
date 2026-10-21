@@ -22,7 +22,7 @@ const EVENT_LIST_COLUMNS =
   "tickets_and_rates,def_date_depart,def_date_return," +
   "base_flight_price,base_hotel_price,event_additional_markup," +
   "light_package,light_ticket,light_detail,light_checked_at,light_silenced_until," +
-  "price_drop_usd,price_drop_from,price_drop_until,deactivated_reason";
+  "price_drop_usd,price_drop_from,price_drop_until,deactivated_reason,is_hidden";
 
 export async function getEvents() {
   await requireStaff();
@@ -127,6 +127,10 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     // a form opened before the package went live would switch it back off with its save.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     ready_package_token: _rt, ready_package_mode: _rm, ready_package_price_usd: _rp,
+    // "Hidden" (an uploader event nobody approved yet) is owned by the uploader's Approve - a form
+    // opened before the approval would hide the event again with its save.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    is_hidden: _ih,
     ...event
   } = input;
   const before = await fetchBefore("events", "id", id, event);

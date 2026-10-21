@@ -242,6 +242,8 @@ async function readEventOrder(now: Date): Promise<FeedLightRow[]> {
     .from("events")
     .select(LIGHT_COLUMNS)
     .is("is_deleted", null)
+    // Hidden = built by the uploader, not approved yet: never in a company's list or search.
+    .eq("is_hidden", false)
     .gte("date", feedCutoffDate(now))
     .order("date", { ascending: true })
     .limit(2000)

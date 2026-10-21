@@ -225,6 +225,8 @@ export async function findVenueMemory(input: VenueMemoryInput): Promise<VenueMem
     .eq("type", input.eventType)
     .is("is_deleted", null)
     .not("is_test", "is", true)
+    // A hidden event (uploader, not approved yet) is not live: its tickets are no one's memory.
+    .eq("is_hidden", false)
     .order("date", { ascending: false })
     .limit(MEMORY_CANDIDATES);
   if (error) {

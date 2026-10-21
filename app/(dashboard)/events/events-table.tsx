@@ -251,6 +251,7 @@ export function EventsTable() {
   const [hideSold, setHideSold] = useSessionState("hideSold", false);
   const [hidePast, setHidePast] = useSessionState("hidePast", false);
   const [showTicketOnly, setShowTicketOnly] = useSessionState("showTicketOnly", false);
+  const [showHidden, setShowHidden] = useSessionState("showHidden", false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkMarkupOpen, setBulkMarkupOpen] = useState(false);
@@ -582,6 +583,7 @@ export function EventsTable() {
       if (eventDate < today) return false;
     }
     if (showTicketOnly && !isTicketOnlyEvent(event)) return false;
+    if (showHidden && event.is_hidden !== true) return false;
     if (filterCatIdSet) {
       const ids = catsByEvent[event.id] ?? [];
       if (!ids.some((id) => filterCatIdSet.has(id))) return false;
@@ -764,6 +766,15 @@ export function EventsTable() {
                 className="text-destructive border-destructive"
               >
                 Deleted
+              </Badge>
+            )}
+            {row.original.is_hidden === true && (
+              <Badge
+                variant="outline"
+                className="border-amber-400 text-amber-800"
+                title="Built by the AI Uploader and not approved yet - the site, the feeds and the syncs do not see it"
+              >
+                מוסתר
               </Badge>
             )}
             {isTicketOnlyEvent(row.original) && (
@@ -1280,6 +1291,20 @@ export function EventsTable() {
             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
           >
             Ticket-only events only
+          </label>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="show-hidden"
+            checked={showHidden}
+            onCheckedChange={(checked) => setShowHidden(checked as boolean)}
+          />
+          <label
+            htmlFor="show-hidden"
+            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+          >
+            מוסתרים
           </label>
         </div>
 

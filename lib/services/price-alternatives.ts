@@ -230,7 +230,8 @@ export async function runAlternativesPass(opts: { dryRun: boolean; budgetMs: num
   type Candidate = { id: number; is_test: boolean | null; alt_at: string | null };
   const { rows, error, truncated } = await fetchPaged<Candidate>(
     () => db.from("events").select("id,is_test,alt_at:light_detail->ours->alt->>at")
-      .is("is_deleted", null).gte("date", today).or("light_package.eq.red,light_ticket.eq.red").order("id", { ascending: true }),
+      .is("is_deleted", null).eq("is_hidden", false) // hidden = uploader event nobody approved yet: not quoted
+      .gte("date", today).or("light_package.eq.red,light_ticket.eq.red").order("id", { ascending: true }),
     ALT_EVENTS_MAX,
   );
   if (error) { console.error("alternatives: candidate read failed", JSON.stringify(error)); throw new Error(`alternatives candidates: ${error.message}`); }

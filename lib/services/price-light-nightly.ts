@@ -208,6 +208,8 @@ export async function runPriceLightNightly(options: { dryRun: boolean; budgetMs:
         .from("events")
         .select(LIGHT_EVENT_COLUMNS)
         .is("is_deleted", null)
+        // Hidden = uploader event nobody approved yet: no snapshot, no light, no task.
+        .eq("is_hidden", false)
         .gte("date", today)
         .order("light_checked_at", { ascending: true, nullsFirst: true })
         .order("id", { ascending: true }),

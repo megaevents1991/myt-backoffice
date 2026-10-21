@@ -311,6 +311,8 @@ export async function runOurOfferPass(opts: { dryRun: boolean; budgetMs?: number
     () => db.from("events")
       .select(`${OUR_OFFER_EVENT_COLUMNS},is_test,base_flight_price,base_hotel_price,ours_at:light_detail->ours->>at,ours_errors:light_detail->ours->errors`)
       .is("is_deleted", null)
+      // Hidden = uploader event nobody approved yet: its package is not described or quoted.
+      .eq("is_hidden", false)
       .gte("date", today)
       .order("id", { ascending: true }),
     OUR_OFFER_EVENTS_MAX,

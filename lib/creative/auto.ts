@@ -692,6 +692,9 @@ export async function generateCampaignForEvent(
   caches?: CreativeLookupCaches,
   options: GenerateCampaignOptions = {},
 ): Promise<CampaignResult> {
+  // A hidden event (built by the uploader, not approved yet) gets no creative. Not a gap either:
+  // nothing is written to the row - no hash, no skip reason - so approving it starts from scratch.
+  if (event.is_hidden === true) return { status: "skipped", reason: "hidden" };
   // Gallery-aware hash: the picked gallery image is part of what gets
   // rendered, so a gallery edit must produce a new hash (→ regenerate).
   const [artistRows, subjectRows] = await Promise.all([
@@ -827,7 +830,7 @@ export async function generateCampaignForEvent(
 
 /** Every column the creative pipeline reads - the cron's scan and the single-event push. */
 export const CAMPAIGN_EVENT_COLUMNS =
-  `id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,${SITE_PRICE_COLUMNS},art_image_url,card_image_url,campaign_input_hash,campaign_image_url,campaign_generated_at`;
+  `id,name,name_english,type,date,location,event_location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel,skip_flight,${SITE_PRICE_COLUMNS},art_image_url,card_image_url,campaign_input_hash,campaign_image_url,campaign_generated_at,is_hidden`;
 
 /**
  * Work order for a run: events with no creative at all first (in the order
@@ -897,6 +900,8 @@ export async function runCampaignCreatives(
     .from("events")
     .select(CAMPAIGN_EVENT_COLUMNS)
     .is("is_deleted", null)
+    // Hidden = an uploader event nobody approved yet: no creative, no feed, nothing written to it.
+    .eq("is_hidden", false)
     .gte("date", todayISO)
     .order("date", { ascending: true });
   if (error) {

@@ -1775,6 +1775,14 @@ export default function EventPage({
                 : "Create Event"
               : `Edit Event: ${event.name}`}
           </h1>
+          {/* Built by the AI Uploader and not approved yet: the site, the feeds and the syncs do not see it. */}
+          {!isNewEvent && event.is_hidden === true && (
+            <Link href="/uploader" className="mt-1 inline-block">
+              <Badge variant="outline" className="border-amber-400 text-amber-800">
+                מוסתר - ממתין לאישור
+              </Badge>
+            </Link>
+          )}
           {isNewEvent && searchParams.get("data") && (
             <p className="text-sm text-muted-foreground mt-1">
               Pre-populated with data from XS2Event. Review and adjust as

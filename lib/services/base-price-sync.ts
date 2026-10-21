@@ -170,6 +170,8 @@ export async function runBasePriceSync(options: {
       "id,name,date,def_date_depart,def_date_return,location,base_flight_price,base_hotel_price",
     )
     .is("is_deleted", null)
+    // Hidden = uploader event nobody approved yet: its base prices are the uploader's, not rewritten here.
+    .eq("is_hidden", false)
     .gte("date", isoDaysFromNow(2)) // sync until 2 days before the event
     .order("date");
   if (error) {
