@@ -183,6 +183,8 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
           "id,name,name_english,date,card_image_url,art_image_url,is_prioritized,created_at",
         )
         .is("is_deleted", null)
+        // Hidden = uploader event nobody approved yet: not offered to pin on the homepage.
+        .eq("is_hidden", false)
         .gte("date", todayISO())
         .order("date", { ascending: true })
         .limit(2000),

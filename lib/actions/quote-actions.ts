@@ -117,6 +117,8 @@ export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
           "id,name,date,location,base_flight_price,base_hotel_price,tickets_and_rates,event_additional_markup,markup_ticket,markup_flight,markup_hotel",
         )
         .is("is_deleted", null)
+        // Hidden = uploader event nobody approved yet: not quotable.
+        .eq("is_hidden", false)
         .gte("date", today)
         .order("date", { ascending: true })
         .order("id", { ascending: true }),

@@ -218,6 +218,8 @@ export async function getPackageBuilderEvents(): Promise<BuilderEvent[]> {
         .from("events")
         .select(EVENT_COLUMNS)
         .is("is_deleted", null)
+        // Hidden = uploader event nobody approved yet: partners cannot build a package on it.
+        .eq("is_hidden", false)
         .gte("date", minStart)
         .order("date", { ascending: true })
         .order("id", { ascending: true }),
