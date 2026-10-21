@@ -61,7 +61,8 @@ import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-lo
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
 import type { EventTicket } from "@/types/app.types";
-import type { ShowIdentity, UploaderPlan } from "@/types/uploader.types";
+import type { ShowIdentity, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
+import * as runRules from "@/lib/uploader/run-rules";
 
 let checks = 0;
 /** A truthy check. */
@@ -1921,6 +1922,264 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     "no_ticket_only_markup: the blocker's text",
   );
   check(!!WARNING_TEXT.no_base_price && !!WARNING_TEXT.no_base_price_hotel, "no_base_price: flight and hotel blocker texts exist");
+}
+
+// ---- Task 8: server-action rules (lib/uploader/run-rules.ts) ------------------------------------
+{
+  const R = runRules;
+  const AT = "2026-10-21T10:00:00.000Z";
+  const CLAPTON = "Eric Clapton";
+  const showAt = (city: string, date: string, tixId: string, liveId: number | null, over: Partial<ShowIdentity> = {}): ShowIdentity => ({
+    name_english: CLAPTON,
+    city,
+    country_code: "GB",
+    venue: `${city} Arena`,
+    date,
+    lat: 51.5,
+    lon: -0.17,
+    suppliers: {
+      tixstock: { event_id: tixId, name: CLAPTON, ticket_count: 40, venue_map_url: null },
+      livetickets: liveId === null ? null : { event_id: liveId, name_heb: "אריק קלפטון", sellable: 3 },
+    },
+    competition: null,
+    home_team: null,
+    away_team: null,
+    fallback: [],
+    ...over,
+  });
+  const ask = (kind: UploaderQuestion["kind"], show: ShowIdentity, keys: string[], over: Partial<UploaderQuestion> = {}): UploaderQuestion => ({
+    kind,
+    key: questionKey(show, CLAPTON),
+    text: "?",
+    options: keys.map((k) => ({ key: k, label: `label ${k}` })),
+    free_text: false,
+    asked_at: AT,
+    task_id: "task-1",
+    ...over,
+  });
+  const answer = (key: string | null, text: string | null = null): runRules.StoredAnswer => ({ key, text, by: "user-1", at: AT });
+
+  // Constants the actions validate with.
+  same(
+    [R.BRIEF_MAX, R.ANSWER_KEY_MAX, R.ANSWER_TEXT_MAX, R.REJECT_REASON_MAX, R.SKIPPED_BY_ANSWER],
+    [4000, 80, 500, 500, "skipped_by_answer"],
+    "task 8: input limits + the build's own skip reason",
+  );
+  check(R.REJECT_REASON_MAX > REJECT_REASON_MIN, "task 8: the reason window is not empty");
+
+  // isUuid / isPositiveInt
+  check(R.isUuid("0b0e8c8a-1f2d-4c3b-9a8e-7d6c5b4a3f21"), "isUuid: a uuid");
+  check(R.isUuid("0B0E8C8A-1F2D-4C3B-9A8E-7D6C5B4A3F21"), "isUuid: upper case");
+  check(!R.isUuid("0b0e8c8a-1f2d-4c3b-9a8e-7d6c5b4a3f21 "), "isUuid: trailing space");
+  check(!R.isUuid("0b0e8c8a-1f2d-4c3b-9a8e-7d6c5b4a3f2"), "isUuid: one character short");
+  check(!R.isUuid("not-a-uuid,status.eq.found"), "isUuid: anything else");
+  check(!R.isUuid(5) && !R.isUuid(null) && !R.isUuid(undefined), "isUuid: non-strings");
+  check(R.isPositiveInt(3) && R.isPositiveInt(1), "isPositiveInt: 1, 3");
+  check(![0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "3", null].some((v) => R.isPositiveInt(v)), "isPositiveInt: 0, negative, fraction, NaN, Infinity, text, null");
+
+  // cleanAnswerInput: the shape check before any read.
+  same(R.cleanAnswerInput({ key: " both ", text: null }), { key: "both", text: null }, "answer: a key, trimmed");
+  same(R.cleanAnswerInput({ key: null, text: "  London  " }), { key: null, text: "London" }, "answer: free text, trimmed");
+  same(R.cleanAnswerInput({ text: "London" }), { key: null, text: "London" }, "answer: an absent key is null");
+  same(R.cleanAnswerInput({ key: "skip", text: "not ours" }), { key: "skip", text: "not ours" }, "answer: key and a note");
+  same(R.cleanAnswerInput({ key: "", text: "  " }), null, "answer: both blank -> refused");
+  same(R.cleanAnswerInput({}), null, "answer: nothing -> refused");
+  for (const bad of [null, undefined, "skip", 5, [], ["skip"]]) same(R.cleanAnswerInput(bad), null, `answer: ${JSON.stringify(bad)} is no answer`);
+  same(R.cleanAnswerInput({ key: 5 }), null, "answer: a numeric key -> refused");
+  same(R.cleanAnswerInput({ key: "x".repeat(81) }), null, "answer: key over 80 -> refused");
+  same(R.cleanAnswerInput({ key: "x".repeat(80) })?.key?.length, 80, "answer: key of 80 -> kept");
+  same(R.cleanAnswerInput({ text: "y".repeat(501) }), null, "answer: text over 500 -> refused");
+  same(R.cleanAnswerInput({ key: "skip", text: "y".repeat(501) }), null, "answer: a valid key does not excuse an over-long text");
+
+  // checkAnswer: the key must be one of the stored options; free text only where allowed.
+  const london = showAt("London", "2027-05-20", "tx-1", 9001);
+  const pickShow = ask("pick_show", london, ["tx-2", "tx-1", "tx-3", "both", "skip"]);
+  same(R.checkAnswer(pickShow, { key: "tx-3", text: null }), { ok: true, label: "label tx-3" }, "checkAnswer: a listed option, with its label");
+  same(R.checkAnswer(pickShow, { key: "tx-9", text: null }), { ok: false }, "checkAnswer: an id the question never offered");
+  same(R.checkAnswer(pickShow, { key: "yes", text: null }), { ok: false }, "checkAnswer: another kind's key");
+  same(R.checkAnswer(pickShow, { key: null, text: "the evening one" }), { ok: false }, "checkAnswer: free text where the question has none");
+  const pickLocation = ask("pick_location", london, ["4", "skip"], { free_text: true });
+  same(R.checkAnswer(pickLocation, { key: null, text: "London" }), { ok: true, label: null }, "checkAnswer: free text where allowed");
+  same(R.checkAnswer(pickLocation, { key: null, text: "  " }), { ok: false }, "checkAnswer: blank free text");
+  same(R.checkAnswer(pickLocation, { key: "4", text: null }), { ok: true, label: "label 4" }, "checkAnswer: a location id option");
+
+  // answerEffect
+  same(R.answerEffect(pickShow, london, answer("skip")), { kind: "skip" }, "effect: skip");
+  same(R.answerEffect(pickShow, london, answer("tx-3")), { kind: "requeue", show: london }, "effect: a listing - the build re-reads it, the show is untouched here");
+  same(R.answerEffect(pickLocation, london, answer(null, "London")), { kind: "requeue", show: london }, "effect: a location - the build applies it");
+  const pickDate = ask("pick_date", london, ["tix:2027-05-20", "live:2027-05-21", "both", "skip"]);
+  const moved = R.answerEffect(pickDate, london, answer("live:2027-05-21"));
+  same(moved.kind === "requeue" ? [moved.show.date, moved.show.suppliers] : null, ["2027-05-21", london.suppliers], "effect: a day moves the show, both suppliers stay");
+  same(london.date, "2027-05-20", "effect: the input show is not mutated");
+
+  const dateBoth = R.answerEffect(pickDate, london, answer("both"));
+  check(dateBoth.kind === "split" && dateBoth.extra.length === 1, "effect: pick_date both -> one extra show");
+  if (dateBoth.kind === "split") {
+    same([dateBoth.show.date, dateBoth.show.suppliers.livetickets, dateBoth.show.suppliers.tixstock?.event_id], ["2027-05-20", null, "tx-1"], "effect: pick_date both - the item is TixStock's show on its day");
+    const extra = dateBoth.extra[0];
+    same([extra.show.date, extra.show.suppliers.tixstock, extra.show.suppliers.livetickets?.event_id], ["2027-05-21", null, 9001], "effect: pick_date both - the extra is LiveTickets' show on its day");
+    same([extra.question.key, extra.question.task_id, extra.question.answer?.key, extra.question.answer?.by], [`${pickDate.key}#both:2`, null, "live:2027-05-21", "user-1"], "effect: the extra's question is answered, keyed apart, no task");
+  }
+
+  const showBoth = R.answerEffect(pickShow, london, answer("both"));
+  check(showBoth.kind === "split", "effect: pick_show both -> split");
+  if (showBoth.kind === "split") {
+    same(showBoth.show, london, "effect: pick_show both - the item keeps the listing (and partner) it holds");
+    same(showBoth.extra.map((e) => e.question.answer?.key), ["tx-2", "tx-3"], "effect: one extra per OTHER listing, in option order (the held tx-1 is skipped)");
+    same(showBoth.extra.map((e) => e.question.key), [`${pickShow.key}#both:2`, `${pickShow.key}#both:3`], "effect: extras keyed apart from the original question");
+    same(showBoth.extra.map((e) => e.show.suppliers.livetickets), [null, null], "effect: the LiveTickets partner stays on ONE item only");
+    check(showBoth.extra.every((e) => e.question.task_id === null && e.question.answer?.at === AT), "effect: extras carry no task and the answer's time");
+  }
+  const pickLive = ask("pick_show", london, ["live:9001", "live:9002", "both", "skip"]);
+  const liveBoth = R.answerEffect(pickLive, london, answer("both"));
+  same(
+    liveBoth.kind === "split" ? liveBoth.extra.map((e) => [e.question.answer?.key, e.show.suppliers.tixstock, e.show.suppliers.livetickets?.event_id]) : null,
+    [["live:9002", null, 9001]],
+    "effect: LiveTickets listings - the extra drops the TixStock partner (the build swaps in live:9002)",
+  );
+  const unheld = R.answerEffect(pickShow, showAt("London", "2027-05-20", "tx-zz", null), answer("both"));
+  same(unheld.kind === "split" ? unheld.extra.map((e) => e.question.answer?.key) : null, ["tx-1", "tx-3"], "effect: a show holding no option keeps the first one, the rest become extras");
+
+  // planRunItems
+  const A = showAt("London", "2027-05-20", "tx-a", 1);
+  const E = showAt("Berlin", "2027-05-21", "tx-e1", null, { country_code: "DE" });
+  const D = showAt("Milan", "2027-05-22", "tx-d", 4, { country_code: "IT" });
+  const B = showAt("Paris", "2027-05-25", "tx-paris", null, { country_code: "FR" });
+  const C = showAt("Zurich", "2027-05-28", "tx-c", null, { country_code: "CH" });
+  const F = showAt("Madrid", "2027-05-30", "tx-f", 6, { country_code: "ES" });
+  const G = showAt("Rome", "2027-05-31", "tx-g1", null, { country_code: "IT" });
+  const H = showAt("Vienna", "2027-06-02", "tx-h1", null, { country_code: "AT" });
+  const qE = ask("pick_show", E, ["tx-e1", "tx-e2", "both", "skip"], { task_id: null });
+  const qD = ask("pick_date", D, ["tix:2027-05-22", "live:2027-05-23", "both", "skip"], { task_id: null });
+  const qF = ask("pick_date", F, ["tix:2027-05-30", "live:2027-05-31", "both", "skip"], { task_id: null });
+  const qG = ask("pick_show", G, ["tx-g1", "tx-g2", "both", "skip"], { task_id: null });
+  const qH = ask("pick_show", H, ["tx-h1", "tx-h2", "both", "skip"], { task_id: null });
+  const prior = (kind: PriorItem["kind"], key: string, ans: { key: string | null; text: string | null } | null, extra: Partial<PriorItem> = {}): PriorItem => ({
+    subject_en: CLAPTON,
+    kind,
+    key,
+    answer: ans,
+    run_no: 3,
+    by: "Alon",
+    ...extra,
+  });
+  const existing: ExistingEvent[] = [{ id: 812, name_english: CLAPTON, date: "2027-05-25T20:00:00", city_iata: "PAR", eids: ["tx-paris"], is_hidden: true }];
+  const drafts = R.planRunItems({
+    shows: [B, A, C],
+    questions: [
+      { show: H, question: qH },
+      { show: G, question: qG },
+      { show: F, question: qF },
+      { show: D, question: qD },
+      { show: E, question: qE },
+    ],
+    existing,
+    priors: [
+      prior("rejected", questionKey(C, CLAPTON), null, { run_no: 2, by: "", reason: "never in Zurich" }),
+      prior("pick_show", qE.key, { key: "tx-e2", text: null }),
+      prior("pick_date", qF.key, { key: "both", text: null }),
+      prior("pick_show", qG.key, { key: "tx-gone", text: null }),
+      prior("pick_show", qH.key, { key: "skip", text: null }),
+    ],
+    fallback: new Map([[showKey(A.country_code, A.city, A.date, A.home_team), ["xs2event" as const]]]),
+    subject_en: CLAPTON,
+    at: AT,
+  });
+  same(
+    drafts.map((d) => [d.position, d.show.city, d.status]),
+    [
+      [0, "London", "found"],
+      [1, "Berlin", "found"],
+      [2, "Milan", "question"],
+      [3, "Paris", "skipped"],
+      [4, "Zurich", "skipped"],
+      [5, "Madrid", "found"],
+      [6, "Madrid", "found"],
+      [7, "Rome", "question"],
+      [8, "Vienna", "skipped"],
+    ],
+    "planRunItems: soonest first, shows and questions merged, a split's extra right after it",
+  );
+  same([drafts[0].show.fallback, drafts[0].decisions, drafts[0].question, drafts[0].ask], [["xs2event"], [], null, false], "planRunItems: a plain show is found, with its XS2Event sighting");
+  same([drafts[1].question?.answer?.key, drafts[1].question?.answer?.by, drafts[1].question?.answer?.at, drafts[1].ask], ["tx-e2", "Alon", AT, false], "planRunItems: an earlier answer is applied, no task");
+  same(drafts[1].decisions.map((d) => d.code), ["prior_answer"], "planRunItems: ... with the prior_answer decision");
+  check(drafts[1].decisions[0].text.includes("Alon") && drafts[1].decisions[0].text.includes("#3"), `planRunItems: the decision names who and which run (${drafts[1].decisions[0].text})`);
+  same([drafts[2].ask, drafts[2].question?.answer, drafts[2].question?.key], [true, undefined, qD.key], "planRunItems: an unanswered question waits for a person (ask)");
+  same([drafts[3].skip_reason, drafts[3].decisions.map((d) => d.code), drafts[3].question, drafts[3].ask], ["exists", ["duplicate_dropped"], null, false], "planRunItems: already on the site -> skipped exists");
+  check(drafts[3].decisions[0].text.includes("812"), "planRunItems: the duplicate names the existing event");
+  same([drafts[4].skip_reason, drafts[4].decisions.map((d) => d.code)], ["rejected_before", ["rejected_before"]], "planRunItems: rejected for good -> skipped rejected_before");
+  check(drafts[4].decisions[0].text.includes("never in Zurich") && drafts[4].decisions[0].text.includes("#2"), "planRunItems: ... quoting the reason and the run");
+  same(
+    [drafts[5].show.date, drafts[5].show.suppliers.livetickets, drafts[5].question?.answer?.key],
+    ["2027-05-30", null, "both"],
+    "planRunItems: an earlier 'both' splits - the item is TixStock's day",
+  );
+  same(
+    [drafts[6].show.date, drafts[6].show.suppliers.tixstock, drafts[6].question?.key, drafts[6].decisions.map((d) => d.code), drafts[6].ask],
+    ["2027-05-31", null, `${qF.key}#both:2`, ["prior_answer"], false],
+    "planRunItems: ... and LiveTickets' day is its own found item",
+  );
+  same([drafts[7].ask, drafts[7].decisions], [true, []], "planRunItems: an earlier answer this question no longer offers is not applied - asked again");
+  same([drafts[8].skip_reason, drafts[8].question?.answer?.key, drafts[8].ask], ["skipped_by_answer", "skip", false], "planRunItems: an earlier 'skip' skips the show again");
+  same(R.planRunItems({ shows: [], questions: [], existing, priors: [], fallback: new Map(), subject_en: CLAPTON, at: AT }), [], "planRunItems: nothing found -> no items");
+  same(B.fallback, [], "planRunItems: input shows are not mutated");
+
+  // runCounts / nextRunStatus
+  same(
+    R.runCounts(["found", "found", "ready", "made-up"]),
+    { found: 2, building: 0, question: 0, skipped: 0, ready: 1, approved: 0, rejected: 0, error: 0, total: 4 },
+    "runCounts: every status (zeros too) + total; an unknown status counts in total only",
+  );
+  same(R.nextRunStatus("building", R.runCounts(["found", "ready"])), "building", "run status: something to build -> building");
+  same(R.nextRunStatus("building", R.runCounts(["building", "question"])), "building", "run status: a build in flight -> building");
+  same(R.nextRunStatus("building", R.runCounts(["question", "ready"])), "waiting", "run status: only questions left to unblock -> waiting");
+  same(R.nextRunStatus("waiting", R.runCounts(["ready", "approved", "skipped"])), "review", "run status: built events to approve -> review");
+  same(R.nextRunStatus("review", R.runCounts(["approved", "rejected", "skipped", "error"])), "done", "run status: nothing left for anyone -> done");
+  same(R.nextRunStatus("done", R.runCounts(["found", "approved"])), "building", "run status: a re-queued item reopens a done run");
+  same(R.nextRunStatus("planned", R.runCounts([])), "done", "run status: a run with no items is done");
+  same(R.nextRunStatus("stopped", R.runCounts(["found"])), "stopped", "run status: stopped stays stopped");
+  same(R.nextRunStatus("error", R.runCounts(["found"])), "error", "run status: error stays error");
+  same([...R.RECOMPUTED_RUN_STATUSES].sort(), ["building", "done", "planned", "review", "waiting"], "run status: the recompute never overwrites stopped / error");
+
+  // planPreview
+  same(
+    R.planPreview({ shows: [B, A, showAt("London", "2027-06-10", "tx-l2", null)], questions: [{ show: D }], existing }),
+    { shows: 3, questions: 1, existing: 1, cities: ["London", "Milan", "Paris"] },
+    "planPreview: counts, the existing ones among the shows, each city once, soonest first",
+  );
+  same(R.planPreview({ shows: [], questions: [], existing: [] }), R.EMPTY_PREVIEW, "planPreview: nothing found");
+
+  // EDIT_EVENT_COLUMNS covers the edit diff.
+  same(
+    R.EDIT_EVENT_COLUMNS.split(",").sort(),
+    ["id", "tickets_and_rates", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
+    "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id",
+  );
+
+  // subjectArtOf
+  const artistRows = (art: string | null, image: string | null): SubjectRows => ({
+    artist: { id: 7, name: "אריק קלפטון", image_url: image, art_image_url: art, event_gallery: [], bio: null, hasTwin: true },
+    team: null,
+  });
+  same(R.subjectArtOf("artist", artistRows("cut.png", "flat.jpg"), CLAPTON), { kind: "artist", name_english: CLAPTON, image_url: "cut.png" }, "subjectArt: the cut-out first");
+  same(R.subjectArtOf("artist", artistRows("  ", "flat.jpg"), CLAPTON)?.image_url, "flat.jpg", "subjectArt: a blank cut-out -> the photo");
+  same(R.subjectArtOf("artist", artistRows(null, null), CLAPTON)?.image_url, null, "subjectArt: no picture at all -> null image");
+  same(R.subjectArtOf("artist", { artist: null, team: null }, CLAPTON), null, "subjectArt: no artist row -> null");
+  const teamRows: SubjectRows = {
+    artist: null,
+    team: { id: 3, name: "Liverpool", logo_url: "crest.svg", crestInLibrary: false, image_url: "team.jpg", art_image_url: null, bio: null, hasTwin: true },
+  };
+  same(R.subjectArtOf("team", teamRows, "Liverpool FC"), { kind: "team", name_english: "Liverpool", image_url: "crest.svg" }, "subjectArt: a team's crest, under its own English name");
+  same(R.subjectArtOf("competition", teamRows, "Premier League"), null, "subjectArt: a competition has no picture");
+
+  // twoCityOf / withTwoCity
+  const chosen = R.withTwoCity(A, 7);
+  same(R.twoCityOf(chosen), { flightCityId: 7 }, "two-city: the choice rides on the show");
+  check(!("two_city" in A), "two-city: withTwoCity copies, never mutates");
+  same(R.twoCityOf(A), null, "two-city: no choice");
+  for (const bad of [null, "x", { two_city: null }, { two_city: { flight_city_id: "7" } }, { two_city: { flight_city_id: 0 } }, { two_city: { flight_city_id: 2.5 } }]) {
+    same(R.twoCityOf(bad), null, `two-city: ${JSON.stringify(bad)} is no choice`);
+  }
 }
 
 console.log(`tour uploader selftest: all ${checks} checks passed`);
