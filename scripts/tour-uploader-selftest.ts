@@ -1822,4 +1822,105 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
 }
 
+// ---- Task 7 pre-review fixes: competition-prefixed fixtures, LiveTickets test rows, ticket-only markup blocker
+{
+  const NOW = new Date("2026-10-21T09:00:00Z");
+  const liverpool: Subject = { kind: "team", name_en: "Liverpool FC", name_he: "ליברפול", aliases: ["Liverpool", "ליברפול"] };
+  const plan = (homeOnly: boolean): UploaderPlan => {
+    const p = emptyPlan();
+    p.subject = { kind: "team", name_he: "ליברפול", name_en: "Liverpool FC" };
+    p.scope.home_only = homeOnly;
+    return p;
+  };
+  const tix = (event_id: string, event_name: string, performers: string[], show_date = "2026-12-09T20:00:00+00:00"): TixRow => ({
+    event_id,
+    event_name,
+    show_date,
+    venue_name: "Anfield",
+    city_name: "Liverpool",
+    country_code: "GB",
+    performers: performers.map((name) => ({ name })),
+    category_name: "UEFA Champions League",
+    sub_category_name: "Champions League",
+    ticket_count: 2072,
+    venue_map_url: null,
+    lat: 53.4308,
+    lon: -2.9608,
+  });
+  const live = (event_id: number, event_name: string, performers: string[], show_date = "2026-12-09T20:00:00+00:00"): LiveRow => ({
+    event_id,
+    event_name,
+    event_name_heb: null,
+    show_date,
+    city_name: "Liverpool",
+    country_name: "United Kingdom",
+    performers: performers.map((name) => ({ name })),
+    event_type: "sports_live_event_dynamic",
+    sellable: 10,
+  });
+
+  // 1. "<competition> - <A> vs <B>": the sides come from the segment that holds " vs ".
+  const porto = tix("tx-uefa-porto", "UEFA Champions League - Liverpool FC vs FC Porto", ["Liverpool FC", "FC Porto"]);
+  same(tixMatchesSubject(porto, liverpool, plan(true).scope), "match", "competition prefix: Liverpool opens the fixture -> a home match, not away");
+  const portoLive = live(2327309, "Champions League: Liverpool vs FC Porto", ["Liverpool", "FC Porto"]);
+  const prefixed = groupRows([porto], [portoLive], liverpool, plan(true), NOW);
+  same(
+    prefixed.shows.map((s) => [s.home_team, s.away_team, s.suppliers.tixstock?.event_id ?? null, s.suppliers.livetickets?.event_id ?? null]),
+    [["Liverpool FC", "FC Porto", "tx-uefa-porto", 2327309]],
+    "competition prefix: home Liverpool FC, away FC Porto, LiveTickets paired on the same show",
+  );
+  same(prefixed.excluded, [], "competition prefix: neither row is excluded as away");
+  const plain = tix("tx-lfc-porto", "Liverpool FC vs FC Porto", ["Liverpool FC", "FC Porto"]);
+  same(tixMatchesSubject(plain, liverpool, plan(true).scope), "match", "a plain 'A vs B' name is unchanged");
+  same(
+    groupRows([plain], [], liverpool, plan(true), NOW).shows.map((s) => [s.home_team, s.away_team]),
+    [["Liverpool FC", "FC Porto"]],
+    "a plain 'A vs B' name keeps its sides",
+  );
+  const tail = tix("tx-lfc-porto-tail", "Liverpool FC vs FC Porto - Champions League", ["Liverpool FC", "FC Porto"]);
+  same(
+    groupRows([tail], [], liverpool, plan(true), NOW).shows.map((s) => [s.home_team, s.away_team]),
+    [["Liverpool FC", "FC Porto"]],
+    "a competition TAIL still drops off the away side",
+  );
+  same(
+    tixMatchesSubject(tix("tx-uefa-brugge", "UEFA Champions League - Club Brugge vs Liverpool FC", ["Club Brugge", "Liverpool FC"]), liverpool, plan(true).scope),
+    "away",
+    "competition prefix: an away fixture stays away",
+  );
+  same(
+    tixMatchesSubject(tix("tx-lfc-training", "Liverpool FC - Open Training", ["Liverpool FC"]), liverpool, plan(true).scope),
+    "match",
+    "a name with ' - ' and no ' vs ' behaves as before (the name opens with the team)",
+  );
+  same(
+    tixMatchesSubject(tix("tx-tour", "Stadium Tour - Liverpool FC", ["Liverpool FC"]), liverpool, plan(true).scope),
+    "away",
+    "a name with ' - ' and no ' vs ' that does not open with the team stays not-home, as before",
+  );
+
+  // 2. A LiveTickets test row (a "test" word, no " vs ") is excluded as test_row - with no question and no show.
+  const testRow = live(1777069, "liverpool test 3", ["Liverpool"], "2028-06-15T20:00:00+00:00");
+  const tested = groupRows([], [testRow], liverpool, plan(true), NOW);
+  same(tested.shows, [], "test row: no show");
+  same(tested.excluded, [{ row: "livetickets", id: "1777069", reason: "test_row" }], "test row: excluded as test_row");
+  const vsTest = live(1777070, "Liverpool vs Test XI", ["Liverpool", "Test XI"], "2028-06-16T20:00:00+00:00");
+  const real = groupRows([], [vsTest], liverpool, plan(true), NOW);
+  same(real.shows.map((s) => s.suppliers.livetickets?.event_id ?? null), [1777070], "a fixture with 'test' AND ' vs ' is a real show");
+  same(real.excluded, [], "a fixture with 'test' AND ' vs ' is not excluded");
+  same(
+    groupRows([], [live(1777071, "Contest Night", ["Liverpool"], "2028-06-17T20:00:00+00:00")], liverpool, plan(true), NOW).excluded,
+    [],
+    "'test' must be a whole word ('Contest' is not a test row)",
+  );
+
+  // 3. The ticket-only markup blocker text sits beside no_base_price.
+  same(
+    WARNING_TEXT.no_ticket_only_markup,
+    "אין מארק-אפ לכרטיס בלבד - מלאו בעורך לפני האישור",
+    "no_ticket_only_markup: the blocker's text",
+  );
+  check(!!WARNING_TEXT.no_base_price && !!WARNING_TEXT.no_base_price_hotel, "no_base_price: flight and hotel blocker texts exist");
+}
+
 console.log(`tour uploader selftest: all ${checks} checks passed`);

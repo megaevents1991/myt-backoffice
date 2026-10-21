@@ -18,6 +18,8 @@
  *   5. dates     - `calculateSmartDates`.
  *   6. bases     - package only: `quoteFlight` / `quoteHotel` of the location (the ONE pricing rule),
  *                  retry once; still nothing = the `no_base_price` BLOCKER (the event is still built).
+ *                  A ticket-only build whose plan has no ticket-only markup = the `no_ticket_only_markup`
+ *                  BLOCKER (built hidden with `ticket_only_markup: null`; approval waits for the editor).
  *   7. names, 8. `createEvent` (hidden), 9. decisions + warnings + blockers, audit `uploader.built`.
  *
  * No price is computed here: tickets are priced by the sync's own functions
@@ -684,6 +686,10 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext): P
   const blockers: Warning[] = [];
   if (baseFlight === null) blockers.push({ code: "no_base_price", text: WARNING_TEXT.no_base_price, fix_url: fixPrice });
   if (baseHotel === null) blockers.push({ code: "no_base_price", text: WARNING_TEXT.no_base_price_hotel, fix_url: fixPrice });
+  // A ticket-only event is priced ticket + ticket_only_markup alone: built with null, never approved with it.
+  if (placed.mode === "ticket_only" && run.plan.markups.ticket_only === null) {
+    blockers.push({ code: "no_ticket_only_markup", text: WARNING_TEXT.no_ticket_only_markup, fix_url: fixPrice });
+  }
 
   await logAudit({
     action: "uploader.built",

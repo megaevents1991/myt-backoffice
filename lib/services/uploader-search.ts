@@ -18,13 +18,14 @@
  */
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
-import { clubKey, clubNamesMatch, fixtureSides, normalizeName } from "@/lib/on-tour";
+import { clubKey, clubNamesMatch, normalizeName } from "@/lib/on-tour";
 import { findCategoryTwin, namesMatch, TWIN_HUB_SLUG, type TwinPerson } from "@/lib/services/category-twins";
 import { hasLibraryCrest } from "@/lib/services/creative-gaps";
 import { urlSpellings } from "@/lib/services/venue-memory";
 import { SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import {
   calendarDay,
+  fixtureSidesOf,
   groupRows,
   questionKey,
   showKey,
@@ -660,7 +661,7 @@ async function findFallback(
       rows.push({ source: "xs2event", title: r.event_name, date: r.date_start, city: r.city, country: r.iso_country, home: r.hometeam_name, away: r.visiting_name, competition: r.tournament_name });
     }
     for (const r of p1.rows) {
-      const sides = fixtureSides(r.title_english);
+      const sides = fixtureSidesOf(r.title_english);
       rows.push({
         source: "p1",
         title: r.title_english,

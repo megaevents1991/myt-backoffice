@@ -63,7 +63,8 @@ export interface Subject {
 }
 
 type Verdict = "match" | "tribute" | "away" | "no";
-type ExcludedReason = "tribute" | "away" | "out_of_scope" | "zero_tickets_twin";
+/** `test_row` = a LiveTickets test listing ("liverpool test 3": a "test" word and no " vs "). */
+type ExcludedReason = "tribute" | "away" | "out_of_scope" | "zero_tickets_twin" | "test_row";
 
 export type Grouped = {
   shows: ShowIdentity[];
@@ -97,6 +98,25 @@ const SKIP_OPTION = { key: "skip", label: "דלג על ההופעה" } as const;
 
 // ---- names --------------------------------------------------------------------------------------
 
+const VS = /\s+vs\.?\s+/i;
+const DASH_SPLIT = /\s+[-–—]\s+/;
+
+/**
+ * A name's fixture sides (`fixtureSides`), read from the " - " segment that holds " vs ": TixStock
+ * prefixes some fixtures with their competition ("UEFA Champions League - Liverpool FC vs FC Porto"),
+ * and that prefix is not the home side. A name with no such segment is read whole, exactly as
+ * before (a "League: " prefix and a " - Competition" tail are `fixtureSides`' own job). Local to the
+ * uploader on purpose: lib/on-tour.ts mirrors main's catalog rule and stays in step with it.
+ */
+export function fixtureSidesOf(name: string): string[] | null {
+  const segments = name.split(DASH_SPLIT);
+  const fixture = segments.length > 1 ? segments.find((segment) => VS.test(segment)) : undefined;
+  return fixtureSides(fixture ?? name);
+}
+
+/** A LiveTickets test listing: a whole-word "test" in the name and no " vs " ("liverpool test 3"). */
+const isTestRow = (name: string): boolean => /\btest\b/i.test(name) && !VS.test(name);
+
 /** Every name the subject goes by, normalized, blanks dropped: English, Hebrew, and the row's own names. */
 function subjectNames(s: Subject): string[] {
   const names = [s.name_en, s.name_he, ...s.aliases].map((n) => normalizeName(n)).filter((n) => n !== "");
@@ -124,12 +144,12 @@ function titleNamesSubject(title: string | null | undefined, s: Subject): boolea
 
 /**
  * Does `name` open the fixture (= the home side)? When the event name parses as "A vs B"
- * (`fixtureSides`, which also drops a "League: " prefix) the A side decides - by `isHomeGame` or
+ * (`fixtureSidesOf`: a "League: " or "<competition> - " prefix dropped) the A side decides - by `isHomeGame` or
  * the club rule ("Arsenal" opens "Arsenal FC vs ..."); a name that is no fixture must simply
  * start with it (`isHomeGame`).
  */
 function opensFixture(eventName: string, name: string): boolean {
-  const sides = fixtureSides(eventName);
+  const sides = fixtureSidesOf(eventName);
   if (!sides) return isHomeGame(eventName, name);
   return isHomeGame(sides[0], name) || clubNamesMatch(sides[0], name);
 }
@@ -148,7 +168,7 @@ function isHomeFixture(eventName: string, performerName: string, s: Subject): bo
  * only for a name that is no fixture, the first performer. Away = the other one.
  */
 function fixtureTeams(eventName: string, performers: { name: string }[]): { home: string | null; away: string | null } {
-  const sides = fixtureSides(eventName);
+  const sides = fixtureSidesOf(eventName);
   const opener = performers.find((p) => opensFixture(eventName, p.name));
   if (opener) return { home: opener.name, away: performers.find((p) => p !== opener)?.name ?? sides?.[1]?.trim() ?? null };
   if (sides) return { home: sides[0].trim(), away: sides[1]?.trim() ?? null };
@@ -229,7 +249,7 @@ function liveVerdict(row: LiveRow, s: Subject, scope: UploaderPlan["scope"]): Ve
     case "team": {
       const index = row.performers.findIndex((p) => nameIsSubject(p.name, s) || nameIsSubject(p.hebName, s));
       if (index === -1 || !roundMatches(row.event_name, null, scope.round)) return "no";
-      const home = fixtureSides(row.event_name) ? isHomeFixture(row.event_name, row.performers[index].name, s) : index === 0;
+      const home = fixtureSidesOf(row.event_name) ? isHomeFixture(row.event_name, row.performers[index].name, s) : index === 0;
       return scope.home_only && !home ? "away" : "match";
     }
     case "competition":
@@ -497,7 +517,8 @@ const oneDayApart = (a: string, b: string): boolean => Math.abs(dayNumber(calend
  * Supplier rows -> the run's shows, the questions that stop a show, and what was left out.
  *
  * 1. Every row is judged (`tixMatchesSubject` / `liveVerdict`): "no" is dropped silently,
- *    "tribute" / "away" are listed in `excluded`; a matching row outside the window
+ *    "tribute" / "away" are listed in `excluded` (a LiveTickets test listing about the subject -
+ *    "liverpool test 3" - as `test_row`, whatever its verdict); a matching row outside the window
  *    (`date_from` ?? today + SHOW_WINDOW_DAYS, never earlier than that floor, up to `date_to`) or
  *    the plan's cities is listed `out_of_scope`. Who first, then when and where - a tribute act
  *    in an excluded city is still named a tribute. A Live row on the city and day of a TixStock
@@ -544,7 +565,8 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
     const verdict = judged === "match" && awayDays.has(showKey(null, row.city_name, row.show_date)) ? "away" : judged;
     if (verdict === "no") continue;
     const id = String(row.event_id);
-    if (verdict !== "match") excluded.push({ row: "livetickets", id, reason: verdict });
+    if (isTestRow(row.event_name)) excluded.push({ row: "livetickets", id, reason: "test_row" });
+    else if (verdict !== "match") excluded.push({ row: "livetickets", id, reason: verdict });
     else if (!inScope(row.show_date, row.city_name, plan.scope, now)) excluded.push({ row: "livetickets", id, reason: "out_of_scope" });
     else keptLive.push(row);
   }
