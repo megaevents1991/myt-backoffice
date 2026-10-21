@@ -1180,7 +1180,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       siteUrl: company.siteUrl,
       linkSentAt: record.link_sent_at,
       relatedCase: relatedCase ?? null,
-      whatsappApi: whatsappApiReady(company),
+      whatsappApi: await whatsappApiReady(company),
       offer: parseOffer(record.offer),
       inquiries: inquiriesOf(payload, { name: customerName(row), email: row.email }),
       known,
@@ -1555,7 +1555,14 @@ export async function prepareOffer(
     if (input.sendWhatsApp) {
       const to = whatsappPhone(record.phone);
       const answer = to
-        ? await sendTemplate(company, { to, params: [first || "שלום", departure.tourName ?? "הטיול", url] })
+        ? await sendTemplate(company, {
+            to,
+            params: [first || "שלום", departure.tourName ?? "הטיול", url],
+            origin: "api",
+            caseId,
+            customerId: record.customer_id ?? null,
+            sentBy: session.sub,
+          })
         : ({ ok: false, error: "The case has no phone number WhatsApp can use." } as const);
       if (answer.ok) {
         const applied = sentPatch(record, offer, "whatsapp_api", await statusesOf(company));

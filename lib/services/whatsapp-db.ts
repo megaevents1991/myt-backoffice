@@ -283,6 +283,17 @@ export async function updateStatus(waMessageId: string, status: string, at: stri
   return ((data as unknown[] | null)?.length ?? 0) > 0;
 }
 
+/** The outcome of OUR send, by row id: Meta's message id once it answered, the status, the error (null when sent). */
+export async function finishSend(id: string, patch: { waMessageId?: string; status: string; error: string | null; at: string }): Promise<void> {
+  const row: Record<string, unknown> = { status: patch.status, status_at: patch.at, error: patch.error };
+  if (patch.waMessageId) row.wa_message_id = patch.waMessageId;
+  const { error } = await db.from("wa_messages").update(row).eq("id", id);
+  if (error) {
+    if (missingTable(error)) return;
+    throw new Error(`wa_messages: ${error.message}`);
+  }
+}
+
 /** The customer's newest inbound message: the 24-hour window and the case the conversation is on. */
 export async function lastInbound(companyId: string, phoneKey: string): Promise<{ at: string; caseId: string | null } | null> {
   const { data, error } = await db

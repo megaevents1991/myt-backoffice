@@ -18,6 +18,21 @@ import {
   type WaEvent,
 } from "../lib/whatsapp/rules";
 import { envKey, phoneIdFor, tokenFor } from "../lib/whatsapp/env";
+import { WA_TEXT_MAX } from "../lib/whatsapp/rules";
+import {
+  RateGate,
+  createMetaProvider,
+  explain,
+  mediaExtension,
+  mediaStoragePath,
+  metaProvider,
+  providerFor,
+  templateBlock,
+  templateBody,
+  textBody,
+  type WaProvider,
+} from "../lib/whatsapp/meta-provider";
+import type { WaTemplate } from "../lib/services/whatsapp-db";
 
 const NOW = "2026-10-21T10:00:00Z";
 
@@ -185,4 +200,173 @@ assert.equal(previewText("שלום\nמה המחיר?", 10), "שלום מה ה…
 assert.equal(previewText("קצר", 10), "קצר");
 assert.equal(previewText(null), "");
 
-console.log("whatsapp-selftest ok");
+// the provider calls are async - the rest of the file stays flat
+async function main(): Promise<void> {
+  // ---- the Meta provider (lib/whatsapp/meta-provider.ts): pure helpers + the Graph calls over a stub fetch
+  assert.equal(explain(400, { error: { code: 131042 } }), "The WhatsApp account has no payment method - add one in WhatsApp Manager.");
+  assert.equal(explain(400, { error: { code: 131047 } }), "More than 24 hours since the customer last wrote - only a template can be sent.");
+  assert.equal(explain(500, null), "WhatsApp refused the message (500): no details");
+
+  const TEMPLATE_ARGS = { to: "972541234567", template: "booking_link", language: "he", params: ["דנה", " ", "https://x"] };
+  assert.deepEqual(templateBody(TEMPLATE_ARGS), {
+    messaging_product: "whatsapp",
+    to: "972541234567",
+    type: "template",
+    template: {
+      name: "booking_link",
+      language: { code: "he" },
+      components: [{ type: "body", parameters: [{ type: "text", text: "דנה" }, { type: "text", text: "-" }, { type: "text", text: "https://x" }] }],
+    },
+  });
+  assert.deepEqual(templateBody({ ...TEMPLATE_ARGS, params: [] }).template.components, [], "no params = no body component");
+  assert.deepEqual(textBody("972541234567", "היי"), { messaging_product: "whatsapp", to: "972541234567", type: "text", text: { body: "היי", preview_url: false } });
+  assert.equal(textBody("972541234567", "x".repeat(WA_TEXT_MAX + 5)).text.body.length, WA_TEXT_MAX, "capped at the Meta limit");
+
+  assert.equal(mediaExtension("image/jpeg"), "jpg");
+  assert.equal(mediaExtension("image/png"), "png");
+  assert.equal(mediaExtension("image/webp"), "webp");
+  assert.equal(mediaExtension("application/pdf"), "pdf");
+  assert.equal(mediaExtension("audio/ogg; codecs=opus"), "ogg");
+  assert.equal(mediaExtension("video/mp4"), "mp4");
+  assert.equal(mediaExtension(""), "bin");
+  assert.equal(mediaStoragePath("co-1", "1234567890", "image/jpeg"), "co-1/1234567890.jpg");
+  assert.equal(mediaStoragePath("co-1", "a/../b", "image/png"), "co-1/a____b.png", "a media id is never a path");
+
+  const CACHE: WaTemplate[] = [
+    { name: "booking_link", language: "he", category: "UTILITY", status: "APPROVED", body: null, paramCount: 3, syncedAt: NOW },
+    { name: "offer", language: "he", category: "MARKETING", status: "PENDING", body: null, paramCount: 1, syncedAt: NOW },
+  ];
+  assert.equal(templateBlock([], "anything", "he"), null, "an empty cache (never synced) blocks nothing");
+  assert.equal(templateBlock(CACHE, "booking_link", "he"), null);
+  assert.equal(templateBlock(CACHE, "offer", "he"), `The template "offer" (he) is PENDING, not approved - check it in WhatsApp Manager.`);
+  assert.equal(templateBlock(CACHE, "unknown", "he"), null, "a template the cache does not know is tried");
+  assert.equal(templateBlock(CACHE, "offer", "en"), null, "a language the cache does not know is tried");
+
+  // 5 sends a second per company
+  {
+    let clock = 0;
+    const slept: number[] = [];
+    const gate = new RateGate(5, { now: () => clock, sleep: async (msToWait) => { slept.push(msToWait); clock += msToWait; } });
+    for (let i = 0; i < 5; i++) await gate.take("co-1");
+    assert.deepEqual(slept, [], "five in a second pass at once");
+    await gate.take("co-1");
+    assert.equal(slept.length, 1, "the sixth waits");
+    assert.ok(slept[0] > 0 && slept[0] <= 1000, `waits up to a second, not ${slept[0]}`);
+    await gate.take("co-2");
+    assert.equal(slept.length, 1, "another company has its own gate");
+    clock += 2000;
+    await gate.take("co-1");
+    assert.equal(slept.length, 1, "a second later the gate is open again");
+  }
+
+  // the Graph calls, over a stub fetch
+  type Answer = { status: number; body?: unknown; bytes?: ArrayBuffer; throws?: Error };
+  type Call = { url: string; method: string; auth: string | null; body: unknown };
+  function stubFetch(answers: Record<string, Answer>, calls: Call[]): typeof fetch {
+    return (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      calls.push({ url, method: init?.method ?? "GET", auth: headers.get("authorization"), body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
+      const hit = Object.entries(answers).find(([needle]) => url.includes(needle));
+      if (!hit) return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+      const a = hit[1];
+      if (a.throws) throw a.throws;
+      if (a.bytes) return new Response(a.bytes, { status: a.status, headers: { "content-type": "image/jpeg" } });
+      return new Response(JSON.stringify(a.body ?? {}), { status: a.status, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+  }
+  const CFG = { token: "tok-1", phoneId: "111" };
+  const provider = (answers: Record<string, Answer>, calls: Call[] = []): [WaProvider, Call[]] => [createMetaProvider(stubFetch(answers, calls)), calls];
+
+  {
+    const [p, calls] = provider({ "/111/messages": { status: 200, body: { messages: [{ id: "wamid.S" }] } } });
+    assert.deepEqual(await p.sendTemplate(CFG, TEMPLATE_ARGS), { ok: true, messageId: "wamid.S" });
+    assert.equal(calls[0].url, "https://graph.facebook.com/v26.0/111/messages");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].auth, "Bearer tok-1");
+    assert.deepEqual(calls[0].body, templateBody(TEMPLATE_ARGS));
+    assert.deepEqual(await p.sendText(CFG, { to: "972541234567", text: "היי" }), { ok: true, messageId: "wamid.S" });
+    assert.deepEqual(calls[1].body, textBody("972541234567", "היי"));
+  }
+  {
+    const [p] = provider({ "/111/messages": { status: 400, body: { error: { code: 132001, message: "Template name does not exist" } } } });
+    assert.deepEqual(await p.sendTemplate(CFG, TEMPLATE_ARGS), { ok: false, error: "The message template is not approved yet (or its name / language differs) - check it in WhatsApp Manager." });
+  }
+  {
+    const timeout = new Error("t");
+    timeout.name = "TimeoutError";
+    const [p] = provider({ "/111/messages": { status: 0, throws: timeout } });
+    assert.deepEqual(await p.sendText(CFG, { to: "972541234567", text: "x" }), { ok: false, error: "WhatsApp did not answer in time - try again." });
+    const [q] = provider({ "/111/messages": { status: 0, throws: new Error("ECONNRESET") } });
+    assert.deepEqual(await q.sendText(CFG, { to: "972541234567", text: "x" }), { ok: false, error: "WhatsApp could not be reached - try again." });
+  }
+  {
+    const [p, calls] = provider({
+    // the stub answers the FIRST needle a url contains - the second page must be listed first
+    "after=abc": { status: 200, body: { data: [{ name: "page2", language: "he", category: "UTILITY", status: "PENDING", components: [{ type: "BODY", text: "x" }] }] } },
+      "/222/message_templates?": {
+        status: 200,
+        body: {
+          data: [
+            { name: "booking_link", language: "he", category: "UTILITY", status: "APPROVED", components: [{ type: "HEADER", format: "TEXT", text: "מגה" }, { type: "BODY", text: "שלום {{1}}, הטיול {{2}}: {{3}}" }] },
+            { name: "hello", language: "en", category: "MARKETING", status: "REJECTED", components: [] },
+          ],
+          paging: { next: "https://graph.facebook.com/v26.0/222/message_templates?after=abc" },
+        },
+      },
+      });
+    const list = await p.listTemplates("tok-1", "222");
+    assert.ok(calls[0].url.startsWith("https://graph.facebook.com/v26.0/222/message_templates?fields=name,language,category,status,components"), calls[0].url);
+    assert.deepEqual(list, [
+      { name: "booking_link", language: "he", category: "UTILITY", status: "APPROVED", body: "שלום {{1}}, הטיול {{2}}: {{3}}", paramCount: 3 },
+      { name: "hello", language: "en", category: "MARKETING", status: "REJECTED", body: null, paramCount: 0 },
+      { name: "page2", language: "he", category: "UTILITY", status: "PENDING", body: "x", paramCount: 0 },
+    ]);
+    assert.equal(calls.length, 2, "paging.next is followed");
+  }
+  {
+    const [p, calls] = provider({ "/111/smb_app_data": { status: 200, body: { messaging_product: "whatsapp", request_id: "req-1" } }, "/222/subscribed_apps": { status: 200, body: { success: true } } });
+    assert.deepEqual(await p.requestHistorySync(CFG), { ok: true, messageId: "req-1" });
+    assert.deepEqual(calls[0].body, { messaging_product: "whatsapp", sync_type: "history" });
+    assert.equal(calls[0].method, "POST");
+    assert.deepEqual(await p.subscribeApp("tok-1", "222"), { ok: true, messageId: null });
+    assert.equal(calls[1].url, "https://graph.facebook.com/v26.0/222/subscribed_apps");
+    assert.equal(calls[1].method, "POST");
+    assert.equal(calls[1].auth, "Bearer tok-1");
+  }
+  {
+    const bytes = new Uint8Array([255, 216, 255]);
+    const [p, calls] = provider({ "/v26.0/m1": { status: 200, body: { url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=m1", mime_type: "image/jpeg", sha256: "s" } }, "lookaside": { status: 200, bytes: bytes.buffer as ArrayBuffer } });
+    const media = await p.downloadMedia("tok-1", "m1");
+    assert.deepEqual(media, { bytes, mime: "image/jpeg" });
+    assert.equal(calls[1].auth, "Bearer tok-1", "the media url needs the bearer too");
+    const [q] = provider({ "/v26.0/m2": { status: 404, body: { error: { code: 100 } } } });
+    assert.equal(await q.downloadMedia("tok-1", "m2"), null, "a media that is gone is null, not a throw");
+  }
+  {
+    const [p, calls] = provider({ "/111?fields=": { status: 200, body: { display_phone_number: "+972 54-227-2554", verified_name: "Mega Family", quality_rating: "GREEN", platform_type: "CLOUD_API", is_on_biz_app: true } } });
+    assert.deepEqual(await p.phoneInfo("tok-1", "111"), { displayPhone: "+972 54-227-2554", verifiedName: "Mega Family", qualityRating: "GREEN", platformType: "CLOUD_API", isOnBizApp: true });
+    assert.ok(calls[0].url.includes("fields=display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app"), calls[0].url);
+    const [q] = provider({ "/111?fields=": { status: 400, body: { error: { message: "nope" } } } });
+    assert.equal(await q.phoneInfo("tok-1", "111"), null);
+  }
+  {
+    const [p, calls] = provider({ "/oauth/access_token": { status: 200, body: { access_token: "EAAB-long", token_type: "bearer" } } });
+    assert.deepEqual(await p.exchangeCode({ appId: "2120", appSecret: "shh", code: "AQ..1" }), { token: "EAAB-long" });
+    assert.equal(calls[0].method, "GET");
+    assert.equal(calls[0].url, "https://graph.facebook.com/v26.0/oauth/access_token?client_id=2120&client_secret=shh&code=AQ..1");
+    const [q] = provider({ "/oauth/access_token": { status: 400, body: { error: { message: "Invalid verification code format." } } } });
+    const failed = await q.exchangeCode({ appId: "2120", appSecret: "shh", code: "bad" });
+    assert.ok("error" in failed && !failed.error.includes("shh"), "the secret never rides in an error");
+  }
+  assert.equal(providerFor("meta"), metaProvider);
+  assert.equal(providerFor("360dialog"), null, "a provider this build does not have");
+}
+
+main().then(
+  () => console.log("whatsapp-selftest ok"),
+  (e) => {
+    console.error(e);
+    process.exit(1);
+  },
+);
