@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Loader2, MessageCircleQuestion, Search, X } from "lucide-react";
+import { Check, Loader2, MessageCircleQuestion, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SubjectArt } from "@/lib/uploader/action-types";
@@ -9,7 +9,8 @@ import { ANSWER_TEXT_MAX } from "@/lib/uploader/run-rules";
 import { matchesSearch } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
-import { CardShell, stampHe, StatusPill, type BusyKind } from "./show-card";
+import { stampHe, type BusyKind } from "./board-words";
+import { ACTION, CardShell, RejectButton, StatusPill } from "./card-shell";
 
 // A show the builder could not decide alone (spec §5.3, §10): the loudest card on the board. The
 // question, its options as buttons ("skip" last and quiet), a free-text box where the question
@@ -104,23 +105,13 @@ export function QuestionCard({
       onFocusCard={onFocusCard}
       footer={
         <>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy !== null}
-            onClick={() => onReject(item)}
-            className="h-8 gap-1.5 px-2.5 text-[13px] text-destructive hover:bg-destructive/10 hover:text-destructive [&_svg]:size-3.5"
-          >
-            <X aria-hidden />
-            דחה
-          </Button>
+          <RejectButton item={item} busy={busy} onReject={onReject} />
           <Button
             type="button"
             size="sm"
             disabled={!canSend}
             onClick={send}
-            className="ms-auto h-8 min-w-[4.5rem] gap-1.5 px-3 text-[13px] font-semibold [&_svg]:size-3.5"
+            className={cn(ACTION, "ms-auto min-w-[4.5rem] font-semibold")}
           >
             {answering ? <Loader2 aria-hidden className="animate-spin" /> : <MessageCircleQuestion aria-hidden />}
             ענה
@@ -152,6 +143,10 @@ export function QuestionCard({
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                // Enter narrows the list - it must never send the answer.
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.preventDefault();
+                }}
                 placeholder={q.kind === "pick_location" ? "חיפוש מיקום…" : "חיפוש…"}
                 aria-label="חיפוש באפשרויות"
                 disabled={answering}
@@ -167,7 +162,9 @@ export function QuestionCard({
               className={cn("flex flex-wrap gap-1.5", searchable && "max-h-44 overflow-y-auto rounded-md border p-1.5")}
             >
               {visible.map((o) => option(o.key, o.label))}
-              {searchable && visible.length === 0 && <p className="px-1 py-0.5 text-xs text-muted-foreground">אין מיקום בשם הזה</p>}
+              {searchable && visible.length === 0 && (
+                <p className="px-1 py-0.5 text-xs text-muted-foreground">{q.kind === "pick_location" ? "אין מיקום בשם הזה" : "אין תוצאה"}</p>
+              )}
             </div>
           )}
 

@@ -11,11 +11,12 @@ import { REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { REJECT_REASON_MAX } from "@/lib/uploader/run-rules";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
-import { showDate } from "./show-card";
+import { showDate } from "./board-words";
 
 // "דחה" on any card (spec §11): a reason - what the agent learns from, so it is required - and
-// whether this show may be offered again. The hidden event is soft deleted by the action. Mount it
-// with `key={item.id}` so every show starts on an empty reason.
+// whether this show may be offered again. The hidden event is soft deleted by the action. Mounted
+// once; every opening starts on an empty reason, and the show stays on screen through the closing
+// animation.
 
 export function RejectDialog({
   item,
@@ -31,6 +32,19 @@ export function RejectDialog({
   const [reason, setReason] = useState("");
   const [final, setFinal] = useState(true);
   const [saving, setSaving] = useState(false);
+  // The show on screen - kept after `item` turns null so the dialog closes with its text, not blank.
+  const [shown, setShown] = useState<UploaderItem | null>(item);
+  const [wasOpen, setWasOpen] = useState(item !== null);
+  const open = item !== null;
+  if (open !== wasOpen) {
+    // Adjusting state on a prop change during render (React's pattern - no effect, no extra paint).
+    setWasOpen(open);
+    if (item) {
+      setShown(item);
+      setReason("");
+      setFinal(true);
+    }
+  }
 
   const length = reason.trim().length;
   const valid = length >= REJECT_REASON_MIN && length <= REJECT_REASON_MAX;
@@ -47,7 +61,7 @@ export function RejectDialog({
 
   return (
     <Dialog
-      open={item !== null}
+      open={open}
       onOpenChange={(open) => {
         if (!open && !saving) onClose();
       }}
@@ -55,20 +69,20 @@ export function RejectDialog({
       <DialogContent dir="rtl" className="max-w-md [&>button:last-child]:left-4 [&>button:last-child]:right-auto">
         <DialogHeader className="text-start sm:text-start">
           <DialogTitle>לדחות את ההופעה?</DialogTitle>
-          {item && (
+          {shown && (
             <DialogDescription>
-              <bdi>{item.show.city || item.show.name_english}</bdi>
-              {item.show.venue && (
+              <bdi>{shown.show.city || shown.show.name_english}</bdi>
+              {shown.show.venue && (
                 <>
                   {" · "}
-                  <bdi>{item.show.venue}</bdi>
+                  <bdi>{shown.show.venue}</bdi>
                 </>
               )}
               {" · "}
               <span dir="ltr" className="tabular-nums">
-                {showDate(item.show.date)}
+                {showDate(shown.show.date)}
               </span>
-              . {item.event_id !== null ? "האירוע המוסתר יימחק, והסיבה נשמרת כלקח לסוכן." : "הסיבה נשמרת כלקח לסוכן."}
+              . {shown.event_id !== null ? "האירוע המוסתר יימחק, והסיבה נשמרת כלקח לסוכן." : "הסיבה נשמרת כלקח לסוכן."}
             </DialogDescription>
           )}
         </DialogHeader>

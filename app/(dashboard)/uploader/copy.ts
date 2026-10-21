@@ -21,6 +21,28 @@ const ACTION_ERROR_HE: Record<string, string> = {
   subject_not_found: "לא הצלחנו לקרוא את רשימת האמנים והקבוצות - נסו שוב",
   search_failed: "החיפוש אצל הספקים נכשל - נסו שוב",
   db_error: "השמירה נכשלה - נסו שוב",
+  // The review board's actions (/uploader/[id]).
+  not_ready: "לא מוכן",
+  blocked: "חסום",
+  event_gone: "האירוע נמחק",
+  time_budget: "נגמר הזמן - לחצו שוב",
+  not_found: "ההופעה לא נמצאה - רעננו את הדף",
+  not_question: "השאלה כבר נענתה",
+  bad_answer: "התשובה לא מתאימה לשאלה - בחרו אחת מהאפשרויות",
+  // Returned BEFORE anything is written - the show still asks its question.
+  split_failed: "פיצול ההופעות נכשל, נסו שוב",
+  // The answer IS saved; only the task did not close.
+  task_not_closed: "התשובה נשמרה, אבל המשימה לא נסגרה",
+  not_rejectable: "אי אפשר לדחות הופעה במצב הזה",
+  not_retryable: "אין מה לנסות שוב - ההופעה כבר זזה",
+  not_rebuildable: "אי אפשר לבנות את ההופעה מחדש במצב הזה",
+  no_coordinates: "לאולם אין קואורדינטות - בנו ידנית",
+  location_not_found: "המיקום לא נמצא",
+  location_no_iata: "למיקום אין קוד שדה תעופה",
+  event_not_deleted: "האירוע הקודם לא נמחק - שום דבר לא השתנה",
+  not_running: "הריצה כבר לא בבנייה",
+  not_resumable: "אין מה להמשיך בריצה הזו",
+  stopped: "הריצה נעצרה",
 };
 
 /** A server action's `kind` in the screen's words; anything unknown (or a throw, "") gets the generic line. */

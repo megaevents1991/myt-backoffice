@@ -6,13 +6,13 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RunBoard } from "@/lib/uploader/action-types";
 import { cn } from "@/lib/utils";
-import type { RunStatus, UploaderItem } from "@/types/uploader.types";
+import type { RunStatus } from "@/types/uploader.types";
 import { SUBJECT_KIND_HE } from "../copy";
-import { showDate, stampHe, SUBJECT_WARNING_CHIP } from "./show-card";
+import { FILTER_HE, filterCount, FILTERS, showDate, stampHe, SUBJECT_WARNING_CHIP, type BoardCounts, type Filter } from "./board-words";
 
 // The board's head (spec §5.3, mockup B): who the run is about, when and by whom, the brief, the
 // five steps with their counts, the plan as chips, and - while the AI waits on a person - the amber
-// bar that says so and jumps to the first question.
+// bar that says so and jumps to the first question. Plus the filter pills under it.
 
 const BRIEF_SHOWN = 160;
 
@@ -37,72 +37,6 @@ const RUN_STATUS_STYLE: Record<RunStatus, string> = {
   stopped: "bg-sidebar-accent text-sidebar-accent-foreground",
   error: "bg-brand-coral/20 text-brand-coral",
 };
-
-/** The item statuses `countItems` tallies one by one (all of ITEM_STATUSES). */
-const RUN_ITEM_KEYS: Record<UploaderItem["status"], true> = {
-  found: true,
-  building: true,
-  question: true,
-  ready: true,
-  approved: true,
-  skipped: true,
-  rejected: true,
-  error: true,
-};
-
-export type BoardCounts = {
-  total: number;
-  found: number;
-  building: number;
-  question: number;
-  ready: number;
-  /** Ready with no blocker - what "אשר הכל" approves. */
-  approvable: number;
-  approved: number;
-  skipped: number;
-  rejected: number;
-  error: number;
-  /** Not decided yet and carrying a warning or a blocker. */
-  attention: number;
-  /** Hidden events the run created (built, whatever happened to them since). */
-  built: number;
-  packages: number;
-  ticketOnly: number;
-};
-
-export const needsAttention = (i: UploaderItem): boolean =>
-  i.status !== "approved" && i.status !== "rejected" && ((i.warnings ?? []).length > 0 || (i.blockers ?? []).length > 0);
-
-export function countItems(items: UploaderItem[]): BoardCounts {
-  const c: BoardCounts = {
-    total: items.length,
-    found: 0,
-    building: 0,
-    question: 0,
-    ready: 0,
-    approvable: 0,
-    approved: 0,
-    skipped: 0,
-    rejected: 0,
-    error: 0,
-    attention: 0,
-    built: 0,
-    packages: 0,
-    ticketOnly: 0,
-  };
-  for (const i of items) {
-    // A status this build does not know counts in `total` only.
-    if (Object.prototype.hasOwnProperty.call(RUN_ITEM_KEYS, i.status)) c[i.status] += 1;
-    if (i.status === "ready" && (i.blockers ?? []).length === 0) c.approvable += 1;
-    if (needsAttention(i)) c.attention += 1;
-    if (i.status === "ready" || i.status === "approved") {
-      c.built += 1;
-      if (i.mode === "package") c.packages += 1;
-      if (i.mode === "ticket_only") c.ticketOnly += 1;
-    }
-  }
-  return c;
-}
 
 type StepState = "done" | "now" | "ask" | "todo";
 
@@ -382,7 +316,7 @@ export function BoardHeader({
           </span>
           <span>
             <b className="font-semibold text-warning">{counts.question === 1 ? "שאלה אחת ממתינה" : `${counts.question} שאלות ממתינות`}</b>
-            {asker && <> - {asker} קיבל/ה מייל</>}
+            {asker ? <> - נשלח מייל ל{asker}</> : <> - נשלח מייל</>}
           </span>
           {firstQuestion.question?.text && (
             <span dir="auto" className="min-w-0 basis-full truncate text-[13px] text-foreground/75 sm:basis-0 sm:flex-1">
@@ -401,5 +335,52 @@ export function BoardHeader({
         </div>
       )}
     </div>
+  );
+}
+
+/** The filter pills (`?f=`, with their counts) and the keyboard hint. */
+export function FilterBar({ filter, counts, onFilter }: { filter: Filter; counts: BoardCounts; onFilter: (f: Filter) => void }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div role="group" aria-label="סינון הופעות" className="flex flex-wrap gap-1.5">
+        {FILTERS.map((f) => {
+          const n = filterCount(f, counts);
+          const on = filter === f;
+          return (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onFilter(f)}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] transition-colors duration-150 ease-out",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                on
+                  ? "border-primary bg-primary font-semibold text-primary-foreground"
+                  : cn("bg-card hover:bg-accent hover:text-accent-foreground", n === 0 && "text-muted-foreground"),
+                !on && f === "questions" && n > 0 && "border-warning/60 text-warning",
+              )}
+            >
+              {FILTER_HE[f]}
+              <span dir="ltr" className={cn("tabular-nums", on ? "opacity-80" : "opacity-60")}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="hidden items-center gap-1.5 text-[11px] text-muted-foreground lg:flex">
+        <Kbd>↑</Kbd>
+        <Kbd>↓</Kbd> מעבר בין כרטיסים · <Kbd>A</Kbd> אשר · <Kbd>R</Kbd> דחה
+      </p>
+    </div>
+  );
+}
+
+function Kbd({ children }: { children: string }) {
+  return (
+    <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border bg-card px-1 font-sans text-[10px] font-medium text-foreground shadow-card">
+      {children}
+    </kbd>
   );
 }

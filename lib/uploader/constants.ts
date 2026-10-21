@@ -24,6 +24,13 @@ export const TOAST_POLL_MS = 60_000;
 /** How often the review board polls a running build (ms). */
 export const BOARD_POLL_MS = 2_500;
 
+/**
+ * How often the review board re-reads a run its own build loop is not driving - waiting on people,
+ * or a build another open board is running (ms). While this board's loop runs it refreshes after
+ * every step instead.
+ */
+export const BOARD_IDLE_POLL_MS = 15_000;
+
 /** A markup (`ticket_only_markup`, `event_additional_markup`) is a whole number of dollars from 0 up to this. */
 export const MARKUP_MAX = 5000;
 
