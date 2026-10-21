@@ -1108,7 +1108,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       readBookings(),
       readSeats(),
       historyOf(id),
-      threadOf(company, record.customer_id ?? null, record.phone ? [record.phone] : []),
+      threadOf(company, record.customer_id ?? null, record.phone ? [record.phone] : [], { viewer }),
     ]);
 
     const packageId = record.package_id ?? departure?.package_id ?? null;
@@ -1823,7 +1823,9 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
     ]);
     if (cardsAnswer.error) throw new Error(`leads: ${cardsAnswer.error.message}`);
     const records = cardsAnswer.rows.map(withDefaults);
-    const [x, whatsapp] = await Promise.all([enrich(company.id, records), threadOf(company, customer.id, customer.phones ?? [])]);
+    // the thread is cut to the cards this viewer sees (security review 21.10) - the same rule as the cards below
+    const visibleIds = new Set(records.filter((r) => canSeeCard({ assignedTo: r.assigned_to ?? null }, viewer)).map((r) => r.id));
+    const [x, whatsapp] = await Promise.all([enrich(company.id, records), threadOf(company, customer.id, customer.phones ?? [], { scope: { visibleCaseIds: visibleIds } })]);
     const today = todayIso();
     // the viewer's cards; the others are counted, never listed (21.10) - what a card knows is still read over all of them
     const all = records.map((r) => toCaseRow(r, x, statuses));

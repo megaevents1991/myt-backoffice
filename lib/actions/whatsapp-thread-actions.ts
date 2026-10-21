@@ -9,12 +9,12 @@
 import { requireCompany } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
-import { assertCardVisible } from "@/lib/services/tours-board-viewer";
+import { assertCardVisible, boardViewerFor } from "@/lib/services/tours-board-viewer";
 import { actionFail, actionOk, UserError, UUID, type ActionResult } from "@/lib/tours/action-kit";
 import { companyAudit } from "@/lib/tours/company-kit";
 import type { WaThreadMessage } from "@/lib/tours/cases";
 import { customerWa, setCustomerFields } from "@/lib/services/whatsapp-db";
-import { olderThread } from "@/lib/services/whatsapp-thread";
+import { olderThread, threadScopeFor } from "@/lib/services/whatsapp-thread";
 
 const SCOPE = "whatsapp-thread-actions";
 const NOTE_MIN = 3;
@@ -39,14 +39,15 @@ export async function markThreadSeen(caseId: string): Promise<ActionResult<{ see
   }
 }
 
-/** The page of messages before `before` (the oldest shown), oldest first. */
+/** The page of messages before `before` (the oldest shown), oldest first - cut to the cards the viewer sees. */
 export async function loadThreadBefore(customerId: string, before: string): Promise<ActionResult<{ messages: WaThreadMessage[]; hasMore: boolean }>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { session, company } = await requireCompany("tours");
     if (!UUID.test(customerId)) throw new UserError("The customer was not found.");
     const at = Date.parse(before);
     if (!Number.isFinite(at)) throw new UserError("Bad page marker.");
-    return actionOk(await olderThread(company, customerId, new Date(at).toISOString()));
+    const scope = await threadScopeFor(company, customerId, await boardViewerFor(session, company));
+    return actionOk(await olderThread(company, customerId, new Date(at).toISOString(), scope));
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load older messages");
   }
@@ -64,6 +65,9 @@ export async function setCustomerConsent(customerId: string, state: string, note
     const clean = note.trim().replace(/\s+/g, " ");
     if (clean.length < NOTE_MIN) throw new UserError(`Write a note of at least ${NOTE_MIN} characters - where the consent came from.`);
     if (clean.length > NOTE_MAX) throw new UserError(`The note is too long (up to ${NOTE_MAX} characters).`);
+    // a rep decides for a customer they work with - one of the customer's cards is theirs or unassigned (security review 21.10)
+    const scope = await threadScopeFor(company, customerId, await boardViewerFor(session, company));
+    if (!("all" in scope) && scope.visibleCaseIds.size === 0) throw new UserError("This customer's cards belong to another rep.");
     const before = await customerWa(company.id, customerId);
     if (!before) throw new UserError("The customer was not found.");
     const at = new Date().toISOString();
