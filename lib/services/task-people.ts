@@ -11,14 +11,17 @@
  *     them would be invisible to them. An account with no membership at all is
  *     a Mega Events account, the same floor the guards use.
  *   - Any other company: its members (public.company_members) that are active
- *     staff, plus every active superadmin (a superadmin works in every company).
+ *     staff, plus every active superadmin (a superadmin works in every company),
+ *     plus its sales agents (role tours_agent, 22.10) - a member of that company
+ *     only ever; a sales agent is never a person of Mega Events, whatever the
+ *     memberships say or fail to say.
  *
  * `pickTaskPeople` is the rule itself, pure, so the self-test can run it on
  * made-up rows (scripts/tasks-company-scope-selftest.ts).
  */
 import { supabaseTyped } from "@/lib/supabase-server";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
-import { STAFF_ROLES } from "@/types/auth.types";
+import { STAFF_ROLES, TOURS_AGENT_ROLE } from "@/types/auth.types";
 
 export interface TaskPerson {
   id: string;
@@ -50,6 +53,8 @@ export function pickTaskPeople(
   return staff
     .filter((person) => {
       if (person.role === "superadmin") return true;
+      // a sales agent belongs to the tours company it is a member of, and to nothing else
+      if (person.role === TOURS_AGENT_ROLE) return !megaEvents && !!memberships && !!companiesOf.get(person.id)?.has(companyId);
       if (memberships === null) return megaEvents;
       const companies = companiesOf.get(person.id);
       if (megaEvents) return !companies || companies.has(MEGA_EVENTS_COMPANY_ID);
@@ -70,7 +75,7 @@ export async function taskPeopleOf(
   const { data: staff, error } = await supabaseTyped
     .from("user_profiles")
     .select("id,display_name,email,role")
-    .in("role", STAFF_ROLES)
+    .in("role", [...STAFF_ROLES, TOURS_AGENT_ROLE])
     .eq("is_active", true)
     .order(order === "name" ? "display_name" : "created_at", { ascending: order === "name" });
   if (error) {

@@ -195,6 +195,28 @@ export async function requireCompany(
 }
 
 /**
+ * Guard of the screens a SALES AGENT (role tours_agent, 22.10) works like a rep:
+ * the tours dashboard, the Reservations board with its customer pages, and the
+ * tasks board - and every action they call. Staff pass exactly as
+ * requireCompany() does; a tours_agent passes when the active company (its own
+ * memberships only - getActiveCompany throws COMPANY_UNASSIGNED_ERROR with
+ * none) sells the product. Everything else keeps requireCompany(), which
+ * refuses the role: the tours editor, flights, the site, settings, approvals,
+ * users, the company's status list.
+ */
+export async function requireCompanyRep(
+  productType?: ProductType,
+): Promise<{ session: SessionPayload; company: Company }> {
+  const session = await getSession();
+  if (session?.role !== TOURS_AGENT_ROLE) return requireCompany(productType);
+  const company = await getActiveCompany(session);
+  if (productType && !company.productTypes.includes(productType)) {
+    throw new Error(`Forbidden: the active company (${company.slug}) does not sell "${productType}"`);
+  }
+  return { session, company };
+}
+
+/**
  * Guard of the READ side that a tours_agent shares with staff - today the
  * departures board and its read-only card, later the agents portal.
  *

@@ -36,7 +36,7 @@ import {
   Table2,
 } from "lucide-react";
 import { ADMIN_ROLES, TOURS_AGENT_ROLE, type Role } from "@/types/auth.types";
-import { isToursAgentPath } from "@/lib/auth/tours-agent";
+import { isToursAgentMenuPath } from "@/lib/auth/tours-agent";
 // Type only - lib/company.ts is server code and must not reach the client bundle.
 import type { ProductType } from "@/lib/company";
 
@@ -527,8 +527,9 @@ export function isToursCompanyPath(pathname: string): boolean {
 /**
  * Groups this role may see in a company that sells `productTypes`.
  * forms_operator lives entirely inside /forms - the rest of the nav would just
- * be a wall of middleware redirects. tours_agent likewise: only the screens
- * middleware lets it open (lib/auth/tours-agent.ts), whatever the company.
+ * be a wall of middleware redirects. tours_agent (the sales agent) likewise:
+ * only its three screens (TOURS_AGENT_MENU in lib/auth/tours-agent.ts),
+ * whatever the company.
  *
  * Pure - the sidebar and the command palette both call it with the active
  * company's product types, so they can never disagree.
@@ -550,7 +551,7 @@ export function visibleGroups(
     return forProducts(NAV, ["tours"])
       .map((group) => ({
         ...group,
-        items: group.items.filter((item) => !item.roles && isToursAgentPath(item.href)),
+        items: group.items.filter((item) => !item.roles && isToursAgentMenuPath(item.href)),
       }))
       .filter((group) => group.items.length > 0);
   }

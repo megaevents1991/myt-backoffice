@@ -34,7 +34,7 @@
 import { supabase } from "@/lib/supabase-server";
 import { worksInMegaEvents } from "@/lib/auth/guards";
 import type { SessionPayload } from "@/lib/auth/session";
-import { MEGA_EVENTS_COMPANY_ID, listCompaniesFor, requireCompany, type Company } from "@/lib/company";
+import { MEGA_EVENTS_COMPANY_ID, listCompaniesFor, requireCompanyRep, type Company } from "@/lib/company";
 import { hasEventsTaskBoard } from "@/lib/services/task-company";
 
 export type TaskScope = Pick<Company, "id">;
@@ -122,10 +122,11 @@ export type TasksScope = ReturnType<typeof tasksOf>;
 export const megaEventsTasks = () => tasksOf({ id: MEGA_EVENTS_COMPANY_ID });
 
 /**
- * Guard of every task-board action: a staff session, the active company, and
- * that company's scope.
+ * Guard of every task-board action: a staff session - or a sales agent's
+ * (tours_agent, 22.10: a person of its tours company's board, never of Mega
+ * Events) - the active company, and that company's scope.
  *
- * `requireCompany()` admits staff of any company and falls back to Mega Events
+ * `requireCompanyRep()` admits staff of any company and falls back to Mega Events
  * whenever the caller's companies cannot be resolved. The Mega Events board
  * keeps the gate it had as `requireStaff()`: someone who was added to other
  * companies only (worksInMegaEvents) is refused even when the fallback lands
@@ -140,7 +141,7 @@ export async function requireTaskBoard(): Promise<{
   tasks: TasksScope;
   eventsBoard: boolean;
 }> {
-  const { session, company } = await requireCompany();
+  const { session, company } = await requireCompanyRep();
   if (!(await mayOpenBoard(session, company))) throw new Error("Unauthorized");
   return { session, company, tasks: tasksOf(company), eventsBoard: hasEventsTaskBoard(company) };
 }

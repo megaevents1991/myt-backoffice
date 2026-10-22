@@ -510,12 +510,22 @@ function pureChecks() {
 
   // Who a task may go to (lib/services/task-people.ts) - on made-up rows.
   const person = (id: string, role: string) => ({ id, role, display_name: id, email: `${id}@example.test` });
-  const staff = [person("root", "superadmin"), person("me-admin", "admin"), person("floating", "editor"), person("mf-editor", "editor"), person("both", "editor")];
+  const staff = [
+    person("root", "superadmin"),
+    person("me-admin", "admin"),
+    person("floating", "editor"),
+    person("mf-editor", "editor"),
+    person("both", "editor"),
+    // a sales agent (tours_agent, 22.10) of the other company, and one nobody assigned yet
+    person("mf-agent", "tours_agent"),
+    person("lost-agent", "tours_agent"),
+  ];
   const memberships = [
     { user_id: "me-admin", company_id: MEGA_EVENTS_COMPANY_ID },
     { user_id: "mf-editor", company_id: OTHER_COMPANY },
     { user_id: "both", company_id: MEGA_EVENTS_COMPANY_ID },
     { user_id: "both", company_id: OTHER_COMPANY },
+    { user_id: "mf-agent", company_id: OTHER_COMPANY },
   ];
   const ids = (people: { id: string }[]) => people.map((p) => p.id);
   check(
@@ -523,10 +533,11 @@ function pureChecks() {
     ids(pickTaskPeople(staff, memberships, MEGA_EVENTS_COMPANY_ID)),
     ["root", "me-admin", "floating", "both"],
   );
-  check("people: another company = its members and the superadmins", ids(pickTaskPeople(staff, memberships, OTHER_COMPANY)), ["root", "mf-editor", "both"]);
-  check("people: with no memberships at all Mega Events is the whole staff list", ids(pickTaskPeople(staff, [], MEGA_EVENTS_COMPANY_ID)), ids(staff));
+  check("people: another company = its members and the superadmins - a sales agent member among them (22.10)", ids(pickTaskPeople(staff, memberships, OTHER_COMPANY)), ["root", "mf-editor", "both", "mf-agent"]);
+  const noAgents = ids(staff.filter((p) => p.role !== "tours_agent"));
+  check("people: with no memberships at all Mega Events is the whole STAFF list - never a sales agent", ids(pickTaskPeople(staff, [], MEGA_EVENTS_COMPANY_ID)), noAgents);
   check("people: with no memberships another company has superadmins only", ids(pickTaskPeople(staff, [], OTHER_COMPANY)), ["root"]);
-  check("people: unreadable memberships keep the Mega Events list whole", ids(pickTaskPeople(staff, null, MEGA_EVENTS_COMPANY_ID)), ids(staff));
+  check("people: unreadable memberships keep the Mega Events list whole - still no sales agent", ids(pickTaskPeople(staff, null, MEGA_EVENTS_COMPANY_ID)), noAgents);
   check("people: unreadable memberships give another company superadmins only", ids(pickTaskPeople(staff, null, OTHER_COMPANY)), ["root"]);
   check("people: only id, name and email travel", Object.keys(pickTaskPeople(staff, memberships, OTHER_COMPANY)[0] ?? {}).sort(), ["display_name", "email", "id"]);
 }

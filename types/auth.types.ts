@@ -17,21 +17,25 @@ export const ROLES = [
 export type Role = (typeof ROLES)[number];
 
 /**
- * tours_agent: a sales agent of a TOURS company (Mega Family). Deliberately not
- * the `agent` role - that one is a Mega Events partner (portal, partner code,
- * credit, coupons). A tours_agent is neither staff nor a partner:
+ * tours_agent: the SALES AGENT of a TOURS company (Mega Family) - "Sales agent"
+ * / "נציג מכירות" on screen (22.10; a read-only viewer from 01.10 to then).
+ * Deliberately not the `agent` role - that one is a Mega Events partner
+ * (portal, partner code, credit, coupons). A tours_agent is neither staff nor a
+ * partner:
  *  - it signs in through the normal login and holds the site-wide cookie;
  *  - it works only in the companies it is assigned to (company_members) and
  *    has NO Mega Events floor - unassigned means access to nothing;
- *  - today it sees the departures board of its company, read-only
- *    (requireCompanyViewer in lib/company.ts); a portal of its own comes later
- *    (lib/auth/tours-agent.ts holds its home and the paths it may open).
+ *  - it works three screens as a REP (its own and the unassigned cards, never
+ *    a manager): the tours dashboard, the Reservations board + customer pages,
+ *    the tasks board (requireCompanyRep in lib/company.ts); the departures
+ *    board stays read-only for it (requireCompanyViewer). lib/auth/tours-agent.ts
+ *    holds its home, its menu and the paths it may open.
  */
 export const TOURS_AGENT_ROLE = "tours_agent" satisfies Role;
 
 /** Display names of the roles that are shown by more than their id. */
 export const ROLE_LABELS: Partial<Record<Role, { en: string; he: string }>> = {
-  tours_agent: { en: "Tours agent", he: "סוכן טיולים" },
+  tours_agent: { en: "Sales agent", he: "נציג מכירות" },
 };
 
 export const STAFF_ROLES: Role[] = ["superadmin", "admin", "editor"];
