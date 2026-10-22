@@ -248,7 +248,8 @@ export function CardActionsMenu({
   const close = () => setSheet(null);
   return (
     <>
-      <DropdownMenu>
+      {/* not modal: a dialog opens from an item, and a modal menu + a modal dialog can leave pointer-events:none on the body */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Actions" title="Notes, booking link, follow-up" disabled={busy}>
             <MoreHorizontal className="h-4 w-4" />

@@ -575,7 +575,7 @@ export function suggestDepositFollowUp(departureDate: string | null, today: stri
 }
 
 export type FollowUpAfterStatus = { ok: true; followUpDate: string | null | undefined } | { ok: false; error: string };
-const DEPOSIT_NEEDS_DAY = "Pick the day to follow up on the balance.";
+export const DEPOSIT_NEEDS_DAY = "Pick the day to follow up on the balance.";
 const DAY_IN_PAST = "The follow-up day cannot be in the past.";
 
 /**
@@ -594,6 +594,9 @@ export function followUpAfterStatus(input: { to: string; requested: string | nul
   }
   return { ok: true, followUpDate: requested };
 }
+
+/** A deposit card keeps a day until the balance is settled: the day may move, never go (review 22.10). */
+export const canClearFollowUp = (status: string): boolean => status !== "deposit_paid";
 
 /** A status that names a value of its own (a tour + season, a follow-up day) cannot be set on many cards at once. */
 export function bulkStatusBlocker(key: string, label: string): string | null {

@@ -46,7 +46,9 @@ import {
   TODAY_REASON_LABELS,
   bookingBlocksDelete,
   bookingPhase,
+  DEPOSIT_NEEDS_DAY,
   bulkStatusBlocker,
+  canClearFollowUp,
   checkFuture,
   followUpAfterStatus,
   cleanPhones,
@@ -661,6 +663,8 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
     }
     if (followUpDate !== undefined) {
       if (followUpDate !== null && !DAY.test(followUpDate)) throw new UserError("The follow-up date is not a valid day.");
+      // a deposit card's day may move, never go - whatever button sent the null (review 22.10)
+      if (followUpDate === null && !canClearFollowUp((patch.status as string | undefined) ?? before.status)) throw new UserError(DEPOSIT_NEEDS_DAY);
       set("follow_up_date", before.follow_up_date, followUpDate);
     }
     if (change.notes !== undefined) {
@@ -786,8 +790,6 @@ export async function bulkUpdateCases(
       const blocker = bulkStatusBlocker(status.key, status.label);
       if (blocker) throw new UserError(blocker);
       patch.status = status.key;
-      // paid has nothing left to follow up (Alon 22.10)
-      if (status.key === "paid") patch.follow_up_date = null;
       // the same rule as one case: a closing status says why, one reason for the whole selection
       if (needsCloseReason(status.key, statuses)) {
         const bookings = await liveBookingsOf(company, unique);
@@ -823,6 +825,18 @@ export async function bulkUpdateCases(
 
     const before: { id: string; case_no: number; status: string; assigned_to: string | null }[] = [];
     for (const part of chunk(unique, IN_CHUNK)) {
+      // paid has nothing left to follow up (Alon 22.10) - on the cards that were not paid already; a card already paid keeps
+      // the day its rep set (the single-card rule and the booking trigger do the same)
+      if (patch.status === "paid") {
+        const { error: dayError } = await supabaseTyped
+          .from("leads")
+          .update({ follow_up_date: null })
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .in("id", part)
+          .neq("status", "paid");
+        if (dayError) throw new Error(`leads: ${dayError.message}`);
+      }
       const { data, error } = await supabaseTyped
         .from("leads")
         .update(patch)

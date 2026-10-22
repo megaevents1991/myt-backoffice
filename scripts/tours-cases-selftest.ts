@@ -40,6 +40,7 @@ import {
   suggestDepositFollowUp,
   followUpAfterStatus,
   bulkStatusBlocker,
+  canClearFollowUp,
   canTakeCard,
   htmlToText,
   siteHref,
@@ -175,6 +176,10 @@ assert.deepEqual(followUpAfterStatus({ to: "offer_sent", requested: undefined, s
 assert.equal(bulkStatusBlocker("future", "ליד עתידי"), '"ליד עתידי" names a tour and a season - set it on each card.');
 assert.equal(bulkStatusBlocker("deposit_paid", "שולם מקדמה"), '"שולם מקדמה" names a follow-up day - set it on each card.');
 assert.equal(bulkStatusBlocker("paid", "שולם"), null);
+// a deposit card keeps a day until the balance is settled: clearing it with no status change is refused (review 22.10)
+assert.equal(canClearFollowUp("deposit_paid"), false);
+assert.equal(canClearFollowUp("paid"), true);
+assert.equal(canClearFollowUp("offer_sent"), true);
 assert.equal(canTakeCard({ assignedTo: null }), true);
 assert.equal(canTakeCard({ assignedTo: "rep-1" }), false);
 

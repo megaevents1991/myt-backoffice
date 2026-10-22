@@ -58,7 +58,7 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { afterSave, moveInOrder, noteLine, orderBoard, placeInOrder, writtenToday, type BoardViewer } from "@/lib/tours/board";
+import { afterSave, canSeeCard, moveInOrder, noteLine, orderBoard, placeInOrder, writtenToday, type BoardViewer } from "@/lib/tours/board";
 import {
   BulkAssignSelect,
   CardWhat,
@@ -182,12 +182,12 @@ export function BoardScreen() {
       const result = await run(action, done);
       setBusy(null);
       if (!result.success) return false;
-      const next = afterSave(data?.cards ?? [], result.data, viewer);
-      setData((current) => current && { ...current, cards: next.cards });
-      if (next.handedTo) toast({ title: `Card handed to ${repName(next.handedTo)}` });
+      // over the list as it stands NOW - two rows' actions may overlap, and a memoized list would drop the first one's row
+      setData((current) => current && { ...current, cards: afterSave(current.cards, result.data, viewer).cards });
+      if (!canSeeCard(result.data, viewer)) toast({ title: `Card handed to ${repName(result.data.assignedTo)}` });
       return true;
     },
-    [data, repName, run, setData, toast, viewer],
+    [repName, run, setData, toast, viewer],
   );
   const save = useCallback((card: CaseRow, change: CaseChange, done: string) => apply(card, () => updateCase(card.id, change), done), [apply]);
   // the quick actions' host (22.10): the same patch, and "open the card" = its customer page at that section
