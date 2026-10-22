@@ -2,19 +2,21 @@
 
 /**
  * One customer, every deal of theirs under them (Nir 19.10, mockup https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).
- * The header is the person - phones, e-mail, national id, ACC NUM, edited once for every card. Below: inquiries
+ * The header is the person - phones, e-mail, national id, edited once for every card (ACC NUM is the card's own,
+ * 22.10). Below: inquiries
  * waiting to be filed, the open cards, then History (closed deals and trips that left). A card opens in place into
  * the card page (CasePage embedded): its orders, travelers, offer, product, gift, source and notes.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, CalendarClock, ChevronRight, GitMerge, Inbox, Link2, Loader2, Phone, PlusCircle, Star, StickyNote, TriangleAlert, UserRound, X, type LucideIcon } from "lucide-react";
+import { ArrowLeft, CalendarClock, ChevronRight, GitMerge, Hash, Inbox, Link2, Loader2, Phone, PlusCircle, Star, StickyNote, TriangleAlert, UserRound, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { useToast } from "@/hooks/use-toast";
@@ -36,7 +38,8 @@ import {
   type CustomerChange,
   type CustomerPageData,
 } from "@/lib/tours/cases";
-import { FollowUpInput, MailButton, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, GHOST_FIELD, MailButton, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { NotesEditor, OfferPanel, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
 import { CasePage, type CardFocus } from "@/components/tours/cases/case-page";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { MergeCustomerDialog } from "@/components/tours/cases/customer-dialogs";
@@ -179,6 +182,7 @@ function CardRow({
   onOpenChange,
   onChanged,
   flash,
+  initialFocus,
 }: {
   card: CaseRow;
   orders: BoardOrder[];
@@ -188,6 +192,8 @@ function CardRow({
   onChanged: () => void;
   /** The card the reader came from: highlighted for a moment, never opened by itself (Dor 21.10). */
   flash?: boolean;
+  /** Opened at this section on arrival - a board row's "Edit and resend" / "Build an offer" (`?focus=`). */
+  initialFocus?: CardFocus["section"] | null;
 }) {
   const today = todayIso();
   const { statuses } = data;
@@ -203,7 +209,8 @@ function CardRow({
       : null;
   const color = statusOf(card.status, statuses)?.color ?? "gray";
   const closed = isClosedStatus(card.status, statuses);
-  const [focus, setFocus] = useState<CardFocus | null>(null);
+  const [focus, setFocus] = useState<CardFocus | null>(initialFocus ? { section: initialFocus, at: Date.now() } : null);
+  const [sheet, setSheet] = useState<"link" | "notes" | null>(null);
   const offer = offerLine(card);
   const firstNote = card.notes?.trim().split("\n")[0] ?? "";
   const notesLine = firstNote ? (firstNote.length > 48 ? `${firstNote.slice(0, 47)}…` : firstNote) : "Add a note";
@@ -212,10 +219,22 @@ function CardRow({
     const result = await run(() => updateCase(card.id, { followUpDate }), "Follow-up day saved");
     if (result.success) onChanged();
   };
-  // a shortcut opens the card at that part of it
+  // building or editing an offer opens the card at that part of it; everything else acts from the outside (Alon 22.10)
   const go = (section: CardFocus["section"]) => {
     setFocus({ section, at: Date.now() });
     onOpenChange(true);
+  };
+  const host: CardActionHost = {
+    apply: async (action, done) => {
+      const result = await run(action, done);
+      if (result.success) onChanged();
+      return result.success;
+    },
+    openCard: go,
+  };
+  const saveAcc = async (next: string) => {
+    if (next === (card.accNum ?? "")) return;
+    await host.apply(() => updateCase(card.id, { accNum: next || null }), "ACC NUM saved");
   };
   return (
     <Collapsible open={open} onOpenChange={onOpenChange} asChild>
@@ -255,10 +274,24 @@ function CardRow({
           )}
           {priced && <span className="tabular text-sm font-medium">{fmtPrice(priced.total, priced.currency)}</span>}
         </CollapsibleTrigger>
-        {/* shortcuts on the card's outside (Alon 20.10): where the offer stands and what the team wrote, one click into it */}
+        {/* shortcuts on the card's outside (Alon 20.10): where the offer stands and what the team wrote - worked right here (22.10) */}
         <div className="flex flex-wrap gap-2 px-4 pb-3 ps-11">
-          <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} onClick={() => go("link")} />
-          <CardShortcut icon={StickyNote} label="Notes" value={notesLine} tone={card.notes?.trim() ? "default" : "muted"} onClick={() => go("notes")} />
+          <Popover open={sheet === "link"} onOpenChange={(next) => setSheet(next ? "link" : null)}>
+            <PopoverTrigger asChild>
+              <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} />
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[22rem] max-w-[calc(100vw-2rem)]">
+              <OfferPanel card={card} host={host} onDone={() => setSheet(null)} />
+            </PopoverContent>
+          </Popover>
+          <Popover open={sheet === "notes"} onOpenChange={(next) => setSheet(next ? "notes" : null)}>
+            <PopoverTrigger asChild>
+              <CardShortcut icon={StickyNote} label="Notes" value={notesLine} tone={card.notes?.trim() ? "default" : "muted"} />
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[24rem] max-w-[calc(100vw-2rem)]">
+              <NotesEditor card={card} host={host} onDone={() => setSheet(null)} />
+            </PopoverContent>
+          </Popover>
           {/* the third shortcut (Dor 20.10): the next follow-up, changed right here */}
           {!closed && (
             <label
@@ -272,6 +305,25 @@ function CardRow({
               <FollowUpInput ghost value={card.followUpDate} due={followUpDue(card, statuses, today)} className="h-7 w-[8.5rem] text-xs" onSave={(followUpDate) => void saveFollowUp(followUpDate)} />
             </label>
           )}
+          {/* ACC NUM is the deal's, not the person's (Alon 22.10): on every card, a closed one too */}
+          <label className="inline-flex items-center gap-2 rounded-md border bg-background px-2.5 py-0.5 text-sm" title="ACC NUM of this card's order">
+            <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="font-medium">ACC</span>
+            <input
+              key={card.accNum ?? ""}
+              dir="ltr"
+              aria-label="ACC NUM"
+              defaultValue={card.accNum ?? ""}
+              maxLength={40}
+              placeholder="—"
+              className={cn("h-7 w-24 rounded-md border px-2 text-xs tabular", GHOST_FIELD)}
+              onBlur={(e) => void saveAcc(e.target.value.trim())}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+            />
+          </label>
+          <TakeCardButton card={card} host={host} currentUserId={data.currentUserId} className="h-7" />
         </div>
         <CollapsibleContent className="border-t bg-muted/20 p-4">{open && <CasePage id={card.id} embedded focus={focus} onChanged={onChanged} />}</CollapsibleContent>
       </article>
@@ -286,13 +338,23 @@ const SHORTCUT_TONE: Record<ShortcutTone, string> = {
   warning: "text-amber-800 dark:text-amber-300",
 };
 
-/** A button on a closed card: a label and what stands behind it. */
-function CardShortcut({ icon: Icon, label, value, tone, onClick }: { icon: LucideIcon; label: string; value: string; tone: ShortcutTone; onClick: () => void }) {
+/** A button on a closed card: a label and what stands behind it. A popover's trigger (asChild) - the rest of the props and the ref are its. */
+function CardShortcut({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  className,
+  ...rest
+}: { icon: LucideIcon; label: string; value: string; tone: ShortcutTone } & ComponentProps<"button">) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="inline-flex max-w-full items-center gap-2 rounded-md border bg-background px-2.5 py-1 text-start text-sm hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      {...rest}
+      className={cn(
+        "inline-flex max-w-full items-center gap-2 rounded-md border bg-background px-2.5 py-1 text-start text-sm hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className,
+      )}
     >
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <span className="font-medium">{label}</span>
@@ -323,8 +385,11 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
   const run = useActionToast();
   const { toast } = useToast();
   const wanted = cardId ?? params.get("card") ?? undefined;
+  // a board row's "Edit and resend" / "Build an offer": the wanted card opens at that section (22.10)
+  const focusParam = params.get("focus");
+  const initialFocus: CardFocus["section"] | null = focusParam === "link" || focusParam === "notes" ? focusParam : null;
   const { data, error, loading, reload, setData } = useActionData<CustomerPageData>(() => getCustomerPage({ customerId, cardId }), [customerId, cardId]);
-  const [opened, setOpened] = useState<Set<string> | null>(null);
+  const [opened, setOpened] = useState<Set<string> | null>(() => (wanted && initialFocus ? new Set([wanted]) : null));
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
   const [merging, setMerging] = useState<"pick" | "suggested" | null>(null);
@@ -439,10 +504,8 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
             <PhonesField phones={customer.phones} disabled={saving} onSave={(phones) => void saveCustomer({ phones })} />
           </div>
           <HeaderField label="Email" value={customer.email} dir="ltr" inputMode="email" onSave={(email) => void saveCustomer({ email })} />
-          <div className="grid grid-cols-2 gap-3">
-            <HeaderField label="National id (ת״ז)" value={customer.idNumber} dir="ltr" inputMode="numeric" onSave={(idNumber) => void saveCustomer({ idNumber })} />
-            <HeaderField label="ACC NUM" value={customer.accNum} dir="ltr" onSave={(accNum) => void saveCustomer({ accNum })} />
-          </div>
+          {/* ACC NUM left the header on 22.10: it is the card's (each order has its own) */}
+          <HeaderField label="National id (ת״ז)" value={customer.idNumber} dir="ltr" inputMode="numeric" onSave={(idNumber) => void saveCustomer({ idNumber })} />
         </div>
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <span>Customer since {fmtDate(customer.createdAt.slice(0, 10))}</span>
@@ -548,7 +611,7 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
           <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">No open card. Add one with New card.</p>
         ) : (
           openCards.map((c) => (
-            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} flash={flashId === c.id} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
+            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} flash={flashId === c.id} initialFocus={c.id === wanted ? initialFocus : null} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
           ))
         )}
         {data.hiddenCards > 0 && (
@@ -565,7 +628,7 @@ export function CustomerPage({ customerId, cardId }: { customerId?: string; card
             <span className="text-sm text-muted-foreground">Closed deals and trips that left.</span>
           </div>
           {history.map((c) => (
-            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} flash={flashId === c.id} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
+            <CardRow key={c.id} card={c} orders={ordersOf(c.id)} data={data} open={open.has(c.id)} flash={flashId === c.id} initialFocus={c.id === wanted ? initialFocus : null} onOpenChange={(v) => setOpen(c.id, v)} onChanged={() => void reload({ quiet: true })} />
           ))}
         </section>
       )}

@@ -59,7 +59,7 @@ const roomsOf = (counts: Record<string, number>, d: LinkDeparture | undefined) =
   d ? d.rooms.flatMap((r) => Array<string>(counts[r.key] ?? 0).fill(r.key)) : [];
 const countsOf = (rooms: readonly string[]) => rooms.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k]: (acc[k] ?? 0) + 1 }), {});
 
-interface SendProps {
+export interface SendProps {
   offer: CaseOffer;
   phone: string | null;
   email: string | null;
@@ -69,7 +69,7 @@ interface SendProps {
 }
 
 /** The ways to send an offer. A click on WhatsApp or e-mail records it as sent (markOfferSent) - copying does not. */
-function SendButtons({ offer, phone, email, firstName, busy, onSent }: SendProps) {
+export function SendButtons({ offer, phone, email, firstName, busy, onSent }: SendProps) {
   const { toast } = useToast();
   const message = linkMessage(firstName, offer.tourName, offer.url);
   const app = whatsappAppLink(phone, message);
@@ -157,8 +157,9 @@ function SendAgain(props: SendProps) {
   );
 }
 
-/** The offer on the case: what was prepared, whether and how it was sent - with Send / Edit and resend / Withdraw. */
-function OfferSummary(props: SendProps & { onEdit: () => void; onWithdraw: () => void }) {
+/** The offer on the case: what was prepared, whether and how it was sent - with Send / Edit and resend / Withdraw. Shared with the
+ * folded card's popover and the board row's dialog (card-quick-actions.tsx). */
+export function OfferSummary(props: SendProps & { onEdit: () => void; onWithdraw: () => void }) {
   const { offer, busy, onEdit, onWithdraw } = props;
   const sent = offerSent(offer);
   return (
