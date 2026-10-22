@@ -24,7 +24,8 @@ import type { PanelVenue } from "./classify-dialog";
 
 // "לטיפול ברמת הריצה" (spec 5.1 / 11): what every card of the run would say the same way - the hall is
 // new, the clubs have no Hebrew name, the subject has no page, the crest is missing - as ONE row each,
-// with the number of shows it touches and one action. The rows are `runLevelRows` (lib/uploader/run-panel.ts,
+// with the number of shows it touches and one action (a hall with an event arranged by hand: learn, and
+// classify beside it - ruling R20). The rows are `runLevelRows` (lib/uploader/run-panel.ts,
 // pure - the board computes them; nothing is regrouped here). A row leaves when its warnings do (the
 // dialogs remove them and the board reads the run again); the panel leaves with its last row.
 // `id="run-panel"` is where a card's folded line ("N הערות ברמת הריצה - בפאנל למעלה") scrolls to.
@@ -55,24 +56,35 @@ export function RunPanel({
   const [open, setOpen] = useState(true);
   const byId = new Map(items.map((i) => [i.id, i]));
 
+  function classifyButton(venue: PanelVenue) {
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={() => onClassify(venue)} className={ACTION}>
+        <ListChecks aria-hidden />
+        {BTN_CLASSIFY}
+      </Button>
+    );
+  }
+
   function action(row: PanelRow) {
     const venue = row.venue;
     switch (row.action) {
       case "classify":
-        return venue ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => onClassify(venue)} className={ACTION}>
-            <ListChecks aria-hidden />
-            {BTN_CLASSIFY}
-          </Button>
-        ) : null;
+        return venue ? classifyButton(venue) : null;
       case "learn": {
+        // A hall a person arranged one event of (ruling R20): learning from it is the main way (filled), the
+        // classification dialog stays one click away - a learn can find no template, or leave rows to review.
         const fixed = venue?.fixedItemId ?? null;
-        return fixed ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => onLearn(fixed)} className={ACTION}>
-            <GraduationCap aria-hidden />
-            {BTN_LEARN_APPLY}
-          </Button>
-        ) : null;
+        return (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {fixed && (
+              <Button type="button" size="sm" onClick={() => onLearn(fixed)} className={ACTION}>
+                <GraduationCap aria-hidden />
+                {BTN_LEARN_APPLY}
+              </Button>
+            )}
+            {venue && row.secondary === "classify" && classifyButton(venue)}
+          </span>
+        );
       }
       case "names":
         return (

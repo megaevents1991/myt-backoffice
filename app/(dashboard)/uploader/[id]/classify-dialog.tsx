@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { classifyVenue, proposeVenueClassification } from "@/lib/actions/uploader-actions";
 import type { ProposeResult } from "@/lib/uploader/action-types";
-import { ZONE_LABEL_MAX, type ClassificationRow, type ConfirmedRow, type ProposedRow } from "@/lib/uploader/classify";
+import { CLASSIFY_TIMEOUT_MS, readyToConfirm, ZONE_LABEL_MAX, type ClassificationRow, type ConfirmedRow, type ProposedRow } from "@/lib/uploader/classify";
 import type { PanelRow } from "@/lib/uploader/run-panel";
 import { ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
 import { cn } from "@/lib/utils";
@@ -93,6 +93,18 @@ function shownAsProposed(rows: ClassificationRow[]): Record<string, ProposedRow>
   );
 }
 
+/** The row as `classifyVenue` takes it: a dropped or "לבדיקה" row carries no label - an untouched AI-unsure row's doubtful label never becomes a zone. */
+function confirmedOf(row: ClassificationRow, e: RowEdit): ConfirmedRow {
+  const named = !e.drop && !isUnsure(e);
+  return {
+    category: row.category,
+    label_he: named ? e.label.trim() : "",
+    description_he: named ? e.description.trim() : "",
+    drop: e.drop,
+    unsure: isUnsure(e),
+  };
+}
+
 /** The status column: who said what about the row, as it stands now (an edit can turn an AI row into "לבדיקה"). */
 function statusText(row: ClassificationRow, e: RowEdit): string {
   if (e.drop) {
@@ -101,8 +113,10 @@ function statusText(row: ClassificationRow, e: RowEdit): string {
     if (row.drop && row.status === "ai") return STATUS_DROPPED_AI(row.drop_reason === "away");
     return STATUS_DROPPED;
   }
-  if (isUnsure(e)) return e.aiUnsure ? STATUS_UNSURE : STATUS_REVIEW;
-  if (row.status === "rule_drop") return STATUS_KEPT_AGAINST_RULE;
+  const unsure = isUnsure(e) ? (e.aiUnsure ? STATUS_UNSURE : STATUS_REVIEW) : null;
+  // The away rule flags the category and it stays - un-dropped now, or kept at an earlier confirm (ruling R22): say so.
+  if (row.ruleDrop) return unsure ? `${STATUS_KEPT_AGAINST_RULE} · ${unsure}` : STATUS_KEPT_AGAINST_RULE;
+  if (unsure) return unsure;
   if (row.status === "existing" && row.existing) return STATUS_EXISTING(row.existing.label);
   if (row.status === "ai") return STATUS_AI;
   return "";
@@ -195,25 +209,16 @@ export function ClassifyDialog({
 
   const current = rows.map((row) => ({ row, e: editFor(row) }));
   const blocked = current.some(({ e }) => needsLabel(e));
-  // Something must be decided (ruling R19 - stricter than 5.2's "every row labelled or for review"): an
-  // all-"לבדיקה" confirm on a new hall would adopt the drawing with no zones and un-light the map.
-  const decided = current.some(({ e }) => e.drop || (!isUnsure(e) && e.label.trim() !== ""));
+  const confirmed: ConfirmedRow[] = current.map(({ row, e }) => confirmedOf(row, e));
+  // Something must be decided (ruling R19 - stricter than 5.2's "every row labelled or for review"), and a hall
+  // with no template needs a NAMED zone (ruling R25 - the rule's away drop alone would adopt the drawing with
+  // nothing lit and move every show onto it). The server refuses the same.
+  const decided = readyToConfirm(confirmed, data !== null && data.venue.templateId !== null);
   const canConfirm = data !== null && rows.length > 0 && !blocked && decided && !saving;
   const line = data ? aiLine(data.ai) : null;
 
   async function confirm() {
     if (!data || !canConfirm) return;
-    // A dropped or "לבדיקה" row carries no label: an untouched AI-unsure row's doubtful label never becomes a zone.
-    const confirmed: ConfirmedRow[] = current.map(({ row, e }) => {
-      const named = !e.drop && !isUnsure(e);
-      return {
-        category: row.category,
-        label_he: named ? e.label.trim() : "",
-        description_he: named ? e.description.trim() : "",
-        drop: e.drop,
-        unsure: isUnsure(e),
-      };
-    });
     setSaving(true);
     try {
       const r = await classifyVenue(runId, data.venue.sourceUrl, { rows: confirmed, proposed: shownAsProposed(data.rows), ai: data.ai.used });
@@ -260,7 +265,7 @@ export function ClassifyDialog({
         </DialogHeader>
 
         {phase.kind === "loading" ? (
-          <AiWait />
+          <AiWait timeoutMs={CLASSIFY_TIMEOUT_MS} />
         ) : rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">{CLASSIFY_EMPTY}</p>
         ) : (
@@ -306,6 +311,8 @@ export function ClassifyDialog({
                           data-box
                           dir="rtl"
                           value={e.label}
+                          // An English stored label is no label (ruling R26): shown as a hint, never sent.
+                          placeholder={row.placeholder || undefined}
                           maxLength={ZONE_LABEL_MAX}
                           disabled={e.drop || saving}
                           aria-label={`${COL_LABEL}: ${row.category}`}

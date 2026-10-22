@@ -25,7 +25,6 @@ import {
   COL_NAME_HE,
   COL_SUPPLIER_NAME,
   COL_WHAT,
-  LIVE_NAMED_LINE,
   NAME_NEEDS_ENGLISH,
   NAME_NEEDS_HEBREW,
   NAMES_FAILED,
@@ -35,6 +34,7 @@ import {
   NETWORK_TEXT,
   NO_IMAGES_LINE,
   NO_IMAGES_LINE_ARTIST,
+  RENAMABLE_LINE,
   STATUS_ARTIST_CREATE,
   STATUS_NAME_SKIPPED,
   STATUS_TEAM_CREATE,
@@ -48,8 +48,10 @@ import { rtl } from "./use-run-board";
 // box holds the clean supplier name), and one confirm (`createTeamsAndRename`) that creates the missing
 // rows INACTIVE (no crest, no picture - the AI brings none) and renames every show of the run. A row
 // `clubNamesMatch` found after all is "existing": used, never created, both boxes read-only. A row whose
-// Hebrew box a person empties is left out (that fixture keeps its English name). Shows that take their
-// Hebrew name from LiveTickets need no row; with no row at all the dialog is one button.
+// Hebrew box a person empties is left out (that fixture keeps its English name). Shows that now have a
+// Hebrew name by other means (LiveTickets, a team added in Templates, a partial confirm) need no row
+// (`renamable`, ruling R24); with no row at all - something to rename, or the run's names task still open -
+// the dialog is one button, an empty confirm that renames, clears the warnings and closes the task.
 
 type Loaded = Extract<NamesProposeResult, { ok: true }>;
 type Phase = { kind: "loading" } | { kind: "ready"; data: Loaded };
@@ -158,11 +160,12 @@ export function NamesDialog({
   const current = rows.map((row) => ({ row, e: editFor(row) }));
   const blocked = current.some(({ row, e }) => row.status !== "existing" && rowProblem(e) !== null);
   const send = current.map(({ row, e }) => confirmedOf(row, e)).filter((r): r is ConfirmedTeamRow => r !== null);
-  const liveNamed = data?.liveNamed ?? 0;
-  /** [] is a valid confirm when LiveTickets names some shows (it renames them). */
-  const canConfirm = data !== null && !blocked && !saving && (send.length > 0 || liveNamed > 0);
-  const onlyLive = data !== null && rows.length === 0 && liveNamed > 0;
-  const nothing = data !== null && rows.length === 0 && liveNamed === 0;
+  const renamable = data?.renamable ?? 0;
+  /** [] is a valid confirm when shows would take a Hebrew name, or the run's names task is still open (ruling R24). */
+  const emptyConfirm = data !== null && (renamable > 0 || data.namesTask);
+  const canConfirm = data !== null && !blocked && !saving && (send.length > 0 || emptyConfirm);
+  const onlyRename = data !== null && rows.length === 0 && emptyConfirm;
+  const nothing = data !== null && rows.length === 0 && !emptyConfirm;
   const line = data ? aiLine(data.ai) : null;
 
   async function confirm() {
@@ -295,7 +298,7 @@ export function NamesDialog({
                 </TableBody>
               </Table>
             )}
-            {liveNamed > 0 && <p className="text-[13px] text-muted-foreground">{LIVE_NAMED_LINE(liveNamed)}</p>}
+            {renamable > 0 && <p className="text-[13px] text-muted-foreground">{RENAMABLE_LINE(renamable)}</p>}
           </form>
         )}
 
@@ -306,7 +309,7 @@ export function NamesDialog({
           {data !== null && !nothing && (
             <Button type="submit" form="uploader-names" disabled={!canConfirm}>
               {saving && <Loader2 aria-hidden className="animate-spin" />}
-              {onlyLive ? BTN_NAMES_LIVE : artist ? BTN_CONFIRM_ARTIST : BTN_CONFIRM_TEAMS}
+              {onlyRename ? BTN_NAMES_LIVE : artist ? BTN_CONFIRM_ARTIST : BTN_CONFIRM_TEAMS}
             </Button>
           )}
         </DialogFooter>
