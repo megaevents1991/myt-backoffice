@@ -309,3 +309,130 @@ const LOAD_ERROR_HE: Record<string, string> = {
 export const loadErrorText = (kind: string): string => LOAD_ERROR_HE[kind] ?? actionErrorText(kind);
 
 export const NETWORK_TEXT = "אין חיבור לשרת - נסו שוב";
+
+// ---- round "אלון 1": the run panel, the two dialogs, learn-from-event, a rule for the run (spec 5.1-5.5) ----
+
+/** "N הופעות", "הופעה אחת" for one. */
+const showsHe = (n: number): string => (n === 1 ? "הופעה אחת" : `${n} הופעות`);
+
+// The run panel (5.1).
+export const PANEL_TITLE = "לטיפול ברמת הריצה";
+export const PANEL_TOPICS = (n: number): string => (n === 1 ? "נושא אחד" : `${n} נושאים`);
+export const PANEL_COLLAPSE = "קפל";
+export const PANEL_EXPAND = "הצג";
+export const BTN_CLASSIFY = "סווג כרטיסים";
+export const BTN_LEARN_APPLY = "החל על שאר ההופעות";
+export const BTN_NAMES = "תן שמות בעברית";
+export const BTN_OPEN_TEMPLATES = "פתח ב-Templates";
+/** Under a venue row with several events arranged by hand: the other ones, each offered as a source too. */
+export const PANEL_OTHER_FIXED = "נערכו בעורך גם:";
+export const PANEL_COUNT_TITLE = "הופעות שהנושא נוגע בהן";
+/** The grey line a card folds its run-level warnings into (a button to the panel). */
+export const FOLD_LINE = (n: number): string => (n === 1 ? "הערה אחת ברמת הריצה - בפאנל למעלה" : `${n} הערות ברמת הריצה - בפאנל למעלה`);
+
+// Both dialogs: the proposal, and what is said when the AI gave none.
+export const AI_WAIT = "ה-AI מציע…";
+export const AI_OFF_LINE = "ה-AI כבוי / לא ענה - מלאו את השמות ידנית";
+export const AI_RATE_LINE = "יותר מדי קריאות ל-AI בזמן קצר - מלאו את השמות ידנית";
+/** The line above a dialog's table when the AI did not propose (`ai.reason`); null = nothing to say (it proposed, or nothing needed proposing). */
+export function aiLine(ai: { used: boolean; reason: string | null }): string | null {
+  if (ai.used || ai.reason === "not_needed") return null;
+  return ai.reason === "rate_limited" ? AI_RATE_LINE : AI_OFF_LINE;
+}
+export const BTN_CANCEL = "בטל";
+export const BTN_CLOSE = "סגור";
+
+// The classification dialog (5.2).
+export const CLASSIFY_TITLE = (venue: string): string => `סיווג כרטיסים - ${venue}`;
+export const CLASSIFY_DESCRIPTION = "כותרת הזון היא כותרת הכרטיס באתר, התיאור הוא השורה שמתחתיה. קטגוריה שנפסלת יורדת מהאירועים.";
+export const COL_CATEGORY = "קטגוריה (TixStock)";
+export const COL_LABEL = "שם הזון בעברית (כותרת הכרטיס באתר)";
+export const COL_DESCRIPTION = "תיאור בעברית (שורה מתחת)";
+export const COL_DROP = "לפסול";
+export const COL_STATUS = "סטטוס";
+export const BTN_CONFIRM_CLASSIFY = (n: number): string =>
+  n === 0 ? "אשר - יישמר כתבנית האולם" : n === 1 ? "אשר - יחול על ההופעה ויישמר כתבנית האולם" : `אשר - יחול על ${n} ההופעות ויישמר כתבנית האולם`;
+export const STATUS_AI = "הצעת ה-AI";
+export const STATUS_RULE_DROP = "נפסל: יציע אוהדי חוץ (כלל)";
+export const STATUS_UNSURE = "לבדיקה - ה-AI לא בטוח (יישאר בלי זון)";
+/** A row a person emptied (both boxes) - "לבדיקה" without blaming the AI. */
+export const STATUS_REVIEW = "לבדיקה (יישאר בלי זון)";
+export const STATUS_DROPPED = "נפסל";
+export const STATUS_DROPPED_AI = (away: boolean): string => (away ? "נפסל: יציע אוהדי חוץ (הצעת ה-AI)" : "נפסל (הצעת ה-AI)");
+export const STATUS_DROPPED_STORED = "נפסל בתבנית האולם";
+export const STATUS_KEPT_AGAINST_RULE = "נשאר למרות הכלל";
+export const STATUS_EXISTING = (label: string): string => `בתבנית: ${label}`;
+export const STATUS_NOT_SOLD = "לא במכירה בריצה הזו";
+export const STATUS_SHOWS = showsHe;
+export const STATUS_OFF_MAP = "לא מסומן במפה - יקבל כותרת בלי סימון";
+export const CLASSIFY_NEEDS_LABEL = "חסר שם לזון - או רוקנו גם את התיאור (לבדיקה)";
+export const CLASSIFY_EMPTY = "לא נמצאו קטגוריות לסווג באולם הזה.";
+export const CLASSIFY_FAILED = "הסיווג לא נשמר";
+export const CLASSIFY_OPEN_FAILED = "לא הצלחתי לפתוח את הסיווג";
+/** The toast after a confirm: "15 אירועים עודכנו · 7 זונים · 1 נפסל · 1 לבדיקה" (`withUnsure` false: learn-from-event, which has none). */
+export function CLASSIFY_DONE(r: { events: number; zones: number; dropped: number; unsure: number }, withUnsure = true): string {
+  const parts = [
+    r.events === 1 ? "אירוע אחד עודכן" : `${r.events} אירועים עודכנו`,
+    r.zones === 1 ? "זון אחד" : `${r.zones} זונים`,
+    `${r.dropped} נפסלו`,
+  ];
+  if (withUnsure) parts.push(`${r.unsure} לבדיקה`);
+  return parts.join(" · ");
+}
+/** A confirm that ran out of time before every show was rewritten. */
+export const PARTIAL_LINE = (left: number): string =>
+  `${left === 1 ? "הופעה אחת לא הספיקה" : `${left} הופעות לא הספיקו`} להתעדכן - לחצו שוב כדי לסיים.`;
+
+// The names dialog (5.3).
+export const NAMES_TITLE = "שמות בעברית";
+export const COL_SUPPLIER_NAME = "שם אצל הספק";
+export const COL_NAME_EN = "שם באנגלית (לעמוד)";
+export const COL_NAME_HE = "שם בעברית";
+export const COL_WHAT = "מה יקרה";
+export const NO_IMAGES_LINE =
+  "ה-AI לא מביא תמונות: הקבוצות ייווצרו לא פעילות, בלי סמל ובלי תמונה - הפעילו אותן ב-Templates אחרי שהסמל הועלה.";
+export const NO_IMAGES_LINE_ARTIST = "ה-AI לא מביא תמונות: האמן ייווצר לא פעיל, בלי תמונה - הפעילו אותו ב-Templates אחרי שהתמונה הועלתה.";
+export const STATUS_TEAM_CREATE = "תיווצר קבוצה (בלי סמל ותמונה)";
+export const STATUS_ARTIST_CREATE = "ייווצר אמן (בלי תמונה)";
+export const STATUS_TEAM_EXISTING = "קיימת כבר - ישתמש בה";
+export const STATUS_NAME_SKIPPED = "יידלג - האירועים יישארו עם השם באנגלית";
+export const NAME_NEEDS_HEBREW = "צריך אותיות בעברית";
+export const NAME_NEEDS_ENGLISH = "חסר שם באנגלית";
+export const LIVE_NAMED_LINE = (n: number): string =>
+  n === 1 ? "אירוע אחד יקבל את השם בעברית מלייב טיקטס" : `${n} אירועים יקבלו את השם בעברית מלייב טיקטס`;
+export const NAMES_NONE = "אין שמות חסרים בריצה הזו.";
+export const BTN_NAMES_LIVE = "עדכן שמות בעברית";
+export const BTN_CONFIRM_TEAMS = "צור את הקבוצות ועדכן את שמות האירועים";
+export const BTN_CONFIRM_ARTIST = "צור את האמן ועדכן את שמות האירועים";
+export const NAMES_FAILED = "השמות לא נשמרו";
+export const NAMES_OPEN_FAILED = "לא הצלחתי לפתוח את השמות";
+/** The toast after a confirm: "3 קבוצות נוצרו · 15 אירועים קיבלו שם בעברית". */
+export function TEAMS_DONE(r: { created: number; renamed: number }, artist: boolean): string {
+  const made = artist
+    ? r.created === 1
+      ? "אמן נוצר"
+      : `${r.created} אמנים נוצרו`
+    : r.created === 1
+      ? "קבוצה אחת נוצרה"
+      : `${r.created} קבוצות נוצרו`;
+  return `${made} · ${r.renamed === 1 ? "אירוע אחד קיבל" : `${r.renamed} אירועים קיבלו`} שם בעברית`;
+}
+
+// Learn from an event a person arranged in the editor (5.5).
+export const BTN_LEARN_CARD = (n: number): string =>
+  n === 1 ? "למד מהאירוע הזה והחל על ההופעה הנוספת" : `למד מהאירוע הזה והחל על ${n} ההופעות`;
+export const LEARN_TITLE = "ללמוד מהאירוע הזה?";
+export const LEARN_DESCRIPTION = "תבנית האולם תתעדכן מהאירוע שסודר בעורך, ושאר ההופעות באולם בריצה ייכתבו לפיה. בלי AI. האירוע עצמו לא משתנה.";
+export const LEARN_READING = "קורא את האירוע…";
+export const BTN_LEARN_CONFIRM = "החל";
+export const LEARN_FAILED = "הלמידה מהאירוע לא נשמרה";
+export const LEARN_OPEN_FAILED = "לא הצלחתי לקרוא את האירוע";
+export const LEARN_ZONES = (zones: number, newZones: number): string =>
+  `${zones === 1 ? "זון אחד" : `${zones} זונים`} (${newZones === 1 ? "חדש אחד" : `${newZones} חדשים`})`;
+export const LEARN_DROPPED = (n: number): string => (n === 1 ? "קטגוריה אחת נפסלה" : `${n} קטגוריות נפסלו`);
+export const LEARN_DESCRIPTIONS = (n: number): string => (n === 1 ? "תיאור אחד" : `${n} תיאורים`);
+export const LEARN_SIBLINGS = (n: number): string => `יחול על ${showsHe(n)}`;
+
+// A rule for the run, on a question card (5.4).
+export const SIMILAR_LINE = (n: number): string => (n === 1 ? "החל גם על השאלה הדומה בריצה" : `החל גם על ${n} השאלות הדומות בריצה`);
+export const ANSWERED_MANY = (n: number): string => `נענו ${n} שאלות`;
