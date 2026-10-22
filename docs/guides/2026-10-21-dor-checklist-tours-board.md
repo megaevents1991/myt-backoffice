@@ -35,3 +35,12 @@
 ## 4. מה לא דורש כלום ממך
 
 - ה-dev המקומי: `.env.development.local` מפנה ל-Supabase מקומי (קובץ בטיחות מ-1.10) - הסיסמה של פרודקשן לא עובדת שם בכוונה. בודקים בפרודקשן.
+
+## 5. סיבוב 3 (22.10.2026) - אחרי הפוש הבא - 5 דקות
+
+הקוד ב-master, המיגרציה `20261022130813_tours_board_round_3.sql` עולה עם הפוש. ספק: `docs/superpowers/specs/2026-10-22-tours-board-round-3-design.md`.
+
+1. GitHub ← Actions ← **Apply DB Migrations** ירוק (מנקה תאריכי פולו-אפ שעברו מקארדים ששולמו; הטריגר של הזמנה review→paid מנקה גם הוא; ACC NUM מכותרת הלקוח מועתק לקארדים שאין להם).
+2. **Users** ← חברה **מגה פמילי** ← כל נציג שהוא היום `editor` ← role בחברה: **Sales agent (נציג מכירות)**. רק superadmin יכול. שינוי התפקיד מסיים את הסשן שלו - הוא מתחבר מחדש ורואה רק Dashboard / Reservations / Tasks. (נציג שעובד גם בחברה אחרת נשאר `editor` - כלל המערכת.) אלון ומי שמנהל נשארים **admin**.
+3. פרודקשן ← `/tours/reservations` ← TODAY: בסוף שורה "⋯" (Notes / Booking link / Follow-up) ו-"Take it" על קארד לא משויך; RESERVATIONS: עמודת ACC. קארד ← סטטוס "שולם מקדמה" פותח דיאלוג תאריך; "שולם" מוחק את תאריך הפולו-אפ.
+4. עמוד לקוח: אין יותר ACC NUM בכותרת; על קארד מקופל - "Booking link" ו-"Notes" עובדים במקום (פופאובר), תיבת "ACC", "Take it".
