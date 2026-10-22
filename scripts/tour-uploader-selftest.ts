@@ -70,6 +70,16 @@ import {
 import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploader/decisions";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import {
+  cleanClubName,
+  cleanTeamRows,
+  missingHebrewNames,
+  missingSides,
+  parseTeamNames,
+  slugFor,
+  teamRowsFor,
+  type ProposedName,
+} from "@/lib/uploader/team-names";
+import {
   applyClassification,
   classificationDiff,
   cleanConfirmedRows,
@@ -1767,17 +1777,17 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const noSubject = { name_en: "Liverpool FC", name_he: "ליברפול" };
   same(
     eventNames("team", match(), noSubject, teamsHe, null),
-    { name: "ליברפול - קריסטל פאלאס", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: true },
+    { name: "ליברפול - קריסטל פאלאס", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: true, source: "teams" },
     "football: Hebrew names of both sides, TixStock's English name",
   );
   same(
     eventNames("team", match({ away_team: "Brighton & Hove Albion FC" }), noSubject, teamsHe, null),
-    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false },
+    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false, source: "english" },
     "football with one side unknown -> the English name, hebrew false",
   );
   same(
     eventNames("team", match({ home_team: null, away_team: null }), noSubject, teamsHe, null),
-    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false },
+    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false, source: "english" },
     "football with no sides read -> the English name",
   );
   same(
@@ -1787,12 +1797,12 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
   same(
     eventNames("team", match(), noSubject, { ...teamsHe, "crystal palace fc": "  " }, null),
-    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false },
+    { name: "Liverpool FC vs Crystal Palace FC", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: false, source: "english" },
     "a blank Hebrew name in the table is not a name",
   );
   same(
     eventNames("competition", match(), { name_en: "Premier League", name_he: null }, teamsHe, null),
-    { name: "ליברפול - קריסטל פאלאס", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: true },
+    { name: "ליברפול - קריסטל פאלאס", name_english: "Liverpool FC vs Crystal Palace FC", hebrew: true, source: "teams" },
     "a competition run names its fixtures like a team run",
   );
 
@@ -1800,27 +1810,27 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const festival = match({ name_english: "Eric Clapton Live 2027", home_team: null, away_team: null });
   same(
     eventNames("artist", festival, clapton, teamsHe, null),
-    { name: "אריק קלפטון", name_english: "Eric Clapton", hebrew: true },
+    { name: "אריק קלפטון", name_english: "Eric Clapton", hebrew: true, source: "artist" },
     "music: the artist row's Hebrew name and the performer's English name (not the supplier's title)",
   );
   same(
     eventNames("artist", festival, { name_en: "Eric Clapton", name_he: null }, teamsHe, "אריק קלפטון (לייב)"),
-    { name: "אריק קלפטון (לייב)", name_english: "Eric Clapton", hebrew: true },
+    { name: "אריק קלפטון (לייב)", name_english: "Eric Clapton", hebrew: true, source: "livetickets" },
     "music: no Hebrew on the row -> LiveTickets' hebName",
   );
   same(
     eventNames("artist", festival, clapton, teamsHe, "שם אחר"),
-    { name: "אריק קלפטון", name_english: "Eric Clapton", hebrew: true },
+    { name: "אריק קלפטון", name_english: "Eric Clapton", hebrew: true, source: "artist" },
     "music: the artist row's Hebrew name beats Live's",
   );
   same(
     eventNames("artist", festival, { name_en: "Eric Clapton", name_he: null }, teamsHe, null),
-    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false },
+    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false, source: "english" },
     "music: no Hebrew anywhere -> the English name, hebrew false",
   );
   same(
     eventNames("artist", festival, { name_en: "Eric Clapton", name_he: "  " }, teamsHe, " "),
-    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false },
+    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false, source: "english" },
     "music: blank strings are not names",
   );
 }
@@ -3568,6 +3578,288 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(ticketsFixedByHand(payloadOf(built), null), false, "ticketsFixedByHand: no row = nothing to compare");
   same(ticketsFixedByHand({ name: "x" }, rowOf(built)), false, "ticketsFixedByHand: a payload with no tickets is not a baseline");
   same(ticketsFixedByHand(payloadOf(built), rowOf(null)), false, "ticketsFixedByHand: unreadable tickets are not claimed as fixed");
+}
+
+// ---- Round אלון 1, Task 3: names (lib/uploader/names.ts rule + lib/uploader/team-names.ts) ---------
+{
+  const show = (over: Partial<ShowIdentity> = {}, liveHeb: string | null = null): ShowIdentity => ({
+    name_english: "Fulham FC vs Newcastle United FC",
+    city: "London",
+    country_code: "GB",
+    venue: "Craven Cottage",
+    date: "2027-03-06",
+    lat: 51.47,
+    lon: -0.22,
+    suppliers: { tixstock: null, livetickets: liveHeb === null ? null : { event_id: 9, name_heb: liveHeb, sellable: 10 } },
+    competition: "Premier League",
+    home_team: "Fulham FC",
+    away_team: "Newcastle United FC",
+    fallback: [],
+    ...over,
+  });
+  const warn = (code: string) => ({ code, text: code });
+  const teamItem = (over: Partial<ShowIdentity> = {}, liveHeb: string | null = null, codes: string[] = []) => ({
+    show: show(over, liveHeb),
+    warnings: codes.map(warn),
+  });
+  const team = { kind: "team" as const, name_en: "Fulham", name_he: null as string | null };
+  const both = { fulham: "פולהאם", "newcastle united": "ניוקאסל יונייטד" };
+
+  // -- eventNames: ours, then LiveTickets', else English --------------------------------------
+  same(
+    eventNames("team", show({}, "פולהאם נגד ניוקאסל"), team, withSupplierSpellings(both, ["Fulham FC", "Newcastle United FC"]), "פולהאם נגד ניוקאסל"),
+    { name: "פולהאם - ניוקאסל יונייטד", name_english: "Fulham FC vs Newcastle United FC", hebrew: true, source: "teams" },
+    "eventNames: both sides known -> ours, source teams (LiveTickets' name is not even looked at)",
+  );
+  same(
+    eventNames("team", show(), team, withSupplierSpellings({ fulham: "פולהאם" }, ["Fulham FC", "Newcastle United FC"]), "  פולהאם נגד ניוקאסל  "),
+    { name: "פולהאם נגד ניוקאסל", name_english: "Fulham FC vs Newcastle United FC", hebrew: true, source: "livetickets" },
+    "eventNames: one side missing + LiveTickets' Hebrew name -> LiveTickets' (trimmed), source livetickets",
+  );
+  same(
+    eventNames("competition", show(), { name_en: "Premier League", name_he: null }, {}, "פולהאם נגד ניוקאסל"),
+    { name: "פולהאם נגד ניוקאסל", name_english: "Fulham FC vs Newcastle United FC", hebrew: true, source: "livetickets" },
+    "eventNames: a competition run takes LiveTickets' name the same way",
+  );
+  same(
+    eventNames("team", show(), team, {}, "Fulham v Newcastle"),
+    { name: "Fulham FC vs Newcastle United FC", name_english: "Fulham FC vs Newcastle United FC", hebrew: false, source: "english" },
+    "eventNames: a latin LiveTickets name is no Hebrew name -> English, hebrew false",
+  );
+  same(
+    eventNames("team", show(), team, {}, "   "),
+    { name: "Fulham FC vs Newcastle United FC", name_english: "Fulham FC vs Newcastle United FC", hebrew: false, source: "english" },
+    "eventNames: a blank LiveTickets name is no name",
+  );
+  const long = eventNames("team", show(), team, {}, "א".repeat(200));
+  same([long.name.length, long.source, long.hebrew], [120, "livetickets", true], "eventNames: a 200-char LiveTickets name is cut to 120");
+  same(
+    eventNames("team", show(), team, {}, `${"x".repeat(120)}אבג`).source,
+    "english",
+    "eventNames: the Hebrew letter is looked for in the name as it is stored (after the cut)",
+  );
+  same(
+    eventNames("artist", show({ home_team: null, away_team: null }), { name_en: "Eric Clapton", name_he: null }, {}, "Eric Clapton Live"),
+    { name: "Eric Clapton", name_english: "Eric Clapton", hebrew: false, source: "english" },
+    "eventNames: an artist run holds LiveTickets' name to the same Hebrew-letter rule",
+  );
+
+  // -- cleanClubName --------------------------------------------------------------------------
+  same(
+    ["Newcastle United FC", "AFC Bournemouth", "Real Madrid CF", "Manchester City"].map(cleanClubName),
+    ["Newcastle United", "Bournemouth", "Real Madrid", "Manchester City"],
+    "cleanClubName: a suffix or a prefix qualifier goes, a plain name stays",
+  );
+  same(
+    ["FC Barcelona", "  Real   Madrid  CF ", "AFC Bournemouth FC", "SC Freiburg", "Borussia SC Dortmund", "Racing Club", "Bacfc United", "BC Place", "Cardiff City AC"].map(cleanClubName),
+    ["Barcelona", "Real Madrid", "Bournemouth", "Freiburg", "Borussia SC Dortmund", "Racing Club", "Bacfc United", "Place", "Cardiff City"],
+    "cleanClubName: both ends, whole words only, spaces collapsed",
+  );
+  same(["FC", " ", "AFC FC"].map(cleanClubName), ["FC", "", "AFC FC"], "cleanClubName: a name that is only qualifiers is left as it is");
+
+  // -- missingSides ---------------------------------------------------------------------------
+  const run = [
+    teamItem({}, null, ["no_team_page"]),
+    teamItem({ home_team: "Aston Villa FC", away_team: "Fulham FC" }),
+    teamItem({ home_team: "Newcastle United FC", away_team: "Brighton & Hove Albion FC" }),
+  ];
+  same(
+    missingSides(run, { kind: "team", name_en: "Fulham" }, { "aston villa": "אסטון וילה" }),
+    [
+      { supplier_name: "Fulham", isSubject: true },
+      { supplier_name: "Newcastle United FC", isSubject: false },
+      { supplier_name: "Brighton & Hove Albion FC", isSubject: false },
+    ],
+    "missingSides: the subject first (its own side folded in), a known side skipped, a repeated side once",
+  );
+  same(
+    missingSides(run.map((i) => ({ ...i, warnings: [] })), { kind: "team", name_en: "Fulham" }, { "aston villa": "אסטון וילה" }).map((s) => s.supplier_name),
+    ["Fulham FC", "Newcastle United FC", "Brighton & Hove Albion FC"],
+    "missingSides: no no_team_page anywhere -> no subject row, just the sides that are unknown",
+  );
+  same(
+    missingSides(run, { kind: "team", name_en: "Fulham" }, { fulham: "פולהאם", "aston villa": "אסטון וילה", "newcastle united": "ניוקאסל יונייטד", "brighton & hove albion": "ברייטון" }),
+    [{ supplier_name: "Fulham", isSubject: true }],
+    "missingSides: every side known, only the subject's page is missing",
+  );
+  same(
+    missingSides(
+      [teamItem({ home_team: "Atlético Madrid", away_team: "Liverpool FC" }), teamItem({ home_team: "Atletico Madrid", away_team: "liverpool fc" }), teamItem({ home_team: " ", away_team: null })],
+      { kind: "team", name_en: "Liverpool" },
+      {},
+    ).map((s) => s.supplier_name),
+    ["Atlético Madrid", "Liverpool FC"],
+    "missingSides: distinct by normalizeName (accents and case), blank and null sides skipped",
+  );
+  same(
+    missingSides([teamItem({ home_team: "Liverpool FC", away_team: "Everton FC" })], { kind: "competition", name_en: "Premier League" }, {}).map((s) => s.isSubject),
+    [false, false],
+    "missingSides: a competition run (no page warning) lists its sides only",
+  );
+  const musicRun = [teamItem({ home_team: "Not A Team", away_team: null }, null, ["no_artist_page", "no_bio"]), teamItem({ home_team: null, away_team: null }, null, ["no_artist_page"])];
+  same(
+    missingSides(musicRun, { kind: "artist", name_en: "Eric Clapton" }, {}),
+    [{ supplier_name: "Eric Clapton", isSubject: true }],
+    "missingSides: an artist run lists the subject only, once",
+  );
+  same(
+    missingSides(musicRun.map((i) => ({ ...i, warnings: [] })), { kind: "artist", name_en: "Eric Clapton" }, {}),
+    [],
+    "missingSides: an artist with a page is missing nothing",
+  );
+
+  // -- missingHebrewNames ---------------------------------------------------------------------
+  same(
+    missingHebrewNames([teamItem({}, "פולהאם נגד ניוקאסל"), teamItem({ home_team: "Aston Villa FC", away_team: "Everton FC" }, "אסטון וילה נגד אברטון")], team, {}),
+    [],
+    "missingHebrewNames: LiveTickets names every show -> nothing to ask",
+  );
+  same(
+    missingHebrewNames(
+      [
+        teamItem({}, "פולהאם נגד ניוקאסל"),
+        teamItem({ home_team: "Aston Villa FC", away_team: "Brighton & Hove Albion FC" }),
+        teamItem({ home_team: "Brighton & Hove Albion FC", away_team: "Aston Villa FC" }),
+        teamItem({ home_team: "Aston Villa FC", away_team: "Fulham FC" }, "Villa v Fulham"),
+      ],
+      team,
+      { "aston villa": "אסטון וילה" },
+    ),
+    ["Brighton & Hove Albion FC", "Fulham FC"],
+    "missingHebrewNames: the unknown sides of shows nobody names in Hebrew, once each; a known side is not asked",
+  );
+  same(
+    missingHebrewNames([teamItem({}, "פולהאם נגד ניוקאסל")], team, {}),
+    [],
+    "missingHebrewNames: a show LiveTickets names asks for nothing even though neither side is ours",
+  );
+  const musicShows = [{ show: show({ home_team: null, away_team: null }) }];
+  const clapton2 = { kind: "artist" as const, name_en: "Eric Clapton", name_he: null as string | null };
+  same(missingHebrewNames(musicShows, clapton2, {}), ["Eric Clapton"], "missingHebrewNames: an artist with no Hebrew name anywhere is asked");
+  same(missingHebrewNames(musicShows, { ...clapton2, name_he: "אריק קלפטון" }, {}), [], "missingHebrewNames: an artist row with a Hebrew name asks nothing");
+  same(
+    missingHebrewNames([{ show: show({ home_team: null, away_team: null }, "אריק קלפטון בלייב") }], clapton2, {}),
+    [],
+    "missingHebrewNames: an artist show LiveTickets names asks nothing",
+  );
+
+  // -- parseTeamNames -------------------------------------------------------------------------
+  const asked = ["Newcastle United FC", "Aston Villa FC", "Fulham FC", "Brighton & Hove Albion FC", "Everton FC"];
+  const parsed = parseTeamNames(
+    {
+      teams: [
+        { supplier_name: "newcastle united fc", name_en: "Newcastle United", name_he: "  ניוקאסל   יונייטד " },
+        { supplier_name: "Aston Villa FC", name_en: "Aston Villa", name_he: "Aston Villa" },
+        { supplier_name: "Spurs", name_en: "Tottenham", name_he: "טוטנהאם" },
+        { supplier_name: "Newcastle United FC", name_en: "Newcastle", name_he: "כפילות" },
+        { supplier_name: "Fulham FC", name_en: "F".repeat(100), name_he: "פ".repeat(80) },
+        { supplier_name: "Everton FC", name_en: "  ", name_he: "אברטון" },
+        "junk",
+        { supplier_name: 7 },
+      ],
+    },
+    asked,
+  );
+  same(
+    [...parsed.rows.entries()],
+    [
+      ["Newcastle United FC", { name_en: "Newcastle United", name_he: "ניוקאסל יונייטד" }],
+      ["Fulham FC", { name_en: "F".repeat(80), name_he: "פ".repeat(60) }],
+      ["Everton FC", { name_en: "Everton", name_he: "אברטון" }],
+    ],
+    "parseTeamNames: rows keyed by the asked name; matched by normalizeName, trimmed, caps 80 / 60, a blank English name falls back to the clean supplier name",
+  );
+  check(!parsed.rows.has("Aston Villa FC"), "parseTeamNames: a Hebrew name with no Hebrew letter drops the row");
+  check(!parsed.rows.has("Brighton & Hove Albion FC"), "parseTeamNames: a name the answer skipped has no row");
+  const aboutProblems = (needle: string): boolean => parsed.problems.some((p) => p.includes(needle));
+  check(aboutProblems("Aston Villa FC"), "parseTeamNames: the dropped row is a problem");
+  check(aboutProblems("Spurs"), "parseTeamNames: an unknown team is a problem");
+  check(aboutProblems("Newcastle United FC") && parsed.problems.some((p) => p.includes("twice")), "parseTeamNames: a second answer for a name is a problem and is ignored");
+  check(aboutProblems("Brighton"), "parseTeamNames: a skipped name is noted");
+  for (const bad of [null, undefined, "x", 5, [], {}, { teams: "x" }]) {
+    const r = parseTeamNames(bad, asked);
+    same([r.rows.size, r.problems.length > 0], [0, true], `parseTeamNames: ${JSON.stringify(bad)} is no answer - no rows, a problem`);
+  }
+
+  // -- cleanTeamRows --------------------------------------------------------------------------
+  const ALLOWED_TEAMS = new Set(["Newcastle United FC", "Fulham FC", "Everton FC"]);
+  const trow = (extra: Record<string, unknown> = {}) => ({ supplier_name: "Fulham FC", name_en: "Fulham", name_he: "פולהאם", existing_id: null, ...extra });
+  same(
+    cleanTeamRows([trow({ supplier_name: " Newcastle United FC ", name_en: " Newcastle United ", name_he: " ניוקאסל יונייטד " }), trow({ existing_id: 12 })], ALLOWED_TEAMS),
+    [
+      { supplier_name: "Newcastle United FC", name_en: "Newcastle United", name_he: "ניוקאסל יונייטד", existing_id: null },
+      { supplier_name: "Fulham FC", name_en: "Fulham", name_he: "פולהאם", existing_id: 12 },
+    ],
+    "cleanTeamRows: trimmed rows, an existing id kept",
+  );
+  same(cleanTeamRows([], ALLOWED_TEAMS), [], "cleanTeamRows: no rows is an empty list, not an error");
+  same(cleanTeamRows([trow()], new Set(["fulham fc"])), [trow()], "cleanTeamRows: the allowed set may hold normalized names");
+  for (const [what, raw] of [
+    ["not a list", { rows: [] }],
+    ["a row that is not an object", [trow(), "x"]],
+    ["a Hebrew name with no Hebrew letter", [trow({ name_he: "Fulham" })]],
+    ["a Hebrew name over 60", [trow({ name_he: "פ".repeat(61) })]],
+    ["an English name over 80", [trow({ name_en: "F".repeat(81) })]],
+    ["a blank English name", [trow({ name_en: "  " })]],
+    ["a supplier name nobody offered", [trow({ supplier_name: "Spurs" })]],
+    ["the same team twice", [trow(), trow({ supplier_name: "fulham fc" })]],
+    ["more rows than offered", [trow(), trow({ supplier_name: "Everton FC" }), trow({ supplier_name: "Newcastle United FC" }), trow()]],
+    ["an existing id of 0", [trow({ existing_id: 0 })]],
+    ["a negative existing id", [trow({ existing_id: -3 })]],
+    ["a fractional existing id", [trow({ existing_id: 1.5 })]],
+    ["a text existing id", [trow({ existing_id: "7" })]],
+    ["a missing existing id", [{ supplier_name: "Fulham FC", name_en: "Fulham", name_he: "פולהאם" }]],
+    ["a wrongly typed Hebrew name", [trow({ name_he: 5 })]],
+  ] as [string, unknown][]) {
+    same(cleanTeamRows(raw, ALLOWED_TEAMS), null, `cleanTeamRows: ${what} is refused whole`);
+  }
+
+  // -- teamRowsFor ----------------------------------------------------------------------------
+  const sides = [
+    { supplier_name: "Newcastle United FC", isSubject: false },
+    { supplier_name: "Aston Villa FC", isSubject: false },
+    { supplier_name: "Spurs", isSubject: false },
+    { supplier_name: "Brighton & Hove Albion FC", isSubject: false },
+  ];
+  const teamRows = [
+    { id: 5, name: "אסטון וילה", name_english: "Aston Villa" },
+    { id: 6, name: "ללא אנגלית", name_english: null },
+    { id: 7, name: "טוטנהאם", name_english: "Tottenham Hotspur" },
+  ];
+  const proposal = new Map<string, ProposedName>([
+    ["Newcastle United FC", { name_en: "Newcastle United", name_he: "ניוקאסל יונייטד" }],
+    ["Aston Villa FC", { name_en: "Aston Villa", name_he: "אסטון ויילה" }],
+    ["Spurs", { name_en: "Tottenham Hotspur", name_he: "ספרס" }],
+  ]);
+  same(
+    teamRowsFor(sides, proposal, teamRows),
+    [
+      { supplier_name: "Newcastle United FC", name_en: "Newcastle United", name_he: "ניוקאסל יונייטד", existing_id: null, status: "create" },
+      { supplier_name: "Aston Villa FC", name_en: "Aston Villa", name_he: "אסטון וילה", existing_id: 5, status: "existing" },
+      { supplier_name: "Spurs", name_en: "Tottenham Hotspur", name_he: "טוטנהאם", existing_id: 7, status: "existing" },
+      { supplier_name: "Brighton & Hove Albion FC", name_en: "Brighton & Hove Albion", name_he: "", existing_id: null, status: "manual" },
+    ],
+    "teamRowsFor: proposed -> create; a club the table already has -> existing (its Hebrew name, the AI's too ignored); a name the AI skipped -> manual",
+  );
+  same(
+    teamRowsFor(sides, null, teamRows),
+    [
+      { supplier_name: "Newcastle United FC", name_en: "Newcastle United", name_he: "", existing_id: null, status: "manual" },
+      { supplier_name: "Aston Villa FC", name_en: "Aston Villa", name_he: "אסטון וילה", existing_id: 5, status: "existing" },
+      { supplier_name: "Spurs", name_en: "Spurs", name_he: "", existing_id: null, status: "manual" },
+      { supplier_name: "Brighton & Hove Albion FC", name_en: "Brighton & Hove Albion", name_he: "", existing_id: null, status: "manual" },
+    ],
+    "teamRowsFor: no AI proposal -> manual rows (clean English name, empty Hebrew) except what already exists",
+  );
+  same(teamRowsFor([], proposal, teamRows), [], "teamRowsFor: nothing missing, no rows");
+
+  // -- slugFor --------------------------------------------------------------------------------
+  same(slugFor("Newcastle United", "ניוקאסל יונייטד"), "newcastle-united", "slugFor: the latin slug of the English name");
+  same(slugFor("  Brighton & Hove Albion! ", ""), "brighton-hove-albion", "slugFor: runs of other characters become one dash, the ends are trimmed");
+  same(slugFor("פולהאם", "Fulham FC"), "fulham-fc", "slugFor: no latin letter in the English name -> the Hebrew-name field's latin slug");
+  for (const [en, he] of [["פולהאם", "פולהאם"], ["", ""], ["---", "!!!"]]) {
+    check(/^item-[a-z0-9]{6}$/.test(slugFor(en, he)), `slugFor: nothing latin ("${en}" / "${he}") -> item- and 6 random characters`);
+  }
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
