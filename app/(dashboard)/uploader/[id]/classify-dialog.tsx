@@ -62,17 +62,26 @@ import { rtl } from "./use-run-board";
 
 export type PanelVenue = NonNullable<PanelRow["venue"]>;
 
-/** What a person can change on a row. */
-type RowEdit = { label: string; description: string; drop: boolean };
+/**
+ * What a person can change on a row. `aiUnsure`: the AI marked the row unsure - the label it may still
+ * have proposed ("Box 12", a latin one) is shown but doubtful, and the row stays "לבדיקה" until a person
+ * touches either box (the first edit makes the boxes theirs).
+ */
+type RowEdit = { label: string; description: string; drop: boolean; aiUnsure: boolean };
 type Loaded = Extract<ProposeResult, { ok: true }>;
 type Phase = { kind: "loading" } | { kind: "ready"; data: Loaded };
 
-/** Both Hebrew boxes empty on a kept row = "לבדיקה": the ticket stays, unzoned, the category stays out of the template. */
-const isUnsure = (e: RowEdit): boolean => !e.drop && e.label.trim() === "" && e.description.trim() === "";
+/** "לבדיקה" (a kept row): the AI was unsure and nobody touched it, or both Hebrew boxes are empty - the ticket stays, unzoned, the category stays out of the template. */
+const isUnsure = (e: RowEdit): boolean => !e.drop && (e.aiUnsure || (e.label.trim() === "" && e.description.trim() === ""));
 /** A kept row with a description but no name: neither a zone nor "לבדיקה" - the confirm waits for it. */
-const needsLabel = (e: RowEdit): boolean => !e.drop && e.label.trim() === "" && e.description.trim() !== "";
+const needsLabel = (e: RowEdit): boolean => !e.drop && !e.aiUnsure && e.label.trim() === "" && e.description.trim() !== "";
 
-const editOf = (row: ClassificationRow): RowEdit => ({ label: row.label_he, description: row.description_he, drop: row.drop });
+const editOf = (row: ClassificationRow): RowEdit => ({
+  label: row.label_he,
+  description: row.description_he,
+  drop: row.drop,
+  aiUnsure: row.unsure && !row.drop,
+});
 
 /** The rows exactly as the dialog showed them before any edit, keyed by category key (`classifyVenue`'s `proposed`). */
 function shownAsProposed(rows: ClassificationRow[]): Record<string, ProposedRow> {
@@ -92,7 +101,7 @@ function statusText(row: ClassificationRow, e: RowEdit): string {
     if (row.drop && row.status === "ai") return STATUS_DROPPED_AI(row.drop_reason === "away");
     return STATUS_DROPPED;
   }
-  if (isUnsure(e)) return row.status === "unsure" && row.label_he === "" && row.description_he === "" ? STATUS_UNSURE : STATUS_REVIEW;
+  if (isUnsure(e)) return e.aiUnsure ? STATUS_UNSURE : STATUS_REVIEW;
   if (row.status === "rule_drop") return STATUS_KEPT_AGAINST_RULE;
   if (row.status === "existing" && row.existing) return STATUS_EXISTING(row.existing.label);
   if (row.status === "ai") return STATUS_AI;
@@ -140,11 +149,20 @@ export function ClassifyDialog({
   });
 
   const sourceUrl = open ? (venue?.sourceUrl ?? null) : null;
+  // A (re)opening starts on the wait in the same render - never a frame of the previous hall's table.
+  // Closing keeps the table, so the dialog closes with what it showed.
+  const [requested, setRequested] = useState<string | null>(null);
+  if (sourceUrl !== requested) {
+    setRequested(sourceUrl);
+    if (sourceUrl !== null) {
+      setPhase({ kind: "loading" });
+      setEdits({});
+    }
+  }
+
   useEffect(() => {
     if (sourceUrl === null) return;
     const id = ++seq.current;
-    setPhase({ kind: "loading" });
-    setEdits({});
     const fail = (description: ReactNode) => {
       toast({ variant: "destructive", title: CLASSIFY_OPEN_FAILED, description: rtl(description) });
       closeRef.current();
@@ -171,26 +189,31 @@ export function ClassifyDialog({
   const setEdit = (key: string, patch: Partial<RowEdit>) =>
     setEdits((all) => {
       const row = rows.find((r) => r.key === key);
-      const base = all[key] ?? (row ? editOf(row) : { label: "", description: "", drop: false });
+      const base = all[key] ?? (row ? editOf(row) : { label: "", description: "", drop: false, aiUnsure: false });
       return { ...all, [key]: { ...base, ...patch } };
     });
 
   const current = rows.map((row) => ({ row, e: editFor(row) }));
   const blocked = current.some(({ e }) => needsLabel(e));
-  // Something must be decided: a hall where every row stays "לבדיקה" has nothing to save.
-  const decided = current.some(({ e }) => e.drop || e.label.trim() !== "");
+  // Something must be decided (ruling R19 - stricter than 5.2's "every row labelled or for review"): an
+  // all-"לבדיקה" confirm on a new hall would adopt the drawing with no zones and un-light the map.
+  const decided = current.some(({ e }) => e.drop || (!isUnsure(e) && e.label.trim() !== ""));
   const canConfirm = data !== null && rows.length > 0 && !blocked && decided && !saving;
   const line = data ? aiLine(data.ai) : null;
 
   async function confirm() {
     if (!data || !canConfirm) return;
-    const confirmed: ConfirmedRow[] = current.map(({ row, e }) => ({
-      category: row.category,
-      label_he: e.drop ? "" : e.label.trim(),
-      description_he: e.drop ? "" : e.description.trim(),
-      drop: e.drop,
-      unsure: isUnsure(e),
-    }));
+    // A dropped or "לבדיקה" row carries no label: an untouched AI-unsure row's doubtful label never becomes a zone.
+    const confirmed: ConfirmedRow[] = current.map(({ row, e }) => {
+      const named = !e.drop && !isUnsure(e);
+      return {
+        category: row.category,
+        label_he: named ? e.label.trim() : "",
+        description_he: named ? e.description.trim() : "",
+        drop: e.drop,
+        unsure: isUnsure(e),
+      };
+    });
     setSaving(true);
     try {
       const r = await classifyVenue(runId, data.venue.sourceUrl, { rows: confirmed, proposed: shownAsProposed(data.rows), ai: data.ai.used });
@@ -287,8 +310,8 @@ export function ClassifyDialog({
                           disabled={e.drop || saving}
                           aria-label={`${COL_LABEL}: ${row.category}`}
                           aria-invalid={missing || undefined}
-                          onChange={(ev) => setEdit(row.key, { label: ev.target.value })}
-                          className={cn("h-8 text-[13px]", missing && "border-destructive")}
+                          onChange={(ev) => setEdit(row.key, { label: ev.target.value, aiUnsure: false })}
+                          className={cn("h-8 text-[13px]", e.aiUnsure && "italic text-muted-foreground", missing && "border-destructive")}
                         />
                         {missing && <p className="mt-1 text-[11px] leading-snug text-destructive">{CLASSIFY_NEEDS_LABEL}</p>}
                       </TableCell>
@@ -300,8 +323,8 @@ export function ClassifyDialog({
                           maxLength={ZONE_DESCRIPTION_MAX}
                           disabled={e.drop || saving}
                           aria-label={`${COL_DESCRIPTION}: ${row.category}`}
-                          onChange={(ev) => setEdit(row.key, { description: ev.target.value })}
-                          className="h-8 text-[13px]"
+                          onChange={(ev) => setEdit(row.key, { description: ev.target.value, aiUnsure: false })}
+                          className={cn("h-8 text-[13px]", e.aiUnsure && "italic text-muted-foreground")}
                         />
                       </TableCell>
                       <TableCell className="py-2 text-center">

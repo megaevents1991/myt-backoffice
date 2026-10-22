@@ -18,6 +18,14 @@
  */
 import type { ItemStatus, SubjectKind, UploaderItem, Warning } from "@/types/uploader.types";
 
+/**
+ * A name inside a Hebrew line, isolated (FSI ... PDI): without it an English name followed by a number
+ * ("Craven Cottage · 15 הופעות") glues the number to the English run and cuts "הופעות" from it (bidi
+ * rules W7 / N1). Every Latin name a row's text interpolates goes through it, so the strings are right by
+ * themselves, wherever they are printed.
+ */
+export const iso = (name: string): string => `⁨${name}⁩`;
+
 /** The warning codes that are about the whole run, not one show. `new_venue` / `unzoned_tickets` only with a TixStock drawing (`isRunLevel`). */
 export const RUN_LEVEL_CODES: readonly string[] = [
   "no_team_page",
@@ -128,7 +136,7 @@ function venueRow(sourceUrl: string, group: Carrier[], carriers: Carrier[], fixe
     .sort(newestFirst);
   if (edited.length > 0) {
     const waiting = group.filter((c) => fixedByHand[c.item.id] !== true).length;
-    const head = `אולם: ${name} · ${edited[0].event_id === null ? "אירוע סודר בעורך" : `אירוע ${edited[0].event_id} סודר בעורך`}`;
+    const head = `אולם: ${iso(name)} · ${edited[0].event_id === null ? "אירוע סודר בעורך" : `אירוע ${edited[0].event_id} סודר בעורך`}`;
     return {
       ...base,
       text: waiting > 0 ? `${head} · ${shows(waiting)} עדיין בלי זונים` : head,
@@ -140,8 +148,8 @@ function venueRow(sourceUrl: string, group: Carrier[], carriers: Carrier[], fixe
   return {
     ...base,
     text: isNew
-      ? `אולם חדש: ${name} · ${shows(count)} · הכרטיסים עלו באנגלית ובלי זונים`
-      : `אולם: ${name} · ${categoriesWord(categoriesToReview(group))} לבדיקה · ${shows(count)}`,
+      ? `אולם חדש: ${iso(name)} · ${shows(count)} · הכרטיסים עלו באנגלית ובלי זונים`
+      : `אולם: ${iso(name)} · ${categoriesWord(categoriesToReview(group))} לבדיקה · ${shows(count)}`,
     action: "classify",
     venue: { sourceUrl, name, state: isNew ? "new" : "unzoned", fixedItemId: null, otherFixedItemIds: [] },
   };
@@ -158,10 +166,10 @@ function venueRows(carriers: Carrier[], fixedByHand: Record<string, boolean>): P
   return [...byDrawing].map(([url, group]) => venueRow(url, group, carriers, fixedByHand));
 }
 
-/** The first three names and "(+k)" for the rest. */
+/** The first three names (each isolated) and "(+k)" for the rest. */
 function nameList(names: string[]): string {
   const more = names.length - 3;
-  return `${names.slice(0, 3).join(", ")}${more > 0 ? ` (+${more})` : ""}`;
+  return `${names.slice(0, 3).map(iso).join(", ")}${more > 0 ? ` (+${more})` : ""}`;
 }
 
 function namesRow(carriers: Carrier[], missing: string[]): PanelRow[] {
@@ -177,7 +185,7 @@ function subjectRow(carriers: Carrier[], name_en: string): PanelRow[] {
   if (group.length === 0) return [];
   const word = group.some((c) => has(c, "no_team_page")) ? "קבוצה" : "אמן";
   const subject = name_en.trim();
-  return [{ kind: "subject", key: "subject", text: `אין עמוד ${word} באתר${subject === "" ? "" : ` ל-${subject}`}`, count: group.length, action: "names" }];
+  return [{ kind: "subject", key: "subject", text: `אין עמוד ${word} באתר${subject === "" ? "" : ` ל-${iso(subject)}`}`, count: group.length, action: "names" }];
 }
 
 /** The fix rows, in this order; each links to the first fix_url any of its warnings carried. */

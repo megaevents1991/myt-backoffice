@@ -4,6 +4,7 @@
 // is the screen-wide `actionErrorText` (../copy.ts).
 import type { SubjectArt } from "@/lib/uploader/action-types";
 import { siteCardPrice, type SiteCardPriceEvent } from "@/lib/package-price";
+import { iso } from "@/lib/uploader/run-panel";
 import { canRebuildTwoCity, REJECTABLE_STATUSES } from "@/lib/uploader/run-rules";
 import { farVenueOffer } from "@/lib/uploader/warnings";
 import type { ItemStatus, UploaderItem } from "@/types/uploader.types";
@@ -361,7 +362,8 @@ export const STATUS_DROPPED = "נפסל";
 export const STATUS_DROPPED_AI = (away: boolean): string => (away ? "נפסל: יציע אוהדי חוץ (הצעת ה-AI)" : "נפסל (הצעת ה-AI)");
 export const STATUS_DROPPED_STORED = "נפסל בתבנית האולם";
 export const STATUS_KEPT_AGAINST_RULE = "נשאר למרות הכלל";
-export const STATUS_EXISTING = (label: string): string => `בתבנית: ${label}`;
+/** The stored label is often English - isolated, so the " · N הופעות" after it keeps its number (`iso`). */
+export const STATUS_EXISTING = (label: string): string => `בתבנית: ${iso(label)}`;
 export const STATUS_NOT_SOLD = "לא במכירה בריצה הזו";
 export const STATUS_SHOWS = showsHe;
 export const STATUS_OFF_MAP = "לא מסומן במפה - יקבל כותרת בלי סימון";
@@ -379,9 +381,11 @@ export function CLASSIFY_DONE(r: { events: number; zones: number; dropped: numbe
   if (withUnsure) parts.push(`${r.unsure} לבדיקה`);
   return parts.join(" · ");
 }
-/** A confirm that ran out of time before every show was rewritten. */
-export const PARTIAL_LINE = (left: number): string =>
-  `${left === 1 ? "הופעה אחת לא הספיקה" : `${left} הופעות לא הספיקו`} להתעדכן - לחצו שוב כדי לסיים.`;
+const notReached = (left: number): string => (left === 1 ? "הופעה אחת לא הספיקה להתעדכן" : `${left} הופעות לא הספיקו להתעדכן`);
+/** A classification confirm that ran out of time before every show was rewritten (the panel's "סווג כרטיסים" reopens it). */
+export const PARTIAL_LINE = (left: number): string => `${notReached(left)} - פתחו שוב את הסיווג ואשרו כדי לסיים את שאר ההופעות.`;
+/** The same for learn-from-event (the panel's / the card's learn button runs it again). */
+export const PARTIAL_LEARN_LINE = (left: number): string => `${notReached(left)} - לחצו שוב על "${BTN_LEARN_APPLY}" כדי לסיים את שאר ההופעות.`;
 
 // The names dialog (5.3).
 export const NAMES_TITLE = "שמות בעברית";
@@ -436,3 +440,7 @@ export const LEARN_SIBLINGS = (n: number): string => `יחול על ${showsHe(n)
 // A rule for the run, on a question card (5.4).
 export const SIMILAR_LINE = (n: number): string => (n === 1 ? "החל גם על השאלה הדומה בריצה" : `החל גם על ${n} השאלות הדומות בריצה`);
 export const ANSWERED_MANY = (n: number): string => `נענו ${n} שאלות`;
+/** The description under ANSWERED_MANY: what happened to those shows, then their tasks. */
+export const ANSWERED_MANY_SKIPPED = "ההופעות דולגו.";
+export const ANSWERED_MANY_REQUEUED = "ההופעות חוזרות לבנייה.";
+export const ANSWERED_MANY_TASKS = "המשימות נסגרו.";

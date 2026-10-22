@@ -18,6 +18,9 @@ import { BoardBar, RebuildConfirm } from "./board-bar";
 import { BoardHeader, FilterBar } from "./board-header";
 import {
   ANSWERED_MANY,
+  ANSWERED_MANY_REQUEUED,
+  ANSWERED_MANY_SKIPPED,
+  ANSWERED_MANY_TASKS,
   countItems,
   farVenueTarget,
   FILTERS,
@@ -157,10 +160,8 @@ export function BoardClient({
         });
         if (r.ok && more > 0) {
           // A rule for the run (spec 5.4): this question and `more` others answered the same way.
-          say(
-            ANSWERED_MANY(more + 1),
-            a.key === "skip" ? "ההופעות דולגו. המשימות נסגרו." : `${runStopped ? STOPPED_REQUEUE_TEXT : "ההופעות חוזרות לבנייה."} המשימות נסגרו.`,
-          );
+          const what = a.key === "skip" ? ANSWERED_MANY_SKIPPED : runStopped ? STOPPED_REQUEUE_TEXT : ANSWERED_MANY_REQUEUED;
+          say(ANSWERED_MANY(more + 1), `${what} ${ANSWERED_MANY_TASKS}`);
         } else {
           say("התשובה נשמרה", r.ok ? (a.key === "skip" ? "ההופעה דולגה. המשימה נסגרה." : `${backToBuild} המשימה נסגרה.`) : actionErrorText(r.kind));
         }

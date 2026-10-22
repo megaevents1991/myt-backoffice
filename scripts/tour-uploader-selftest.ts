@@ -100,7 +100,7 @@ import {
   type TemplateLike,
 } from "@/lib/uploader/classify";
 import { farVenueOffer, warning, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
-import { cardWarnings, isRunLevel, RUN_LEVEL_CODES, runLevelRows } from "@/lib/uploader/run-panel";
+import { cardWarnings, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
@@ -4032,7 +4032,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     {
       kind: "venue",
       key: `venue:${DRAWING_A}`,
-      text: "אולם חדש: Craven Cottage · 3 הופעות · הכרטיסים עלו באנגלית ובלי זונים",
+      text: `אולם חדש: ${iso("Craven Cottage")} · 3 הופעות · הכרטיסים עלו באנגלית ובלי זונים`,
       count: 3,
       action: "classify",
       venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "new", fixedItemId: null, otherFixedItemIds: [] },
@@ -4044,7 +4044,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     {
       kind: "venue",
       key: `venue:${DRAWING_B}`,
-      text: "אולם: Craven Cottage · קטגוריות לבדיקה · הופעה אחת",
+      text: `אולם: ${iso("Craven Cottage")} · קטגוריות לבדיקה · הופעה אחת`,
       count: 1,
       action: "classify",
       venue: { sourceUrl: DRAWING_B, name: "Craven Cottage", state: "unzoned", fixedItemId: null, otherFixedItemIds: [] },
@@ -4072,7 +4072,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     {
       kind: "venue",
       key: `venue:${DRAWING_A}`,
-      text: "אולם: Craven Cottage · אירוע 1231 סודר בעורך · 3 הופעות עדיין בלי זונים",
+      text: `אולם: ${iso("Craven Cottage")} · אירוע 1231 סודר בעורך · 3 הופעות עדיין בלי זונים`,
       count: 5,
       action: "learn",
       venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "fixed", fixedItemId: "f3", otherFixedItemIds: ["f1"] },
@@ -4083,10 +4083,10 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const twoHalls = [mk("g1", [W("new_venue")]), mk("g2", [W("unzoned_tickets")], { map: DRAWING_B, event_id: 55 })];
   const twoHallRows = runLevelRows(twoHalls, { g2: true }, team, []);
   same(twoHallRows.map((r) => r.venue?.state), ["new", "fixed"], "runLevelRows: an edit on one drawing does not touch the other venue row");
-  same(twoHallRows[1].text, "אולם: Craven Cottage · אירוע 55 סודר בעורך", "runLevelRows: the only show on the drawing was the edited one - no 'still without zones' clause (the template is still worth learning)");
+  same(twoHallRows[1].text, `אולם: ${iso("Craven Cottage")} · אירוע 55 סודר בעורך`, "runLevelRows: the only show on the drawing was the edited one - no 'still without zones' clause (the template is still worth learning)");
   same(
     runLevelRows([mk("h1", [W("new_venue")]), mk("h2", [W("new_venue")], { event_id: null })], { h2: true }, team, [])[0].text,
-    "אולם: Craven Cottage · אירוע סודר בעורך · הופעה אחת עדיין בלי זונים",
+    `אולם: ${iso("Craven Cottage")} · אירוע סודר בעורך · הופעה אחת עדיין בלי זונים`,
     "runLevelRows: a fixed item without an event id still reads (no number)",
   );
 
@@ -4099,28 +4099,33 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       {
         kind: "names",
         key: "names",
-        text: "שמות בעברית חסרים: Newcastle United FC, Aston Villa FC, Spurs (+1) · 2 אירועים נבנו עם שם באנגלית",
+        text: `שמות בעברית חסרים: ${iso("Newcastle United FC")}, ${iso("Aston Villa FC")}, ${iso("Spurs")} (+1) · 2 אירועים נבנו עם שם באנגלית`,
         count: 2,
         action: "names",
       },
     ],
     "runLevelRows: the names row lists the first three and (+k), counts the events built with an English name",
   );
-  same(runLevelRows(heb, {}, team, sides.slice(0, 3))[0].text, "שמות בעברית חסרים: Newcastle United FC, Aston Villa FC, Spurs · 2 אירועים נבנו עם שם באנגלית", "runLevelRows: three names or fewer - no (+k)");
-  same(runLevelRows(heb, {}, team, Array.from({ length: 11 }, (_, i) => `Club ${i}`))[0].text.includes("Club 2 (+8)"), true, "runLevelRows: eleven names - (+8)");
-  same(runLevelRows([], {}, team, ["Spurs"]), [{ kind: "names", key: "names", text: "שמות בעברית חסרים: Spurs", count: 0, action: "names" }], "runLevelRows: names missing but no event carries the warning (a run that predates it) - the row still asks");
+  same(
+    runLevelRows(heb, {}, team, sides.slice(0, 3))[0].text,
+    `שמות בעברית חסרים: ${iso("Newcastle United FC")}, ${iso("Aston Villa FC")}, ${iso("Spurs")} · 2 אירועים נבנו עם שם באנגלית`,
+    "runLevelRows: three names or fewer - no (+k)",
+  );
+  same(runLevelRows(heb, {}, team, Array.from({ length: 11 }, (_, i) => `Club ${i}`))[0].text.includes(`${iso("Club 2")} (+8)`), true, "runLevelRows: eleven names - (+8)");
+  same(runLevelRows([], {}, team, ["Spurs"]), [{ kind: "names", key: "names", text: `שמות בעברית חסרים: ${iso("Spurs")}`, count: 0, action: "names" }], "runLevelRows: names missing but no event carries the warning (a run that predates it) - the row still asks");
+  same(iso("Fulham FC"), "⁨Fulham FC⁩", "iso: a name between FSI and PDI - the number after it stays with its Hebrew word");
   same(runLevelRows(heb, {}, team, [])[0].text, "שמות בעברית חסרים · 2 אירועים נבנו עם שם באנגלית", "runLevelRows: events carry the warning but no club is missing (an artist run) - the row without a list");
   same(runLevelRows([mk("h4", [W("no_hebrew_name")])], {}, team, [])[0].text, "שמות בעברית חסרים · אירוע אחד נבנה עם שם באנגלית", "runLevelRows: one event reads as one");
 
   const noTeamPage = [mk("s1", [W("no_team_page")]), mk("s2", [W("no_team_page")])];
   same(
     runLevelRows(noTeamPage, {}, team, []),
-    [{ kind: "subject", key: "subject", text: "אין עמוד קבוצה באתר ל-Fulham FC", count: 2, action: "names" }],
+    [{ kind: "subject", key: "subject", text: `אין עמוד קבוצה באתר ל-${iso("Fulham FC")}`, count: 2, action: "names" }],
     "runLevelRows: the subject row - a team without a page",
   );
   same(
     runLevelRows([mk("s3", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton" }, []),
-    [{ kind: "subject", key: "subject", text: "אין עמוד אמן באתר ל-Eric Clapton", count: 1, action: "names" }],
+    [{ kind: "subject", key: "subject", text: `אין עמוד אמן באתר ל-${iso("Eric Clapton")}`, count: 1, action: "names" }],
     "runLevelRows: the subject row - an artist without a page",
   );
 
@@ -4165,7 +4170,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   ];
   const keptRows = runLevelRows(withRejected, {}, team, []);
   same(keptRows.map((r) => [r.kind, r.count]), [["venue", 2], ["names", 1], ["fix", 1]], "runLevelRows: a rejected show is not counted (an approved one is)");
-  same(keptRows[0].text, "אולם חדש: Craven Cottage · 2 הופעות · הכרטיסים עלו באנגלית ובלי זונים", "runLevelRows: the venue row's count leaves the rejected show out");
+  same(keptRows[0].text, `אולם חדש: ${iso("Craven Cottage")} · 2 הופעות · הכרטיסים עלו באנגלית ובלי זונים`, "runLevelRows: the venue row's count leaves the rejected show out");
   same(runLevelRows([mk("k4", [W("new_venue"), W("no_team_page"), W("no_category_twin")], { status: "rejected" })], {}, team, []), [], "runLevelRows: the last show on a drawing was rejected - no dead row");
   const rejectedTeacher = runLevelRows(
     [mk("k5", [W("new_venue")], { status: "rejected", event_id: 9 }), mk("k6", [W("new_venue")])],
@@ -4186,7 +4191,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   )[0];
   same(
     [liveTeacher.venue?.state, liveTeacher.venue?.fixedItemId, liveTeacher.venue?.otherFixedItemIds, liveTeacher.text],
-    ["fixed", "k8", [], "אולם: Craven Cottage · אירוע 9 סודר בעורך · הופעה אחת עדיין בלי זונים"],
+    ["fixed", "k8", [], `אולם: ${iso("Craven Cottage")} · אירוע 9 סודר בעורך · הופעה אחת עדיין בלי זונים`],
     "runLevelRows: next to an edited, rejected show, the live edited one is the teacher (the newer rejected one is not listed)",
   );
 
@@ -4202,7 +4207,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       {
         kind: "venue",
         key: `venue:${DRAWING_A}`,
-        text: "אולם: Craven Cottage · 3 קטגוריות לבדיקה · 2 הופעות",
+        text: `אולם: ${iso("Craven Cottage")} · 3 קטגוריות לבדיקה · 2 הופעות`,
         count: 2,
         action: "classify",
         venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "unzoned", fixedItemId: null, otherFixedItemIds: [] },
@@ -4210,14 +4215,14 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     ],
     "runLevelRows: unzoned_review carriers make the unzoned row; n = the DISTINCT categories across them (trimmed, blanks out)",
   );
-  same(runLevelRows([mk("u3", [review(["Corner"])])], {}, team, [])[0].text, "אולם: Craven Cottage · קטגוריה אחת לבדיקה · הופעה אחת", "runLevelRows: one category reads as one");
+  same(runLevelRows([mk("u3", [review(["Corner"])])], {}, team, [])[0].text, `אולם: ${iso("Craven Cottage")} · קטגוריה אחת לבדיקה · הופעה אחת`, "runLevelRows: one category reads as one");
   same(
     runLevelRows([mk("u4", [warning("unzoned_review", { count: 2, total: 9, categories: "A, B" })])], {}, team, [])[0].text,
-    "אולם: Craven Cottage · קטגוריות לבדיקה · הופעה אחת",
+    `אולם: ${iso("Craven Cottage")} · קטגוריות לבדיקה · הופעה אחת`,
     "runLevelRows: an unzoned_review line that carries no categories (an older row) keeps the wording without a number",
   );
   const reviewTwoDrawings = runLevelRows([u1, mk("u5", [review(["Corner"])], { map: DRAWING_B })], {}, team, []);
-  same(reviewTwoDrawings.map((r) => r.text), ["אולם: Craven Cottage · 2 קטגוריות לבדיקה · הופעה אחת", "אולם: Craven Cottage · קטגוריה אחת לבדיקה · הופעה אחת"], "runLevelRows: the category count is per venue row (per drawing)");
+  same(reviewTwoDrawings.map((r) => r.text), [`אולם: ${iso("Craven Cottage")} · 2 קטגוריות לבדיקה · הופעה אחת`, `אולם: ${iso("Craven Cottage")} · קטגוריה אחת לבדיקה · הופעה אחת`], "runLevelRows: the category count is per venue row (per drawing)");
   const reviewBesideNew = runLevelRows([u1, mk("u6", [W("new_venue")])], {}, team, []);
   same([reviewBesideNew.length, reviewBesideNew[0].venue?.state, reviewBesideNew[0].count], [1, "new", 2], "runLevelRows: any new_venue carrier on the drawing makes the row 'new', unzoned_review shows counted");
   same(runLevelRows([u1, mk("u7", [], { event_id: 77 })], { u7: true }, team, [])[0].venue?.state, "fixed", "runLevelRows: an edited show on the drawing makes the row 'fixed' whatever the warnings");

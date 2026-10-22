@@ -115,11 +115,20 @@ export function NamesDialog({
     closeRef.current = onClose;
   });
 
+  // A (re)opening starts on the wait in the same render - never a frame of the previous rows.
+  // Closing keeps the rows, so the dialog closes with what it showed.
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setPhase({ kind: "loading" });
+      setEdits({});
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
     const id = ++seq.current;
-    setPhase({ kind: "loading" });
-    setEdits({});
     const fail = (description: ReactNode) => {
       toast({ variant: "destructive", title: NAMES_OPEN_FAILED, description: rtl(description) });
       closeRef.current();

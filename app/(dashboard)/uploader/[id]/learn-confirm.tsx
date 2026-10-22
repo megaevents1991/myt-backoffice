@@ -23,7 +23,7 @@ import {
   LEARN_TITLE,
   LEARN_ZONES,
   NETWORK_TEXT,
-  PARTIAL_LINE,
+  PARTIAL_LEARN_LINE,
 } from "./board-words";
 import { rtl } from "./use-run-board";
 
@@ -59,10 +59,17 @@ export function LearnConfirm({
   });
 
   const target = open ? itemId : null;
+  // A (re)opening starts on the wait in the same render - never a frame of the previous event's summary.
+  // Closing keeps the summary, so the confirm closes with what it showed.
+  const [requested, setRequested] = useState<string | null>(null);
+  if (target !== requested) {
+    setRequested(target);
+    if (target !== null) setPhase({ kind: "loading" });
+  }
+
   useEffect(() => {
     if (target === null) return;
     const id = ++seq.current;
-    setPhase({ kind: "loading" });
     const fail = (description: ReactNode) => {
       toast({ variant: "destructive", title: LEARN_OPEN_FAILED, description: rtl(description) });
       closeRef.current();
@@ -105,7 +112,7 @@ export function LearnConfirm({
         });
         return;
       }
-      toast({ title: CLASSIFY_DONE(r, false), description: r.reached < r.total ? rtl(PARTIAL_LINE(r.total - r.reached)) : undefined });
+      toast({ title: CLASSIFY_DONE(r, false), description: r.reached < r.total ? rtl(PARTIAL_LEARN_LINE(r.total - r.reached)) : undefined });
       await onDone();
     } catch {
       toast({ variant: "destructive", title: LEARN_FAILED, description: rtl(NETWORK_TEXT) });
