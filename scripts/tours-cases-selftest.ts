@@ -61,6 +61,7 @@ import {
   bookingPhase,
   travelerGroups,
   payloadText,
+  waitingForOf,
   closeBlockedBy,
   parseOffer,
   offerSent,
@@ -458,6 +459,11 @@ assert.equal(whatsappAppLink("12", "x"), null);
 assert.equal(payloadText({ productId: 31, code: "CBEA1014", label: "14.10 - 20.10" }), "14.10 - 20.10");
 assert.equal(payloadText({ a: 1 }), '{"a":1}');
 assert.equal(payloadText("text"), "text");
+// a "tell me when tours open" lead says what it waits for (Alon, 22.10)
+assert.equal(waitingForOf({ termKind: "audiences", termSlug: "נשים", termName: "נשים", tile: "נשים" }), "נשים", "an empty home tile: its world");
+assert.equal(waitingForOf({ termName: "משפחות", tile: "מאורגנים למשפחות", tagSlug: "חגים", tagName: "חגים" }), "חגים · משפחות", "a pill kept on without tours: the trip type, then the world");
+assert.equal(waitingForOf({ tile: "מבצעים" }), "מבצעים", "a tile of no term: its own name");
+assert.equal(waitingForOf({ name: "דנה", option: "משפחות" }), null, "any other form waits for nothing");
 
 // ---------------------------------------------------------------- one customer, deal cards (Nir 19.10)
 const card = (over: Partial<RouteCard> = {}): RouteCard => ({

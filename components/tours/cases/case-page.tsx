@@ -81,7 +81,26 @@ import { MoveCardDialog } from "@/components/tours/cases/customer-dialogs";
 import { WhatsappThread } from "@/components/tours/cases/whatsapp-thread";
 
 /** Fields of a form that the page already shows in its own place. */
-const SHOWN_PAYLOAD_KEYS = new Set(["name", "phone", "email", "message", "matched_by", "acceptance", "website", "related_case", "merged", "inquiries", "joined_into"]);
+const SHOWN_PAYLOAD_KEYS = new Set([
+  "name",
+  "phone",
+  "email",
+  "message",
+  "matched_by",
+  "acceptance",
+  "website",
+  "related_case",
+  "merged",
+  "inquiries",
+  "joined_into",
+  // a "tell me when tours open" lead: shown as "Waiting for" (waitingForOf)
+  "termKind",
+  "termSlug",
+  "termName",
+  "tile",
+  "tagSlug",
+  "tagName",
+]);
 /** The day after today (YYYY-MM-DD): "No answer" calls again tomorrow. */
 const tomorrowOf = (today: string): string => new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const UTM_LABELS: Record<string, string> = {
@@ -530,6 +549,12 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
           <Section title="Product" icon={MapPinned} tone="violet">
             <FactList>
               <Fact label="Tour">{(data.pkg?.name ?? row.tourName) && <span dir="auto">{data.pkg?.name ?? row.tourName}</span>}</Fact>
+              {/* a "tell me when tours open" lead: the world / trip type it waits for (Alon, 22.10) */}
+              {row.waitingFor && (
+                <Fact label="Waiting for">
+                  <span dir="auto">{row.waitingFor}</span>
+                </Fact>
+              )}
               <Fact label="Departure">
                 {data.departure && (
                   <span className="tabular">

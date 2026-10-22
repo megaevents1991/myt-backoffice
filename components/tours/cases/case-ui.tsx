@@ -140,7 +140,16 @@ export function CardWhat({ card, children }: { card: CaseRow; children?: ReactNo
   return (
     <div className="min-w-0">
       <div dir="auto" className="truncate">
-        {card.tourName ?? <span className="text-muted-foreground">Tour not chosen</span>}
+        {card.tourName ??
+          (card.waitingFor ? (
+            // a "tell me when tours open" lead: what it waits for, in place of a tour (Alon, 22.10)
+            <span>
+              <span className="text-muted-foreground">Waiting for: </span>
+              {card.waitingFor}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Tour not chosen</span>
+          ))}
       </div>
       <div dir="auto" className="tabular text-xs text-muted-foreground">
         {card.departureCode ? `${card.departureCode}${card.departureDate ? ` · ${fmtDate(card.departureDate)}` : ""}` : (card.season ?? "No date yet")}

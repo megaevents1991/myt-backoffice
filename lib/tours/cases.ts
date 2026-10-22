@@ -674,6 +674,8 @@ export interface CaseRow {
   departureDate: string | null;
   packageId: string | null;
   tourName: string | null;
+  /** What a "tell me when tours open" lead waits for (waitingForOf); null for every other card. */
+  waitingFor?: string | null;
   /** The customer the card belongs to (20261019180000) - null before the migration. */
   customerId: string | null;
   customerNo: number | null;
@@ -1231,6 +1233,17 @@ export function travelerGroups(
       };
     })
     .filter((g) => g.passengers.length > 0);
+}
+
+/**
+ * What a "tell me when tours open" lead waits for, as the site's form sends it: the trip type (`tagName`, a pill of a
+ * home tile), then the world or page (`termName`), else the home tile's name (`tile`) - "חגים · משפחות", "נשים".
+ * null for any other form. Alon, 22.10: a lead from the women's tile showed nothing of it on the card.
+ */
+export function waitingForOf(payload: Record<string, unknown>): string | null {
+  const text = (key: string) => (typeof payload[key] === "string" ? (payload[key] as string).trim() : "");
+  const parts = [...new Set([text("tagName"), text("termName") || text("tile")].filter(Boolean))];
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /** A form field as one line: a waiting list's date by its label, anything else as text. */

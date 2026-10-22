@@ -94,6 +94,7 @@ import {
   splitName,
   statusOf,
   validateStatuses,
+  waitingForOf,
   waLink,
   type BookingLinkResult,
   type CaseOffer,
@@ -461,6 +462,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     departureDate: departure?.startDate ?? null,
     packageId: r.package_id ?? departure?.packageId ?? null,
     tourName: departure?.tourName ?? (r.package_id ? (x.packages.get(r.package_id) ?? null) : null),
+    waitingFor: waitingForOf(asObject(r.payload)),
     customerId: r.customer_id ?? null,
     customerNo: r.customer_id ? (x.customers.get(r.customer_id) ?? null) : null,
     // an inquiry that got a booking since is a card like any other
