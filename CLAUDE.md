@@ -1576,6 +1576,76 @@ and a test run is no safer than a real one. Decommission it (plan
 `../myt-main/docs/superpowers/plans/2026-09-01-mondial-decommission-plan.md`, in myt-main, untracked there,
 still planned) or port the gate before the first hidden row exists.** `revalidateMain` also pings that site.
 
+**Round "אלון 1" (22.10.2026; spec `docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md`, plan
+`docs/superpowers/plans/2026-10-22-uploader-alon-round-1.md`, migration `20261022170000_uploader_alon_round_1.sql`).**
+Alon's first real run (`386c906f`, Fulham: 15 hidden events) printed the SAME four warnings on every card, left the
+TixStock tickets in raw English with no zone (one was "Away Fans Section" at $4,680) and named the events in English;
+Dor's four rulings are the rules: the AI PROPOSES and a person confirms once; a confirmed opponent name creates the team
+INACTIVE with no image; one event fixed by hand in the editor teaches the rest; the Hebrew name is ours, then
+LiveTickets', else ask. **The panel** (`lib/uploader/run-panel.ts`, pure; `run-panel.tsx`; every Hebrew string in
+`board-words.ts`): `runLevelRows` = "לטיפול ברמת הריצה" between the header and the filter pills, one row per kind with ONE
+button - a hall per `show.suppliers.tixstock.venue_map_url` in three forms (`new` = no template, `unzoned` = categories
+still "לבדיקה", `fixed` = an event arranged in the editor, `getRun`'s `fixedByHand` via `ticketsFixedByHand`), the Hebrew
+names (`getRun`'s `missingNames`), the subject's missing page, the fixes (crest / bio / cut-out / gallery -> the warning's
+own `fix_url`) and the /c/ twin as information; it counts `ready` / `approved` shows only. `cardWarnings` folds
+`RUN_LEVEL_CODES` into one grey line "N הערות ברמת הריצה - בפאנל למעלה" (`new_venue` / `unzoned_tickets` only when the
+show HAS a TixStock drawing); the fold is a VIEW - `uploader_items.warnings` is untouched - and `unzoned_review`
+("לבדיקה: <categories>") stays on the card while feeding the venue row. **Classification** (`classify-dialog.tsx`,
+`lib/uploader/classify.ts`, selftest): `proposeVenueClassification(runId, sourceUrl)` reads the drawing read-only
+(`fetchSupplierSvg`, `lib/venue-maps/supplier-svg.ts`) and makes ONE AI call; the dialog is a row per category of the
+DRAWING plus the run's tickets - editable Hebrew zone label (the card title) and description (the line under it), a
+"לפסול" switch, a status. `dropRule` is CODE (word-bounded away / visitor(s) / visiting; the model may add a drop with
+a reason, never remove one; a person can flip any drop; obstructed views are NOT a category rule - they are refused per
+LISTING by `listingsTheSiteSells`). A row the AI is unsure about, or a person empties, is "לבדיקה" until touched: its
+ticket stays with no zone, it is left OUT of the template (`adoptVenueMap` would otherwise store an English zone for
+every later run) and the venue stays on the panel. Ruling R19: the confirm needs at least one row named or dropped (an
+all-"לבדיקה" confirm would adopt the drawing with no zones). `classifyVenue(runId, sourceUrl, rows)`: `adoptVenueMap` if
+the venue has no template -> `saveVenueZones(templateFromRows)` -> `rememberSupplierCategories` ->
+`venue_maps.dropped_categories` (`{ tixstock, tixstock_kept }`), then every `ready` / `approved` item of the venue is
+rewritten through `applyClassification` (direct `tickets_and_rates` + `map_image_url` columns, never `updateEvent`; its
+`unzoned` = TixStock tickets only; an event whose tickets would ALL be dropped is left as it is with `all_dropped`), the
+items' warnings / decisions / payload follow (the approve-time edit diff must not read it as a staff edit), audit
+`uploader.classified` + one `uploader.classify_changed` per change. `zones[].description` (<= 160) sits inside the
+existing `venue_maps.zones` jsonb (no column): `VenueZone`, `sanitizeZones`, `zonesOf`, `zoneFromTemplate` (copies onto an
+EMPTY description only - a LiveTickets one is never overwritten) and the editor's Suppliers & zones board ("תיאור ללקוח"
+box per zone) carry it, and the BUILD (`uploader-build.ts` step 4 -> `applyClassification`) uses the template's drops and
+descriptions from now on (decisions `categories_dropped_by_template` / `zones_from_template`; a show whose template drops
+every ticket is skipped `no_tickets`). **Learn from one event:** `learnPreview(itemId)` + `learnFromEvent(itemId)`
+(`learn-confirm.tsx`, no AI) read the EVENT ROW as it is now - not the audit - merge it over the template
+(`templateFromEvent`; a category counts as dropped only when the build's `payload` had it and the row lost it) and rewrite
+the other shows exactly as a confirm does; the card and the panel's venue row offer "למד מהאירוע הזה והחל על N
+ההופעות". **Hebrew names:** `eventNames` (`lib/uploader/names.ts`) = both teams in `teamsHe` -> "<home he> - <away he>",
+else the LiveTickets twin's `event_name_heb` (must hold a Hebrew letter, <= 120; the decision line names the source),
+else English + `no_hebrew_name`; the build never stops for a name - `createRun` raises ONE task per run
+(`missingHebrewNames`, source `uploader`, `source_ref.kind = "uploader_names"`, counted in `MAX_QUESTION_TASKS_PER_RUN`,
+id in `uploader_runs.names_task_id`), closed by the names dialog's confirm; the Tasks board refuses to close it by
+hand. `proposeTeamNames(runId)` (AI call) + `createTeamsAndRename(runId, rows)` (`names-dialog.tsx`,
+`lib/uploader/team-names.ts`: `missingSides`, `cleanClubName`, `parseTeamNames`): teams / artists are created
+INACTIVE through `createFootballTeamInactive` / `createArtistInactive` - no crest, no image, no gallery, and NO taxonomy
+leaf yet - and `updateFootballTeam` / `updateArtist` run `ensurePersonTaxonomy` (tag + auto-tag rule + `/c/` leaf) when
+a save flips `is_active` false -> true; the confirm then renames the run's events (`events.name` + payload) and drops
+`no_hebrew_name` / `no_team_page` / `no_artist_page`. `resolveSubject` (`uploader-search.ts`) now counts INACTIVE rows
+(active first), so "no page" means no row. **The AI never fetches, picks or attaches a picture** (Dor: copyright) - the
+dialog says so in a fixed line. **A rule for the run:** `runRuleOf` / `applyRuleTo` (`lib/uploader/run-rules.ts`) and
+`answerQuestion(itemId, answer, { applyToSimilar })` -> `{ ok, applied }` behind the card's "החל גם על N השאלות הדומות
+בריצה" (`pick_show` both / skip; `pick_date` tix / live / both / skip; `pick_location` only the SAME venue AND city -
+every location is an option of every `pick_location`, so "among its options" would filter nothing); each other question
+goes through the same per-item path, audited `uploader.answered` with `rule_applied`. **The two new AI calls**
+(`lib/services/tour-uploader-classify.ts`: `classifyVenueWithAgent`, `nameTeamsWithAgent`) are the parse's discipline -
+same agent and `TOUR_UPLOADER_AI` switch, forced non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row with cost and
+`user_id`, no price / listing / URL in the prompt - and the dialogs share the parse's cap (`PARSE_RATE_MAX` 10 per
+`PARSE_RATE_WINDOW_MS` 10 min per person, checked by the actions); off / no answer / cap -> the SAME dialog with empty
+boxes ("ה-AI כבוי / לא ענה - מלאו את השמות ידנית"). **Learning is per call:** `loadAgentLessons(def, { sources })` -
+`CLASSIFY_LESSON_SOURCES` = `uploader.classify_changed` (a rename, a drop, an un-drop, a name typed by hand),
+`NAMES_LESSON_SOURCES` = `uploader.team_created`, the brief parse keeps its five older sources + feedback; a row
+confirmed as proposed writes nothing; AI Factory's trace shows every source. NOT built: the SVG mini-map under the
+table; LiveTickets categories zoned in the dialog (the editor's board keeps them); a standing rule across runs; the menu
+badge and "בנה בכל זאת" (older gaps). **Deploy:** the migration (`venue_maps.dropped_categories`,
+`uploader_runs.names_task_id`) was applied on prod 22.10 and every uploader read selects both columns now (`RUN_COLUMNS`,
+`VENUE_TEMPLATE_COLUMNS`) - it must be live BEFORE this code; nothing on myt-main; `npm run db:types` is still owed from
+21.10. First use: Alon's run `386c906f` (the panel shows the Craven Cottage row and the names row at once - the warnings
+are already on its items; his steps: `docs/superpowers/guides/2026-10-21-tour-uploader-how-to-he.md`).
+
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
 light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own
