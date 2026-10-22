@@ -134,7 +134,8 @@ export function zonesOfTemplate(v: Json): VenueZone[] {
   return out;
 }
 
-function supplierCategoriesOf(v: Json): SupplierCategoryMap {
+/** A `venue_maps.supplier_categories` column, rebuilt supplier by supplier (a non-string zone id is dropped). */
+export function supplierCategoriesOf(v: Json): SupplierCategoryMap {
   const out: SupplierCategoryMap = {};
   if (!isObject(v)) return out;
   for (const [supplier, map] of Object.entries(v)) {

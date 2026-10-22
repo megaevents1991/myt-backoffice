@@ -16,10 +16,13 @@ import { logAudit } from "@/lib/audit";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { taskPeopleOf } from "@/lib/services/task-people";
+import { supplierCategoriesOf, zonesOfTemplate } from "@/lib/services/uploader-prior";
 import { closeQuestionTask, openQuestionTask } from "@/lib/services/uploader-questions";
 import { findShows, resolveSubject } from "@/lib/services/uploader-search";
+import { urlSpellings } from "@/lib/services/venue-memory";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
+import { parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
 import { editDiff } from "@/lib/uploader/decisions";
 import {
   artSearchPattern,
@@ -42,6 +45,9 @@ import {
   type SubjectArtRow,
   type SubjectCache,
 } from "@/lib/uploader/run-rules";
+import type { SupplierCategoryMap, VenueZone } from "@/lib/venue-maps/svg-zones";
+import type { EventTicket } from "@/types/app.types";
+import type { Json } from "@/types/database.types";
 import type { ItemStatus, RunStatus, UploaderItem, UploaderPlan, UploaderQuestion, UploaderRun } from "@/types/uploader.types";
 
 // `uploader_runs` / `uploader_items` and `events.is_hidden` are newer than types/database.types.ts
@@ -801,4 +807,220 @@ export async function readSubjectArt(plan: UploaderPlan): Promise<SubjectArt> {
 export async function loadPeople(): Promise<{ id: string; name: string }[]> {
   const staff = await taskPeopleOf({ id: MEGA_EVENTS_COMPANY_ID });
   return (staff ?? []).map((p) => ({ id: p.id, name: p.display_name?.trim() || p.email }));
+}
+
+// ---- round "אלון 1": venue templates, the events a classification rewrites, team rows ----------------
+
+/** A `venue_maps` row as the classification actions read it (`dropped` = `dropped_categories` as keys). */
+export type VenueTemplateRow = {
+  id: string;
+  name: string;
+  source_url: string | null;
+  svg_url: string | null;
+  zones: VenueZone[];
+  supplier_categories: SupplierCategoryMap;
+  dropped: DroppedCategories;
+};
+
+// `dropped_categories` is newer than types/database.types.ts (migration 20261022170000) - read through `db`.
+const VENUE_TEMPLATE_COLUMNS = "id,name,source_url,svg_url,zones,supplier_categories,dropped_categories";
+
+type VenueTemplateDbRow = {
+  id: string;
+  name: string | null;
+  source_url: string | null;
+  svg_url: string | null;
+  zones: Json;
+  supplier_categories: Json;
+  dropped_categories: Json;
+};
+
+function venueTemplateOf(row: VenueTemplateDbRow): VenueTemplateRow {
+  return {
+    id: row.id,
+    name: row.name ?? "",
+    source_url: row.source_url ?? null,
+    svg_url: row.svg_url ?? null,
+    zones: zonesOfTemplate(row.zones),
+    supplier_categories: supplierCategoriesOf(row.supplier_categories),
+    dropped: parseDroppedCategories(row.dropped_categories),
+  };
+}
+
+/**
+ * The venue template of a drawing: by `source_url` in any spelling the url is stored under
+ * (`urlSpellings`), else - an event the editor's board adopted carries OUR copy - by `svg_url`
+ * exactly; the newest `updated_at` wins. `row: null` = no template; `failed` = a read failed (logged).
+ */
+export async function readVenueTemplate(url: string): Promise<{ row: VenueTemplateRow | null; failed: boolean }> {
+  const clean = url.trim();
+  if (clean === "") return { row: null, failed: false };
+  // A spelling holding `"` would break out of PostgREST's quoted `in.(...)` list - a supplier URL never has one.
+  const spellings = urlSpellings(clean).filter((u) => !u.includes('"'));
+  if (spellings.length > 0) {
+    const bySource = (await db
+      .from("venue_maps")
+      .select(VENUE_TEMPLATE_COLUMNS)
+      .in("source_url", spellings)
+      .order("updated_at", { ascending: false })
+      .limit(1)) as DbResult<VenueTemplateDbRow[]>;
+    if (bySource.error) {
+      logDb("venue template (source url) read", bySource.error);
+      return { row: null, failed: true };
+    }
+    const found = bySource.data?.[0];
+    if (found) return { row: venueTemplateOf(found), failed: false };
+  }
+  const bySvg = (await db
+    .from("venue_maps")
+    .select(VENUE_TEMPLATE_COLUMNS)
+    .eq("svg_url", clean)
+    .order("updated_at", { ascending: false })
+    .limit(1)) as DbResult<VenueTemplateDbRow[]>;
+  if (bySvg.error) {
+    logDb("venue template (svg url) read", bySvg.error);
+    return { row: null, failed: true };
+  }
+  const found = bySvg.data?.[0];
+  return { row: found ? venueTemplateOf(found) : null, failed: false };
+}
+
+/** `venue_maps.dropped_categories` replaced: the keys the venue never sells and the rule-drops a person kept. false = the write failed (logged). */
+export async function writeDroppedCategories(id: string, dropped: string[], kept: string[]): Promise<boolean> {
+  const { error } = (await db
+    .from("venue_maps")
+    .update({ dropped_categories: { tixstock: dropped, tixstock_kept: kept }, updated_at: nowIso() })
+    .eq("id", id)) as DbResult<null>;
+  if (error) {
+    logDb(`venue map ${id} dropped categories write`, error);
+    return false;
+  }
+  return true;
+}
+
+/** An event row as a classification / rename reads it. */
+export type EventTicketsRow = { tickets_and_rates: EventTicket[]; map_image_url: string | null; is_hidden: boolean; name: string };
+
+const isTicket = (v: unknown): v is EventTicket =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && typeof (v as { category?: unknown }).category === "string";
+
+/**
+ * The tickets, map, hidden flag and name of these events - soft-deleted ones are no row (a deleted show
+ * is never rewritten). In chunks of IN_CHUNK; null = a read failed (logged). `events.is_hidden` is newer
+ * than the generated types - read through `db`.
+ */
+export async function readEventTickets(ids: number[]): Promise<Map<number, EventTicketsRow> | null> {
+  const rows = new Map<number, EventTicketsRow>();
+  const wanted = [...new Set(ids)];
+  for (let i = 0; i < wanted.length; i += IN_CHUNK) {
+    const { data, error } = (await db
+      .from("events")
+      .select("id,name,tickets_and_rates,map_image_url,is_hidden")
+      .in("id", wanted.slice(i, i + IN_CHUNK))
+      .is("is_deleted", null)) as DbResult<{ id: number; name: string | null; tickets_and_rates: unknown; map_image_url: string | null; is_hidden: boolean | null }[]>;
+    if (error) {
+      logDb("events (tickets) read", error);
+      return null;
+    }
+    for (const row of data ?? []) {
+      rows.set(row.id, {
+        tickets_and_rates: Array.isArray(row.tickets_and_rates) ? row.tickets_and_rates.filter(isTicket) : [],
+        map_image_url: row.map_image_url ?? null,
+        is_hidden: row.is_hidden === true,
+        name: row.name ?? "",
+      });
+    }
+  }
+  return rows;
+}
+
+/**
+ * A classified event: `tickets_and_rates` and `map_image_url` - those two columns only, never through
+ * `updateEvent` (approve's direct-column discipline), only while the event is not deleted. Audited as an
+ * `update` of the event. false = the write failed or the event is gone (logged).
+ */
+export async function writeEventClassification(eventId: number, tickets: EventTicket[], mapUrl: string): Promise<boolean> {
+  const { data, error } = (await db
+    .from("events")
+    .update({ tickets_and_rates: tickets, map_image_url: mapUrl })
+    .eq("id", eventId)
+    .is("is_deleted", null)
+    .select("id")) as DbResult<{ id: number }[]>;
+  if (error) {
+    logDb(`event ${eventId} classification write`, error);
+    return false;
+  }
+  if ((data ?? []).length === 0) {
+    console.error(`uploader: event ${eventId} was not classified - deleted meanwhile`);
+    return false;
+  }
+  await logAudit({
+    action: "update",
+    entityType: "event",
+    entityId: eventId,
+    changes: { map_image_url: mapUrl, tickets_count: tickets.length },
+    metadata: { agent: AGENT, via: "uploader.classify" },
+  });
+  return true;
+}
+
+/** An event's Hebrew name (`events.name` only, only while not deleted), audited as an `update` of the event. false = failed or gone (logged). */
+export async function writeEventName(eventId: number, name: string): Promise<boolean> {
+  const { data, error } = (await db.from("events").update({ name }).eq("id", eventId).is("is_deleted", null).select("id")) as DbResult<
+    { id: number }[]
+  >;
+  if (error) {
+    logDb(`event ${eventId} name write`, error);
+    return false;
+  }
+  if ((data ?? []).length === 0) {
+    console.error(`uploader: event ${eventId} was not renamed - deleted meanwhile`);
+    return false;
+  }
+  await logAudit({ action: "update", entityType: "event", entityId: eventId, changes: { name }, metadata: { agent: AGENT, via: "uploader.renamed" } });
+  return true;
+}
+
+/** Venue templates the style read looks through (newest first) - the table holds a few dozen. */
+const STYLE_TEMPLATES_READ = 50;
+const HEBREW_LETTER = /[א-ת]/;
+
+/**
+ * Up to `max` Hebrew zone labels of OTHER venues (newest templates first, each label once) - the
+ * classification call's style examples. A failed read is logged and gives none: they are a nicety.
+ */
+export async function readStyleLabels(exceptSourceUrl: string, max: number): Promise<string[]> {
+  const except = new Set(urlSpellings(exceptSourceUrl.trim()));
+  const { data, error } = (await db
+    .from("venue_maps")
+    .select("source_url,zones")
+    .order("updated_at", { ascending: false })
+    .limit(STYLE_TEMPLATES_READ)) as DbResult<{ source_url: string | null; zones: Json }[]>;
+  if (error) {
+    logDb("venue templates (style labels) read", error);
+    return [];
+  }
+  const out: string[] = [];
+  for (const row of data ?? []) {
+    if (row.source_url && except.has(row.source_url)) continue;
+    for (const zone of zonesOfTemplate(row.zones)) {
+      const label = zone.label.trim();
+      if (out.length >= max) return out;
+      if (HEBREW_LETTER.test(label) && !out.includes(label)) out.push(label);
+    }
+  }
+  return out;
+}
+
+/** The person rows a names dialog matches against (`teamRowsFor`): every row of the table that is not deleted, active or not. null = the read failed (logged). */
+export async function readPersonNames(table: "football_teams" | "artists"): Promise<{ id: number; name: string; name_english: string | null }[] | null> {
+  const read = await fetchPaged<{ id: number; name: string; name_english: string | null }>(
+    () => db.from(table).select("id,name,name_english").eq("is_deleted", false).order("id"),
+    ITEMS_MAX,
+  );
+  if (read.error || read.truncated) {
+    logDb(`${table} (names) read`, read.error ?? { message: "too many rows" });
+    return null;
+  }
+  return read.rows;
 }
