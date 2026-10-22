@@ -170,13 +170,19 @@ export type UploaderNamesRef = TaskSourceRef & {
   subject: string;
   /** The English names with no Hebrew one (`missingHebrewNames`). */
   names: string[];
+  /** What the waiting toast prints after the subject ("שמות בעברית חסרים: 3 קבוצות"), as a question's `text` does. */
+  text: string;
 };
 
 const NAMES_KIND = "uploader_names";
 const NAMES_FOOTER = "ענו בלוח ההעלאה: תן שמות בעברית";
 
+function namesText(count: number): string {
+  return `שמות בעברית חסרים: ${count === 1 ? "קבוצה אחת" : `${count} קבוצות`}`;
+}
+
 function namesTitle(subject: string, count: number): string {
-  return `שמות בעברית חסרים: ${count === 1 ? "קבוצה אחת" : `${count} קבוצות`} - ${subject}`;
+  return `${namesText(count)} - ${subject}`;
 }
 
 /**
@@ -213,6 +219,7 @@ export async function openNamesTask(run: UploaderRun, missing: string[]): Promis
     run_id: run.id,
     subject,
     names: missing,
+    text: namesText(missing.length),
   };
   const taskTitle = namesTitle(subject, missing.length);
   const taskDescription = [...missing, NAMES_FOOTER].join("\n");

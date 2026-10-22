@@ -14,7 +14,8 @@
  *   3. duplicate - names first, then `existingEventFor` again with the located IATA, under both the
  *                  convention name (music: "Eric Clapton") and the supplier's title.
  *   4. map       - the venue template (`venue_maps`) drops the categories it never sells and zones (and
- *                  describes) the rest through `applyClassification`, else the supplier drawing.
+ *                  describes) the rest through `applyClassification`, else the supplier drawing. A
+ *                  template that drops EVERY ticket of the show = `skipped no_tickets`, as in step 1.
  *   5. dates     - `calculateSmartDates`.
  *   6. bases     - package only: `quoteFlight` / `quoteHotel` of the location (the ONE pricing rule),
  *                  retry once; still nothing = the `no_base_price` BLOCKER (the event is still built).
@@ -511,10 +512,13 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
     const applied = applyClassification(tickets, template, template.dropped);
     tickets = applied.tickets;
     unzoned = applied.unzoned.length;
-    decisions.push(decision("zones_from_template", { zoned: tickets.length - unzoned, total: tickets.length }));
     if (applied.dropped.length > 0) {
       decisions.push(decision("categories_dropped_by_template", { count: applied.dropped.length, names: applied.dropped.join(", ") }));
     }
+    // The template can drop EVERY ticket of the show: zero tickets in total is no event (the step-1
+    // rule again, after the drop). The skipped card names the drop; no "0 of 0 zoned" line.
+    if (tickets.length === 0) return skipped(show, "no_tickets", decisions);
+    decisions.push(decision("zones_from_template", { zoned: tickets.length - unzoned, total: tickets.length }));
   } else if (tixRef?.venue_map_url) {
     mapImageUrl = tixRef.venue_map_url;
   } else if (liveRow) {

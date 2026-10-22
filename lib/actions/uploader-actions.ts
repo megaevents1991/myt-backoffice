@@ -315,7 +315,12 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   // stored on the run is closed again at once, like a question's.
   if (questionTasks < MAX_QUESTION_TASKS_PER_RUN) {
     try {
-      const missing = missingHebrewNames(items, subject, resolved.teamsHe);
+      // A skipped show (exists / rejected_before / skipped by an earlier answer) is never built; a question one may be.
+      const missing = missingHebrewNames(
+        items.filter((i) => i.status !== "skipped"),
+        subject,
+        resolved.teamsHe,
+      );
       if (missing.length > 0) {
         const namesTaskId = await openNamesTask(run, missing);
         if (namesTaskId !== null && !(await writeNamesTaskId(run.id, namesTaskId))) {
