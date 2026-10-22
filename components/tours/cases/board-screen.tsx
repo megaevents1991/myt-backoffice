@@ -8,7 +8,9 @@
  * - TODAY: every card a rep has to touch, coloured by its reason (todayReason), numbered `#` in the VIEWER'S OWN
  *   order - the default is arrival (the oldest first, the newest lead last), a drag or a typed place keeps it
  *   (lib/tours/board.ts orderBoard / moveInOrder / placeInOrder, saved by saveBoardOrder). Phone, Notes (bold when
- *   written today) and a mail shortcut sit on the row. A manager ticks rows and hands them out in bulk.
+ *   written today) and a mail shortcut sit on the row. A manager ticks rows and hands them out in bulk. A "⋯" menu
+ *   (card-quick-actions.tsx) works the card from the row - Notes, Booking link, Follow-up - and "Take it" gives an
+ *   unassigned card to the viewer (Alon 22.10); the same two sit on a LEADS row.
  * - RESERVATIONS: one row per order (a site booking or one a rep typed, each with its T number); a customer with two
  *   orders shows twice. Live / Past / Cancelled.
  * - LEADS: the cards with no order yet. Open / Closed. Bulk assign for a manager.
@@ -36,6 +38,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, listBoard, saveBoardOrder, updateCase } from "@/lib/actions/tours-cases-actions";
+import type { ActionResult } from "@/lib/tours/action-kit";
 import { Chip, LoadError } from "@/components/tours/ui";
 import {
   BOOKING_PHASE_LABELS,
@@ -73,6 +76,7 @@ import {
 import { CasesScreen } from "@/components/tours/cases/cases-screen";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
+import { CardActionsMenu, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
 
 const TABS = ["today", "reservations", "leads", "all"] as const;
 const PHASES: BookingPhase[] = ["active", "past", "cancelled"];
@@ -170,18 +174,29 @@ export function BoardScreen() {
 
   const open = useCallback((cardId: string) => router.push(`/tours/reservations/${cardId}`), [router]);
 
-  const save = useCallback(
-    async (card: CaseRow, change: CaseChange, done: string) => {
+  // one door for every row action that answers the fresh row (updateCase, markOfferSent, withdrawOffer): the row is
+  // patched in place; a card handed to another rep leaves a rep's list - the next click on it would be refused (review 21.10)
+  const apply = useCallback(
+    async (card: CaseRow, action: () => Promise<ActionResult<CaseRow>>, done: string): Promise<boolean> => {
       setBusy(card.id);
-      const result = await run(() => updateCase(card.id, change), done);
+      const result = await run(action, done);
       setBusy(null);
-      if (!result.success) return;
-      // a card handed to another rep leaves a rep's list - the next click on it would be refused (review 21.10)
+      if (!result.success) return false;
       const next = afterSave(data?.cards ?? [], result.data, viewer);
       setData((current) => current && { ...current, cards: next.cards });
       if (next.handedTo) toast({ title: `Card handed to ${repName(next.handedTo)}` });
+      return true;
     },
     [data, repName, run, setData, toast, viewer],
+  );
+  const save = useCallback((card: CaseRow, change: CaseChange, done: string) => apply(card, () => updateCase(card.id, change), done), [apply]);
+  // the quick actions' host (22.10): the same patch, and "open the card" = its customer page at that section
+  const hostFor = useCallback(
+    (card: CaseRow): CardActionHost => ({
+      apply: (action, done) => apply(card, action, done),
+      openCard: (section) => router.push(`/tours/reservations/${card.id}?focus=${section}`),
+    }),
+    [apply, router],
   );
 
   // the viewer's own order: shown at once, saved behind it - ONE save in flight, the newest order replaces anything still
@@ -321,6 +336,7 @@ export function BoardScreen() {
           return (
             <InRow className="flex items-center justify-end gap-1">
               {working && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              <TakeCardButton card={card} host={hostFor(card)} currentUserId={currentUserId} busy={working} />
               {reason === "file" ? (
                 <Button size="sm" onClick={() => open(card.id)}>
                   File it
@@ -350,12 +366,13 @@ export function BoardScreen() {
                   )}
                 </>
               )}
+              <CardActionsMenu card={card} host={hostFor(card)} today={today} currentUserId={currentUserId} busy={working} />
             </InRow>
           );
         },
       },
     ],
-    [busy, onPlace, open, ordersByCard, repName, save, statuses, today],
+    [busy, currentUserId, hostFor, onPlace, open, ordersByCard, repName, save, statuses, today],
   );
 
   const orderColumns = useMemo<ColumnDef<OrderRow>[]>(
@@ -386,6 +403,17 @@ export function BoardScreen() {
         ),
       },
       { id: "travelers", accessorFn: (r) => r.order.travelers, header: "Travelers", cell: ({ row }) => <span className="tabular">{row.original.order.travelers}</span> },
+      // the card's ACC NUM (the deal's, Alon 22.10) - edited on the folded card, read here
+      {
+        id: "acc",
+        accessorFn: (r) => r.card.accNum ?? "",
+        header: "ACC",
+        cell: ({ row }) => (
+          <span dir="ltr" className="tabular text-sm">
+            {row.original.card.accNum ?? EMPTY}
+          </span>
+        ),
+      },
       {
         id: "status",
         accessorFn: (r) => r.card.status,
@@ -485,8 +513,24 @@ export function BoardScreen() {
         header: ({ column }) => <SortableHeader label="Since" column={column} />,
         cell: ({ row }) => <span className="tabular whitespace-nowrap text-sm text-muted-foreground">{fmtInstant(row.original.createdAt)}</span>,
       },
+      {
+        id: "actions",
+        enableHiding: false,
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => {
+          const card = row.original;
+          const working = busy === card.id;
+          return (
+            <InRow className="flex items-center justify-end gap-1">
+              {working && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              <TakeCardButton card={card} host={hostFor(card)} currentUserId={currentUserId} busy={working} />
+              <CardActionsMenu card={card} host={hostFor(card)} today={today} currentUserId={currentUserId} busy={working} />
+            </InRow>
+          );
+        },
+      },
     ],
-    [repName, statuses, today],
+    [busy, currentUserId, hostFor, repName, statuses, today],
   );
 
   const segment = <T extends string>(value: T, onChange: (next: T) => void, options: { id: T; label: string; count: number }[]) => (
