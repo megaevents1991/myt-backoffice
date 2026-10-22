@@ -6,7 +6,10 @@
  * conversation, not per message), the 24-hour window a free-text reply needs, the opt-out words, Meta's
  * webhook signature, and the parser that turns Meta's payload into flat events.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+// "crypto" without the node: scheme on purpose - this module reaches the client bundle through
+// lib/tours/cases.ts (canSendText); webpack has no handler for "node:" URIs there, while the bare
+// builtin gets Next's browser fallback. verifySignature is only ever called on the server (webhook route).
+import { createHmac, timingSafeEqual } from "crypto";
 
 /** A new inbound message after this many hours of silence is a new conversation = a new inquiry. */
 export const WA_INQUIRY_GAP_HOURS = 24;
