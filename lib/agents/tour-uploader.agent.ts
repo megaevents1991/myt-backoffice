@@ -171,8 +171,10 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       // The two texts are long and the model proposes its own; the fact that it was reworded is the lesson.
       if (m.field === "description") return `${at} changed the description of '${category}'`;
       if (m.field === "drop" && typeof m.to === "boolean") {
-        // Only a zone that was proposed as dropped can be un-dropped: the person overruled the proposal.
-        if (!m.to) return `${at} un-dropped '${category}' (the rule flagged it)`;
+        // Only a zone that was proposed as dropped can be un-dropped. `reason` is how it was dropped:
+        // "away" = the code rule flagged it; anything else (or nothing) = the proposal itself, so the
+        // correction is about the model's call and must not teach that the rule was wrong.
+        if (!m.to) return `${at} un-dropped '${category}' (${text(m.reason) === "away" ? "the rule flagged it" : "the proposal dropped it"})`;
         return `${at} dropped '${category}' (${text(m.reason) ?? "other"})`;
       }
       return null;

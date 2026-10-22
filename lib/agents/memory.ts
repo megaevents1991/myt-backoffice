@@ -101,7 +101,10 @@ export async function loadAgentLessons(def: AgentDefinition, opts?: LessonSource
  * Every mark the agent's sources recorded in its lookback window, and what became of each one:
  * quoted in the prompt now, a good lesson that lost its slot, or dropped by its source (and why).
  * `loadAgentLessons` IS the quoted slice of this, in the same order - so the AI Factory's trace
- * can never disagree with what the model actually reads. Quoted lines come first, in prompt order.
+ * can never disagree with what the model actually reads, as long as both are given the same
+ * `sources`. The trace (no filter) can show more sources than one call reads; an agent whose calls
+ * read different sources is read per call by passing that call's `sources`. Quoted lines come
+ * first, in prompt order.
  */
 export async function traceAgentLessons(def: AgentDefinition, opts?: LessonSourceOpts): Promise<LessonTrace[]> {
   const only = opts?.sources;

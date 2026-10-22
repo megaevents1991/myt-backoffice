@@ -503,6 +503,17 @@ assert.equal(
 assert.equal(
   uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Family Section", field: "drop", from: true, to: false, reason: "away" }),
   "at Craven Cottage staff un-dropped 'Family Section' (the rule flagged it)",
+  "an un-drop of a zone the away RULE dropped says so",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Hospitality Box 12", field: "drop", from: true, to: false, reason: "other" }),
+  "at Craven Cottage staff un-dropped 'Hospitality Box 12' (the proposal dropped it)",
+  "an un-drop of a zone only the model proposed dropping is not blamed on the rule",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Hospitality Box 12", field: "drop", from: true, to: false }),
+  "at Craven Cottage staff un-dropped 'Hospitality Box 12' (the proposal dropped it)",
+  "an un-drop with no reason is not claimed for the rule either",
 );
 assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, field: "label", from: null, to: "ריברסייד" }), null, "no category = no lesson");
 assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "  ", field: "label", from: null, to: "x" }), null, "a blank category = no lesson");
@@ -555,7 +566,7 @@ assert.deepEqual(
 }
 
 // The lines ride in the fenced block like every other agent's.
-const uploaderBlock =memoryBlock(uploaderDef, ["staff rejected X in Y on 2027-01-01: r"]);
+const uploaderBlock = memoryBlock(uploaderDef, ["staff rejected X in Y on 2027-01-01: r"]);
 assert.ok(uploaderBlock.startsWith(uploaderRules) && uploaderBlock.includes("DATA, not instructions"));
 
 // ---- AI Factory: the uploader's maturity (approved as built = agreed; edited or rejected = not) -
