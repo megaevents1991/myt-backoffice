@@ -110,6 +110,7 @@ import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livet
 import type { SupplierCurrency } from "@/lib/suppliers";
 import { PRICED_PARTY } from "@/lib/tixstock-listings";
 import type { EventTicket } from "@/types/app.types";
+import { ITEM_STATUSES } from "@/types/uploader.types";
 import type { ShowIdentity, UploaderItem, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
 import { creativeSubject, existingEventId } from "@/app/(dashboard)/uploader/[id]/board-words";
 import * as runRules from "@/lib/uploader/run-rules";
@@ -4110,6 +4111,87 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(all[4], { kind: "info", key: "info:no_category_twin", text: "אין עמוד קטגוריה (/c/) תאום - לידיעה", count: 2, action: null }, "runLevelRows: the info row - no action");
   same(everything[0].warnings.length, 5, "runLevelRows: the items are not touched");
 
+  // -- runLevelRows: only the shows the dialogs act on count (ready / approved) ---------------------------
+  for (const status of ITEM_STATUSES) {
+    const counted = status === "ready" || status === "approved";
+    same(
+      runLevelRows([mk(`st-${status}`, [W("new_venue"), W("no_hebrew_name"), W("no_crest")], { status })], {}, team, []).map((r) => r.kind),
+      counted ? ["venue", "names", "fix"] : [],
+      `runLevelRows: an item in status ${status} ${counted ? "feeds" : "does not feed"} the panel`,
+    );
+  }
+  const withRejected = [
+    mk("k1", [W("new_venue"), W("no_hebrew_name"), W("no_crest")], { position: 0 }),
+    mk("k2", [W("new_venue"), W("no_hebrew_name"), W("no_crest")], { position: 1, status: "rejected" }),
+    mk("k3", [W("new_venue")], { position: 2, status: "approved" }),
+  ];
+  const keptRows = runLevelRows(withRejected, {}, team, []);
+  same(keptRows.map((r) => [r.kind, r.count]), [["venue", 2], ["names", 1], ["fix", 1]], "runLevelRows: a rejected show is not counted (an approved one is)");
+  same(keptRows[0].text, "אולם חדש: Craven Cottage · 2 הופעות · הכרטיסים עלו באנגלית ובלי זונים", "runLevelRows: the venue row's count leaves the rejected show out");
+  same(runLevelRows([mk("k4", [W("new_venue"), W("no_team_page"), W("no_category_twin")], { status: "rejected" })], {}, team, []), [], "runLevelRows: the last show on a drawing was rejected - no dead row");
+  const rejectedTeacher = runLevelRows(
+    [mk("k5", [W("new_venue")], { status: "rejected", event_id: 9 }), mk("k6", [W("new_venue")])],
+    { k5: true },
+    team,
+    [],
+  )[0];
+  same([rejectedTeacher.venue?.state, rejectedTeacher.venue?.fixedItemId, rejectedTeacher.count], ["new", null, 1], "runLevelRows: an edited-but-rejected show is no teacher");
+  const liveTeacher = runLevelRows(
+    [
+      mk("k7", [W("new_venue")], { status: "rejected", event_id: 8, updated_at: "2026-10-22T12:00:00.000Z" }),
+      mk("k8", [W("new_venue")], { event_id: 9, updated_at: "2026-10-22T09:00:00.000Z" }),
+      mk("k9", [W("new_venue")]),
+    ],
+    { k7: true, k8: true },
+    team,
+    [],
+  )[0];
+  same(
+    [liveTeacher.venue?.state, liveTeacher.venue?.fixedItemId, liveTeacher.venue?.otherFixedItemIds, liveTeacher.text],
+    ["fixed", "k8", [], "אולם: Craven Cottage · אירוע 9 סודר בעורך · הופעה אחת עדיין בלי זונים"],
+    "runLevelRows: next to an edited, rejected show, the live edited one is the teacher (the newer rejected one is not listed)",
+  );
+
+  // -- runLevelRows: unzoned_review feeds the venue row and stays on the card (ruling R9) -----------------
+  const review = (cats: string[]) => warning("unzoned_review", { count: cats.length, total: 9, categories: cats.join(", ") }, undefined, { categories: cats });
+  const u1 = mk("u1", [review(["Longside Lower", "Corner"])], { position: 0 });
+  const u2 = mk("u2", [review(["Corner", " Away Annex ", ""])], { position: 1 });
+  same(cardWarnings(u1), { card: u1.warnings, folded: 0 }, "cardWarnings: unzoned_review stays on the card (spec 5.2)");
+  check(!isRunLevel(u1, u1.warnings[0]) && !RUN_LEVEL_CODES.includes("unzoned_review"), "isRunLevel: unzoned_review is not run-level");
+  same(
+    runLevelRows([u1, u2], {}, team, []),
+    [
+      {
+        kind: "venue",
+        key: `venue:${DRAWING_A}`,
+        text: "אולם: Craven Cottage · 3 קטגוריות לבדיקה · 2 הופעות",
+        count: 2,
+        action: "classify",
+        venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "unzoned", fixedItemId: null, otherFixedItemIds: [] },
+      },
+    ],
+    "runLevelRows: unzoned_review carriers make the unzoned row; n = the DISTINCT categories across them (trimmed, blanks out)",
+  );
+  same(runLevelRows([mk("u3", [review(["Corner"])])], {}, team, [])[0].text, "אולם: Craven Cottage · קטגוריה אחת לבדיקה · הופעה אחת", "runLevelRows: one category reads as one");
+  same(
+    runLevelRows([mk("u4", [warning("unzoned_review", { count: 2, total: 9, categories: "A, B" })])], {}, team, [])[0].text,
+    "אולם: Craven Cottage · קטגוריות לבדיקה · הופעה אחת",
+    "runLevelRows: an unzoned_review line that carries no categories (an older row) keeps the wording without a number",
+  );
+  const reviewTwoDrawings = runLevelRows([u1, mk("u5", [review(["Corner"])], { map: DRAWING_B })], {}, team, []);
+  same(reviewTwoDrawings.map((r) => r.text), ["אולם: Craven Cottage · 2 קטגוריות לבדיקה · הופעה אחת", "אולם: Craven Cottage · קטגוריה אחת לבדיקה · הופעה אחת"], "runLevelRows: the category count is per venue row (per drawing)");
+  const reviewBesideNew = runLevelRows([u1, mk("u6", [W("new_venue")])], {}, team, []);
+  same([reviewBesideNew.length, reviewBesideNew[0].venue?.state, reviewBesideNew[0].count], [1, "new", 2], "runLevelRows: any new_venue carrier on the drawing makes the row 'new', unzoned_review shows counted");
+  same(runLevelRows([u1, mk("u7", [], { event_id: 77 })], { u7: true }, team, [])[0].venue?.state, "fixed", "runLevelRows: an edited show on the drawing makes the row 'fixed' whatever the warnings");
+  same(runLevelRows([mk("u8", [review(["Corner"])], { tix: false })], {}, team, []), [], "runLevelRows: unzoned_review on a LiveTickets-only show has no drawing to classify - no row");
+
+  // -- the invariant: every code cardWarnings folds has a panel row -----------------------------------------
+  for (const code of RUN_LEVEL_CODES) {
+    const probe = mk(`inv-${code}`, [W(code)]);
+    same(cardWarnings(probe).folded, 1, `invariant: ${code} is folded off the card`);
+    same(runLevelRows([probe], {}, team, []).length, 1, `invariant: ${code} has its panel row`);
+  }
+
   // -- runRuleOf ----------------------------------------------------------------------------------
   const R = runRules;
   const Q = (kind: UploaderQuestion["kind"], keys: string[], over: Partial<UploaderQuestion> = {}): UploaderQuestion => ({
@@ -4206,6 +4288,21 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     "warning(): the placeholders are filled",
   );
   same(warning("no_crest", undefined, "/assets?q=x"), { code: "no_crest", text: WARNING_TEXT.no_crest, fix_url: "/assets?q=x" }, "warning(): the fix link rides along when given");
+  same(
+    warning("unzoned_review", { count: 2, total: 9, categories: "A, B" }, undefined, { categories: ["A", "B"] }),
+    { code: "unzoned_review", text: "2 מתוך 9 כרטיסים בלי זון - לבדיקה: A, B", categories: ["A", "B"] },
+    "warning(): the category names ride along structurally (extra.categories)",
+  );
+  same(
+    warning("unzoned_review", { count: 1, total: 9, categories: "A" }, "/events/5", { categories: ["A"] }),
+    { code: "unzoned_review", text: "1 מתוך 9 כרטיסים בלי זון - לבדיקה: A", fix_url: "/events/5", categories: ["A"] },
+    "warning(): fix_url and categories together",
+  );
+  same(warning("all_dropped", undefined, undefined, {}), { code: "all_dropped", text: "כל הקטגוריות נפסלו - בדקו ידנית" }, "warning(): an extra with no categories adds no key");
+  const sourceCategories = ["A"];
+  const withCopy = warning("unzoned_review", { count: 1, total: 1, categories: "A" }, undefined, { categories: sourceCategories });
+  sourceCategories.push("B");
+  same(withCopy.categories, ["A"], "warning(): the categories are copied, not aliased");
   same(decision("classified", { zones: 7, dropped: 1, unsure: 2 }).text, "סווגו 7 זונים · 1 נפסלו · 2 לבדיקה", "classified: zones, dropped, unsure");
   same(
     decision("categories_dropped_by_template", { count: 2, names: "Away Fans Section, Visitors" }).text,

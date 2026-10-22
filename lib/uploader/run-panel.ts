@@ -7,11 +7,16 @@
  *
  * `cardWarnings` is a VIEW: `uploader_items.warnings` is never touched. A row exists while at least one
  * item carries its warning; the dialogs remove the warnings they resolve, so the row follows by itself.
+ * Only the shows the dialogs act on count - `ready` / `approved` (`COUNTED_STATUSES`): a rejected show
+ * keeps its warnings but nothing would ever clear them, so it must not inflate a count or keep a row alive.
+ *
+ * `unzoned_review` (what is left unplaced after a classification) is NOT run-level - the card keeps its
+ * "לבדיקה: <categories>" line - but it feeds the venue row: the hall still has categories to review.
  *
  * Selftest: scripts/tour-uploader-selftest.ts (section "Round אלון 1, Task 4").
  * Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md (5.1).
  */
-import type { SubjectKind, UploaderItem, Warning } from "@/types/uploader.types";
+import type { ItemStatus, SubjectKind, UploaderItem, Warning } from "@/types/uploader.types";
 
 /** The warning codes that are about the whole run, not one show. `new_venue` / `unzoned_tickets` only with a TixStock drawing (`isRunLevel`). */
 export const RUN_LEVEL_CODES: readonly string[] = [
@@ -29,6 +34,12 @@ export const RUN_LEVEL_CODES: readonly string[] = [
 
 /** The two codes the classification dialog resolves - run-level only when the show has a drawing to classify. */
 const NEEDS_DRAWING = new Set(["new_venue", "unzoned_tickets"]);
+
+/** The codes that make a venue row: the two above, and what a classification leaves unplaced (a card line, not folded). */
+const VENUE_ROW_CODES = new Set([...NEEDS_DRAWING, "unzoned_review"]);
+
+/** The statuses the dialogs act on (classify / rename rewrite `ready` and `approved` items only) - the only shows the panel counts. */
+const COUNTED_STATUSES: readonly ItemStatus[] = ["ready", "approved"];
 
 /** The show's TixStock drawing url; null = it has none (a LiveTickets-only show, or TixStock without a seat map). */
 function drawingOf(item: UploaderItem): string | null {
@@ -76,7 +87,7 @@ export type PanelRow = {
   fix_url?: string;
 };
 
-/** An item with the run-level warnings it carries (only items that carry one). */
+/** A counted item with the run-level warnings it carries (possibly none - it may carry only an `unzoned_review`). */
 type Carrier = { item: UploaderItem; run: Warning[] };
 
 const has = (c: Carrier, code: string): boolean => c.run.some((w) => w.code === code);
@@ -92,11 +103,29 @@ function venueName(group: Carrier[]): string {
 /** Newest `updated_at` first; an unreadable time sorts last. */
 const newestFirst = (a: UploaderItem, b: UploaderItem): number => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0);
 
-function venueRow(sourceUrl: string, group: Carrier[], items: UploaderItem[], fixedByHand: Record<string, boolean>): PanelRow {
+/** How many DISTINCT categories the group's `unzoned_review` lines name (trimmed; none carried = 0, an older line). */
+function categoriesToReview(group: Carrier[]): number {
+  const names = new Set<string>();
+  for (const c of group) {
+    for (const w of c.item.warnings) {
+      if (w.code !== "unzoned_review" || !Array.isArray(w.categories)) continue;
+      for (const n of w.categories) if (typeof n === "string" && n.trim() !== "") names.add(n.trim());
+    }
+  }
+  return names.size;
+}
+
+/** "קטגוריות" without a number when none was carried, "קטגוריה אחת", or "N קטגוריות". */
+const categoriesWord = (n: number): string => (n === 0 ? "קטגוריות" : n === 1 ? "קטגוריה אחת" : `${n} קטגוריות`);
+
+function venueRow(sourceUrl: string, group: Carrier[], carriers: Carrier[], fixedByHand: Record<string, boolean>): PanelRow {
   const name = venueName(group);
   const count = group.length;
   const base = { kind: "venue" as const, key: `venue:${sourceUrl}`, count };
-  const edited = items.filter((i) => drawingOf(i) === sourceUrl && fixedByHand[i.id] === true).sort(newestFirst);
+  const edited = carriers
+    .map((c) => c.item)
+    .filter((i) => drawingOf(i) === sourceUrl && fixedByHand[i.id] === true)
+    .sort(newestFirst);
   if (edited.length > 0) {
     const waiting = group.filter((c) => fixedByHand[c.item.id] !== true).length;
     const head = `אולם: ${name} · ${edited[0].event_id === null ? "אירוע סודר בעורך" : `אירוע ${edited[0].event_id} סודר בעורך`}`;
@@ -110,21 +139,23 @@ function venueRow(sourceUrl: string, group: Carrier[], items: UploaderItem[], fi
   const isNew = group.some((c) => has(c, "new_venue"));
   return {
     ...base,
-    text: isNew ? `אולם חדש: ${name} · ${shows(count)} · הכרטיסים עלו באנגלית ובלי זונים` : `אולם: ${name} · קטגוריות לבדיקה · ${shows(count)}`,
+    text: isNew
+      ? `אולם חדש: ${name} · ${shows(count)} · הכרטיסים עלו באנגלית ובלי זונים`
+      : `אולם: ${name} · ${categoriesWord(categoriesToReview(group))} לבדיקה · ${shows(count)}`,
     action: "classify",
     venue: { sourceUrl, name, state: isNew ? "new" : "unzoned", fixedItemId: null, otherFixedItemIds: [] },
   };
 }
 
 /** One venue row per exact drawing url among the shows with a venue warning, in the order the drawings first appear. */
-function venueRows(carriers: Carrier[], items: UploaderItem[], fixedByHand: Record<string, boolean>): PanelRow[] {
+function venueRows(carriers: Carrier[], fixedByHand: Record<string, boolean>): PanelRow[] {
   const byDrawing = new Map<string, Carrier[]>();
   for (const c of carriers) {
     const url = drawingOf(c.item);
-    if (url === null || !c.run.some((w) => NEEDS_DRAWING.has(w.code))) continue;
+    if (url === null || !c.item.warnings.some((w) => VENUE_ROW_CODES.has(w.code))) continue;
     byDrawing.set(url, [...(byDrawing.get(url) ?? []), c]);
   }
-  return [...byDrawing].map(([url, group]) => venueRow(url, group, items, fixedByHand));
+  return [...byDrawing].map(([url, group]) => venueRow(url, group, carriers, fixedByHand));
 }
 
 /** The first three names and "(+k)" for the rest. */
@@ -187,10 +218,10 @@ export function runLevelRows(
   missing: string[],
 ): PanelRow[] {
   const carriers = items
-    .map((item): Carrier => ({ item, run: item.warnings.filter((w) => isRunLevel(item, w)) }))
-    .filter((c) => c.run.length > 0);
+    .filter((item) => COUNTED_STATUSES.includes(item.status))
+    .map((item): Carrier => ({ item, run: item.warnings.filter((w) => isRunLevel(item, w)) }));
   return [
-    ...venueRows(carriers, items, fixedByHand),
+    ...venueRows(carriers, fixedByHand),
     ...namesRow(carriers, missing),
     ...subjectRow(carriers, subject.name_en),
     ...fixRows(carriers),

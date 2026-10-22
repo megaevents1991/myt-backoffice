@@ -86,6 +86,8 @@ export type Warning = {
   code: string;
   text: string;
   fix_url?: string;
+  /** `unzoned_review` (round "אלון 1"): the category names still without a zone - the panel's venue row counts the distinct ones. Absent on every other warning and on older rows. */
+  categories?: string[];
 };
 
 export interface UploaderItem {

@@ -82,7 +82,8 @@ export const WARNING_TEXT: Record<string, string> = {
   no_hebrew_name: "לא נמצא שם בעברית - האירוע נבנה עם השם באנגלית",
   far_venue: "האולם רחוק מכל מיקום עם טיסות - {offer}",
   // Round "אלון 1": a classification that dropped every ticket of an event (the event keeps its tickets), and
-  // the card line for tickets whose category stayed unplaced (`{categories}` = the category names).
+  // the card line for tickets whose category stayed unplaced (`{categories}` = the category names; the warning also
+  // carries them as `Warning.categories`, which the panel's venue row counts). It stays on the card (not run-level).
   all_dropped: "כל הקטגוריות נפסלו - בדקו ידנית",
   unzoned_review: "{count} מתוך {total} כרטיסים בלי זון - לבדיקה: {categories}",
   // BLOCKERS (UploaderItem.blockers): approval is refused until fixed in the editor (#fix-price).
@@ -104,9 +105,16 @@ function fill(code: string, params: Record<string, string | number> = {}): strin
   return (WARNING_TEXT[code] ?? code).replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? ""));
 }
 
-/** One warning line: the code and its filled-in Hebrew text (`fix_url` only when given). Exported for the classification and names actions. */
-export function warning(code: string, params?: Record<string, string | number>, fix_url?: string): Warning {
-  return fix_url === undefined ? { code, text: fill(code, params) } : { code, text: fill(code, params), fix_url };
+/**
+ * One warning line: the code and its filled-in Hebrew text (`fix_url` only when given; `extra.categories`
+ * - the category names an `unzoned_review` line is about - only when given). Exported for the
+ * classification and names actions.
+ */
+export function warning(code: string, params?: Record<string, string | number>, fix_url?: string, extra?: { categories?: string[] }): Warning {
+  const line: Warning = { code, text: fill(code, params) };
+  if (fix_url !== undefined) line.fix_url = fix_url;
+  if (extra?.categories !== undefined) line.categories = [...extra.categories];
+  return line;
 }
 
 /** null / undefined / blank string / empty list / empty object. */
