@@ -46,7 +46,9 @@ import {
   TODAY_REASON_LABELS,
   bookingBlocksDelete,
   bookingPhase,
+  bulkStatusBlocker,
   checkFuture,
+  followUpAfterStatus,
   cleanPhones,
   closeBlockedBy,
   customerLabel,
@@ -621,6 +623,8 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
     };
 
     let settled = false;
+    // the day the card is followed up on - as sent, unless the new status says otherwise (paid clears it, a deposit needs one)
+    let followUpDate = change.followUpDate;
     if (change.status !== undefined && change.status !== before.status) {
       const statuses = await statusesOf(company);
       const status = statusOf(change.status, statuses);
@@ -645,6 +649,9 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       }
       set("status", before.status, status.key);
       settled = status.key === "paid" || status.key === "done" || status.key === "deposit_paid";
+      const followUp = followUpAfterStatus({ to: status.key, requested: change.followUpDate, stored: before.follow_up_date, today: todayIso() });
+      if (!followUp.ok) throw new UserError(followUp.error);
+      followUpDate = followUp.followUpDate;
     }
     if (change.assignedTo !== undefined && change.assignedTo !== before.assigned_to) {
       if (change.assignedTo !== null && !(await repsOf(company)).some((p) => p.id === change.assignedTo)) {
@@ -652,9 +659,9 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       }
       set("assigned_to", before.assigned_to, change.assignedTo);
     }
-    if (change.followUpDate !== undefined) {
-      if (change.followUpDate !== null && !DAY.test(change.followUpDate)) throw new UserError("The follow-up date is not a valid day.");
-      set("follow_up_date", before.follow_up_date, change.followUpDate);
+    if (followUpDate !== undefined) {
+      if (followUpDate !== null && !DAY.test(followUpDate)) throw new UserError("The follow-up date is not a valid day.");
+      set("follow_up_date", before.follow_up_date, followUpDate);
     }
     if (change.notes !== undefined) {
       const notes = change.notes.trim();
@@ -776,8 +783,11 @@ export async function bulkUpdateCases(
       const statuses = await statusesOf(company);
       const status = statusOf(change.status, statuses);
       if (!status || !status.isActive) throw new UserError("Unknown status - reload the screen.");
-      if (status.key === "future") throw new UserError(`"${status.label}" names a tour and a season - set it on each card.`);
+      const blocker = bulkStatusBlocker(status.key, status.label);
+      if (blocker) throw new UserError(blocker);
       patch.status = status.key;
+      // paid has nothing left to follow up (Alon 22.10)
+      if (status.key === "paid") patch.follow_up_date = null;
       // the same rule as one case: a closing status says why, one reason for the whole selection
       if (needsCloseReason(status.key, statuses)) {
         const bookings = await liveBookingsOf(company, unique);
@@ -896,7 +906,7 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
         follow_up_date: input.followUpDate || null,
         departure_id: departure?.id ?? null,
         package_id: departure?.package_id ?? null,
-        ...(customer ? { customer_id: customer.id, acc_num: customer.acc_num } : {}),
+        ...(customer ? { customer_id: customer.id } : {}),
     };
     const insert = (row: typeof values | Omit<typeof values, "notes_at">) => supabaseTyped.from("leads").insert(row).select("id, case_no").single();
     let { data: created, error } = await insert(values);
@@ -1922,7 +1932,6 @@ export async function updateCustomer(id: string, change: CustomerChange): Promis
       if (value && !NATIONAL_ID.test(value)) throw new UserError("A national id is 5 to 9 digits.");
       set("id_number", before.id_number, value || null);
     }
-    if (change.accNum !== undefined) set("acc_num", before.acc_num, clean(change.accNum, ACC_MAX));
     if (change.phones !== undefined) {
       const checked = cleanPhones(Array.isArray(change.phones) ? change.phones : []);
       if (!checked.ok) throw new UserError(checked.error);
@@ -1956,7 +1965,6 @@ export async function updateCustomer(id: string, change: CustomerChange): Promis
     }
     if (patch.email !== undefined) cardPatch.email = patch.email;
     if (patch.id_number !== undefined) cardPatch.id_number = patch.id_number;
-    if (patch.acc_num !== undefined) cardPatch.acc_num = patch.acc_num;
     if (Object.keys(cardPatch).length) {
       const { error: cardsError } = await supabaseTyped.from("leads").update(cardPatch).eq("company_id", company.id).eq("customer_id", id).is("is_deleted", null);
       if (cardsError) throw new Error(`leads: ${cardsError.message}`);

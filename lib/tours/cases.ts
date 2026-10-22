@@ -814,14 +814,13 @@ export interface CustomerInfo {
 }
 export const customerName = (c: Pick<CustomerInfo, "firstName" | "lastName">): string => [c.firstName, c.lastName].filter(Boolean).join(" ");
 
-/** What a customer changes; a field left out is not touched. Names, e-mail, id and ACC are copied to every card. */
+/** What a customer changes; a field left out is not touched. Names, e-mail and id are copied to every card (ACC NUM is the card's own, 22.10). */
 export interface CustomerChange {
   firstName?: string | null;
   lastName?: string | null;
   phones?: string[];
   email?: string | null;
   idNumber?: string | null;
-  accNum?: string | null;
 }
 
 /** What a visitor typed on a site form - the name, phone and e-mail it was sent as. */
