@@ -48,10 +48,15 @@ const ACTION_ERROR_HE: Record<string, string> = {
   // The fix wave (21.10): createRun / resumeRun's one-run-per-subject rule, the parse cap, the conditional
   // soft delete, the two-city distance rule, approveAll's skipped re-check, a ready item whose event is gone.
   run_in_progress: "כבר רצה העלאה על הנושא הזה - חכו שתסתיים או עצרו אותה",
-  rate_limited: "יותר מדי פענוחים בזמן קצר - נסו שוב בעוד כמה דקות, או מלאו את התוכנית ידנית",
+  // The parse and the round "אלון 1" dialogs share one per-person cap on the agent's calls.
+  rate_limited: "יותר מדי קריאות ל-AI - נסו בעוד כמה דקות",
   event_live: "האירוע כבר באתר - לא נמחק",
   too_far: `העיר הזו רחוקה מדי מהאולם (מעל ${FAR_VENUE_KM} ק"מ) - בחרו עיר קרובה יותר`,
   recheck_skipped: "כל האישורים נשמרו; בדיקת הזמינות לא הספיקה ותרוץ בסנכרון המחירים הבא",
+  // Round "אלון 1": the classification dialog and "learn from this event".
+  svg_failed: "לא הצלחתי לקרוא את המפה של הספק",
+  adopt_failed: "לא הצלחתי לאמץ את המפה",
+  no_template: "לאירוע הזה אין תבנית אולם ללמוד ממנה",
 };
 
 /** The composer's words for its `bad_input` (the brief is empty) - the generic line belongs to the board. */
