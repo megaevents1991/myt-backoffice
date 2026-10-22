@@ -246,8 +246,9 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
               disabled={busy === row.original.id}
               title={row.original.closeReason ? `Closed because: ${row.original.closeReason}` : undefined}
               future={{ packageId: row.original.packageId, season: row.original.season }}
-              onChange={(status, closeReason, pick) =>
-                void save(row.original, { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}) })
+              deposit={{ departureDate: row.original.departureDate, followUpDate: row.original.followUpDate }}
+              onChange={(status, closeReason, pick, followUpDate) =>
+                void save(row.original, { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}), ...(followUpDate ? { followUpDate } : {}) })
               }
             />
             <StageBar status={row.original.status} hasOrder={!!row.original.bookingRef || row.original.travelers > 0} statuses={statuses} className="flex" />

@@ -27,6 +27,7 @@ import {
   SEASON_MAX,
   STATUS_COLOR_CLASSES,
   TODAY_REASON_LABELS,
+  addDaysIso,
   caseName,
   cardStage,
   checkCloseReason,
@@ -35,6 +36,7 @@ import {
   daysLate,
   needsCloseReason,
   statusOf,
+  suggestDepositFollowUp,
   waLink,
   whatsappAppLink,
   type BookingPhase,
@@ -46,7 +48,7 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { EMPTY, fmtDate } from "@/lib/tours/format";
+import { EMPTY, fmtDate, todayIso } from "@/lib/tours/format";
 
 /** Value of the rep picker for "nobody". */
 export const NOBODY = "nobody";
@@ -407,10 +409,70 @@ export function FutureDialog({
 }
 
 /**
+ * "שולם מקדמה" asks for the day the balance is followed up on (Alon 22.10): the card comes back to TODAY then.
+ * Starts from the card's own day when it is still ahead, else 30 days before the departure (never before today),
+ * else a week from today (suggestDepositFollowUp). The server refuses the status without a day.
+ */
+export function DepositDialog({
+  open,
+  initial,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  initial: { departureDate: string | null; followUpDate: string | null };
+  onCancel: () => void;
+  onConfirm: (followUpDate: string) => void;
+}) {
+  const today = todayIso();
+  const suggested = suggestDepositFollowUp(initial.departureDate, today);
+  const [day, setDay] = useState<string>(initial.followUpDate && initial.followUpDate >= today ? initial.followUpDate : suggested);
+  const ok = isFollowUpDate(day) && day >= today;
+  const quick: { label: string; day: string }[] = [
+    { label: "Tomorrow", day: addDaysIso(today, 1) },
+    { label: "In a week", day: addDaysIso(today, 7) },
+    ...(initial.departureDate && initial.departureDate >= today ? [{ label: "30 days before departure", day: suggested }] : []),
+  ];
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
+      <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle>
+            Deposit paid <span dir="rtl">(שולם מקדמה)</span>
+          </DialogTitle>
+          <DialogDescription>The balance is still owed - which day do you follow up on it? The card comes back to TODAY then.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <label className="grid gap-1 text-sm">
+            <span className="text-xs text-muted-foreground">Follow-up day</span>
+            <Input type="date" dir="ltr" min={today} value={day} onChange={(e) => setDay(e.target.value)} autoFocus />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {quick.map((q) => (
+              <Button key={q.label} type="button" size="sm" variant={day === q.day ? "default" : "outline"} onClick={() => setDay(q.day)}>
+                {q.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
+            Keep the status
+          </Button>
+          <Button disabled={!ok} onClick={() => ok && onConfirm(day)}>
+            Save as deposit paid
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
  * The company's active statuses, plus the case's own one when it was switched off since. A status
  * that closes the case without a deal (Not relevant, Cancelled, ...) first asks why - the change is
  * saved only with a reason (Alon 15.10); cancelling the question keeps the old status. "ליד עתידי"
- * first asks for the tour and the season (Nir 19.10).
+ * first asks for the tour and the season (Nir 19.10); "שולם מקדמה" for the follow-up day (Alon 22.10).
  */
 export function StatusSelect({
   value,
@@ -420,27 +482,44 @@ export function StatusSelect({
   className,
   title,
   future,
+  deposit,
 }: {
   value: string;
   statuses: readonly CaseStatus[];
   disabled?: boolean;
-  onChange: (status: string, closeReason?: string, pick?: FuturePick) => void;
+  onChange: (status: string, closeReason?: string, pick?: FuturePick, followUpDate?: string) => void;
   className?: string;
   /** Hover text - the close reason of a closed case. */
   title?: string;
   /** The card's tour and season - what the future-lead question starts from. */
   future?: { packageId: string | null; season: string | null };
+  /** The card's departure and follow-up day - what the deposit question starts from. */
+  deposit?: { departureDate: string | null; followUpDate: string | null };
 }) {
   const [asking, setAsking] = useState<string | null>(null);
   const [askingFuture, setAskingFuture] = useState(false);
+  const [askingDeposit, setAskingDeposit] = useState(false);
   const offered = statuses.filter((s) => s.isActive || s.key === value);
   const pick = (next: string) => {
     if (needsCloseReason(next, statuses)) return setAsking(next);
     if (next === "future") return setAskingFuture(true);
+    // "שולם מקדמה" names the day the balance is chased (Alon 22.10)
+    if (next === "deposit_paid") return setAskingDeposit(true);
     onChange(next);
   };
   return (
     <>
+      {askingDeposit && (
+        <DepositDialog
+          open
+          initial={deposit ?? { departureDate: null, followUpDate: null }}
+          onCancel={() => setAskingDeposit(false)}
+          onConfirm={(followUpDate) => {
+            setAskingDeposit(false);
+            onChange("deposit_paid", undefined, undefined, followUpDate);
+          }}
+        />
+      )}
       {/* mounted only while asked: it reads the tours then, and starts from the card's own tour and season */}
       {askingFuture && (
         <FutureDialog

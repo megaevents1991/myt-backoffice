@@ -366,8 +366,8 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
     }
     return result.success;
   };
-  const saveStatus = (status: string, closeReason?: string, pick?: FuturePick) =>
-    void save({ status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}) });
+  const saveStatus = (status: string, closeReason?: string, pick?: FuturePick, followUpDate?: string) =>
+    void save({ status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}), ...(followUpDate ? { followUpDate } : {}) });
 
   const addTravelers = (extra: ReservationPrefill = {}) => {
     setTravelersPrefill({
@@ -933,6 +933,7 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
                 statuses={statuses}
                 disabled={busy}
                 future={{ packageId: row.packageId, season: row.season }}
+                deposit={{ departureDate: row.departureDate, followUpDate: row.followUpDate }}
                 onChange={saveStatus}
                 className="w-full justify-start border border-input px-2"
               />
@@ -1060,6 +1061,7 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
               statuses={statuses}
               disabled={busy}
               future={{ packageId: row.packageId, season: row.season }}
+              deposit={{ departureDate: row.departureDate, followUpDate: row.followUpDate }}
               onChange={saveStatus}
               className="w-full justify-start border border-input px-2"
             />
