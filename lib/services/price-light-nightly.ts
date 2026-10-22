@@ -329,8 +329,9 @@ async function revalidateMain(): Promise<void> {
   const hotelServiceUrl = process.env.NEXT_SECRET_HOTEL_SERVICE_URL;
   const revalidationSecret = process.env.NEXT_SECRET_REVALIDATION_SECRET;
   if (!hotelServiceUrl || !revalidationSecret) return;
-  const parallelServiceUrl =
-    process.env.NEXT_SECRET_PARALLEL_HOTEL_SERVICE_URL || "https://mondial2026.mega-events.co.il";
+  // A second site is pinged only when the env names one (the mondial2026 branch site, the old default
+  // here, was taken off its domain on 22.10.2026); the dedupe below drops the duplicate primary.
+  const parallelServiceUrl = process.env.NEXT_SECRET_PARALLEL_HOTEL_SERVICE_URL || hotelServiceUrl;
 
   const targets = [
     { name: "primary", baseUrl: hotelServiceUrl },
