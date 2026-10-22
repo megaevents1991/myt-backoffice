@@ -115,9 +115,13 @@ export type LearnPreview =
   | { ok: true; learned: { zones: number; newZones: number; dropped: string[]; descriptions: number }; siblings: number }
   | { ok: false; kind: string };
 
-/** `proposeTeamNames`: the names dialog's rows, and how many events take their name from LiveTickets. */
+/**
+ * `proposeTeamNames`: the names dialog's rows; `renamable` = the built shows a confirm gives a Hebrew name with
+ * no row to fill (the stored name has no Hebrew letter, `eventNames` now has one - ruling R24); `namesTask` = the
+ * run's names task is still open. Either lets the dialog send a `[]` confirm.
+ */
 export type NamesProposeResult =
-  | { ok: true; rows: TeamRow[]; liveNamed: number; ai: { used: boolean; reason: string | null; problems: string[] } }
+  | { ok: true; rows: TeamRow[]; renamable: number; namesTask: boolean; ai: { used: boolean; reason: string | null; problems: string[] } }
   | { ok: false; kind: string; message?: string };
 
 /** `createTeamsAndRename`: teams created and events renamed. */

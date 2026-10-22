@@ -1,6 +1,7 @@
 // The tour uploader's two newer model calls (agent #3, lib/agents/tour-uploader.agent.ts), next to the
 // brief parse (lib/services/tour-uploader-parse.ts) and in exactly its discipline: `agentEnabled` else
-// `off`, the run's call budget, the definition's timeout with `maxRetries: 0`, a forced NON-strict tool
+// `off`, the run's call budget, a timeout (the definition's; `classify_venue` its own CLASSIFY_TIMEOUT_MS,
+// ruling R28) with `maxRetries: 0`, a forced NON-strict tool
 // call, `effort: "low"`, `stop_reason === "max_tokens"` is a failure, every call that got an answer is
 // audited as `agent.call`, and nothing here throws - every failure is a typed outcome the action turns
 // into "fill it in by hand".
@@ -28,7 +29,7 @@ import { CLASSIFY_LESSON_SOURCES, NAMES_LESSON_SOURCES } from "@/lib/agents/tour
 import type { AgentDefinition } from "@/lib/agents/types";
 import { logAudit } from "@/lib/audit";
 import { defuse, isTimeoutError, lessonsFence, orNone, type PlanAnswer } from "@/lib/services/tour-uploader-parse";
-import { parseClassification, ZONE_LABEL_MAX, type ProposedRow } from "@/lib/uploader/classify";
+import { CLASSIFY_TIMEOUT_MS, parseClassification, ZONE_LABEL_MAX, type ProposedRow } from "@/lib/uploader/classify";
 import { parseTeamNames, TEAM_NAME_EN_MAX, TEAM_NAME_HE_MAX, type ProposedName } from "@/lib/uploader/team-names";
 import { ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
 import type { SubjectKind } from "@/types/uploader.types";
@@ -77,6 +78,8 @@ async function askAgent(
     call: "classify_venue" | "name_teams";
     tool: Anthropic.Tool;
     maxTokens: number;
+    /** The call's own timeout; absent = the agent definition's `timeoutMs`. */
+    timeoutMs?: number;
     sources: string[];
     nothingToAsk: string | null;
     prompt: (def: AgentDefinition, lessons: string[], taught: string[]) => { system: string; user: string };
@@ -97,7 +100,7 @@ async function askAgent(
     ]);
     const { system, user } = spec.prompt(def, lessons, taught);
     // anthropicKey() rather than the raw env var: agentEnabled() already proved it is a real key.
-    const client = new Anthropic({ apiKey: anthropicKey() ?? undefined, timeout: def.timeoutMs, maxRetries: 0 });
+    const client = new Anthropic({ apiKey: anthropicKey() ?? undefined, timeout: spec.timeoutMs ?? def.timeoutMs, maxRetries: 0 });
     const res = await client.messages.create({
       model,
       max_tokens: spec.maxTokens,
@@ -262,6 +265,8 @@ export async function classifyVenueWithAgent(input: ClassifyInput, budget?: Agen
       call: CLASSIFY_TOOL_NAME,
       tool: CLASSIFY_TOOL,
       maxTokens: CLASSIFY_MAX_TOKENS,
+      // ~2.5K Hebrew output tokens for a big stadium - more than the agent's 20 s (ruling R28).
+      timeoutMs: CLASSIFY_TIMEOUT_MS,
       sources: CLASSIFY_LESSON_SOURCES,
       nothingToAsk: input.categories.length === 0 ? "categories: empty" : null,
       prompt: (def, lessons, taught) => classifyPrompt(def, lessons, taught, input),

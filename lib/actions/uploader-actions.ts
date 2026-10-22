@@ -26,9 +26,11 @@
  *   query string (`.eq` / `.in` values only).
  * - Every audit row carries `metadata.agent: "tour-uploader"` (what the agent learns from).
  *
- * This file holds ONLY the exported actions. Their reads and writes live in
- * lib/services/uploader-store.ts (not "use server"), the pure rules in lib/uploader/run-rules.ts
- * (selftested), the result shapes in lib/uploader/action-types.ts.
+ * Besides the exported actions this file holds, for now, their private orchestration helpers (the venue
+ * rewrite, the names context, the template write - none of them exported, so none is an endpoint); a move
+ * of those into a service module may follow. The reads and writes live in lib/services/uploader-store.ts
+ * (not "use server"), the pure rules in lib/uploader/run-rules.ts, classify.ts, team-names.ts (selftested),
+ * the result shapes in lib/uploader/action-types.ts.
  */
 import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
@@ -107,11 +109,14 @@ import {
   cleanConfirmedRows,
   drawingCategories,
   dropRule,
+  FIRST_CONFIRM_NEEDS_NAME,
   forgetUnconfirmed,
+  isAppliedState,
+  isFixedByHand,
   proposalRows,
+  readyToConfirm,
   templateFromEvent,
   templateFromRows,
-  ticketsFixedByHand,
   ZONE_LABEL_MAX,
   type CategoryInput,
   type DrawingCategory,
@@ -562,13 +567,14 @@ export async function getRun(runId: string, opts?: { people?: boolean }): Promis
 
   const rows = await readEditRows([...new Set(stored.filter(hasBuiltEvent).map((i) => i.event_id))]);
   const edited: Record<string, boolean> = {};
-  // A person arranged this show's TixStock tickets in the editor (zones / descriptions / categories): the panel offers "learn from it".
+  // A person arranged this show's TixStock tickets in the editor (zones / descriptions / categories): the panel
+  // offers "learn from it" - until the show has taught the venue (`taught_venue`, ruling R20).
   const fixedByHand: Record<string, boolean> = {};
   const items = stored.map((item) => {
     if (rows === null || !hasBuiltEvent(item)) return item;
     const row = rows.get(item.event_id) ?? null;
     edited[item.id] = editDiff(item.payload, row).length > 0;
-    fixedByHand[item.id] = ticketsFixedByHand(item.payload, row);
+    fixedByHand[item.id] = isFixedByHand(item, row);
     // Deleted (or gone) meanwhile: not approvable - approve would answer `event_gone` anyway.
     if (!row) return { ...item, blockers: [...(item.blockers ?? []), EVENT_GONE_BLOCKER] };
     return { ...item, blockers: liveBlockers(item.blockers, row) };
@@ -617,7 +623,8 @@ async function missingNamesOf(run: UploaderRun, items: UploaderItem[]): Promise<
  *
  * `applyToSimilar` ("החל גם על N השאלות הדומות בריצה", spec 5.4 / 7): after this item's own answer, the
  * rule it makes (`runRuleOf`) answers every other open question of the run that `applyRuleTo` fits, in
- * board order, through the same per-item path (each audited with `rule_applied: true`), stopping at the
+ * board order, through the same per-item path (each audited with `rule_applied: true, rule_child: true` - a
+ * record the agent does not learn from, M4), stopping at the
  * first database failure - what was answered stays answered. This item's own audit row is written last
  * and carries `rule_applied: true, applied: n` when the rule answered any. `applied` = how many more.
  */
@@ -654,7 +661,8 @@ export async function answerQuestion(
         if (done.kind === "db_error" || done.kind === "split_failed") break;
         continue;
       }
-      await logAnswered(done.audit, { rule_applied: true });
+      // `rule_child`: the record of this answer, never a lesson of its own (M4) - this item's row carries the rule.
+      await logAnswered(done.audit, { rule_applied: true, rule_child: true });
       applied += 1;
     }
   }
@@ -723,7 +731,7 @@ async function answerOne(item: UploaderItem, run: UploaderRun, clean: AnswerInpu
   };
 }
 
-async function logAnswered(audit: Answered["audit"], rule: { rule_applied?: true; applied?: number }): Promise<void> {
+async function logAnswered(audit: Answered["audit"], rule: { rule_applied?: true; applied?: number; rule_child?: true }): Promise<void> {
   await logAudit({ action: "uploader.answered", entityType: "uploader_item", entityId: audit.itemId, metadata: { ...audit.metadata, ...rule } });
 }
 
@@ -986,9 +994,10 @@ export async function rebuildTwoCity(itemId: string, flightCityId?: number | nul
 //
 // Spec 5.2 / 5.5 / 6.3 / 6.5. The rules are pure in lib/uploader/classify.ts; the template is written
 // through the venue-map actions (`saveVenueZones`, `rememberSupplierCategories`, `adoptVenueMap`), the
-// events and items through lib/services/uploader-store.ts. Order of writes, always: the template, then
-// the events, then the items (their payload follows the event, so approve never reads the classification
-// as a staff edit), then the audit rows, then one site refresh. Nothing here writes a price.
+// events and items through lib/services/uploader-store.ts. Order of writes, always: the template, then each
+// event followed at once by its item (the payload follows the event, so approve never reads the
+// classification as a staff edit - ruling R27), then the audit rows, then one site refresh. Nothing here
+// writes a price.
 
 /** A drawing url longer than this is no TixStock S3 url. */
 const SOURCE_URL_MAX = 2_000;
@@ -996,7 +1005,9 @@ const SOURCE_URL_MAX = 2_000;
 const CONFIRM_ROWS_MAX = 300;
 /**
  * A classification (or a learn) stops STARTING event rewrites this long after the action began (the board
- * page's maxDuration is 60 s): the rest are `reached < total`, and a second confirm finishes them.
+ * page's maxDuration is 60 s): the rest are `reached < total`. A second confirm finishes them - the rewrite
+ * skips an event already in the applied state (`isAppliedState`) and every item is written right after its
+ * event (ruling R27), so a cut-off run leaves nothing half-recorded behind it.
  */
 const REWRITE_BUDGET_MS = 40_000;
 /** What reaches the model is capped: a category name, a stored zone label, a show-title hint, a supplier name. */
@@ -1064,12 +1075,20 @@ function messageOf(e: unknown): string {
 const templateLikeOf = (row: VenueTemplateRow | null): TemplateLike | null =>
   row ? { zones: row.zones, supplier_categories: row.supplier_categories } : null;
 
-/** The label the stored template already gives a key, when its mapping points at a zone that exists. */
-function storedLabel(template: TemplateLike | null, key: string): string | null {
+/**
+ * The HEBREW label the stored template already gives a key (its mapping points at a zone that exists, and the
+ * zone's label has a Hebrew letter); null otherwise - an English label (the slug a drawing adoption gives) is
+ * no label (ruling R26), so the key is asked about.
+ */
+function hebrewStoredLabel(template: TemplateLike | null, key: string): string | null {
   const zoneId = template?.supplier_categories.tixstock?.[key];
   const zone = zoneId ? template?.zones.find((z) => z.id === zoneId) : undefined;
-  return zone?.label?.trim() || null;
+  const label = zone?.label?.trim() ?? "";
+  return HEBREW_LETTER.test(label) ? label : null;
 }
+
+/** How many TixStock tickets a list holds - `unzoned_review`'s total, like its count (M6). */
+const tixstockCount = (tickets: EventTicket[]): number => tickets.filter((t) => ticketSupplier(t, "tx_event") === "tixstock").length;
 
 /** The TixStock tickets' category key -> name ("longside lower tier" -> "Longside Lower Tier"), first spelling wins. */
 function tixstockCategoryNames(tickets: EventTicket[]): Map<string, string> {
@@ -1223,7 +1242,8 @@ async function writeTemplate(id: string, update: TemplateUpdate): Promise<{ ok: 
 
 /**
  * A show's warnings once its tickets were classified (ruling R9): the venue warnings decided afresh - none
- * when every ticket has a zone, else `unzoned_review` naming the categories still without one.
+ * when every ticket has a zone, else `unzoned_review` naming the categories still without one. `unzoned` and
+ * `total` both count TixStock tickets only (M6, ruling R17): "N מתוך M" compares like with like.
  */
 function classifiedWarnings(prior: Warning[], unzoned: string[], total: number): Warning[] {
   const kept = prior.filter((w) => !VENUE_WARNINGS.has(w.code));
@@ -1235,20 +1255,34 @@ function classifiedWarnings(prior: Warning[], unzoned: string[], total: number):
 type Rewrite = { eventIds: number[]; reached: number; live: boolean; itemsFailed: number };
 
 /**
- * Spec 6.3 steps 2-3 over the venue's shows, in board order. Step 2: each event's tickets dropped and zoned
- * by the template (`applyClassification`) and written with the template's map - one UPDATE of those two
- * columns; a show whose tickets would ALL be dropped is not written (its card gets `all_dropped`, ruling
- * R12). It stops at the first failed event write, or past REWRITE_BUDGET_MS: `reached` = how many shows it
- * got through. Step 3: each item reached follows its event - venue warnings, the `classified` decision and
- * `payload.tickets_and_rates` / `payload.map_image_url` = what was written - so approve's edit diff never
- * reads the classification as a staff edit. An item write that fails is counted (`itemsFailed`).
+ * Spec 6.3 steps 2-3 over the venue's shows, in board order, one show at a time (ruling R27). Step 2: the
+ * event's tickets dropped and zoned by the template (`applyClassification`, `previous` = the template before
+ * this write, so zoned tickets follow a relabel - ruling R21) and written with the template's map - one
+ * UPDATE of those two columns, skipped when the event is already in that state (`isAppliedState`: a second
+ * confirm goes on where a cut-off one stopped); a show whose tickets would ALL be dropped is not written (its
+ * card gets `all_dropped`, ruling R12). Step 3, right after its event: the item follows it - venue warnings,
+ * the `classified` decision and `payload.tickets_and_rates` / `payload.map_image_url` = what the event now
+ * holds - so approve's edit diff never reads the classification as a staff edit, and a run cut off between
+ * shows leaves no rewritten event whose item looks hand-fixed. It stops at the first failed event write, or
+ * past REWRITE_BUDGET_MS: `reached` = how many shows it got through. An item write that fails is counted.
  */
-async function rewriteVenueItems(targets: BuiltItem[], events: Map<number, EventTicketsRow>, template: AppliedTemplate, started: number): Promise<Rewrite> {
+async function rewriteVenueItems(
+  targets: BuiltItem[],
+  events: Map<number, EventTicketsRow>,
+  template: AppliedTemplate,
+  previous: TemplateLike | null,
+  started: number,
+): Promise<Rewrite> {
   const tpl: TemplateLike = { zones: template.zones, supplier_categories: template.supplier_categories };
-  const patches: { item: BuiltItem; patch: Record<string, unknown> }[] = [];
   const eventIds: number[] = [];
   let reached = 0;
   let live = false;
+  let itemsFailed = 0;
+  const record = async (item: BuiltItem, patch: Record<string, unknown>): Promise<void> => {
+    const written = await transitionItem(item.id, REWRITTEN_STATUSES, patch);
+    if (written === "db_error") itemsFailed += 1;
+    else if (written === "moved") console.warn(`uploader-actions: item ${item.id} left ready / approved meanwhile - its classification was not recorded on it`);
+  };
 
   for (const item of targets) {
     if (Date.now() - started > REWRITE_BUDGET_MS) break;
@@ -1257,36 +1291,28 @@ async function rewriteVenueItems(targets: BuiltItem[], events: Map<number, Event
       reached += 1;
       continue;
     }
-    const applied = applyClassification(row.tickets_and_rates, tpl, template.dropped);
+    const applied = applyClassification(row.tickets_and_rates, tpl, template.dropped, previous);
     if (applied.tickets.length === 0) {
       // The event is NOT rewritten, so its venue warnings stand as they are: `all_dropped` is only added (once).
-      patches.push({ item, patch: { warnings: [...item.warnings.filter((w) => w.code !== "all_dropped"), warning("all_dropped")] } });
+      await record(item, { warnings: [...item.warnings.filter((w) => w.code !== "all_dropped"), warning("all_dropped")] });
       reached += 1;
       continue;
     }
-    if (!(await writeEventClassification(item.event_id, applied.tickets, template.svgUrl))) break;
+    if (!isAppliedState(row, applied.tickets, template.svgUrl)) {
+      if (!(await writeEventClassification(item.event_id, applied.tickets, template.svgUrl))) break;
+      eventIds.push(item.event_id);
+      if (item.status === "approved" || !row.is_hidden) live = true;
+    }
     reached += 1;
-    eventIds.push(item.event_id);
-    if (item.status === "approved" || !row.is_hidden) live = true;
     const zones = new Set(applied.tickets.map((t) => t.zoneId).filter((z): z is string => !!z)).size;
-    patches.push({
-      item,
-      patch: {
-        warnings: classifiedWarnings(item.warnings, applied.unzoned, applied.tickets.length),
-        decisions: [
-          ...item.decisions.filter((d) => d.code !== "classified"),
-          decision("classified", { zones, dropped: applied.dropped.length, unsure: uniqueTexts(applied.unzoned).length }),
-        ],
-        ...(item.payload ? { payload: { ...item.payload, tickets_and_rates: applied.tickets, map_image_url: template.svgUrl } } : {}),
-      },
+    await record(item, {
+      warnings: classifiedWarnings(item.warnings, applied.unzoned, tixstockCount(applied.tickets)),
+      decisions: [
+        ...item.decisions.filter((d) => d.code !== "classified"),
+        decision("classified", { zones, dropped: applied.dropped.length, unsure: uniqueTexts(applied.unzoned).length }),
+      ],
+      ...(item.payload ? { payload: { ...item.payload, tickets_and_rates: applied.tickets, map_image_url: template.svgUrl } } : {}),
     });
-  }
-
-  let itemsFailed = 0;
-  for (const { item, patch } of patches) {
-    const written = await transitionItem(item.id, REWRITTEN_STATUSES, patch);
-    if (written === "db_error") itemsFailed += 1;
-    else if (written === "moved") console.warn(`uploader-actions: item ${item.id} left ready / approved meanwhile - its classification was not recorded on it`);
   }
   return { eventIds, reached, live, itemsFailed };
 }
@@ -1331,9 +1357,11 @@ function rewriteResult(rewrite: Rewrite, total: number, counts: { zones: number;
 
 /**
  * The classification dialog opens: the venue's categories (the drawing's and the built events' tickets),
- * the stored template's labels, the code rule's drops, and - when a category the venue does not drop is
- * not labelled by the template yet - the agent's proposal (`classify_venue`; the labelled ones ride along
- * as `existingLabel`, the dropped ones are never asked about). The per-person AI cap is checked first; the
+ * the stored template's labels, the code rule's drops, and - when a category the venue does not drop has no
+ * HEBREW label in the template yet - the agent's proposal (`classify_venue`). The ask set (ruling R26) = the
+ * categories without a Hebrew label, minus the venue's drops: a Hebrew-labelled one is shown as stored and
+ * not asked about, an English label counts as none (and is never handed over as an existing label for the
+ * model to keep). The per-person AI cap is checked first; the
  * dialog never fails for the AI's sake (spec 5.2, ruling R13): AI off, the cap, an unreadable count, a
  * timeout or a bad answer = the rows open empty (`ai.reason`), the rule's drops applied. `proposed` = the
  * model's raw proposal; the confirm sends back the rows as SHOWN (`rows`).
@@ -1353,21 +1381,17 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
   // What the venue drops - its own list and the code rule, minus what a person kept - is decided: never asked again.
   const kept = new Set(dropped.kept);
   const venueDrops = (key: string): boolean => !kept.has(key) && (dropped.dropped.includes(key) || dropRule(key).drop);
-  const askable = ctx.categories.filter((c) => !venueDrops(c.key));
+  // The ask set: what the venue does not drop and the template has no Hebrew label for.
+  const unlabelled = ctx.categories.filter((c) => !venueDrops(c.key) && hebrewStoredLabel(template, c.key) === null);
 
   let proposed: Map<string, ProposedRow> | null = null;
   let ai: { used: boolean; reason: string | null; problems: string[] } = { used: false, reason: "not_needed", problems: [] };
-  const needsProposal = askable.some((c) => storedLabel(template, c.key) === null);
-  if (needsProposal && skip) {
+  if (unlabelled.length > 0 && skip) {
     ai = { used: false, reason: skip, problems: [] };
-  } else if (needsProposal) {
+  } else if (unlabelled.length > 0) {
     // A key too long to hand over whole is not asked about (its row opens for review): a cut name would not map back to it.
-    const asked = askable.filter((c) => c.key.length <= AI_CATEGORY_MAX);
+    const asked = unlabelled.filter((c) => c.key.length <= AI_CATEGORY_MAX);
     const styleExamples = (await readStyleLabels(sourceUrl, STYLE_EXAMPLES_MAX)).slice(0, STYLE_EXAMPLES_MAX).map((l) => cutText(l, AI_LABEL_MAX));
-    const label = (key: string): string | null => {
-      const stored = storedLabel(template, key);
-      return stored ? cutText(stored, AI_LABEL_MAX) : null;
-    };
     const outcome = await classifyVenueWithAgent(
       {
         venue: cutText(ctx.name, AI_CATEGORY_MAX),
@@ -1379,7 +1403,8 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
           key: c.key,
           sections: c.sections,
           shows: c.shows,
-          existingLabel: label(c.key),
+          // Every asked key is one with no Hebrew label: there is none to keep (an English one must not be kept).
+          existingLabel: null,
         })),
         styleExamples,
       },
@@ -1410,13 +1435,15 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
  * from the client), `proposed` = the rows as the dialog SHOWED them (null = it carried none), `ai` = whether
  * the dialog opened with the agent's proposal (recorded on `uploader.classified`, ruling R14). A venue
  * category the rows leave out is UNSURE (ruling R16): forgotten unless the template already labels it in
- * Hebrew. In order:
+ * Hebrew. A venue with no template needs one NAMED row (ruling R25 - `readyToConfirm`), else `bad_input`
+ * with FIRST_CONFIRM_NEEDS_NAME and nothing is written. In order:
  * 1. the template - adopted first when the venue has none (`adopt_failed` stops here, nothing written),
  *    then its zones, mapping and dropped list written;
- * 2-3. the venue's events rewritten and their items following (`rewriteVenueItems`);
+ * 2-3. the venue's events rewritten, each item following right after its event (`rewriteVenueItems`);
  * 4. `uploader.classified` (the record) and one `uploader.classify_changed` per change (the lessons);
  * 5. the site refreshed once when a live event changed, the price light's list when any did.
- * `reached < total` = the time budget or a failed event write stopped it - a second confirm finishes it.
+ * `reached < total` = the time budget or a failed event write stopped it - a second confirm finishes it (the
+ * events already rewritten are skipped, ruling R27).
  */
 export async function classifyVenue(runId: string, sourceUrl: string, input: unknown): Promise<ClassifyResult> {
   const started = Date.now();
@@ -1434,6 +1461,8 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   if (confirmed === null || confirmed.length === 0) return fail("bad_input");
   const shown = shownRows(input.proposed, allowed);
   if (shown === undefined) return fail("bad_input");
+  // A first confirm adopts the drawing and moves every event onto our copy: with no zone named, nothing would light (ruling R25).
+  if (!ctx.template && !readyToConfirm(confirmed, false)) return { ok: false, kind: "bad_input", message: FIRST_CONFIRM_NEEDS_NAME };
 
   // 1. The template.
   let base: TemplateLike & { id: string; dropped: DroppedCategories };
@@ -1453,8 +1482,8 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   const written = await writeTemplate(base.id, update);
   if (!written.ok) return written;
 
-  // 2-3. The events, then their items.
-  const rewrite = await rewriteVenueItems(ctx.targets, ctx.events, written.template, started);
+  // 2-3. Each event, then its item (zoned tickets follow the template as it stood before this write - `base`).
+  const rewrite = await rewriteVenueItems(ctx.targets, ctx.events, written.template, base, started);
 
   // 4. The record and the lessons.
   const droppedRows = confirmed.filter((r) => r.drop);
@@ -1595,15 +1624,15 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
   const written = await writeTemplate(ctx.template.id, ctx.update);
   if (!written.ok) return written;
 
-  // 2-3. The other shows' events, then their items; then the source's item (its event is the source - untouched).
-  const rewrite = await rewriteVenueItems(targets, events, written.template, started);
+  // 2-3. Each other show's event, then its item; then the source's item (its event is the source - untouched).
+  const rewrite = await rewriteVenueItems(targets, events, written.template, templateLikeOf(ctx.template), started);
   const own = ctx.row.tickets_and_rates;
   const marked = await transitionItem(ctx.item.id, REWRITTEN_STATUSES, {
     // TixStock tickets only, as `applyClassification` counts them (ruling R17: LiveTickets zoning is the editor's board).
     warnings: classifiedWarnings(
       ctx.item.warnings,
       own.filter((t) => ticketSupplier(t, "tx_event") === "tixstock" && !t.zoneId).map((t) => t.category),
-      own.length,
+      tixstockCount(own),
     ),
     decisions: [...ctx.item.decisions.filter((d) => d.code !== "taught_venue"), decision("taught_venue")],
   });
@@ -1701,10 +1730,12 @@ function namesHints(sides: MissingSide[], items: UploaderItem[], kind: "team" | 
 /**
  * The names dialog opens (spec 5.3): every side of the run's shows `teamsHe` does not know (and the subject
  * when it has no page), one `name_teams` call for all of them, the rows (`teamRowsFor`: create / existing /
- * manual), and how many built shows take their Hebrew name from LiveTickets (`liveNamed` - the stored name is
- * English, `eventNames` now answers LiveTickets'). The per-person AI cap is checked first; the dialog never
- * fails for the AI's sake (ruling R13): AI off, the cap, an unreadable count or a failed call = the rows open
- * for a manual fill (`ai.reason`).
+ * manual), how many built shows a confirm renames with no row to fill (`renamable`, ruling R24: a ready /
+ * approved show whose stored name has no Hebrew letter while `eventNames` now has a Hebrew one - from our
+ * teams, a team added in Templates meanwhile, or LiveTickets), and whether the run's names task is still open
+ * (`namesTask`) - either one lets the dialog send a `[]` confirm, which renames, clears `no_hebrew_name` and
+ * closes the task. The per-person AI cap is checked first; the dialog never fails for the AI's sake (ruling
+ * R13): AI off, the cap, an unreadable count or a failed call = the rows open for a manual fill (`ai.reason`).
  */
 export async function proposeTeamNames(runId: string): Promise<NamesProposeResult> {
   const session = await requireAdmin();
@@ -1739,14 +1770,14 @@ export async function proposeTeamNames(runId: string): Promise<NamesProposeResul
   }
 
   const subject = { name_en: cache.subject.name_en, name_he: cache.subject.name_he };
-  const liveNamed = items.filter(isRewritable).filter((i) => {
+  const renamable = items.filter(isRewritable).filter((i) => {
     const sideNames = withSupplierSpellings(cache.teamsHe, [i.show.home_team, i.show.away_team]);
     const names = eventNames(cache.subject.kind, i.show, subject, sideNames, i.show.suppliers.livetickets?.name_heb ?? null);
     const stored = typeof i.payload?.name === "string" ? i.payload.name : "";
-    return names.source === "livetickets" && !HEBREW_LETTER.test(stored);
+    return names.hebrew && !HEBREW_LETTER.test(stored);
   }).length;
 
-  return { ok: true, rows: teamRowsFor(sides, proposed, ctx.teams), liveNamed, ai };
+  return { ok: true, rows: teamRowsFor(sides, proposed, ctx.teams), renamable, namesTask: !!ctx.run.names_task_id, ai };
 }
 
 /** A Postgres unique violation (a taken slug). */
@@ -1815,6 +1846,9 @@ async function createPersonInactive(kind: "team" | "artist", row: ConfirmedTeamR
  *    `named_he` / `name_from_livetickets`); once the subject has a row, `no_team_page` / `no_artist_page`
  *    leave EVERY item of the run that carries them;
  * 4. the run's names task closed, `uploader.renamed`, the site refreshed once when a live event was renamed.
+ * An empty `rows` is a valid confirm (ruling R24 - every side known by other means, or a partial confirm
+ * that already created the teams): nothing is created, steps 2-4 rename what they can, clear
+ * `no_hebrew_name` where it is resolved and close the task.
  */
 export async function createTeamsAndRename(runId: string, rows: unknown): Promise<TeamsResult> {
   await requireAdmin();

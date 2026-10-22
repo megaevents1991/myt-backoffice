@@ -177,12 +177,13 @@ export type UploaderNamesRef = TaskSourceRef & {
 const NAMES_KIND = "uploader_names";
 const NAMES_FOOTER = "ענו בלוח ההעלאה: תן שמות בעברית";
 
-function namesText(count: number): string {
-  return `שמות בעברית חסרים: ${count === 1 ? "קבוצה אחת" : `${count} קבוצות`}`;
+/** "שמות בעברית חסרים: 3 קבוצות" - or "... אמן" on an artist run, whose one missing name is the artist's (T7). */
+function namesText(count: number, artist: boolean): string {
+  return `שמות בעברית חסרים: ${artist ? "אמן" : count === 1 ? "קבוצה אחת" : `${count} קבוצות`}`;
 }
 
-function namesTitle(subject: string, count: number): string {
-  return `${namesText(count)} - ${subject}`;
+function namesTitle(subject: string, count: number, artist: boolean): string {
+  return `${namesText(count, artist)} - ${subject}`;
 }
 
 /**
@@ -210,6 +211,7 @@ export async function openNamesTask(run: UploaderRun, missing: string[]): Promis
   if (open && open.length > 0) return open[0].id;
 
   const subject = run.plan.subject.name_en;
+  const artist = run.plan.subject.kind === "artist";
   const ref: UploaderNamesRef = {
     kind: NAMES_KIND,
     table: "uploader_runs",
@@ -219,9 +221,9 @@ export async function openNamesTask(run: UploaderRun, missing: string[]): Promis
     run_id: run.id,
     subject,
     names: missing,
-    text: namesText(missing.length),
+    text: namesText(missing.length, artist),
   };
-  const taskTitle = namesTitle(subject, missing.length);
+  const taskTitle = namesTitle(subject, missing.length, artist);
   const taskDescription = [...missing, NAMES_FOOTER].join("\n");
   const { data, error } = (await tasks
     .insert({

@@ -518,7 +518,8 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
     // The template can drop EVERY ticket of the show: zero tickets in total is no event (the step-1
     // rule again, after the drop). The skipped card names the drop; no "0 of 0 zoned" line.
     if (tickets.length === 0) return skipped(show, "no_tickets", decisions);
-    decisions.push(decision("zones_from_template", { zoned: tickets.length - unzoned, total: tickets.length }));
+    // Counted, not derived: `unzoned` lists TixStock tickets only (ruling R17), so an unzoned LiveTickets ticket is in neither.
+    decisions.push(decision("zones_from_template", { zoned: tickets.filter((t) => !!t.zoneId).length, total: tickets.length }));
   } else if (tixRef?.venue_map_url) {
     mapImageUrl = tixRef.venue_map_url;
   } else if (liveRow) {

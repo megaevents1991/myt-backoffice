@@ -256,12 +256,12 @@ async function twinCategories(hub: "team" | "artist"): Promise<{ hubId: number |
   return { hubId, leaves: rows };
 }
 
-/** The first roster row named like the brief (main's roster order: by name). A team also matches by club tokens. */
 /** Active rows first, each group in the order read (a stable sort): `pickRow` prefers the live page, then a row made inactive. */
 function activeFirst<R extends { is_active: boolean }>(rows: R[]): R[] {
   return [...rows].sort((a, b) => Number(b.is_active) - Number(a.is_active));
 }
 
+/** The first roster row named like the brief (main's roster order: by name). A team also matches by club tokens. */
 function pickRow<R extends TwinPerson>(roster: R[], plan: UploaderPlan, club: boolean): R | null {
   const wanted = { name: plan.subject.name_he ?? "", name_english: plan.subject.name_en };
   return (
