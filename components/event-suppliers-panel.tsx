@@ -60,6 +60,7 @@ import {
 } from "@/lib/suppliers";
 import {
   newZoneId,
+  ZONE_DESCRIPTION_MAX,
   type VenueMap,
   type VenueZone,
 } from "@/lib/venue-maps/svg-zones";
@@ -630,10 +631,18 @@ export function EventSuppliersPanel({
 
   const savedZones = useMemo(() => venueMap?.zones ?? [], [venueMap?.zones]);
 
-  /** In the list being edited but not (or not so) in the database. */
+  /**
+   * In the list being edited but not (or not so) in the database. The
+   * description counts: none and "" are the same (the server stores neither).
+   */
   const isUnsavedZone = useCallback(
     (zone: VenueZone) =>
-      !savedZones.some((z) => z.id === zone.id && z.label === zone.label),
+      !savedZones.some(
+        (z) =>
+          z.id === zone.id &&
+          z.label === zone.label &&
+          (z.description ?? "").trim() === (zone.description ?? "").trim(),
+      ),
     [savedZones],
   );
 
@@ -2052,19 +2061,39 @@ export function EventSuppliersPanel({
                         );
                       }}
                     />
-                    <Input
-                      dir="rtl"
-                      value={zone.label}
-                      onChange={(e) => {
-                        const label = e.target.value;
-                        setZones((prev) =>
-                          prev.map((z) =>
-                            z.id === zone.id ? { ...z, label } : z,
-                          ),
-                        );
-                        setZonesDirty(true);
-                      }}
-                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <Input
+                        dir="rtl"
+                        value={zone.label}
+                        onChange={(e) => {
+                          const label = e.target.value;
+                          setZones((prev) =>
+                            prev.map((z) =>
+                              z.id === zone.id ? { ...z, label } : z,
+                            ),
+                          );
+                          setZonesDirty(true);
+                        }}
+                      />
+                      <Input
+                        dir="rtl"
+                        className="h-8 text-xs"
+                        title="תיאור ללקוח"
+                        aria-label={`Zone description for ${zone.label}`}
+                        placeholder="שורה מתחת לכותרת הכרטיס באתר"
+                        maxLength={ZONE_DESCRIPTION_MAX}
+                        value={zone.description ?? ""}
+                        onChange={(e) => {
+                          const description = e.target.value || undefined;
+                          setZones((prev) =>
+                            prev.map((z) =>
+                              z.id === zone.id ? { ...z, description } : z,
+                            ),
+                          );
+                          setZonesDirty(true);
+                        }}
+                      />
+                    </div>
                     <span className="w-16 shrink-0 text-xs text-muted-foreground">
                       {zone.sections.length} sections
                     </span>
