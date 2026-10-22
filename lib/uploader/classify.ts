@@ -8,12 +8,14 @@
  *  - `dropRule`, `drawingCategories`, `parseDroppedCategories`: the facts the dialog starts from.
  *  - `parseClassification`, `proposalRows`: the model's proposal checked, and the dialog's rows
  *    (stored label > proposal, the code rule for "away" stands first).
- *  - `cleanConfirmedRows`, `templateFromRows`, `forgetUnconfirmed`, `classificationDiff`: what a person
- *    confirmed -> the final template (zones, mapping, drops; a left-out key is unsure), and what they
- *    changed against the proposal.
- *  - `templateFromEvent`, `ticketsFixedByHand`: the same template learned from one event a person
- *    arranged in the editor.
- *  - `applyClassification`: drop + zone a list of tickets by the template (confirm AND build).
+ *  - `cleanConfirmedRows`, `readyToConfirm`, `templateFromRows`, `forgetUnconfirmed`, `classificationDiff`:
+ *    what a person confirmed -> the final template (zones, mapping, drops; a left-out key is unsure), and
+ *    what they changed against the proposal.
+ *  - `templateFromEvent`, `ticketsFixedByHand`, `isFixedByHand`: the same template learned from one event a
+ *    person arranged in the editor.
+ *  - `applyClassification`, `isAppliedState`: drop + zone (and re-sync) a list of tickets by the template
+ *    (confirm, learn AND build), and whether an event already holds that result.
+ * A zone label with no Hebrew letter is no label (ruling R26): never "existing", never spread by a learn.
  *
  * Zones and mappings are MERGED over the existing template: ids are reused per key, zones of keys that
  * are not mentioned stay as they were, a dropped or unsure key loses its zone and its mapping.
@@ -30,16 +32,25 @@ import {
   newZoneId,
   sectionCategory,
   ZONE_DESCRIPTION_MAX,
+  ZONE_LABEL_MAX,
   type SupplierCategoryMap,
   type VenueZone,
 } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import type { EventTicket } from "@/types/app.types";
 
-/** The longest zone label (the ticket card's title) the dialog and the model may give. */
-export const ZONE_LABEL_MAX = 40;
+/** The longest zone label (the ticket card's title) - svg-zones' cap (80, ruling R23), re-exported for the dialog and the actions. */
+export { ZONE_LABEL_MAX };
 /** The longest category name a confirmed row may carry. */
 const CATEGORY_NAME_MAX = 200;
+/**
+ * How long the `classify_venue` call may take (ruling R28) - a big stadium is ~2.5K Hebrew output tokens,
+ * more than the agent's 20 s (which the parse and `name_teams` keep). The dialog's wait bar fills over it.
+ * Here, not in the service: the dialog (a client component) reads it.
+ */
+export const CLASSIFY_TIMEOUT_MS = 40_000;
+/** `classifyVenue`'s refusal of a first confirm with no zone named (ruling R25). */
+export const FIRST_CONFIRM_NEEDS_NAME = "name at least one zone before the first confirm";
 
 const HEBREW_LETTER = /[א-ת]/;
 /** The words that make a stand an away stand. Word-bounded, so "Getaway Lounge" is not one. */
@@ -75,8 +86,10 @@ export type ClassificationRow = CategoryInput &
     ruleDrop: "away" | null;
     /** The drawing has sections for the category. */
     onMap: boolean;
-    /** The stored template's label and description for it, when it has one. */
+    /** The stored template's label and description for it, when it has one IN HEBREW (ruling R26 - a label with no Hebrew letter is no label). */
     existing: { label: string; description: string } | null;
+    /** A stored label with no Hebrew letter (the English slug a drawing adoption gives): the label box's placeholder, never its value; "" = none. */
+    placeholder: string;
     status: "ai" | "rule_drop" | "unsure" | "existing" | "manual";
   };
 
@@ -297,6 +310,9 @@ function existingEntry(template: TemplateLike | null, key: string): { label: str
  * The rows the dialog opens with, one per key. What a row shows, strongest first: the rule drop (unless a
  * person kept that key before), a category the venue already dropped, the stored template entry, the
  * model's proposal, and - with no proposal at all (`null`: AI off or failed) - an empty manual row.
+ * A stored entry counts only with a Hebrew label (ruling R26): an English one (the slug a drawing adoption
+ * gives) is the label box's `placeholder` and the row is the proposal's / a manual one - though a
+ * description stored on it (a person wrote it in the editor) stays the row's description.
  */
 export function proposalRows(
   categories: CategoryInput[],
@@ -310,7 +326,9 @@ export function proposalRows(
   return collapseByKey(categories).map((input) => {
     const { key } = input;
     const ruleDrop = dropRule(key).reason;
-    const existing = existingEntry(template, key);
+    const stored = existingEntry(template, key);
+    const existing = stored && hasHebrew(stored.label) ? stored : null;
+    const placeholder = stored && !existing ? stored.label : "";
     const proposal = proposed?.get(key) ?? null;
     const kept = keptKeys.has(key);
 
@@ -329,6 +347,7 @@ export function proposalRows(
       shown = skippedRow();
       status = "unsure";
     }
+    if (!existing && stored?.description) shown = { ...shown, description_he: stored.description };
 
     if (ruleDrop && !kept) {
       shown = { ...shown, drop: true, drop_reason: ruleDrop, unsure: false };
@@ -338,7 +357,7 @@ export function proposalRows(
       status = "existing";
     }
 
-    return { ...input, ...shown, ruleDrop, onMap: input.sections.length > 0, existing, status };
+    return { ...input, ...shown, ruleDrop, onMap: input.sections.length > 0, existing, placeholder, status };
   });
 }
 
@@ -346,8 +365,10 @@ export function proposalRows(
 
 /**
  * The dialog's answer, checked on the server. `null` when anything is wrong: not a list, a row that is not
- * an object or has a wrongly typed field, a category outside `allowedKeys` or named twice, a label over
- * `ZONE_LABEL_MAX` or a description over `ZONE_DESCRIPTION_MAX`, or a kept, sure row with no label.
+ * an object or has a wrongly typed field, a category outside `allowedKeys` or named twice, a description
+ * over `ZONE_DESCRIPTION_MAX`, or a kept, sure row with no label. A label over `ZONE_LABEL_MAX` is CUT to it
+ * (ruling R23): a stored label longer than the cap is prefilled into the dialog as it is, and must never
+ * make every confirm at that venue fail.
  */
 export function cleanConfirmedRows(raw: unknown, allowedKeys: Set<string>): ConfirmedRow[] | null {
   if (!Array.isArray(raw) || raw.length > allowedKeys.size) return null;
@@ -368,14 +389,26 @@ export function cleanConfirmedRows(raw: unknown, allowedKeys: Set<string>): Conf
     const name = category.trim();
     const key = normalizeSupplierCategory(name);
     if (!name || name.length > CATEGORY_NAME_MAX || !allowedKeys.has(key) || seen.has(key)) return null;
-    const label = label_he.trim();
+    const label = cut(label_he, ZONE_LABEL_MAX);
     const description = description_he.trim();
-    if (label.length > ZONE_LABEL_MAX || description.length > ZONE_DESCRIPTION_MAX) return null;
+    if (description.length > ZONE_DESCRIPTION_MAX) return null;
     if (!drop && !unsure && !label) return null;
     seen.add(key);
     rows.push({ category: name, label_he: label, description_he: description, drop, unsure });
   }
   return rows;
+}
+
+/**
+ * May these confirmed rows be confirmed? With a template (ruling R19): something must be decided - a row
+ * named or dropped. With NO template (ruling R25): a NAMED row (kept, sure, with a label) - the first
+ * confirm adopts the drawing and moves the venue's events onto our copy, and with no zone named (only the
+ * rule's away drop, say) nothing would light on it. The dialog gates its button on this, and
+ * `classifyVenue` refuses a first confirm that fails it (`FIRST_CONFIRM_NEEDS_NAME`).
+ */
+export function readyToConfirm(rows: ConfirmedRow[], hasTemplate: boolean): boolean {
+  const named = rows.some((row) => !row.drop && !row.unsure && row.label_he.trim() !== "");
+  return hasTemplate ? named || rows.some((row) => row.drop) : named;
 }
 
 /**
@@ -479,13 +512,19 @@ export function forgetUnconfirmed(
  * The template an event a person arranged by hand teaches (only TixStock tickets count):
  *  - a ticket with a `zoneId` maps its category to that zone (a zone the template lacks is created, with
  *    the drawing's sections for the category);
- *  - the zone's label becomes the ticket's `zoneLabel` when the template's has no Hebrew letter, or when
- *    the ticket's differs and has one - so a Hebrew label never gives way to a latin one;
+ *  - the zone's label becomes the ticket's `zoneLabel` when that differs and has a Hebrew letter - a label
+ *    with none never replaces another (ruling R26);
  *  - a non-empty ticket `description` becomes the zone's description;
  *  - a category the payload (what the build wrote) had and the event no longer has is a drop - one the
- *    payload never had is not; a zoned ticket of a category the rule drops keeps it (`kept`), and of a
- *    category the venue dropped un-drops it.
- * Everything is merged over `existing`, as `templateFromRows` does. `learned` is what the confirm quotes.
+ *    payload never had is not; a zoned ticket of a category the venue dropped un-drops it;
+ *  - it NEVER keeps a rule-drop (`kept`, ruling R22): adopting the drawing in the editor zones every TixStock
+ *    ticket, the away one included, so a zoned away ticket says nothing about the away rule - only the
+ *    dialog's explicit un-drop keeps one (`templateFromRows`);
+ *  - a key whose zone ends with no Hebrew label is NOT spread (ruling R26): it is not mapped, and its stored
+ *    mapping is forgotten when that also points at a zone with no Hebrew label - the siblings stay unzoned
+ *    for it (the panel keeps asking for a Hebrew name); the zone itself stays (the source event uses it).
+ * Everything is merged over `existing`, as `templateFromRows` does. `learned` is what the confirm quotes
+ * (`zones` = the Hebrew-labelled zones it maps).
  */
 export function templateFromEvent(
   eventTickets: EventTicket[],
@@ -502,12 +541,10 @@ export function templateFromEvent(
   );
   const categoryToZone: Record<string, string> = {};
   const created = new Set<string>();
-  const mapped = new Set<string>();
   const relabelled = new Set<string>();
   const described = new Set<string>();
   const eventKeys = new Set<string>();
   const zonedKeys = new Set<string>();
-  const ruleKept: string[] = [];
 
   for (const ticket of eventTickets) {
     if (!isTixStock(ticket)) continue;
@@ -532,13 +569,11 @@ export function templateFromEvent(
       }
     }
     zonedKeys.add(key);
-    mapped.add(zone.id);
     categoryToZone[key] = zone.id;
-    if (dropRule(key).drop) ruleKept.push(key);
 
     const was = before.get(zone.id) ?? { label: zone.label, description: undefined };
     const ticketLabel = cut(ticket.zoneLabel, ZONE_LABEL_MAX);
-    if (!relabelled.has(zone.id) && ticketLabel && ticketLabel !== was.label && (!hasHebrew(was.label) || hasHebrew(ticketLabel))) {
+    if (!relabelled.has(zone.id) && ticketLabel && ticketLabel !== was.label && hasHebrew(ticketLabel)) {
       zone.label = ticketLabel;
       relabelled.add(zone.id);
     }
@@ -549,6 +584,16 @@ export function templateFromEvent(
     }
   }
 
+  // Ruling R26: a key whose zone has no Hebrew label is not spread to the siblings.
+  const current = tixstockMap(existing);
+  const hebrewZone = (zoneId: string | undefined): boolean => hasHebrew(zones.find((z) => z.id === zoneId)?.label ?? "");
+  const unlabelled: string[] = [];
+  for (const [key, zoneId] of Object.entries(categoryToZone)) {
+    if (hebrewZone(zoneId)) continue;
+    delete categoryToZone[key];
+    if (current[key] && !hebrewZone(current[key])) unlabelled.push(key);
+  }
+
   const payloadNames = new Map<string, string>();
   for (const ticket of payloadTickets) {
     if (!isTixStock(ticket)) continue;
@@ -556,16 +601,17 @@ export function templateFromEvent(
     if (key && !payloadNames.has(key)) payloadNames.set(key, cut(ticketCategory(ticket), CATEGORY_NAME_MAX));
   }
   const eventDropped = [...payloadNames.keys()].filter((key) => !eventKeys.has(key));
+  // Only the dropped keys' zones may go: an unlabelled key's zone stays (the source event points at it).
   zones = withoutOrphanedZones(zones, existing, eventDropped, categoryToZone);
 
   return {
     zones,
     categoryToZone,
-    forget: eventDropped,
+    forget: unique([...eventDropped, ...unlabelled]),
     dropped: unique([...existingDropped.dropped.filter((key) => !zonedKeys.has(key)), ...eventDropped]),
-    kept: unique([...existingDropped.kept.filter((key) => !eventDropped.includes(key)), ...ruleKept]),
+    kept: existingDropped.kept.filter((key) => !eventDropped.includes(key)),
     learned: {
-      zones: mapped.size,
+      zones: new Set(Object.values(categoryToZone)).size,
       newZones: created.size,
       dropped: eventDropped.map((key) => payloadNames.get(key) ?? key),
       descriptions: described.size,
@@ -609,24 +655,69 @@ export function ticketsFixedByHand(
   return false;
 }
 
+/**
+ * The board's "fixed by hand" for one item (`getRun`'s `fixedByHand`, the panel's `fixed` venue row and the
+ * card's learn button): `ticketsFixedByHand`, until the item has taught the venue (ruling R20). A learn never
+ * rewrites its source event, so the payload keeps differing for ever; once the decisions carry `taught_venue`
+ * the item stops counting and the venue row falls back to `new` / `unzoned` by its warnings.
+ */
+export function isFixedByHand(
+  item: { payload: Record<string, unknown> | null; decisions: { code: string }[] },
+  row: { tickets_and_rates: unknown } | null,
+): boolean {
+  if (item.decisions.some((d) => d.code === "taught_venue")) return false;
+  return ticketsFixedByHand(item.payload, row);
+}
+
 // ---- Apply -------------------------------------------------------------------------------------------
 
 /**
- * Drop and zone a list of tickets by a classified venue - the dialog's confirm and the build's ticket step
- * run this same function. A TixStock ticket leaves when its key is in the venue's dropped list or the rule
- * drops its key, unless the key is in `kept`. The rest go through `zoneFromTemplate` (the zone's
- * description lands on an empty one only). `dropped` = the category of each removed key;
+ * A TixStock ticket that already has a zone, brought in step with the template (ruling R21 - the editor's
+ * zones board keeps the same invariant on a save): its `zoneLabel` is the zone's current label; its
+ * `description` follows the zone's when the ticket's is empty or is the one the PREVIOUS template gave that
+ * zone (it came from the template, so it follows it) - one a person typed stays. A zone gone from the
+ * template clears `zoneId` / `zoneLabel` (and a description that came from that zone), so the ticket is zoned
+ * by the mapping like a new one, or listed as unzoned. A ticket already in step is handed back as is.
+ */
+function inStepWithTemplate(ticket: EventTicket, zones: Map<string, VenueZone>, previous: Map<string, VenueZone>): EventTicket {
+  if (!isTixStock(ticket) || !ticket.zoneId) return ticket;
+  const own = (ticket.description ?? "").trim();
+  const fromTemplate = (previous.get(ticket.zoneId)?.description ?? "").trim();
+  const zone = zones.get(ticket.zoneId);
+  if (!zone) {
+    const cleared: EventTicket = { ...ticket };
+    delete cleared.zoneId;
+    delete cleared.zoneLabel;
+    if (own !== "" && own === fromTemplate) cleared.description = "";
+    return cleared;
+  }
+  const description = own === "" || own === fromTemplate ? (zone.description ?? "") : ticket.description;
+  if (ticket.zoneLabel === zone.label && description === ticket.description) return ticket;
+  return { ...ticket, zoneLabel: zone.label, description };
+}
+
+/**
+ * Drop and zone a list of tickets by a classified venue - the dialog's confirm, the learn and the build's
+ * ticket step run this same function. A TixStock ticket leaves when its key is in the venue's dropped list or
+ * the rule drops its key, unless the key is in `kept`. Every TixStock ticket that already has a zone is then
+ * brought in step with the template (`inStepWithTemplate`, ruling R21; `previous` = the template before this
+ * write - the confirm and the learn pass it, the build passes `null`); the rest go through `zoneFromTemplate`
+ * (the zone's description lands on an empty one only). `dropped` = the category of each removed key;
  * `unzoned` = the category of every TIXSTOCK ticket left without a zone. A LiveTickets ticket is never
- * listed: a classification writes the TixStock template only, and zoning LiveTickets is the editor's board
- * (ruling R17) - listing it would keep the show's `unzoned_review` (and the panel's venue row) for ever.
+ * touched nor listed: a classification writes the TixStock template only, and zoning LiveTickets is the
+ * editor's board (ruling R17) - listing it would keep the show's `unzoned_review` (and the panel's venue row)
+ * for ever.
  */
 export function applyClassification(
   tickets: EventTicket[],
   template: TemplateLike,
   dropped: DroppedCategories,
+  previous: TemplateLike | null = null,
 ): { tickets: EventTicket[]; dropped: string[]; unzoned: string[] } {
   const listed = new Set(dropped.dropped);
   const kept = new Set(dropped.kept);
+  const zonesById = new Map(template.zones.map((zone) => [zone.id, zone]));
+  const previousById = new Map((previous?.zones ?? []).map((zone) => [zone.id, zone]));
 
   const staying: EventTicket[] = [];
   const removed = new Map<string, string>();
@@ -636,7 +727,7 @@ export function applyClassification(
       if (!removed.has(key)) removed.set(key, ticket.category);
       continue;
     }
-    staying.push(ticket);
+    staying.push(inStepWithTemplate(ticket, zonesById, previousById));
   }
 
   const zoned = zoneFromTemplate(staying, "tx_event", template);
@@ -645,6 +736,30 @@ export function applyClassification(
     dropped: [...removed.values()],
     unzoned: zoned.filter((ticket) => isTixStock(ticket) && !ticket.zoneId).map((ticket) => ticket.category),
   };
+}
+
+/** A value with every object's keys in order, so two equal values print alike whatever order their keys came in. */
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedKeys);
+  if (!isObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, sortedKeys(value[key])]),
+  );
+}
+
+/**
+ * Is this event already in the state a classification would write (ruling R27): the same map and the same
+ * tickets, deep (key order aside)? The rewrite skips such an event, so a second confirm after a cut-off one
+ * goes on where the first stopped instead of rewriting what is done.
+ */
+export function isAppliedState(
+  row: { tickets_and_rates: EventTicket[]; map_image_url: string | null },
+  tickets: EventTicket[],
+  mapUrl: string,
+): boolean {
+  return row.map_image_url === mapUrl && JSON.stringify(sortedKeys(row.tickets_and_rates)) === JSON.stringify(sortedKeys(tickets));
 }
 
 // ---- What a person changed ---------------------------------------------------------------------------

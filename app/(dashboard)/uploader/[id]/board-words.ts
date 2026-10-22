@@ -361,7 +361,8 @@ export const STATUS_REVIEW = "לבדיקה (יישאר בלי זון)";
 export const STATUS_DROPPED = "נפסל";
 export const STATUS_DROPPED_AI = (away: boolean): string => (away ? "נפסל: יציע אוהדי חוץ (הצעת ה-AI)" : "נפסל (הצעת ה-AI)");
 export const STATUS_DROPPED_STORED = "נפסל בתבנית האולם";
-export const STATUS_KEPT_AGAINST_RULE = "נשאר למרות הכלל";
+/** A row the away rule drops that is kept - un-dropped now, or kept at an earlier confirm (ruling R22): the hint that it is sold. */
+export const STATUS_KEPT_AGAINST_RULE = "נשמר למרות כלל אוהדי החוץ";
 /** The stored label is often English - isolated, so the " · N הופעות" after it keeps its number (`iso`). */
 export const STATUS_EXISTING = (label: string): string => `בתבנית: ${iso(label)}`;
 export const STATUS_NOT_SOLD = "לא במכירה בריצה הזו";
@@ -371,12 +372,12 @@ export const CLASSIFY_NEEDS_LABEL = "חסר שם לזון - או רוקנו גם
 export const CLASSIFY_EMPTY = "לא נמצאו קטגוריות לסווג באולם הזה.";
 export const CLASSIFY_FAILED = "הסיווג לא נשמר";
 export const CLASSIFY_OPEN_FAILED = "לא הצלחתי לפתוח את הסיווג";
-/** The toast after a confirm: "15 אירועים עודכנו · 7 זונים · 1 נפסל · 1 לבדיקה" (`withUnsure` false: learn-from-event, which has none). */
+/** The toast after a confirm: "15 אירועים עודכנו · 7 זונים · נפסל אחד · 1 לבדיקה" (`withUnsure` false: learn-from-event, which has none). */
 export function CLASSIFY_DONE(r: { events: number; zones: number; dropped: number; unsure: number }, withUnsure = true): string {
   const parts = [
     r.events === 1 ? "אירוע אחד עודכן" : `${r.events} אירועים עודכנו`,
     r.zones === 1 ? "זון אחד" : `${r.zones} זונים`,
-    `${r.dropped} נפסלו`,
+    r.dropped === 1 ? "נפסל אחד" : `${r.dropped} נפסלו`,
   ];
   if (withUnsure) parts.push(`${r.unsure} לבדיקה`);
   return parts.join(" · ");
@@ -402,8 +403,8 @@ export const STATUS_TEAM_EXISTING = "קיימת כבר - ישתמש בה";
 export const STATUS_NAME_SKIPPED = "יידלג - האירועים יישארו עם השם באנגלית";
 export const NAME_NEEDS_HEBREW = "צריך אותיות בעברית";
 export const NAME_NEEDS_ENGLISH = "חסר שם באנגלית";
-export const LIVE_NAMED_LINE = (n: number): string =>
-  n === 1 ? "אירוע אחד יקבל את השם בעברית מלייב טיקטס" : `${n} אירועים יקבלו את השם בעברית מלייב טיקטס`;
+/** How many built shows the confirm gives a Hebrew name with no row to fill (`proposeTeamNames`' `renamable`, ruling R24). */
+export const RENAMABLE_LINE = (n: number): string => (n === 1 ? "אירוע אחד יקבל שם בעברית" : `${n} אירועים יקבלו שם בעברית`);
 export const NAMES_NONE = "אין שמות חסרים בריצה הזו.";
 export const BTN_NAMES_LIVE = "עדכן שמות בעברית";
 export const BTN_CONFIRM_TEAMS = "צור את הקבוצות ועדכן את שמות האירועים";

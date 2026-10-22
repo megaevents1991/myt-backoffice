@@ -550,6 +550,18 @@ assert.equal(
   "a rule flag with no count is not a number to quote",
 );
 assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "X", rule_applied: true, applied: 2 }), null, "the suffix never rescues a row with no answer");
+// A question the rule for the run answered (a sibling of the first item, M4) is the same decision again: the
+// first item's row carries the rule and its reach, the N sibling rows teach nothing - they would fill the quota.
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "Leeds", date: "2027-05-22", answer: "2027-05-22", rule_applied: true, rule_child: true }),
+  null,
+  "a sibling the rule answered (rule_child) is no lesson of its own",
+);
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "London", date: "2027-05-20", answer: "2027-05-21", rule_applied: true, applied: 3, rule_child: false }),
+  "for Eric Clapton in London on 2027-05-20 staff picked 2027-05-21 (pick_date) (a rule for the run, applied to 3 more)",
+  "the first item's rule row is still the lesson",
+);
 
 // Which call reads which source: three lists, every declared source in exactly one of them.
 assert.deepEqual(CLASSIFY_LESSON_SOURCES, ["uploader.classify_changed"]);

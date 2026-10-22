@@ -1,13 +1,18 @@
 // AGENT #3 - the tour uploader ("סוכן העלאת סיורים").
 //
 // Staff type a free-text brief about a tour ("העלה את הסיור של אריק קלפטון באירופה, בלי ברלין, תוסיף
-// 75 דולר"). This agent makes the ONE AI call of the feature: it turns that brief into a plan
-// (types/uploader.types.ts `UploaderPlan`) that a person confirms before anything is built. Finding
-// the shows at TixStock / LiveTickets, placing each near a flight-and-hotel location, tickets, prices
-// and the hidden events themselves are all deterministic code (lib/uploader/*) - the agent never sees
-// a show, never prices and never creates anything. The call lives in
-// lib/services/tour-uploader-parse.ts, next to the answer check (`parsePlanInput`, lib/uploader/plan.ts)
-// that enforces the plan's shape. Spec: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md.
+// 75 דולר"). This agent makes THREE kinds of AI call, each a proposal a person confirms before anything is
+// written:
+//  - the brief -> a plan (types/uploader.types.ts `UploaderPlan`) - lib/services/tour-uploader-parse.ts,
+//    checked by `parsePlanInput` (lib/uploader/plan.ts);
+//  - `classify_venue` (round "אלון 1"): a venue's TixStock ticket categories -> a Hebrew zone label, a
+//    description, a drop / unsure flag each - checked by `parseClassification` (lib/uploader/classify.ts);
+//  - `name_teams` (round "אלון 1"): the run's club names (or the artist) -> a clean English and a Hebrew name -
+//    checked by `parseTeamNames` (lib/uploader/team-names.ts). The two live in lib/services/tour-uploader-classify.ts.
+// Finding the shows at TixStock / LiveTickets, placing each near a flight-and-hotel location, tickets, prices
+// and the hidden events themselves are all deterministic code (lib/uploader/*) - the agent never sees a
+// listing, never prices and never creates anything. Specs: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md,
+// docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md.
 import { FAR_VENUE_KM, MARKUP_MAX, NEAR_LOCATION_KM, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import { emptyPlan } from "@/lib/uploader/plan";
 import type { UploaderPlan } from "@/types/uploader.types";
@@ -96,6 +101,9 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       // stored key (`live:123` / a TixStock id means nothing to the model on its own).
       const answer = text(m?.label) ?? text(m?.text) ?? text(m?.answer) ?? text(m?.key);
       if (!m || !kind || !subject || !answer) return null;
+      // A question the rule for the run answered is the same decision again (M4): the first item's row
+      // carries the rule and how far it reached; its N siblings would only crowd the quota.
+      if (m.rule_child === true) return null;
       // An answer that became a rule for the run (spec 5.4 / 7) decided MORE than one question: say how far it reached.
       const n = m.applied;
       const rule =
@@ -219,13 +227,17 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
     "סוכן העלאת הסיורים נכנס לתמונה כשאיש צוות מקליד בריף חופשי על סיור - בעברית או באנגלית: אמן, קבוצה " +
     "או ליגה, טווח תאריכים, ערים להוציא או להשאיר, מארקאפ שהוא מבקש להוסיף. הוא קורא את הבריף ומחזיר " +
     "תוכנית מובנית אחת (נושא יחיד, טווח, כללי מיקום, מארקאפים, ספקים) שהצוות מאשר או מתקן לפני שנבנה " +
-    "משהו. זו קריאת ה-AI היחידה בפיצ'ר: מציאת ההופעות אצל TixStock ו-LiveTickets, התאמת מיקום לטיסה " +
-    "ומלון, כרטיסים, מחירים ויצירת האירועים (מוסתרים, לבדיקה) הם קוד דטרמיניסטי שהסוכן לא רואה. מה שהבריף " +
-    "לא אומר נשאר null - הוא לא מנחש, והתשובה שלו נבדקת שדה שדה (lib/uploader/plan.ts) לפני שהיא מגיעה לאדם.",
+    "משהו. בלוח הריצה הוא עושה עוד שתי קריאות, כל אחת הצעה שאדם מאשר: שם בעברית ותיאור לכל קטגוריית " +
+    "כרטיסים של אולם (וסימון מה לפסול או מה לא ברור), ושמות בעברית ובאנגלית לקבוצות (או לאמן) שאין להן עמוד. " +
+    "מציאת ההופעות אצל TixStock ו-LiveTickets, התאמת מיקום לטיסה ומלון, כרטיסים, מחירים ויצירת האירועים " +
+    "(מוסתרים, לבדיקה) הם קוד דטרמיניסטי שהסוכן לא רואה. מה שלא נאמר לו נשאר ריק - הוא לא מנחש, וכל תשובה " +
+    "שלו נבדקת שדה שדה (lib/uploader/plan.ts, classify.ts, team-names.ts) לפני שהיא מגיעה לאדם.",
   decides: [
     "איך לפרש את הבריף לתוכנית: נושא יחיד, טווח תאריכים, ערים לכלול או להוציא, משחקי בית או כולם, סבב",
     "אילו מארקאפים הבריף מבקש - רק מספר שנאמר בו במפורש",
     "מה לעשות בהופעה בלי מיקום קרוב לטיסה ומלון: כרטיס בלבד או דילוג - לפי מה שהבריף אומר",
+    "איזה שם בעברית ואיזה תיאור להציע לכל קטגוריית כרטיסים באולם, ומה להציע לפסול (יציע אוהדי חוץ) או לסמן לבדיקה",
+    "איזה שם באנגלית ובעברית להציע לכל קבוצה (או אמן) שחסר לה שם בעברית",
   ],
   neverDoes: [
     "לא קובע, לא מחשב ולא מציע מחיר - מארקאפ הוא רק מספר שהבריף עצמו מציין",
@@ -236,13 +248,17 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
   humanDecides: [
     "אישור התוכנית (או תיקונה) לפני שמתחילה בנייה",
     "תשובה לשאלות שהבונה לא מצליח להכריע לבד - איזו הופעה, איזה תאריך, איזה מיקום",
+    "אישור סיווג הכרטיסים של אולם (שמות, תיאורים, מה נפסל) לפני שהוא נכתב לתבנית ולאירועים",
+    "אישור השמות בעברית לפני שנוצרות קבוצות (לא פעילות) והאירועים מקבלים שם",
     "אישור או דחייה של כל אירוע שנבנה (דחייה דורשת סיבה)",
   ],
   switchEnv: "TOUR_UPLOADER_AI",
   modelEnv: "TOUR_UPLOADER_AI_MODEL",
   defaultModel: "claude-opus-5",
-  // A staff member waits on the plan card while this runs, so the timeout is longer than the
-  // nightly agents' - but there is still no SDK retry: a hung call falls back to the manual form.
+  // A staff member waits on the plan card (or a dialog) while this runs, so the timeout is longer than the
+  // nightly agents' - but there is still no SDK retry: a hung call falls back to the manual form. The
+  // brief and `name_teams` wait this long; `classify_venue` waits CLASSIFY_TIMEOUT_MS (lib/uploader/classify.ts,
+  // 40 s - a big stadium's Hebrew labels are ~2.5K output tokens, ruling R28).
   timeoutMs: 20_000,
   callsPerRun: 3,
   // No confidence gate: the plan is confirmed by a person, and its shape is checked field by field.

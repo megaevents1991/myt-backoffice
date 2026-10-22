@@ -73,7 +73,8 @@ export const DECISION_TEXT = {
   rejected_before: (p) => `נדחתה בריצה #${str(p, "run")} על ידי ${str(p, "by")}${str(p, "reason") === "" ? "" : `: ${str(p, "reason")}`}`,
   question_untasked: (p) => `שאלה ללא משימה - מעל ${str(p, "max")} שאלות בריצה`,
   // Round "אלון 1".
-  classified: (p) => `סווגו ${str(p, "zones")} זונים · ${str(p, "dropped")} נפסלו · ${str(p, "unsure")} לבדיקה`,
+  classified: (p) =>
+    `${Number(p.zones) === 1 ? "סווג זון אחד" : `סווגו ${str(p, "zones")} זונים`} · ${Number(p.dropped) === 1 ? "נפסל אחד" : `${str(p, "dropped")} נפסלו`} · ${str(p, "unsure")} לבדיקה`,
   categories_dropped_by_template: (p) =>
     Number(p.count) === 1
       ? `קטגוריה אחת נפסלה לפי תבנית האולם: ${str(p, "names")}`

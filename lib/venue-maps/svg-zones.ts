@@ -27,6 +27,13 @@ export type VenueZone = {
 /** The longest zone description kept, everywhere a zone is read or written. */
 export const ZONE_DESCRIPTION_MAX = 160;
 
+/**
+ * The longest zone label (the ticket card's title) a template takes: what `zonesFromCategories` cuts a
+ * first label to, what the tour uploader's classification dialog and its confirm cut to (a longer stored
+ * label is cut, never a reason to refuse the confirm).
+ */
+export const ZONE_LABEL_MAX = 80;
+
 /** A zone description as stored: the trimmed text cut to ZONE_DESCRIPTION_MAX, or undefined when nothing is left. */
 export const cleanZoneDescription = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;
@@ -146,7 +153,7 @@ export function zonesFromCategories(
       continue;
     }
     const label =
-      labelFor(key)?.trim().slice(0, 80) ||
+      labelFor(key)?.trim().slice(0, ZONE_LABEL_MAX) ||
       category.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
     const zone: VenueZone = {
       id: newZoneId(key, zones),

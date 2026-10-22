@@ -81,11 +81,17 @@ export type PanelRow = {
   count: number;
   /** What the row's button does: the classification dialog, learn-from-an-edited-event, the names dialog, the warning's own link; null = information only. */
   action: "classify" | "learn" | "names" | "link" | null;
+  /**
+   * A second, lesser button (ruling R20): a `fixed` venue row offers the classification dialog beside
+   * "learn" - a learn can answer `no_template` (nothing adopted the drawing) or leave categories to review,
+   * and the dialog must still be reachable. Absent on every other row.
+   */
+  secondary?: "classify";
   /** A venue row: its drawing, hall name and which of the three forms it is in. */
   venue?: {
     sourceUrl: string;
     name: string;
-    /** new = no template yet; unzoned = a template with categories left to review; fixed = a person arranged one event in the editor. */
+    /** new = no template yet; unzoned = a template with categories left to review; fixed = a person arranged one event in the editor and it has not taught the venue yet (`isFixedByHand`). */
     state: "new" | "unzoned" | "fixed";
     /** `fixed`: the item to learn from (the newest edit); the other edited items are listed under it. */
     fixedItemId: string | null;
@@ -141,6 +147,7 @@ function venueRow(sourceUrl: string, group: Carrier[], carriers: Carrier[], fixe
       ...base,
       text: waiting > 0 ? `${head} · ${shows(waiting)} עדיין בלי זונים` : head,
       action: "learn",
+      secondary: "classify",
       venue: { sourceUrl, name, state: "fixed", fixedItemId: edited[0].id, otherFixedItemIds: edited.slice(1).map((i) => i.id) },
     };
   }

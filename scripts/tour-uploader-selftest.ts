@@ -81,14 +81,19 @@ import {
 } from "@/lib/uploader/team-names";
 import {
   applyClassification,
+  CLASSIFY_TIMEOUT_MS,
   classificationDiff,
   cleanConfirmedRows,
   drawingCategories,
   dropRule,
+  FIRST_CONFIRM_NEEDS_NAME,
   forgetUnconfirmed,
+  isAppliedState,
+  isFixedByHand,
   parseClassification,
   parseDroppedCategories,
   proposalRows,
+  readyToConfirm,
   templateFromEvent,
   templateFromRows,
   ticketsFixedByHand,
@@ -102,7 +107,7 @@ import {
 import { farVenueOffer, warning, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { cardWarnings, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
-import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
+import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX, ZONE_LABEL_MAX as SVG_ZONE_LABEL_MAX } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
 import { nameFragments, searchWindow, subjectPatterns, tixSlices, TIX_SLICES_MAX } from "@/lib/services/uploader-search";
@@ -113,7 +118,7 @@ import { PRICED_PARTY } from "@/lib/tixstock-listings";
 import type { EventTicket } from "@/types/app.types";
 import { ITEM_STATUSES } from "@/types/uploader.types";
 import type { ShowIdentity, UploaderItem, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
-import { creativeSubject, existingEventId } from "@/app/(dashboard)/uploader/[id]/board-words";
+import { CLASSIFY_DONE, creativeSubject, existingEventId, RENAMABLE_LINE } from "@/app/(dashboard)/uploader/[id]/board-words";
 import * as runRules from "@/lib/uploader/run-rules";
 import { TOUR_UPLOADER_AGENT } from "@/lib/agents";
 import { normalizeSupplierCategory } from "@/lib/suppliers";
@@ -3137,8 +3142,8 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     proposed({ unsure: true }),
     "parseClassification: a row that is both dropped and unsure is unsure - the safe side keeps the ticket",
   );
-  const capped = oneAnswer({ label_he: ` ${"א".repeat(60)} `, description_he: "ב".repeat(200) });
-  same([capped?.label_he.length, capped?.description_he.length, ZONE_LABEL_MAX], [40, 160, 40], "parseClassification: labels are cut to 40, descriptions to 160");
+  const capped = oneAnswer({ label_he: ` ${"א".repeat(100)} `, description_he: "ב".repeat(200) });
+  same([capped?.label_he.length, capped?.description_he.length, ZONE_LABEL_MAX], [80, 160, 80], "parseClassification: labels are cut to 80 (ruling R23), descriptions to 160");
   same(
     parseClassification({ categories: [{ category: "Away Fans Section", label_he: "יציע ראשון" }, { category: "away-fans-section", label_he: "יציע שני" }] }, ["away fans section"]).rows.get("away fans section")?.label_he,
     "יציע ראשון",
@@ -3233,7 +3238,6 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     ["a row that is not an object", [row1, "x"]],
     ["an unknown key", [{ ...row1, category: "Mystery Stand" }]],
     ["a duplicate key (another spelling)", [row1, { ...row1, category: "CAT-1" }]],
-    ["a label over the cap", [{ ...row1, label_he: "א".repeat(ZONE_LABEL_MAX + 1) }]],
     ["a description over the cap", [{ ...row1, description_he: "ב".repeat(161) }]],
     ["an empty label on a kept, sure row", [{ ...row1, label_he: "   " }]],
     ["a flag that is not a boolean", [{ ...row1, drop: "yes" }]],
@@ -3457,8 +3461,8 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
   same(
     [keptByEvent.kept, keptByEvent.dropped],
-    [["old kept", "away fans section"], ["cat 7"]],
-    "templateFromEvent: a zoned ticket of a rule-drop category keeps it, and a zoned ticket of a dropped category un-drops it",
+    [["old kept"], ["cat 7"]],
+    "templateFromEvent: a zoned ticket of a rule-drop category never infers `kept` (ruling R22), and a zoned ticket of a dropped category un-drops it",
   );
   same(templateFromEvent([], [], null, [], NO_DROPS).zones, [], "templateFromEvent: no template and nothing zoned is an empty template");
 
@@ -4075,9 +4079,10 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       text: `אולם: ${iso("Craven Cottage")} · אירוע 1231 סודר בעורך · 3 הופעות עדיין בלי זונים`,
       count: 5,
       action: "learn",
+      secondary: "classify",
       venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "fixed", fixedItemId: "f3", otherFixedItemIds: ["f1"] },
     },
-    "runLevelRows: fixed wins over new; the newest edit (by updated_at) is offered, the older one listed under it; the rest still wait",
+    "runLevelRows: fixed wins over new; the newest edit (by updated_at) is offered, the older one listed under it; the rest still wait; classify is offered beside learn (ruling R20)",
   );
   same(runLevelRows(five, { f1: false }, team, [])[0].venue?.state, "new", "runLevelRows: a false flag is not an edit");
   const twoHalls = [mk("g1", [W("new_venue")]), mk("g2", [W("unzoned_tickets")], { map: DRAWING_B, event_id: 55 })];
@@ -4346,7 +4351,9 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const withCopy = warning("unzoned_review", { count: 1, total: 1, categories: "A" }, undefined, { categories: sourceCategories });
   sourceCategories.push("B");
   same(withCopy.categories, ["A"], "warning(): the categories are copied, not aliased");
-  same(decision("classified", { zones: 7, dropped: 1, unsure: 2 }).text, "סווגו 7 זונים · 1 נפסלו · 2 לבדיקה", "classified: zones, dropped, unsure");
+  same(decision("classified", { zones: 7, dropped: 3, unsure: 2 }).text, "סווגו 7 זונים · 3 נפסלו · 2 לבדיקה", "classified: zones, dropped, unsure");
+  same(decision("classified", { zones: 7, dropped: 1, unsure: 2 }).text, "סווגו 7 זונים · נפסל אחד · 2 לבדיקה", "classified: one dropped reads as one (M6)");
+  same(decision("classified", { zones: 1, dropped: 0, unsure: 0 }).text, "סווג זון אחד · 0 נפסלו · 0 לבדיקה", "classified: one zone reads as one");
   same(
     decision("categories_dropped_by_template", { count: 2, names: "Away Fans Section, Visitors" }).text,
     "2 קטגוריות נפסלו לפי תבנית האולם: Away Fans Section, Visitors",
@@ -4528,6 +4535,187 @@ const supplierSvg = ((): typeof import("@/lib/venue-maps/supplier-svg") => {
   check(supplierSvg.isUsableSvg('<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>'), "isUsableSvg: an svg");
   check(!supplierSvg.isUsableSvg("<html><body>Access denied</body></html>") && !supplierSvg.isUsableSvg(""), "isUsableSvg: anything that is not an svg is refused");
   check(supplierSvg.isUsableSvg(`<svg>${"x".repeat(supplierSvg.MAX_SVG_BYTES - 11)}</svg>`) && !supplierSvg.isUsableSvg(`<svg>${"x".repeat(supplierSvg.MAX_SVG_BYTES)}</svg>`), "isUsableSvg: the size cap is MAX_SVG_BYTES");
+}
+
+// ---- Round אלון 1, final fix wave (final-review.md rulings R20-R28, M6) ---------------------------------
+{
+  const tix = (category: string, extra: Partial<EventTicket> = {}): EventTicket => ({
+    id: `t-${category}`,
+    category,
+    price: 100,
+    description: "",
+    colorOnTheMap: "rgb(5, 32, 60)",
+    supplier: "tixstock",
+    ...extra,
+  });
+  const lt = (category: string, extra: Partial<EventTicket> = {}): EventTicket => tix(category, { id: `lt-${category}`, supplier: "livetickets", ...extra });
+  const NONE = { dropped: [], kept: [] };
+  const confirmedRow = (category: string, extra: Partial<ConfirmedRow> = {}): ConfirmedRow => ({ category, label_he: "", description_he: "", drop: false, unsure: false, ...extra });
+
+  // -- R20: an item a learn already taught from is no longer "fixed by hand" ---------------------------------
+  const builtTickets = [tix("Cat 1"), tix("Cat 2")];
+  const editedRow = { tickets_and_rates: [tix("Cat 1", { zoneId: "cat-1" }), tix("Cat 2")] };
+  same(isFixedByHand({ payload: { tickets_and_rates: builtTickets }, decisions: [] }, editedRow), true, "R20 isFixedByHand: an event arranged in the editor is fixed by hand");
+  same(
+    isFixedByHand({ payload: { tickets_and_rates: builtTickets }, decisions: [{ code: "zones_from_template" }, { code: "taught_venue" }] }, editedRow),
+    false,
+    "R20 isFixedByHand: once its decisions carry taught_venue it stops counting as fixed (the exit from the fixed state)",
+  );
+  same(isFixedByHand({ payload: { tickets_and_rates: builtTickets }, decisions: [] }, { tickets_and_rates: builtTickets }), false, "R20 isFixedByHand: an untouched event is not");
+
+  // -- R21: applyClassification re-syncs every zoned TixStock ticket ----------------------------------------
+  const previousTpl: TemplateLike = {
+    zones: [
+      { id: "cat-1", label: "cat 1", sections: [], description: "תיאור ישן" },
+      { id: "old-zone", label: "old", sections: [] },
+      { id: "lost", label: "lost", sections: [] },
+    ],
+    supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "old-zone", "cat 9": "lost" } },
+  };
+  const nextTpl: TemplateLike = {
+    zones: [
+      { id: "cat-1", label: "קטגוריה 1", sections: [], description: "תיאור חדש" },
+      { id: "cat-2", label: "קטגוריה 2", sections: [] },
+    ],
+    supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2" } },
+  };
+  const resync = applyClassification(
+    [
+      tix("Cat 1", { id: "empty", zoneId: "cat-1", zoneLabel: "cat 1", description: "" }),
+      tix("Cat 1", { id: "from-template", zoneId: "cat-1", zoneLabel: "cat 1", description: "תיאור ישן" }),
+      tix("Cat 1", { id: "typed", zoneId: "cat-1", zoneLabel: "cat 1", description: "כתוב ביד" }),
+      tix("Cat 2", { id: "moved", zoneId: "old-zone", zoneLabel: "old" }),
+      tix("Cat 9", { id: "orphan", zoneId: "lost", zoneLabel: "lost" }),
+      lt("VIP", { id: "live", zoneId: "lost", zoneLabel: "lost" }),
+    ],
+    nextTpl,
+    NONE,
+    previousTpl,
+  );
+  same(
+    resync.tickets.map((t) => [t.id, t.zoneId ?? null, t.zoneLabel ?? null, t.description]),
+    [
+      ["empty", "cat-1", "קטגוריה 1", "תיאור חדש"],
+      ["from-template", "cat-1", "קטגוריה 1", "תיאור חדש"],
+      ["typed", "cat-1", "קטגוריה 1", "כתוב ביד"],
+      ["moved", "cat-2", "קטגוריה 2", ""],
+      ["orphan", null, null, ""],
+      ["live", "lost", "lost", ""],
+    ],
+    "R21 applyClassification: a zoned ticket takes its zone's current label; an empty description or the PREVIOUS zone's one follows the new description, a typed one stays; a gone zone is cleared (re-zoned by the mapping when it has one); a LiveTickets ticket is not touched",
+  );
+  same(resync.unzoned, ["Cat 9"], "R21 applyClassification: a ticket whose zone is gone and whose key maps nowhere is unzoned and listed");
+  const keepsSelf = tix("Cat 1", { zoneId: "cat-1", zoneLabel: "קטגוריה 1", description: "תיאור חדש" });
+  check(applyClassification([keepsSelf], nextTpl, NONE, previousTpl).tickets[0] === keepsSelf, "R21 applyClassification: a ticket already in step is handed back as is (no copy)");
+  same(
+    applyClassification([tix("Cat 1", { zoneId: "cat-1", zoneLabel: "קטגוריה 1", description: "תיאור ישן" })], nextTpl, NONE, null).tickets[0].description,
+    "תיאור ישן",
+    "R21 applyClassification: with no previous template (the build) a non-empty description is never replaced",
+  );
+  same(
+    applyClassification(
+      [tix("Cat 1", { zoneId: "cat-1", zoneLabel: "cat 1", description: "תיאור ישן" })],
+      { zones: [{ id: "cat-1", label: "קטגוריה 1", sections: [] }], supplier_categories: { tixstock: { "cat 1": "cat-1" } } },
+      NONE,
+      previousTpl,
+    ).tickets[0].description,
+    "",
+    "R21 applyClassification: the zone lost its description - the one the ticket took from it goes too",
+  );
+
+  // -- R22: learning from an event never infers `kept` --------------------------------------------------------
+  const awayTpl: TemplateLike = { zones: [{ id: "away", label: "Away Fans Section", sections: [] }], supplier_categories: { tixstock: { "away fans section": "away" } } };
+  const learnedAway = templateFromEvent([tix("Away Fans Section", { zoneId: "away", zoneLabel: "יציע אורחים" })], [tix("Away Fans Section")], awayTpl, [], NONE);
+  same(learnedAway.kept, [], "R22 templateFromEvent: an away ticket the editor zoned keeps nothing - the away rule still stands at the venue");
+  same(
+    applyClassification([tix("Away Fans Section")], { zones: learnedAway.zones, supplier_categories: { tixstock: learnedAway.categoryToZone } }, { dropped: learnedAway.dropped, kept: learnedAway.kept }).dropped,
+    ["Away Fans Section"],
+    "R22: a sibling's away ticket is still dropped after the learn",
+  );
+
+  // -- R23: an over-long label is cut, never refused ----------------------------------------------------------
+  same([ZONE_LABEL_MAX, SVG_ZONE_LABEL_MAX], [80, 80], "R23 ZONE_LABEL_MAX: 80, exported from svg-zones beside ZONE_DESCRIPTION_MAX (classify re-exports it)");
+  const longLabel = `${"א".repeat(80)}ב`;
+  same(
+    cleanConfirmedRows([{ category: "Cat 1", label_he: longLabel, description_he: "", drop: false, unsure: false }], new Set(["cat 1"])),
+    [{ category: "Cat 1", label_he: "א".repeat(80), description_he: "", drop: false, unsure: false }],
+    "R23 cleanConfirmedRows: an 81-character label is cut to 80, not refused",
+  );
+
+  // -- R25: with no template the confirm needs a NAMED row --------------------------------------------------
+  const awayDrop = confirmedRow("Away Fans Section", { drop: true });
+  const named = confirmedRow("Cat 1", { label_he: "קטגוריה 1" });
+  const unsureWithLabel = confirmedRow("Cat 2", { label_he: "x", unsure: true });
+  same(readyToConfirm([awayDrop, confirmedRow("Cat 2", { unsure: true })], false), false, "R25 readyToConfirm: no template, the rule's drop alone is not enough");
+  same(readyToConfirm([awayDrop, unsureWithLabel], false), false, "R25 readyToConfirm: no template, an unsure row (even carrying a label) is not named");
+  same(readyToConfirm([awayDrop, named], false), true, "R25 readyToConfirm: no template, one named row is enough");
+  same(readyToConfirm([confirmedRow("Cat 1", { label_he: "   " })], false), false, "R25 readyToConfirm: a blank label is no name");
+  same(readyToConfirm([awayDrop], true), true, "R25 readyToConfirm: with a template the old gate stays - a drop decides");
+  same(readyToConfirm([confirmedRow("Cat 2", { unsure: true })], true), false, "R25 readyToConfirm: with a template, all for review decides nothing");
+  check(FIRST_CONFIRM_NEEDS_NAME === "name at least one zone before the first confirm", "R25 FIRST_CONFIRM_NEEDS_NAME: the server's message");
+
+  // -- R26: a label with no Hebrew letter is unlabelled everywhere --------------------------------------------
+  const englishTpl: TemplateLike = {
+    zones: [
+      { id: "cat-1", label: "Cat 1", sections: [], description: "תיאור שנכתב בעורך" },
+      { id: "cat-2", label: "קטגוריה 2", sections: [] },
+    ],
+    supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2" } },
+  };
+  const cats: CategoryInput[] = [
+    { category: "Cat 1", key: "cat 1", sections: [], shows: 2 },
+    { category: "Cat 2", key: "cat 2", sections: [], shows: 2 },
+  ];
+  const withAi = proposalRows(cats, new Map([["cat 1", { label_he: "יציע ראשון", description_he: "הצעה", drop: false, drop_reason: null, unsure: false }]]), englishTpl, NONE);
+  same(
+    withAi.map((r) => [r.key, r.status, r.existing, r.label_he, r.description_he, r.placeholder]),
+    [
+      ["cat 1", "ai", null, "יציע ראשון", "תיאור שנכתב בעורך", "Cat 1"],
+      ["cat 2", "existing", { label: "קטגוריה 2", description: "" }, "קטגוריה 2", "", ""],
+    ],
+    "R26 proposalRows: an English stored label is no existing label - the proposal's label is the value, the English the placeholder, a stored description kept; a Hebrew one stays 'existing'",
+  );
+  same(
+    proposalRows(cats.slice(0, 1), null, englishTpl, NONE).map((r) => [r.status, r.label_he, r.placeholder]),
+    [["manual", "", "Cat 1"]],
+    "R26 proposalRows: no proposal (AI off) - a manual row, the English only as the placeholder",
+  );
+  const latinLearn = templateFromEvent(
+    [tix("Cat 1", { zoneId: "cat-1", zoneLabel: "Cat One" }), tix("Cat 2", { zoneId: "cat-2", zoneLabel: "קטגוריה 2" })],
+    [tix("Cat 1"), tix("Cat 2")],
+    englishTpl,
+    [],
+    NONE,
+  );
+  same(latinLearn.categoryToZone, { "cat 2": "cat-2" }, "R26 templateFromEvent: a key whose zone has no Hebrew label is not mapped by the learn");
+  same(latinLearn.forget, ["cat 1"], "R26 templateFromEvent: its stored (English) mapping is forgotten, so the siblings are not zoned with it");
+  same(latinLearn.zones.map((z) => [z.id, z.label]), [["cat-1", "Cat 1"], ["cat-2", "קטגוריה 2"]], "R26 templateFromEvent: the English zone itself stays - the source event still points at it");
+  same(latinLearn.learned.zones, 1, "R26 templateFromEvent: only the Hebrew zones count as learned");
+  const latinApplied = applyClassification([tix("Cat 1"), tix("Cat 2")], { zones: latinLearn.zones, supplier_categories: { tixstock: { "cat 2": "cat-2" } } }, NONE, englishTpl);
+  same(latinApplied.unzoned, ["Cat 1"], "R26: a sibling's ticket of that key stays unzoned - the panel keeps asking for a Hebrew name");
+  const keepsHebrewMapping = templateFromEvent(
+    [tix("Cat 9", { zoneId: "cat-1", zoneLabel: "Cat One" })],
+    [tix("Cat 9")],
+    { zones: englishTpl.zones, supplier_categories: { tixstock: { "cat 9": "cat-2" } } },
+    [],
+    NONE,
+  );
+  same([keepsHebrewMapping.categoryToZone, keepsHebrewMapping.forget], [{}, []], "R26 templateFromEvent: a stored mapping to a Hebrew zone is never forgotten for a ticket zoned elsewhere");
+
+  // -- R27: an event already in the applied state is not rewritten ------------------------------------------
+  const MAP = "https://example.supabase.co/storage/v1/object/public/venue-maps/a.svg";
+  const appliedTickets = [tix("Cat 1", { zoneId: "cat-1", zoneLabel: "קטגוריה 1" })];
+  const reordered = appliedTickets.map((t) => JSON.parse(JSON.stringify({ zoneLabel: t.zoneLabel, ...t })) as EventTicket);
+  same(isAppliedState({ tickets_and_rates: reordered, map_image_url: MAP }, appliedTickets, MAP), true, "R27 isAppliedState: the same tickets (key order does not matter) and map");
+  same(isAppliedState({ tickets_and_rates: appliedTickets, map_image_url: "https://tixstock.example/x.svg" }, appliedTickets, MAP), false, "R27 isAppliedState: another map is not applied");
+  same(isAppliedState({ tickets_and_rates: [tix("Cat 1")], map_image_url: MAP }, appliedTickets, MAP), false, "R27 isAppliedState: an unzoned ticket is not applied");
+  same(isAppliedState({ tickets_and_rates: [...appliedTickets, tix("Cat 2")], map_image_url: MAP }, appliedTickets, MAP), false, "R27 isAppliedState: a ticket more is not applied");
+
+  // -- R28 + M6 + R24 words ------------------------------------------------------------------------------------
+  same(CLASSIFY_TIMEOUT_MS, 40_000, "R28 CLASSIFY_TIMEOUT_MS: the classify_venue call (and its wait bar) waits 40 s");
+  same(CLASSIFY_DONE({ events: 15, zones: 7, dropped: 1, unsure: 1 }), "15 אירועים עודכנו · 7 זונים · נפסל אחד · 1 לבדיקה", "M6 CLASSIFY_DONE: one dropped reads as one");
+  same(CLASSIFY_DONE({ events: 1, zones: 1, dropped: 2, unsure: 0 }, false), "אירוע אחד עודכן · זון אחד · 2 נפסלו", "M6 CLASSIFY_DONE: plural drops, no review count after a learn");
+  same([RENAMABLE_LINE(1), RENAMABLE_LINE(4)], ["אירוע אחד יקבל שם בעברית", "4 אירועים יקבלו שם בעברית"], "R24 RENAMABLE_LINE: what the names dialog says a [] confirm renames");
 }
 
 /** The drawing helper's fetch, against a stubbed `fetch` - the error strings are adoptVenueMap's own, unchanged. */
