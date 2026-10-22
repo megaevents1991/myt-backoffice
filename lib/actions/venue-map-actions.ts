@@ -14,6 +14,7 @@ import {
   type VenueMap,
   type VenueZone,
 } from "@/lib/venue-maps/svg-zones";
+import { fetchSupplierSvg, isAdoptableHost } from "@/lib/venue-maps/supplier-svg";
 
 // venue_maps isn't in the generated Database type yet - cast like venue-memory.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,10 +27,6 @@ const db = supabase as any;
 const BUCKET = "public_resources";
 const sourcePath = (id: string) => `venue-maps/${id}/source.svg`;
 const publishedPath = (id: string) => `venue-maps/${id}/map.svg`;
-
-/** Supplier hosts a drawing may be adopted from. */
-const ADOPTABLE_HOSTS = new Set(["tixstock.s3.eu-west-2.amazonaws.com"]);
-const MAX_SVG_BYTES = 2_000_000;
 
 const COLUMNS = "id,name,source_url,svg_url,zones,supplier_categories";
 
@@ -220,25 +217,16 @@ export async function adoptVenueMap(
   } catch {
     return fail("Invalid map URL");
   }
-  if (!ADOPTABLE_HOSTS.has(parsed.hostname)) {
+  if (!isAdoptableHost(sourceUrl)) {
     return fail("This map is not a supplier SVG we can adopt");
   }
 
   const existing = await findByColumn("source_url", sourceUrl);
   if (existing) return { ok: true, data: existing };
 
-  let svg: string;
-  try {
-    const res = await fetch(parsed.toString(), { cache: "no-store" });
-    if (!res.ok) return fail(`Supplier map returned ${res.status}`);
-    svg = await res.text();
-  } catch (error) {
-    console.error("venue-map: source fetch failed", error);
-    return fail("Could not download the supplier map");
-  }
-  if (!svg.includes("<svg") || svg.length > MAX_SVG_BYTES) {
-    return fail("The supplier map is not a usable SVG");
-  }
+  const fetched = await fetchSupplierSvg(sourceUrl);
+  if (!fetched.ok) return fail(fetched.error);
+  const svg = fetched.svg;
   if (listSectionIds(svg).length === 0) {
     return fail("The supplier map has no sections to zone");
   }
