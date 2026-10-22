@@ -582,6 +582,7 @@ const ID_LIKE = /^[0-9a-f-]{6,}$|^\d+$/i;
 const SEGMENT_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
   events: "Events",
+  trips: "Euro Trips",
   reservations: "Reservations",
   tasks: "Tasks",
   marketing: "Marketing Dashboard",

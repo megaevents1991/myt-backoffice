@@ -539,6 +539,60 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     },
   },
   {
+    id: "euro-trips",
+    nav: "/events",
+    productType: "events",
+    howTo: [
+      {
+        title: t("Build a Euro Trip", "לבנות טריפ"),
+        steps: [
+          t("Open [Events](/events) and switch to the \"טריפים (Euro Trip)\" tab, or go straight to [Trips](/events/trips).", "פותחים את [האירועים](/events) ועוברים ללשונית \"טריפים (Euro Trip)\", או ישר ל[טריפים](/events/trips)."),
+          t("Click \"טריפ חדש\" and write a \"כותרת\" (2-80 characters) - the heading of the trip's card on the site.", "לוחצים \"טריפ חדש\" וכותבים \"כותרת\" (2-80 תווים) - הכותרת של כרטיס הטריפ באתר."),
+          t("Under \"אירועים\" search by name (Hebrew or English) or by event number and pick 2 or 3 upcoming events. The × on a chip removes one.", "תחת \"אירועים\" מחפשים לפי שם (עברית או אנגלית) או לפי מספר אירוע ובוחרים 2 או 3 אירועים עתידיים. ה-× על השבב מסיר אחד."),
+          t("\"סדר\": the lower number shows first. Turn \"פעיל\" off to keep the trip here without showing it on the site.", "\"סדר\": המספר הנמוך מוצג קודם. מכבים \"פעיל\" כדי לשמור את הטריפ כאן בלי להציג אותו באתר."),
+          t("\"שמירה\". The site refreshes at once - if it could not, a red \"האתר לא התרענן\" toast says so and the site catches up by itself within the hour.", "\"שמירה\". האתר מתרענן מיד - אם לא הצליח, מופיעה הודעה אדומה \"האתר לא התרענן\" והאתר מתעדכן לבד בתוך שעה."),
+        ],
+      },
+    ],
+    title: t("Euro Trips (staff trips)", "טריפים (Euro Trip)"),
+    intro: t(
+      "A trip is a ready route of 2-3 events with a title you choose. The site's Build Your Euro Trip page shows the staff trips first, in \"סדר\" order, then the routes it builds by itself.",
+      "טריפ הוא מסלול מוכן של 2-3 אירועים עם כותרת שאתם בוחרים. עמוד Build Your Euro Trip באתר מציג קודם את הטריפים שלכם לפי \"סדר\", ואחריהם את המסלולים שהוא בונה לבד.",
+    ),
+    points: [
+      t(
+        "The line under each trip says whether the site will show it: \"לא יוצג באתר: <event> - <reason>\" when an event is deleted, hidden, taken off sale, sold out, already past or not found; \"כבוי - לא מוצג באתר\" when the switch is off; otherwise \"מוצג באתר אם כל האירועים עדיין מתאימים זה לזה\".",
+        "השורה מתחת לכל טריפ אומרת אם האתר יציג אותו: \"לא יוצג באתר: <אירוע> - <סיבה>\" כשאירוע נמחק, מוסתר, הוסר מהמכירה, אזל, כבר עבר או לא נמצא; \"כבוי - לא מוצג באתר\" כשהמתג כבוי; אחרת \"מוצג באתר אם כל האירועים עדיין מתאימים זה לזה\".",
+      ),
+      t(
+        "The site re-checks, by itself, that the events still fit each other (distance and gap between dates, by the Euro Trip settings). A trip that stopped fitting simply disappears from the site - this screen cannot see that, so \"מוצג באתר אם...\" is a promise of \"not ruled out here\", not of \"is live\".",
+        "האתר בודק לבד שהאירועים עדיין מתאימים זה לזה (מרחק ופער בין התאריכים, לפי ההגדרות של Euro Trip). טריפ שהפסיק להתאים פשוט נעלם מהאתר - המסך הזה לא רואה את זה, ולכן \"מוצג באתר אם...\" אומר \"לא נפסל כאן\", לא \"באוויר\".",
+      ),
+      t(
+        "Auto-built routes that hold exactly the same events as a staff trip are not shown twice - the staff trip, with your title, wins. Staff trips show even when the setting for auto-built routes is 0.",
+        "מסלולים שהאתר בונה לבד ומכילים בדיוק אותם אירועים כמו טריפ שלכם לא מוצגים פעמיים - הטריפ שלכם, עם הכותרת שלכם, מנצח. טריפים שלכם מוצגים גם כשההגדרה של מסלולים אוטומטיים היא 0.",
+      ),
+      t(
+        "Any staff member can create, edit and switch trips (editors too). Every change is in the Audit Log.",
+        "כל איש צוות יכול ליצור, לערוך ולהדליק/לכבות טריפים (גם עורכים). כל שינוי נרשם בלוג הביקורת.",
+      ),
+    ],
+    rules: [
+      t(
+        "\"מחיקה\" removes the trip for good (a trip is not an event); the Audit Log keeps what it held. To hide a trip for a while, switch \"פעיל\" off instead.",
+        "\"מחיקה\" מוחקת את הטריפ סופית (טריפ הוא לא אירוע); לוג הביקורת שומר מה היה בו. כדי להסתיר טריפ לזמן מה, מכבים \"פעיל\" במקום.",
+      ),
+      t(
+        "A trip that vanished from the site is not an error: read its status line first (a sold-out or deleted event is the usual reason).",
+        "טריפ שנעלם מהאתר הוא לא תקלה: קודם קוראים את שורת המצב שלו (אירוע שאזל או נמחק הוא הסיבה הרגילה).",
+      ),
+    ],
+    links: [
+      { label: t("Trips", "טריפים"), href: "/events/trips" },
+      { label: t("Events table", "טבלת אירועים"), href: "/events" },
+    ],
+  },
+  {
     id: "pricing",
     nav: "/price-changes",
     productType: "events",

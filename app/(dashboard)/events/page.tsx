@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
+import { EventsSubnav } from "@/components/events/events-subnav";
 import { EventsTable } from "./events-table";
 import { useToast } from "@/hooks/use-toast";
 
@@ -70,6 +71,8 @@ export default function EventsPage() {
           </>
         }
       />
+
+      <EventsSubnav active="events" />
 
       <EventsTable />
     </div>
