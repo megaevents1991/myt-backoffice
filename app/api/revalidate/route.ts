@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { guardAdminRoute } from "@/lib/auth/guards";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   // Triggered from the dashboard (RevalidateButton / events page) - require an
   // authenticated admin so it can't be spammed to cause a cache stampede.
   const denied = await guardAdminRoute();
@@ -9,9 +9,6 @@ export async function GET(request: NextRequest) {
   try {
     // Get the domains and secret from environment variables
     const hotelServiceUrl = process.env.NEXT_SECRET_HOTEL_SERVICE_URL;
-    // A second site is pinged only when the env names one (the mondial2026 branch site, the old
-    // default here, was taken off its domain on 22.10.2026); the dedupe below drops a duplicate.
-    const parallelServiceUrl = process.env.NEXT_SECRET_PARALLEL_HOTEL_SERVICE_URL || hotelServiceUrl;
     const revalidationSecret = process.env.NEXT_SECRET_REVALIDATION_SECRET;
 
     if (!hotelServiceUrl || !revalidationSecret) {
@@ -23,6 +20,10 @@ export async function GET(request: NextRequest) {
         { status: 500 },
       );
     }
+
+    // A second site is pinged only when the env names one (the mondial2026 branch site, the old
+    // default here, was taken off its domain on 22.10.2026); the dedupe below drops a duplicate.
+    const parallelServiceUrl = process.env.NEXT_SECRET_PARALLEL_HOTEL_SERVICE_URL || hotelServiceUrl;
 
     const targets = [
       { name: "primary", baseUrl: hotelServiceUrl },
@@ -110,13 +111,13 @@ export async function GET(request: NextRequest) {
       message: "Pages revalidated successfully on all targets",
       data: successes,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Revalidation error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to revalidate pages",
+        error: error instanceof Error && error.message ? error.message : "Failed to revalidate pages",
       },
       { status: 500 },
     );
