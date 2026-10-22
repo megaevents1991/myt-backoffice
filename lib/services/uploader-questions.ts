@@ -9,6 +9,9 @@
  * completed, the answer appended to the description), `countOpenQuestions` feeds the toast and the
  * menu badge. Every audit row carries `metadata.agent: "tour-uploader"`.
  *
+ * `openNamesTask` raises the run's ONE names task (the Hebrew team / artist names it lacks, spec 7.1
+ * of round "אלון 1"); `closeNamesTask` is the same close as a question's.
+ *
  * Session-free: the server actions that call it own the guard (Task 8).
  */
 // Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
@@ -159,6 +162,100 @@ export async function closeQuestionTask(taskId: string, answerText: string): Pro
     throw new Error(`task close failed: ${error.message}`);
   }
 }
+
+/** `source_ref` of the run's names task: the task-board shape plus the run and the Hebrew names it waits for. */
+export type UploaderNamesRef = TaskSourceRef & {
+  run_id: string;
+  /** The run's subject (English name) - what the toast prints. */
+  subject: string;
+  /** The English names with no Hebrew one (`missingHebrewNames`). */
+  names: string[];
+};
+
+const NAMES_KIND = "uploader_names";
+const NAMES_FOOTER = "ענו בלוח ההעלאה: תן שמות בעברית";
+
+function namesTitle(subject: string, count: number): string {
+  return `שמות בעברית חסרים: ${count === 1 ? "קבוצה אחת" : `${count} קבוצות`} - ${subject}`;
+}
+
+/**
+ * ONE task for the whole run: the teams whose Hebrew name is missing (spec 7.1, round "אלון 1") -
+ * same shape as a question task (source `uploader`, board `ops`, priority `high`, the asker as
+ * assignee, `created_by: null`), but tied to the RUN, so an open task of the same run is reused.
+ * Returns the task id, or null when the lookup / insert failed or nothing is missing (logged -
+ * the run goes on without it, `names_task_id` stays null).
+ */
+export async function openNamesTask(run: UploaderRun, missing: string[]): Promise<string | null> {
+  if (missing.length === 0) return null;
+  const tasks = megaEventsTasks();
+  const { data: open, error: openError } = (await tasks
+    .select("id")
+    .eq("source", SOURCE)
+    .eq("source_ref->>run_id", run.id)
+    .eq("source_ref->>kind", NAMES_KIND)
+    .is("deleted_at", null)
+    .in("status", OPEN_TASK_STATUSES)
+    .limit(1)) as TaskResult<{ id: string }[]>;
+  if (openError) {
+    console.error("uploader-questions: names-task lookup failed", JSON.stringify(openError));
+    return null;
+  }
+  if (open && open.length > 0) return open[0].id;
+
+  const subject = run.plan.subject.name_en;
+  const ref: UploaderNamesRef = {
+    kind: NAMES_KIND,
+    table: "uploader_runs",
+    row_id: run.id,
+    label: `${subject} · שמות בעברית`,
+    url: `/uploader/${run.id}`,
+    run_id: run.id,
+    subject,
+    names: missing,
+  };
+  const taskTitle = namesTitle(subject, missing.length);
+  const taskDescription = [...missing, NAMES_FOOTER].join("\n");
+  const { data, error } = (await tasks
+    .insert({
+      title: taskTitle,
+      description: taskDescription,
+      priority: "high",
+      assignee_id: run.asker_id,
+      created_by: null,
+      source: SOURCE,
+      source_ref: ref,
+      board: "ops",
+    })
+    .select("id")
+    .single()) as TaskResult<{ id: string }>;
+  if (error || !data) {
+    console.error("uploader-questions: names task insert failed", JSON.stringify(error));
+    return null;
+  }
+
+  await notifyTaskAssigned({
+    taskId: data.id,
+    companyId: tasks.companyId,
+    title: taskTitle,
+    description: taskDescription,
+    priority: "high",
+    dueDate: null,
+    sourceRef: ref,
+    assigneeId: run.asker_id,
+    assignerId: null,
+  });
+  await logAudit({
+    action: "uploader.asked",
+    entityType: "uploader_run",
+    entityId: run.id,
+    metadata: { agent: "tour-uploader", run_id: run.id, kind: "names", names: missing, task_id: data.id },
+  });
+  return data.id;
+}
+
+/** The names dialog's confirm closes the run's names task - the same close as a question's, the note says what was named. */
+export const closeNamesTask: (taskId: string, note: string) => Promise<void> = closeQuestionTask;
 
 /**
  * The asker's open uploader questions: how many, and the newest one (its run, subject and text) -

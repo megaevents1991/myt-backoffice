@@ -10,10 +10,11 @@
  */
 // Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
 import "server-only";
-import { supabase, supabaseTyped } from "@/lib/supabase-server";
+import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { normalizeName } from "@/lib/on-tour";
 import { urlSpellings } from "@/lib/services/venue-memory";
+import { parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
 import { priorItemsOf, priorRunScope, type PriorItem, type PriorItemRow, type PriorRunRow } from "@/lib/uploader/shows";
 import { cleanZoneDescription, type SupplierCategoryMap, type VenueMap, type VenueZone } from "@/lib/venue-maps/svg-zones";
 import type { Json } from "@/types/database.types";
@@ -147,22 +148,33 @@ function supplierCategoriesOf(v: Json): SupplierCategoryMap {
 /**
  * The venue template (`venue_maps`) of a supplier drawing, matched on `source_url` in any of the
  * spellings a URL is stored under ("Royal Albert Hall" / "Royal%20Albert%20Hall"). null = a venue
- * we have no template for (the build warns `new_venue`).
+ * we have no template for (the build warns `new_venue`). `dropped` = the categories the venue never
+ * sells and the rule-drops a person kept (`venue_maps.dropped_categories`); a template that has none
+ * reads as empty lists.
  */
-export async function venueMapFor(sourceUrl: string | null): Promise<Pick<VenueMap, "svg_url" | "zones" | "supplier_categories"> | null> {
+export async function venueMapFor(
+  sourceUrl: string | null,
+): Promise<(Pick<VenueMap, "svg_url" | "zones" | "supplier_categories"> & { dropped: DroppedCategories }) | null> {
   const url = (sourceUrl ?? "").trim();
   if (url === "") return null;
   // A spelling holding `"` would break out of PostgREST's quoted `in.(...)` list - a supplier URL never has one.
   const spellings = urlSpellings(url).filter((u) => !u.includes('"'));
   if (spellings.length === 0) return null;
-  const { data, error } = await supabaseTyped
+  // `dropped_categories` is newer than types/database.types.ts (`npm run db:types` after migration
+  // 20261022170000) - the file's boundary cast reads it.
+  const { data, error } = await db
     .from("venue_maps")
-    .select("svg_url,zones,supplier_categories")
+    .select("svg_url,zones,supplier_categories,dropped_categories")
     .in("source_url", spellings)
     .order("updated_at", { ascending: false })
     .limit(1);
   if (error) fail("venue_maps read", error);
   const row = data?.[0];
   if (!row) return null;
-  return { svg_url: row.svg_url, zones: zonesOfTemplate(row.zones), supplier_categories: supplierCategoriesOf(row.supplier_categories) };
+  return {
+    svg_url: row.svg_url ?? null,
+    zones: zonesOfTemplate(row.zones),
+    supplier_categories: supplierCategoriesOf(row.supplier_categories),
+    dropped: parseDroppedCategories(row.dropped_categories),
+  };
 }

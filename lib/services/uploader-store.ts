@@ -52,7 +52,7 @@ const db = supabase as any;
 /** `metadata.agent` of every audit row the uploader writes (what the agent learns from). */
 export const AGENT = "tour-uploader";
 
-const RUN_COLUMNS = "id,created_by,asker_id,brief,plan,plan_ai,status,counts,ai_cost_usd,is_test,error,created_at,updated_at";
+const RUN_COLUMNS = "id,created_by,asker_id,brief,plan,plan_ai,status,counts,ai_cost_usd,is_test,error,names_task_id,created_at,updated_at";
 const ITEM_COLUMNS =
   "id,run_id,position,show,status,mode,location,decisions,warnings,blockers,question,event_id,payload,skip_reason,error,approved_by,approved_at,rejected_reason,rejected_final,created_at,updated_at";
 
@@ -234,6 +234,8 @@ export async function insertRun(row: {
       status: "building",
       counts: row.counts,
       is_test: row.is_test,
+      // The names task needs the run's id, so a run is born without one; `writeNamesTaskId` sets it.
+      names_task_id: null,
       updated_at: row.at,
     })
     .select(RUN_COLUMNS)
@@ -243,6 +245,16 @@ export async function insertRun(row: {
     return null;
   }
   return data;
+}
+
+/** The run's names task (`openNamesTask`) on the run row; false = the write failed (logged). */
+export async function writeNamesTaskId(runId: string, taskId: string | null): Promise<boolean> {
+  const { error } = (await db.from("uploader_runs").update({ names_task_id: taskId }).eq("id", runId)) as DbResult<null>;
+  if (error) {
+    logDb("names task id write", error);
+    return false;
+  }
+  return true;
 }
 
 /** A new run's items (`planRunItems`), all in one insert; null = it failed (the run is marked `error`). */

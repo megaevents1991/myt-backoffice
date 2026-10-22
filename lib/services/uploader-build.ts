@@ -13,7 +13,8 @@
  *                  two-city -> the plan's `without_location` rule. Never a guessed flight city.
  *   3. duplicate - names first, then `existingEventFor` again with the located IATA, under both the
  *                  convention name (music: "Eric Clapton") and the supplier's title.
- *   4. map       - the venue template (`venue_maps`) zones the tickets, else the supplier drawing.
+ *   4. map       - the venue template (`venue_maps`) drops the categories it never sells and zones (and
+ *                  describes) the rest through `applyClassification`, else the supplier drawing.
  *   5. dates     - `calculateSmartDates`.
  *   6. bases     - package only: `quoteFlight` / `quoteHotel` of the location (the ONE pricing rule),
  *                  retry once; still nothing = the `no_base_price` BLOCKER (the event is still built).
@@ -43,6 +44,7 @@ import { existingForShow } from "@/lib/services/uploader-search";
 import { findVenueMemory } from "@/lib/services/venue-memory";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
+import { applyClassification } from "@/lib/uploader/classify";
 import { decision } from "@/lib/uploader/decisions";
 import { clearsOwnEvent } from "@/lib/uploader/run-rules";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
@@ -50,7 +52,6 @@ import { decidePlace, type PlaceInput } from "@/lib/uploader/place";
 import { buildDuplicateFor, existingEventFor, ownEventToClean, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
 import { NO_PRICE_REASON, ticketsFromLiveStock, ticketsFromTixStockFeed, type TixDropReason } from "@/lib/uploader/tickets";
 import { WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
-import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import type { LiveTicketsStock, RawLiveTicketsCategory } from "@/lib/services/livetickets-offers";
 import type { Event, EventTicket } from "@/types/app.types";
 import type { Json } from "@/types/database.types";
@@ -488,6 +489,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
   //    none) - under the convention name the event carries (music: "Eric Clapton") AND the supplier's
   //    own title ("Eric Clapton London"), so neither spelling of an existing event slips through.
   const names = eventNames(ctx.subject.kind, show, ctx.subject, withSupplierSpellings(ctx.teamsHe, [show.home_team, show.away_team]), liveRef?.name_heb ?? null);
+  if (names.source === "livetickets") decisions.push(decision("name_from_livetickets", { name: names.name }));
   //    An item a person split with "both" skips this check (`buildDuplicateFor`): its sibling's hidden
   //    event shares the day, the city and - for an artist - the name, and is a different show.
   const iata = placed.location.city_iata || null;
@@ -504,10 +506,15 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
   if (tixRef?.venue_map_url && template?.svg_url) {
     mapImageUrl = template.svg_url;
     newVenue = false;
-    tickets = zoneFromTemplate(tickets, "tx_event", template);
-    const zoned = tickets.filter((t) => !!t.zoneId).length;
-    unzoned = tickets.length - zoned;
-    decisions.push(decision("zones_from_template", { zoned, total: tickets.length }));
+    // The same function the classification dialog's confirm runs: the venue's dropped categories leave,
+    // the rest are zoned (and described) from the template.
+    const applied = applyClassification(tickets, template, template.dropped);
+    tickets = applied.tickets;
+    unzoned = applied.unzoned.length;
+    decisions.push(decision("zones_from_template", { zoned: tickets.length - unzoned, total: tickets.length }));
+    if (applied.dropped.length > 0) {
+      decisions.push(decision("categories_dropped_by_template", { count: applied.dropped.length, names: applied.dropped.join(", ") }));
+    }
   } else if (tixRef?.venue_map_url) {
     mapImageUrl = tixRef.venue_map_url;
   } else if (liveRow) {

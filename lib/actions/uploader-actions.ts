@@ -33,7 +33,7 @@ import { distanceKm } from "@/lib/services/nearest-location";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { parseBriefWithAgent } from "@/lib/services/tour-uploader-parse";
 import { buildItem } from "@/lib/services/uploader-build";
-import { countOpenQuestions } from "@/lib/services/uploader-questions";
+import { countOpenQuestions, openNamesTask } from "@/lib/services/uploader-questions";
 import { findShows, resolveSubject } from "@/lib/services/uploader-search";
 import { loadPriorItems, priorMarkups } from "@/lib/services/uploader-prior";
 import {
@@ -78,9 +78,10 @@ import {
   transitionItem,
   transitionRun,
   unhide,
+  writeNamesTaskId,
   writeSubjectCache,
 } from "@/lib/services/uploader-store";
-import { FAR_VENUE_KM, PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS, REJECT_REASON_MIN } from "@/lib/uploader/constants";
+import { FAR_VENUE_KM, MAX_QUESTION_TASKS_PER_RUN, PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS, REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { editDiff } from "@/lib/uploader/decisions";
 import { applyPriorDefaults, emptyPlan, parsePlanInput } from "@/lib/uploader/plan";
 import { planTokenFor, verifyPlanToken } from "@/lib/uploader/plan-token";
@@ -123,6 +124,7 @@ import type {
   RunView,
 } from "@/lib/uploader/action-types";
 import type { PriorItem } from "@/lib/uploader/shows";
+import { missingHebrewNames } from "@/lib/uploader/team-names";
 import type { ItemStatus, UploaderPlan, UploaderQuestion, UploaderRun } from "@/types/uploader.types";
 
 // ---- the plan ----------------------------------------------------------------------------------------
@@ -203,8 +205,9 @@ export async function previewPlan(plan: UploaderPlan, opts?: { isTest?: boolean 
 /**
  * Confirm the plan: the run (status building) and one item per show (`planRunItems` - found /
  * question / skipped exists | rejected_before | by an earlier answer), each open question raised as
- * the asker's task. The asker is ALWAYS the session's user (`input.asker_id` is ignored). One run
- * per subject at a time: a run of the same subject still building or waiting -> `run_in_progress`.
+ * the asker's task, then ONE more task when Hebrew team / artist names are missing. The asker is
+ * ALWAYS the session's user (`input.asker_id` is ignored). One run per subject at a time: a run of
+ * the same subject still building or waiting -> `run_in_progress`.
  */
 export async function createRun(input: CreateRunInput): Promise<CreateRunResult> {
   const session = await requireAdmin();
@@ -291,15 +294,37 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   // Every question nobody answered before becomes the asker's task. A task whose id cannot be
   // stored on its item is closed again at once - never a task nothing points back to.
   const byPosition = new Map(items.map((i) => [i.position, i]));
+  let questionTasks = 0;
   for (const draft of drafts) {
     if (!draft.ask) continue;
     const item = byPosition.get(draft.position);
     if (!item?.question) continue;
     const taskId = await raiseQuestion(run, item, item.question);
     if (taskId === null) continue;
+    questionTasks += 1;
     if (!(await setQuestion(item.id, { ...item.question, task_id: taskId }))) {
       console.error(`uploader-actions: task ${taskId} of item ${item.id} could not be stored - closing it`);
       await closeTask(taskId, "נכשל");
+    }
+  }
+
+  // The Hebrew names the run lacks become ONE task (spec 7.1), counted with the question tasks - past
+  // the cap the board's run panel is the ask. The build goes on regardless: a failure here is logged and
+  // never fails the run (`names_task_id` stays null). Judged on the RESOLVED subject, the one the build
+  // names events with (the artist row's Hebrew name wins over the plan's). A task whose id cannot be
+  // stored on the run is closed again at once, like a question's.
+  if (questionTasks < MAX_QUESTION_TASKS_PER_RUN) {
+    try {
+      const missing = missingHebrewNames(items, subject, resolved.teamsHe);
+      if (missing.length > 0) {
+        const namesTaskId = await openNamesTask(run, missing);
+        if (namesTaskId !== null && !(await writeNamesTaskId(run.id, namesTaskId))) {
+          console.error(`uploader-actions: names task ${namesTaskId} of run ${run.id} could not be stored - closing it`);
+          await closeTask(namesTaskId, "נכשל");
+        }
+      }
+    } catch (e) {
+      console.error(`uploader-actions: names task of run ${run.id} failed`, errorText(e));
     }
   }
 
