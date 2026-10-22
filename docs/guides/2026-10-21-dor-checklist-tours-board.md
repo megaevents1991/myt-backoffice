@@ -22,6 +22,8 @@
 
 ## 3. ZeptoMail (Zoho) - דומיין שולח למגה פמילי - 15 דקות
 
+> מדריך קצר ועדכני (22.10): `docs/guides/2026-10-22-zeptomail-megafamily-domain-he.md` - אותו Mail Agent, הדומיין `megafamily.co.il`, בלי סוד חדש ב-Vercel.
+
 היום הבק-אופיס שולח דרך ZeptoMail רק מ-`alon@mega-events.co.il` (`lib/email.ts`). כדי שאישור הזמנה / קבלה / חומר לטיול ייצאו **מהמייל של מגה פמילי** צריך דומיין שולח מאומת:
 
 1. https://mailagent.zoho.com (ZeptoMail) ← **Mail Agents** ← ה-Mail Agent הקיים (או **Add Mail Agent** "Mega Family").
