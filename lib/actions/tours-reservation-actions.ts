@@ -111,7 +111,8 @@ async function toRows(companyId: string, entries: EntryRow[]): Promise<ToursRese
 /** Every reservation of the company, newest first. One departure only when `departureId` is given. */
 export async function listToursReservations(departureId?: string): Promise<ActionResult<ToursReservationRow[]>> {
   try {
-    const { company } = await requireCompanyRep("tours");
+    // every docket of the company: the departures board's read, staff only (a sales agent reads that board through requireCompanyViewer's own field list)
+    const { company } = await requireCompany("tours");
     if (departureId !== undefined && !UUID.test(departureId)) throw new UserError("Departure not found.");
     const { rows, error } = await fetchPaged<EntryRow>(() => {
       let query = toursDb()
