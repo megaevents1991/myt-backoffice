@@ -32,6 +32,8 @@ import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { useToast } from "@/hooks/use-toast";
 import { useSessionState } from "@/hooks/use-view-state";
+import { useAuth } from "@/contexts/auth-context";
+import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 import { EMPTY, fmtDate, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, listBoard, saveBoardOrder, updateCase } from "@/lib/actions/tours-cases-actions";
 import { Chip, LoadError } from "@/components/tours/ui";
@@ -102,6 +104,9 @@ export function BoardScreen() {
   const router = useRouter();
   const run = useActionToast();
   const { toast } = useToast();
+  const { user } = useAuth();
+  // the company's status list is staff's - a sales agent (tours_agent) works the cards, not the list
+  const canEditStatuses = user?.role !== TOURS_AGENT_ROLE;
   const { data, error, loading, reload, setData } = useActionData<BoardPage>(() => listBoard(), []);
   const [q, setQ] = useSessionState<string>("board-q", "");
   const [mine, setMine] = useSessionState<boolean>("board-mine", false);
@@ -531,10 +536,12 @@ export function BoardScreen() {
               <RefreshCw className="h-4 w-4" />
               Refresh
             </Button>
-            <Button variant="outline" onClick={() => setEditingStatuses(true)} disabled={!data}>
-              <ListChecks className="h-4 w-4" />
-              Statuses
-            </Button>
+            {canEditStatuses && (
+              <Button variant="outline" onClick={() => setEditingStatuses(true)} disabled={!data}>
+                <ListChecks className="h-4 w-4" />
+                Statuses
+              </Button>
+            )}
             <Button onClick={() => setAdding(true)} disabled={!data}>
               <PlusCircle className="h-4 w-4" />
               New

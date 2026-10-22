@@ -9,7 +9,7 @@
  * (tours.departure_sales_entries): a row with +pax is a booking, a row with
  * -pax gives seats back and is not counted as a reservation.
  */
-import { requireCompany } from "@/lib/company";
+import { requireCompanyRep } from "@/lib/company";
 import { boardViewerFor } from "@/lib/services/tours-board-viewer";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
@@ -99,7 +99,7 @@ function packageSlugOf(sourcePath: string | null): string | null {
 
 export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     // "New Leads" counts what the viewer would see on the LEADS tab: a rep their own and the unassigned ones (21.10)
     const viewer = await boardViewerFor(session, company);
     const today = todayIso();
@@ -267,7 +267,7 @@ export async function getToursDashboard(): Promise<ActionResult<ToursDashboard>>
 
 /** Site leads per day, for the dashboard chart. */
 export async function getToursLeadsSeries(range: TrendRange): Promise<TrendPoint[]> {
-  const { company } = await requireCompany("tours");
+  const { company } = await requireCompanyRep("tours");
   const { start, end } = seriesWindow(range);
   const { rows, error } = await fetchPaged<{ id: string; created_at: string }>(
     () =>

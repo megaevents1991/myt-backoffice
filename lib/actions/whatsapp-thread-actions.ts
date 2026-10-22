@@ -6,7 +6,7 @@
  * marketing consent with a note. Every action is scoped to the caller's company; a card is marked seen only when
  * the viewer may see it. Sending from the card is phase 2.
  */
-import { requireCompany } from "@/lib/company";
+import { requireCompanyRep } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { assertCardVisible, boardViewerFor } from "@/lib/services/tours-board-viewer";
@@ -26,7 +26,7 @@ const missingColumn = (error: { code?: string; message?: string } | null | undef
 /** The viewer opened the card: its inbound messages up to now are seen. No audit - it is a read receipt. */
 export async function markThreadSeen(caseId: string): Promise<ActionResult<{ seenAt: string }>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     if (!UUID.test(caseId)) throw new UserError("The case was not found.");
     await assertCardVisible(session, company, caseId);
     const seenAt = new Date().toISOString();
@@ -42,7 +42,7 @@ export async function markThreadSeen(caseId: string): Promise<ActionResult<{ see
 /** The page of messages before `before` (the oldest shown), oldest first - cut to the cards the viewer sees. */
 export async function loadThreadBefore(customerId: string, before: string): Promise<ActionResult<{ messages: WaThreadMessage[]; hasMore: boolean }>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     if (!UUID.test(customerId)) throw new UserError("The customer was not found.");
     const at = Date.parse(before);
     if (!Number.isFinite(at)) throw new UserError("Bad page marker.");
@@ -59,7 +59,7 @@ export async function loadThreadBefore(customerId: string, before: string): Prom
  */
 export async function setCustomerConsent(customerId: string, state: string, note: string): Promise<ActionResult<{ state: string; source: string; at: string }>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     if (!UUID.test(customerId)) throw new UserError("The customer was not found.");
     if (!CONSENT_STATES.includes(state as ConsentState)) throw new UserError("Consent can be marked given or withdrawn.");
     const clean = note.trim().replace(/\s+/g, " ");

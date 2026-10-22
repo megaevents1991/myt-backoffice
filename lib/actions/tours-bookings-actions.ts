@@ -11,7 +11,7 @@
  */
 import { revalidatePath } from "next/cache";
 
-import { requireCompany } from "@/lib/company";
+import { requireCompanyRep } from "@/lib/company";
 import { assertCardVisible } from "@/lib/services/tours-board-viewer";
 import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
@@ -39,7 +39,7 @@ const failure = (e: unknown, fallback: string) => actionFail(e, "tours-bookings-
  */
 export async function updateBooking(id: string, change: BookingChange): Promise<ActionResult<BookingRow>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const { data: before, error } = await toursDb()
       .from("bookings")
       .select("*")

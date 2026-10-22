@@ -13,7 +13,7 @@
 import { revalidatePath } from "next/cache";
 
 import { logAudit } from "@/lib/audit";
-import { requireCompany } from "@/lib/company";
+import { requireCompany, requireCompanyRep } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { toursDb } from "@/lib/tours/db";
@@ -111,7 +111,7 @@ async function toRows(companyId: string, entries: EntryRow[]): Promise<ToursRese
 /** Every reservation of the company, newest first. One departure only when `departureId` is given. */
 export async function listToursReservations(departureId?: string): Promise<ActionResult<ToursReservationRow[]>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     if (departureId !== undefined && !UUID.test(departureId)) throw new UserError("Departure not found.");
     const { rows, error } = await fetchPaged<EntryRow>(() => {
       let query = toursDb()
@@ -133,7 +133,7 @@ export async function listToursReservations(departureId?: string): Promise<Actio
 /** The departures a reservation can be made on: not deleted, from a month back on. */
 export async function listReservationDepartures(): Promise<ActionResult<ReservationDeparture[]>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     const { rows, error } = await fetchPaged<{
       id: string;
       code: string;
@@ -177,7 +177,7 @@ export async function listReservationDepartures(): Promise<ActionResult<Reservat
  */
 export async function createToursReservation(input: ReservationInput): Promise<ActionResult<ToursReservationRow>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     if (!UUID.test(input.departureId)) throw new UserError("Choose a departure.");
     const pax = Number(input.pax);
     if (!Number.isInteger(pax) || pax === 0 || Math.abs(pax) > MAX_TRAVELERS) throw new UserError(TRAVELERS_RULE);

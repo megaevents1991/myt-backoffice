@@ -24,7 +24,7 @@ const pax = (tally: Tally | undefined) => `PAX: ${tally ? n(tally.travelers) : "
  * dashboard (numbers, statistics, top lists, a trend, my tasks), filled with
  * tours, reservations and site leads.
  */
-export function ToursDashboard({ isManager }: { isManager: boolean }) {
+export function ToursDashboard({ isManager, agent }: { isManager: boolean; agent?: boolean }) {
   const { data, error, loading, reload } = useActionData(() => getToursDashboard(), []);
 
   const v = (pick: (d: Data) => number) => (data ? n(pick(data)) : "...");
@@ -40,7 +40,8 @@ export function ToursDashboard({ isManager }: { isManager: boolean }) {
           value={v((d) => d.toursOnSale)}
           hint={data ? `${n(data.publishedDepartures)} published departures` : "Published, future dates"}
           icon={MapIcon}
-          href="/tours/packages"
+          // a sales agent may not open the tours editor or the flights (middleware sends it home): a number, no link
+          href={agent ? undefined : "/tours/packages"}
         />
         <StatCard
           label={`Departures (${data?.departuresWindowDays ?? 60} Days)`}
@@ -54,7 +55,7 @@ export function ToursDashboard({ isManager }: { isManager: boolean }) {
           value={v((d) => d.seatsLeft)}
           hint={data ? `Of ${n(data.seatsAllocated)} on live flights` : "On published departures"}
           icon={Plane}
-          href="/offline-flights"
+          href={agent ? undefined : "/offline-flights"}
         />
         <StatCard
           label="Reservations"

@@ -1,4 +1,5 @@
-import { requireCompany } from "@/lib/company";
+import { requireCompanyRep } from "@/lib/company";
+import { TOURS_AGENT_ROLE } from "@/types/auth.types";
 import type { SessionPayload } from "@/lib/auth/session";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { PageHeader } from "@/components/page-header";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function ToursDashboardPage() {
   let session: SessionPayload;
   try {
-    ({ session } = await requireCompany("tours"));
+    ({ session } = await requireCompanyRep("tours"));
   } catch (e) {
     // The active company does not sell tours (Mega Events) - say so, do not crash.
     // Anything else (no staff session) goes to the dashboard error boundary like on every guarded page.
@@ -29,14 +30,16 @@ export default async function ToursDashboardPage() {
     throw e;
   }
 
+  // a sales agent (tours_agent, 22.10) works here as a rep: no publish button, no links to screens it may not open
+  const agent = session.role === TOURS_AGENT_ROLE;
   return (
     <div className="space-y-6">
       <PageHeader
         title="Dashboard"
         description="Tours, reservations and leads at a glance. Every number opens the screen that holds its rows."
-        actions={<PublishSiteButton />}
+        actions={agent ? undefined : <PublishSiteButton />}
       />
-      <ToursDashboard isManager={isManagerRole(session.role)} />
+      <ToursDashboard isManager={isManagerRole(session.role)} agent={agent} />
     </div>
   );
 }

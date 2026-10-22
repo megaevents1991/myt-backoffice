@@ -9,7 +9,7 @@
  */
 import { revalidatePath } from "next/cache";
 
-import { requireCompany, type Company } from "@/lib/company";
+import { requireCompany, requireCompanyRep, type Company } from "@/lib/company";
 import { assertCardVisible } from "@/lib/services/tours-board-viewer";
 import { toursDb } from "@/lib/tours/db";
 import { logAudit } from "@/lib/audit";
@@ -74,7 +74,7 @@ async function freshLog(company: Company, bookingId: string): Promise<OrderPayme
 /** Record a payment on an order. Answers the order's payments as they stand now. */
 export async function addBookingPayment(bookingId: string, input: PaymentInput): Promise<ActionResult<OrderPayment[]>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const problem = checkPaymentInput(input);
     if (problem) throw new UserError(problem);
     const booking = await bookingOf(company, bookingId);
@@ -119,7 +119,7 @@ async function paymentRecord(company: Company, id: string): Promise<PaymentRecor
 /** Change a payment. A site card payment takes only an invoice number and a note. */
 export async function updateBookingPayment(paymentId: string, input: PaymentInput): Promise<ActionResult<OrderPayment[]>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const before = await paymentRecord(company, paymentId);
     await assertCardVisible(session, company, (await bookingOf(company, before.booking_id)).lead_id);
     const fromSite = before.method === "site";
@@ -163,7 +163,7 @@ export async function updateBookingPayment(paymentId: string, input: PaymentInpu
 /** Remove a payment a rep typed (kept, marked deleted). A site card payment stays - add a refund instead. */
 export async function deleteBookingPayment(paymentId: string): Promise<ActionResult<OrderPayment[]>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const before = await paymentRecord(company, paymentId);
     await assertCardVisible(session, company, (await bookingOf(company, before.booking_id)).lead_id);
     if (before.method === "site") throw new UserError("A card payment from the site stays on the order - record a refund instead.");
@@ -198,7 +198,7 @@ async function packageOf(company: Company, id: string): Promise<{ id: string; na
 /** A tour's cancellation fee rules (the tour editor loads them when the card is opened), in the company's currency. */
 export async function getCancellationRules(packageId: string): Promise<ActionResult<{ rules: CancellationRule[]; currency: string }>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     const pkg = await packageOf(company, packageId);
     return actionOk({ rules: await readCancellationRules(company.id, pkg.id), currency: company.defaultCurrency });
   } catch (e) {

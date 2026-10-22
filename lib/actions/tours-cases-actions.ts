@@ -17,7 +17,7 @@ import { revalidatePath } from "next/cache";
 
 import { logAudit } from "@/lib/audit";
 import { matchesSearch } from "@/lib/search";
-import { requireCompany, type Company } from "@/lib/company";
+import { requireCompany, requireCompanyRep, type Company } from "@/lib/company";
 import { supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { taskPeopleOf } from "@/lib/services/task-people";
@@ -584,7 +584,7 @@ async function companyDeparture(company: Company, id: string): Promise<{ id: str
 /** The Reservations screen in one load: every case, the status list and the reps. */
 export async function listCases(): Promise<ActionResult<CasesPage>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     const [page, statuses, reps, viewer] = await Promise.all([allCaseRecords(company), statusesOf(company), repsOf(company), boardViewerFor(session, company)]);
     if (page.error) throw new Error(`leads: ${page.error.message}`);
     const x = await enrich(company.id, page.rows);
@@ -611,7 +611,7 @@ export async function listCases(): Promise<ActionResult<CasesPage>> {
  */
 export async function updateCase(id: string, change: CaseChange): Promise<ActionResult<CaseRow>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const before = await caseRecord(company, id, viewer);
     const patch: LeadUpdate = {};
@@ -773,7 +773,7 @@ export async function bulkUpdateCases(
   change: { status?: string; assignedTo?: string | null; closeReason?: string },
 ): Promise<ActionResult<{ updated: number }>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const unique = [...new Set(ids)];
     if (unique.length === 0 || unique.length > BULK_MAX) throw new UserError(`Select between 1 and ${BULK_MAX} rows.`);
@@ -858,7 +858,7 @@ export async function bulkUpdateCases(
 /** A case staff open by hand. A reservation also puts its travelers on the departure's seats. */
 export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     if (!isCaseType(input.type)) throw new UserError("Choose a type.");
     if (!isCaseSource(input.source)) throw new UserError("Choose how the customer reached us.");
     // "+ New card" on a customer's page: the contact is the customer's own
@@ -955,7 +955,7 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
 /** Marks a case deleted (it stays recoverable). A case with a paid site booking is cancelled, not deleted. */
 export async function deleteCase(id: string): Promise<ActionResult> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const before = await caseRecord(company, id, viewer);
     const { data: bookings, error: bookingsError } = await toursDb()
@@ -1072,7 +1072,7 @@ async function historyOf(id: string): Promise<CaseHistoryItem[]> {
 /** The case page in one load: the case, its bookings, seats, tour, gift, history, statuses and reps. */
 export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const record = await caseRecord(company, id, viewer);
 
@@ -1254,7 +1254,7 @@ async function knownOf(company: Company, record: CaseRecord, statuses: readonly 
 /** "Hold N seats" on the case page: what each closed booking still owes, held now (the same rule as closing by hand). */
 export async function holdCaseSeats(caseId: string): Promise<ActionResult<CaseRow>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     await caseRecord(company, caseId, viewer);
     const held = await holdOwedSeats(company, caseId, session.sub);
@@ -1316,7 +1316,7 @@ async function candidatesOf(company: Company, ids: string[], self: { phone: stri
  */
 export async function findMergeCandidates(caseId: string, query: string): Promise<ActionResult<CaseCandidate[]>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const self = await caseRecord(company, caseId, viewer);
     const q = (query ?? "").trim().slice(0, 80);
@@ -1367,7 +1367,7 @@ export async function findMergeCandidates(caseId: string, query: string): Promis
  */
 export async function mergeCases(caseId: string, otherId: string): Promise<ActionResult<{ keptId: string; keptNo: number; mergedNo: number }>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const [a, b] = await Promise.all([caseRecord(company, caseId, viewer), caseRecord(company, otherId, viewer)]);
     if (a.id === b.id) throw new UserError("A case cannot be merged with itself.");
@@ -1462,7 +1462,7 @@ async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDe
 /** Departures a link can point at: open on the site AND priced - a date with no price table takes no booking (Alon 18.10). */
 export async function listLinkDepartures(): Promise<ActionResult<LinkDeparture[]>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     return actionOk((await linkDepartures(company)).filter((d) => d.rooms.length > 0));
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the departures");
@@ -1492,7 +1492,7 @@ async function quoteRooms(company: Company, siteId: number, rooms: string[]): Pr
 /** The price of a choice in the link card, as the rep changes rooms. Null = the site cannot price it. */
 export async function quoteLink(input: { departureId: string; rooms: string[] }): Promise<ActionResult<LinkQuote | null>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     if (!UUID.test(input.departureId)) throw new UserError("Choose a departure.");
     const [departure] = await linkDepartures(company, input.departureId);
     if (!departure) throw new UserError("This departure is not open on the site.");
@@ -1533,7 +1533,7 @@ export async function prepareOffer(
   input: { departureId: string; rooms: string[]; followUpDate: string; sendWhatsApp?: boolean },
 ): Promise<ActionResult<BookingLinkResult>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     if (!company.siteUrl) throw new UserError("The company has no site address - set it in the company settings first.");
     const record = await caseRecord(company, caseId, viewer);
@@ -1631,7 +1631,7 @@ export async function prepareOffer(
 /** The rep sent the prepared offer on WhatsApp or by e-mail: the case moves to "Offer sent" with its follow-up day. */
 export async function markOfferSent(caseId: string, via: OfferChannel): Promise<ActionResult<CaseRow>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     if (!isOfferChannel(via) || via === "whatsapp_api") throw new UserError("Send the link on WhatsApp or by e-mail.");
     const record = await caseRecord(company, caseId, viewer);
@@ -1667,7 +1667,7 @@ export async function markOfferSent(caseId: string, via: OfferChannel): Promise<
  */
 export async function withdrawOffer(caseId: string): Promise<ActionResult<CaseRow>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const record = await caseRecord(company, caseId, viewer);
     const offer = parseOffer(record.offer);
@@ -1747,7 +1747,7 @@ async function boardOrderOf(company: Company, userId: string): Promise<string[]>
 /** Saves the viewer's own order of TODAY - the whole list, after a drag or a typed place. Private: never audited. */
 export async function saveBoardOrder(ids: string[]): Promise<ActionResult<{ saved: number }>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     // a superadmin looking as a rep must not rewrite that rep's own list (the task_reads precedent)
     if (session.impersonator) return actionOk({ saved: 0 }, "Not saved while impersonating - the order is the rep's own.");
     const lead_ids = cleanOrderIds(Array.isArray(ids) ? ids : []);
@@ -1768,7 +1768,7 @@ export async function saveBoardOrder(ids: string[]): Promise<ActionResult<{ save
  */
 export async function listBoard(): Promise<ActionResult<BoardPage>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     const [page, statuses, reps, viewer, order] = await Promise.all([
       allCaseRecords(company),
       statusesOf(company),
@@ -1807,7 +1807,7 @@ export async function listBoard(): Promise<ActionResult<BoardPage>> {
  */
 export async function getCustomerPage(input: { customerId?: string; cardId?: string }): Promise<ActionResult<CustomerPageData>> {
   try {
-    const { session, company } = await requireCompany("tours");
+    const { session, company } = await requireCompanyRep("tours");
     let customerId = input.customerId ?? null;
     if (!customerId && input.cardId) {
       const card = await caseRecord(company, input.cardId);
@@ -1907,7 +1907,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
  */
 export async function updateCustomer(id: string, change: CustomerChange): Promise<ActionResult<CustomerInfo>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     const before = await customerRecord(company, id);
     const patch: Database["public"]["Tables"]["customers"]["Update"] = {};
     const changes: Record<string, { from: unknown; to: unknown }> = {};
@@ -1986,7 +1986,7 @@ export async function updateCustomer(id: string, change: CustomerChange): Promis
 /** Customers as the merge / move pickers show them: whatever the rep typed - a name, a phone, a C-number, an e-mail. */
 export async function searchCustomers(query: string, excludeId?: string): Promise<ActionResult<CustomerCandidate[]>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     const q = (query ?? "").trim().slice(0, 80);
     if (q.length < 2) return actionOk([]);
     const page = await fetchPaged<CustomerRecord>(
@@ -2039,7 +2039,7 @@ export async function searchCustomers(query: string, excludeId?: string): Promis
  */
 export async function mergeCustomers(keepId: string, otherId: string): Promise<ActionResult<{ moved: number }>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     if (keepId === otherId) throw new UserError("A customer cannot be merged with themselves.");
     const [keep, other] = await Promise.all([customerRecord(company, keepId), customerRecord(company, otherId)]);
     const phones = cleanPhones([...(keep.phones ?? []), ...(other.phones ?? [])]);
@@ -2099,7 +2099,7 @@ export async function mergeCustomers(keepId: string, otherId: string): Promise<A
 /** "Not the same": the same e-mail is not the same person - neither side suggests the other again. */
 export async function dismissCustomerSuggestion(customerId: string, otherId: string): Promise<ActionResult> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     const [me, other] = await Promise.all([customerRecord(company, customerId), customerRecord(company, otherId)]);
     for (const [row, add] of [
       [me, other.id],
@@ -2129,7 +2129,7 @@ export async function dismissCustomerSuggestion(customerId: string, otherId: str
 /** The card belongs to another customer (a relative booked from their own phone): it moves with all it holds. */
 export async function moveCardToCustomer(cardId: string, customerId: string): Promise<ActionResult<{ customerId: string }>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const [card, target] = await Promise.all([caseRecord(company, cardId, viewer), customerRecord(company, customerId)]);
     if (card.customer_id === target.id) throw new UserError("The card is already this customer's.");
@@ -2156,7 +2156,7 @@ export async function moveCardToCustomer(cardId: string, customerId: string): Pr
  */
 export async function fileInquiry(inquiryId: string, cardId: string | null): Promise<ActionResult<{ cardId: string }>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const inquiry = await caseRecord(company, inquiryId, viewer);
     if (!inquiry.to_file) throw new UserError("This inquiry was filed already - reload.");
@@ -2221,7 +2221,7 @@ export async function fileInquiry(inquiryId: string, cardId: string | null): Pro
 /** The tours a future lead can name, each with its seasons (its coming departures', then its own). */
 export async function listFutureTours(): Promise<ActionResult<FutureTour[]>> {
   try {
-    const { company } = await requireCompany("tours");
+    const { company } = await requireCompanyRep("tours");
     const today = todayIso();
     const [packages, departures, seasons] = await Promise.all([
       toursDb().from("packages").select("id, name").eq("company_id", company.id).is("is_deleted", null).order("name", { ascending: true }),
@@ -2265,7 +2265,7 @@ function wallClock(iso: string): Date {
 /** The cases the screen shows (their ids) as an .xlsx file, columns in the screen's order. */
 export async function exportCases(ids: string[]): Promise<ActionResult<{ fileName: string; base64: string; rows: number }>> {
   try {
-    const { company, session } = await requireCompany("tours");
+    const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const wanted = new Set(ids.filter((id) => UUID.test(id)));
     if (wanted.size === 0) throw new UserError("Nothing to export.");
