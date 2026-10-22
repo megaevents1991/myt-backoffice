@@ -45,7 +45,9 @@ function withPrefix(prefix: string, name: string): string {
  *  base_prices {flight, hotel} · prior_answer {name, run} · lodging_from_memory {event} ·
  *  tribute_excluded {name} · duplicate_dropped {name, event_id} ·
  *  two_city_from_memory {event, show_city, flight_city, lodging?} · two_city_chosen {show_city, flight_city, km} ·
- *  rejected_before {run, by, reason} · question_untasked {max}
+ *  rejected_before {run, by, reason} · question_untasked {max} ·
+ *  classified {zones, dropped, unsure} · categories_dropped_by_template {count, names} ·
+ *  named_he {name} · name_from_livetickets {name} · taught_venue {}
  */
 export const DECISION_TEXT = {
   // No `km` = the venue has no coordinates (a LiveTickets-only show, an answered location): no distance is printed.
@@ -70,6 +72,15 @@ export const DECISION_TEXT = {
     `דו-עירוני לפי בחירת צוות: הופעה ${withPrefix("ב", str(p, "show_city"))}, טיסה ${withPrefix("ל", str(p, "flight_city"))} (${km(p)} ק"מ), פיצול מלון`,
   rejected_before: (p) => `נדחתה בריצה #${str(p, "run")} על ידי ${str(p, "by")}${str(p, "reason") === "" ? "" : `: ${str(p, "reason")}`}`,
   question_untasked: (p) => `שאלה ללא משימה - מעל ${str(p, "max")} שאלות בריצה`,
+  // Round "אלון 1".
+  classified: (p) => `סווגו ${str(p, "zones")} זונים · ${str(p, "dropped")} נפסלו · ${str(p, "unsure")} לבדיקה`,
+  categories_dropped_by_template: (p) =>
+    Number(p.count) === 1
+      ? `קטגוריה אחת נפסלה לפי תבנית האולם: ${str(p, "names")}`
+      : `${str(p, "count")} קטגוריות נפסלו לפי תבנית האולם: ${str(p, "names")}`,
+  named_he: (p) => `שם בעברית: ${str(p, "name")}`,
+  name_from_livetickets: (p) => `שם בעברית מלייב טיקטס: ${str(p, "name")}`,
+  taught_venue: () => "האירוע הזה לימד את תבנית האולם",
 } satisfies Record<string, DecisionText>;
 
 export type DecisionCode = keyof typeof DECISION_TEXT;

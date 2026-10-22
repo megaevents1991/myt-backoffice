@@ -479,7 +479,8 @@ export async function getRun(runId: string, opts?: { people?: boolean }): Promis
     return { ...item, blockers: liveBlockers(item.blockers, row) };
   });
   const [people, subjectArt] = await Promise.all([withPeople ? loadPeople() : Promise.resolve([]), readSubjectArt(run.plan)]);
-  return { run, items, edited, editedUnknown: rows === null, people, ...(withPeople ? {} : { peopleOmitted: true as const }), subjectArt };
+  // `fixedByHand` / `missingNames` (round "אלון 1") are computed here by the server-action task; empty until then = the panel offers nothing.
+  return { run, items, edited, editedUnknown: rows === null, people, ...(withPeople ? {} : { peopleOmitted: true as const }), subjectArt, fixedByHand: {}, missingNames: [] };
 }
 
 // ---- questions ---------------------------------------------------------------------------------------

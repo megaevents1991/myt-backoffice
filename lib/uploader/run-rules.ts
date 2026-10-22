@@ -25,6 +25,7 @@ import {
   ITEM_STATUSES,
   type Decision,
   type ItemStatus,
+  type QuestionKind,
   type RunStatus,
   type ShowIdentity,
   type SubjectKind,
@@ -181,6 +182,64 @@ export function answerEffect(q: UploaderQuestion, show: ShowIdentity, answer: St
     if (day) return { kind: "requeue", show: { ...show, date: day } };
   }
   return { kind: "requeue", show };
+}
+
+// ---- a rule for the run (spec 5.4, 7) ----------------------------------------------------------------
+
+/**
+ * An answer a person wants applied to the run's similar open questions ("החל גם על N השאלות הדומות
+ * בריצה"). `key`: pick_show `both` | `skip`; pick_date `tix` | `live` | `both` | `skip` (which supplier's
+ * day to take - each show has its own day); pick_location the `locations` id or `skip`, with the show's
+ * `venue` / `city` (`normalizeName`) it holds for - a competition run across cities gets nothing, three
+ * nights at one hall get the rule. `venue` / `city` are null for the other kinds, and for a show that
+ * has none to match on.
+ */
+export type RunRule = { kind: QuestionKind; key: string; venue: string | null; city: string | null };
+
+/** `normalizeName`, or null when nothing is left. */
+function nameOrNull(v: string | null | undefined): string | null {
+  const n = normalizeName(v);
+  return n === "" ? null : n;
+}
+
+/**
+ * The rule a picked answer makes, or null when it makes none: a listing id names ONE show, free text
+ * says nothing a second question could use, and `confirm_subject` is the run's own.
+ */
+export function runRuleOf(q: UploaderQuestion, item: Pick<UploaderItem, "show">, answer: { key: string | null; text: string | null }): RunRule | null {
+  const key = answer.key;
+  if (key === null) return null;
+  const rule = (k: string, venue: string | null = null, city: string | null = null): RunRule => ({ kind: q.kind, key: k, venue, city });
+  if (q.kind === "pick_show") return key === "both" || key === "skip" ? rule(key) : null;
+  if (q.kind === "pick_date") {
+    const which = key === "both" || key === "skip" ? key : DAY_KEY.exec(key)?.[1];
+    return which ? rule(which) : null;
+  }
+  if (q.kind === "pick_location") {
+    return key === "skip" || /^[1-9]\d*$/.test(key) ? rule(key, nameOrNull(item.show.venue), nameOrNull(item.show.city)) : null;
+  }
+  return null;
+}
+
+/**
+ * The key to answer `other`'s question with under `rule`, or null (leave it for a person): `other` must
+ * still be an open question of the same kind, and the key must be one of ITS options. `pick_date` tix /
+ * live take the other's own `tix:<day>` / `live:<day>` option (null when it has none); `pick_location`
+ * only where the other's show is at the same venue in the same city.
+ */
+export function applyRuleTo(rule: RunRule, other: UploaderItem): string | null {
+  const q = other.question;
+  if (other.status !== "question" || q === null || q.kind !== rule.kind) return null;
+  if (rule.kind === "pick_date" && (rule.key === "tix" || rule.key === "live")) {
+    return q.options.find((o) => DAY_KEY.exec(o.key)?.[1] === rule.key)?.key ?? null;
+  }
+  if (rule.kind === "pick_location") {
+    if (rule.venue === null || rule.city === null) return null;
+    if (normalizeName(other.show.venue) !== rule.venue || normalizeName(other.show.city) !== rule.city) return null;
+  } else if (rule.kind === "confirm_subject") {
+    return null;
+  }
+  return q.options.some((o) => o.key === rule.key) ? rule.key : null;
 }
 
 // ---- a new run's items ----------------------------------------------------------------------------

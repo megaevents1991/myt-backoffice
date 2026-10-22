@@ -3,7 +3,9 @@
  * with. Types only: a "use server" module may export nothing but async functions, so the screens
  * import these from here.
  */
+import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
+import type { TeamRow } from "@/lib/uploader/team-names";
 import type { ItemStatus, UploaderItem, UploaderPlan, UploaderRun } from "@/types/uploader.types";
 
 /** The ai-factory-actions shape: success, or a machine-readable `kind` the screen words. */
@@ -61,6 +63,10 @@ export type RunBoard = {
   /** `getRun(id, { people: false })`: `people` was not read (it is []) - keep the list the board already has. */
   peopleOmitted?: true;
   subjectArt: SubjectArt;
+  /** item id -> a person arranged this item's TixStock tickets in the editor (zones / descriptions / categories differ from the build): the panel offers "learn from this event". */
+  fixedByHand: Record<string, boolean>;
+  /** The club (or artist) names the run still has no Hebrew name for (`missingSides`) - the panel's names row lists them. */
+  missingNames: string[];
 };
 
 /** `getRun`'s answer when the run exists: the board, or `{ run: null, kind: "db_error" }` when a read failed (`getRun` answers null only for "no such run"). */
@@ -82,3 +88,36 @@ export type OpenQuestions = {
 };
 
 export type LocationOption = { id: number; name: string; city_iata: string | null };
+
+// ---- round "אלון 1": classification, names, learn ------------------------------------------------------
+
+/** `classifyVenue` / `learnFromEvent`: how many events were rewritten and what the template ended up with. */
+export type ClassifyResult =
+  | { ok: true; events: number; reached: number; total: number; zones: number; dropped: number; unsure: number }
+  | { ok: false; kind: string; message?: string };
+
+/** `proposeVenueClassification`: the dialog's rows (and what the AI proposed, for the confirm's diff). */
+export type ProposeResult =
+  | {
+      ok: true;
+      venue: { name: string; sourceUrl: string; templateId: string | null };
+      rows: ClassificationRow[];
+      /** What the AI proposed per category key; null = it gave nothing (off / failed - `ai.reason` says why). */
+      proposed: Record<string, ProposedRow> | null;
+      shows: number;
+      ai: { used: boolean; reason: string | null; problems: string[] };
+    }
+  | { ok: false; kind: "bad_input" | "not_found" | "db_error" | "rate_limited" | "svg_failed"; message?: string };
+
+/** `learnPreview`: what the "learn from this event" confirm lists before it applies. */
+export type LearnPreview =
+  | { ok: true; learned: { zones: number; newZones: number; dropped: string[]; descriptions: number }; siblings: number }
+  | { ok: false; kind: string };
+
+/** `proposeTeamNames`: the names dialog's rows, and how many events take their name from LiveTickets. */
+export type NamesProposeResult =
+  | { ok: true; rows: TeamRow[]; liveNamed: number; ai: { used: boolean; reason: string | null; problems: string[] } }
+  | { ok: false; kind: string; message?: string };
+
+/** `createTeamsAndRename`: teams created and events renamed. */
+export type TeamsResult = { ok: true; created: number; renamed: number } | { ok: false; kind: string; message?: string };

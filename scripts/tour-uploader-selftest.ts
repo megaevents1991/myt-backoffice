@@ -98,7 +98,8 @@ import {
   type ProposedRow,
   type TemplateLike,
 } from "@/lib/uploader/classify";
-import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
+import { farVenueOffer, warning, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
+import { cardWarnings, isRunLevel, RUN_LEVEL_CODES, runLevelRows } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
@@ -1595,15 +1596,20 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     [
       "base_prices",
       "categories_dropped",
+      "categories_dropped_by_template",
+      "classified",
       "dates_smart",
       "duplicate_dropped",
       "live_from_snapshot",
       "location_found",
       "location_missing_ticket_only",
       "lodging_from_memory",
+      "name_from_livetickets",
+      "named_he",
       "prior_answer",
       "question_untasked",
       "rejected_before",
+      "taught_venue",
       "tickets_livetickets",
       "tickets_tixstock",
       "tribute_excluded",
@@ -1611,7 +1617,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "two_city_from_memory",
       "zones_from_template",
     ],
-    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10)",
+    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue)",
   );
   same(decision("dates_smart", { depart: "18.05", ret: "21.05" }), { code: "dates_smart", text: "טיסות 18.05 → 21.05" }, "dates_smart: the spec's text");
   same(decision("base_prices", { flight: 310, hotel: 290 }).text, "בסיס מהכלל: טיסה $310 · מלון $290", "base_prices: the spec's text");
@@ -1670,6 +1676,11 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     two_city_chosen: { show_city: "Manchester", flight_city: "London", km: 262 },
     rejected_before: { run: 3, by: "Alon", reason: "מחיר שגוי" },
     question_untasked: { max: 20 },
+    classified: { zones: 7, dropped: 1, unsure: 2 },
+    categories_dropped_by_template: { count: 2, names: "Away Fans Section, Visitors" },
+    named_he: { name: "פולהאם - ניוקאסל יונייטד" },
+    name_from_livetickets: { name: "פולהאם - ניוקאסל" },
+    taught_venue: {},
   };
   for (const code of Object.keys(DECISION_TEXT) as (keyof typeof DECISION_TEXT)[]) {
     const d = decision(code, samples[code]);
@@ -3860,6 +3871,351 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   for (const [en, he] of [["פולהאם", "פולהאם"], ["", ""], ["---", "!!!"]]) {
     check(/^item-[a-z0-9]{6}$/.test(slugFor(en, he)), `slugFor: nothing latin ("${en}" / "${he}") -> item- and 6 random characters`);
   }
+}
+
+// ---- Round אלון 1, Task 4: panel, fold, run rules (run-panel.ts + run-rules.ts + warnings.ts + decisions.ts) ----
+{
+  const DRAWING_A = "https://cdn.example.com/maps/craven-cottage-2026.svg";
+  const DRAWING_B = "https://cdn.example.com/maps/craven-cottage-2027.svg";
+  type Warns = UploaderItem["warnings"];
+  const W = (code: string, fix_url?: string): Warns[number] => (fix_url === undefined ? { code, text: `${code}!` } : { code, text: `${code}!`, fix_url });
+  type Over = {
+    venue?: string | null;
+    city?: string;
+    /** TixStock's drawing url (null = TixStock has the show but no drawing). */
+    map?: string | null;
+    /** false = a LiveTickets-only show. */
+    tix?: boolean;
+    status?: UploaderItem["status"];
+    position?: number;
+    updated_at?: string;
+    event_id?: number | null;
+    question?: UploaderQuestion | null;
+  };
+  const mk = (id: string, warnings: Warns, o: Over = {}): UploaderItem => ({
+    id,
+    run_id: "run-1",
+    position: o.position ?? 0,
+    show: {
+      name_english: "Fulham FC vs Newcastle United FC",
+      city: o.city ?? "London",
+      country_code: "GB",
+      venue: o.venue === undefined ? "Craven Cottage" : o.venue,
+      date: "2027-03-06",
+      lat: 51.47,
+      lon: -0.22,
+      suppliers: {
+        tixstock:
+          o.tix === false
+            ? null
+            : { event_id: `tx-${id}`, name: "Fulham v Newcastle", ticket_count: 20, venue_map_url: o.map === undefined ? DRAWING_A : o.map },
+        livetickets: o.tix === false ? { event_id: 77, name_heb: null, sellable: 4 } : null,
+      },
+      competition: "Premier League",
+      home_team: "Fulham FC",
+      away_team: "Newcastle United FC",
+      fallback: [],
+    },
+    status: o.status ?? "ready",
+    mode: "package",
+    location: null,
+    decisions: [],
+    warnings,
+    blockers: [],
+    question: o.question ?? null,
+    event_id: o.event_id === undefined ? null : o.event_id,
+    payload: null,
+    skip_reason: null,
+    error: null,
+    approved_by: null,
+    approved_at: null,
+    rejected_reason: null,
+    rejected_final: false,
+    created_at: "2026-10-22T08:00:00.000Z",
+    updated_at: o.updated_at ?? "2026-10-22T09:00:00.000Z",
+  });
+  const team = { kind: "team" as const, name_en: "Fulham FC" };
+
+  // -- RUN_LEVEL_CODES, isRunLevel, cardWarnings -------------------------------------------------
+  same(
+    [...RUN_LEVEL_CODES],
+    ["no_team_page", "no_artist_page", "no_crest", "no_bio", "no_cutout", "no_event_gallery", "no_category_twin", "no_hebrew_name", "new_venue", "unzoned_tickets"],
+    "RUN_LEVEL_CODES: the spec's ten codes",
+  );
+  const crowded = mk("c1", [W("no_crest"), W("new_venue"), W("supplier_unreachable"), W("far_venue"), W("single_supplier"), W("all_dropped"), W("no_hebrew_name")]);
+  same(
+    cardWarnings(crowded),
+    { card: [W("supplier_unreachable"), W("far_venue"), W("single_supplier"), W("all_dropped")], folded: 3 },
+    "cardWarnings: run-level lines fold (new_venue on a TixStock drawing too), card-level ones stay in order",
+  );
+  same(crowded.warnings.length, 7, "cardWarnings: the fold is a view - the item's own warnings are untouched");
+  const liveOnly = mk("c2", [W("new_venue"), W("unzoned_tickets"), W("no_bio")], { tix: false });
+  same(
+    cardWarnings(liveOnly),
+    { card: [W("new_venue"), W("unzoned_tickets")], folded: 1 },
+    "cardWarnings: new_venue / unzoned_tickets on a LiveTickets-only item stay on the card",
+  );
+  for (const map of [null, "", "   "]) {
+    same(
+      cardWarnings(mk("c3", [W("new_venue"), W("unzoned_tickets")], { map })),
+      { card: [W("new_venue"), W("unzoned_tickets")], folded: 0 },
+      `cardWarnings: TixStock without a usable drawing (${JSON.stringify(map)}) keeps the venue lines on the card`,
+    );
+  }
+  same(
+    cardWarnings(mk("c4", [W("supplier_unreachable"), W("far_venue")])),
+    { card: [W("supplier_unreachable"), W("far_venue")], folded: 0 },
+    "cardWarnings: only card-level warnings - nothing folded",
+  );
+  same(cardWarnings(mk("c5", [])), { card: [], folded: 0 }, "cardWarnings: no warnings");
+  check(isRunLevel(crowded, W("new_venue")) && isRunLevel(crowded, W("no_hebrew_name")), "isRunLevel: a listed code (new_venue with a drawing)");
+  check(!isRunLevel(liveOnly, W("new_venue")) && !isRunLevel(liveOnly, W("unzoned_tickets")), "isRunLevel: new_venue / unzoned_tickets without a TixStock drawing");
+  check(isRunLevel(liveOnly, W("no_bio")), "isRunLevel: the drawing condition is for the two venue codes only");
+  check(!isRunLevel(crowded, W("far_venue")) && !isRunLevel(crowded, W("all_dropped")) && !isRunLevel(crowded, W("supplier_unreachable")), "isRunLevel: card-level codes");
+
+  // -- runLevelRows: nothing to show --------------------------------------------------------------
+  same(runLevelRows([], {}, team, []), [], "runLevelRows: no items, no names missing - no rows");
+  same(runLevelRows([mk("n1", [W("supplier_unreachable"), W("far_venue")])], {}, team, []), [], "runLevelRows: card-level warnings only - no rows");
+  same(runLevelRows([mk("n2", [W("new_venue"), W("unzoned_tickets")], { tix: false })], {}, team, []), [], "runLevelRows: a LiveTickets-only show raises no venue row");
+
+  // -- runLevelRows: venues group by the exact drawing url -----------------------------------------
+  const grouped = [
+    mk("a1", [W("new_venue")], { position: 0 }),
+    mk("a2", [W("new_venue"), W("no_crest")], { position: 1 }),
+    mk("b1", [W("unzoned_tickets")], { map: DRAWING_B, position: 2 }),
+    mk("l1", [W("new_venue")], { tix: false, position: 3 }),
+    mk("a3", [W("new_venue")], { position: 4 }),
+  ];
+  const groupedRows = runLevelRows(grouped, {}, team, []);
+  same(groupedRows.map((r) => r.kind), ["venue", "venue", "fix"], "runLevelRows: two drawings of one hall = two venue rows, then the fix row");
+  same(
+    groupedRows[0],
+    {
+      kind: "venue",
+      key: `venue:${DRAWING_A}`,
+      text: "אולם חדש: Craven Cottage · 3 הופעות · הכרטיסים עלו באנגלית ובלי זונים",
+      count: 3,
+      action: "classify",
+      venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "new", fixedItemId: null, otherFixedItemIds: [] },
+    },
+    "runLevelRows: a new venue - name, the shows on THAT drawing, classify (the LiveTickets-only show is not counted)",
+  );
+  same(
+    groupedRows[1],
+    {
+      kind: "venue",
+      key: `venue:${DRAWING_B}`,
+      text: "אולם: Craven Cottage · קטגוריות לבדיקה · הופעה אחת",
+      count: 1,
+      action: "classify",
+      venue: { sourceUrl: DRAWING_B, name: "Craven Cottage", state: "unzoned", fixedItemId: null, otherFixedItemIds: [] },
+    },
+    "runLevelRows: the new season's drawing is its own venue row (state unzoned, one show)",
+  );
+  const mixed = runLevelRows([mk("m1", [W("unzoned_tickets")]), mk("m2", [W("new_venue")])], {}, team, []);
+  same([mixed.length, mixed[0].venue?.state, mixed[0].count], [1, "new", 2], "runLevelRows: any new_venue on the drawing makes the row 'new'");
+  same(
+    runLevelRows([mk("v1", [W("new_venue")], { venue: null, city: "Manchester" })], {}, team, [])[0].venue?.name,
+    "Manchester",
+    "runLevelRows: a show with no venue name is called by its city",
+  );
+
+  // -- runLevelRows: fixed by hand wins, newest item first ------------------------------------------
+  const five = [
+    mk("f1", [W("new_venue")], { position: 0, event_id: 1230, updated_at: "2026-10-22T09:00:00.000Z" }),
+    mk("f2", [W("new_venue")], { position: 1 }),
+    mk("f3", [W("new_venue")], { position: 2, event_id: 1231, updated_at: "2026-10-22T11:30:00.000Z" }),
+    mk("f4", [W("new_venue")], { position: 3 }),
+    mk("f5", [W("new_venue")], { position: 4 }),
+  ];
+  same(
+    runLevelRows(five, { f1: true, f3: true, f2: false }, team, [])[0],
+    {
+      kind: "venue",
+      key: `venue:${DRAWING_A}`,
+      text: "אולם: Craven Cottage · אירוע 1231 סודר בעורך · 3 הופעות עדיין בלי זונים",
+      count: 5,
+      action: "learn",
+      venue: { sourceUrl: DRAWING_A, name: "Craven Cottage", state: "fixed", fixedItemId: "f3", otherFixedItemIds: ["f1"] },
+    },
+    "runLevelRows: fixed wins over new; the newest edit (by updated_at) is offered, the older one listed under it; the rest still wait",
+  );
+  same(runLevelRows(five, { f1: false }, team, [])[0].venue?.state, "new", "runLevelRows: a false flag is not an edit");
+  const twoHalls = [mk("g1", [W("new_venue")]), mk("g2", [W("unzoned_tickets")], { map: DRAWING_B, event_id: 55 })];
+  const twoHallRows = runLevelRows(twoHalls, { g2: true }, team, []);
+  same(twoHallRows.map((r) => r.venue?.state), ["new", "fixed"], "runLevelRows: an edit on one drawing does not touch the other venue row");
+  same(twoHallRows[1].text, "אולם: Craven Cottage · אירוע 55 סודר בעורך", "runLevelRows: the only show on the drawing was the edited one - no 'still without zones' clause (the template is still worth learning)");
+  same(
+    runLevelRows([mk("h1", [W("new_venue")]), mk("h2", [W("new_venue")], { event_id: null })], { h2: true }, team, [])[0].text,
+    "אולם: Craven Cottage · אירוע סודר בעורך · הופעה אחת עדיין בלי זונים",
+    "runLevelRows: a fixed item without an event id still reads (no number)",
+  );
+
+  // -- runLevelRows: names, subject, fix rows, info row, and their order ------------------------------
+  const heb = [mk("h1", [W("no_hebrew_name")]), mk("h2", [W("no_hebrew_name")]), mk("h3", [])];
+  const sides = ["Newcastle United FC", "Aston Villa FC", "Spurs", "Brighton & Hove Albion FC"];
+  same(
+    runLevelRows(heb, {}, team, sides),
+    [
+      {
+        kind: "names",
+        key: "names",
+        text: "שמות בעברית חסרים: Newcastle United FC, Aston Villa FC, Spurs (+1) · 2 אירועים נבנו עם שם באנגלית",
+        count: 2,
+        action: "names",
+      },
+    ],
+    "runLevelRows: the names row lists the first three and (+k), counts the events built with an English name",
+  );
+  same(runLevelRows(heb, {}, team, sides.slice(0, 3))[0].text, "שמות בעברית חסרים: Newcastle United FC, Aston Villa FC, Spurs · 2 אירועים נבנו עם שם באנגלית", "runLevelRows: three names or fewer - no (+k)");
+  same(runLevelRows(heb, {}, team, Array.from({ length: 11 }, (_, i) => `Club ${i}`))[0].text.includes("Club 2 (+8)"), true, "runLevelRows: eleven names - (+8)");
+  same(runLevelRows([], {}, team, ["Spurs"]), [{ kind: "names", key: "names", text: "שמות בעברית חסרים: Spurs", count: 0, action: "names" }], "runLevelRows: names missing but no event carries the warning (a run that predates it) - the row still asks");
+  same(runLevelRows(heb, {}, team, [])[0].text, "שמות בעברית חסרים · 2 אירועים נבנו עם שם באנגלית", "runLevelRows: events carry the warning but no club is missing (an artist run) - the row without a list");
+  same(runLevelRows([mk("h4", [W("no_hebrew_name")])], {}, team, [])[0].text, "שמות בעברית חסרים · אירוע אחד נבנה עם שם באנגלית", "runLevelRows: one event reads as one");
+
+  const noTeamPage = [mk("s1", [W("no_team_page")]), mk("s2", [W("no_team_page")])];
+  same(
+    runLevelRows(noTeamPage, {}, team, []),
+    [{ kind: "subject", key: "subject", text: "אין עמוד קבוצה באתר ל-Fulham FC", count: 2, action: "names" }],
+    "runLevelRows: the subject row - a team without a page",
+  );
+  same(
+    runLevelRows([mk("s3", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton" }, []),
+    [{ kind: "subject", key: "subject", text: "אין עמוד אמן באתר ל-Eric Clapton", count: 1, action: "names" }],
+    "runLevelRows: the subject row - an artist without a page",
+  );
+
+  const fixes = [
+    mk("x1", [W("no_bio"), W("no_event_gallery", "/templates/artists/3/edit#fix-gallery")]),
+    mk("x2", [W("no_bio", "/templates/football/5/edit#fix-bio"), W("no_crest", "/assets?q=Fulham"), W("no_cutout")]),
+    mk("x3", [W("no_bio", "/templates/football/6/edit#fix-bio")]),
+  ];
+  same(
+    runLevelRows(fixes, {}, team, []),
+    [
+      { kind: "fix", key: "fix:no_crest", text: "אין סמל לקבוצה", count: 1, action: "link", fix_url: "/assets?q=Fulham" },
+      { kind: "fix", key: "fix:no_bio", text: "אין ביוגרפיה", count: 3, action: "link", fix_url: "/templates/football/5/edit#fix-bio" },
+      { kind: "fix", key: "fix:no_cutout", text: "אין גזרה לאמן", count: 1, action: null },
+      { kind: "fix", key: "fix:no_event_gallery", text: "אין גלריית אירועים", count: 1, action: "link", fix_url: "/templates/artists/3/edit#fix-gallery" },
+    ],
+    "runLevelRows: one fix row per code in the spec's order, the first fix_url seen (a line with none is skipped), no link without one",
+  );
+
+  const everything = [
+    mk("e1", [W("no_category_twin"), W("no_team_page"), W("no_hebrew_name"), W("new_venue"), W("no_crest", "/assets?q=F")]),
+    mk("e2", [W("no_category_twin")], { map: DRAWING_B }),
+  ];
+  const all = runLevelRows(everything, {}, team, ["Spurs"]);
+  same(all.map((r) => r.kind), ["venue", "names", "subject", "fix", "info"], "runLevelRows: venues, names, subject, fixes, info - in that order");
+  same(all[4], { kind: "info", key: "info:no_category_twin", text: "אין עמוד קטגוריה (/c/) תאום - לידיעה", count: 2, action: null }, "runLevelRows: the info row - no action");
+  same(everything[0].warnings.length, 5, "runLevelRows: the items are not touched");
+
+  // -- runRuleOf ----------------------------------------------------------------------------------
+  const R = runRules;
+  const Q = (kind: UploaderQuestion["kind"], keys: string[], over: Partial<UploaderQuestion> = {}): UploaderQuestion => ({
+    kind,
+    key: `${kind}-k`,
+    text: "?",
+    options: keys.map((k) => ({ key: k, label: `label ${k}` })),
+    free_text: false,
+    asked_at: "2026-10-22T08:00:00.000Z",
+    task_id: null,
+    ...over,
+  });
+  const qItem = (id: string, q: UploaderQuestion | null, o: Over = {}): UploaderItem => mk(id, [], { status: "question", question: q, ...o });
+  const here = mk("r1", [], { venue: "Craven Cottage", city: "London" });
+  const pickShow = Q("pick_show", ["tx-1", "live:9", "both", "skip"]);
+  const none = { venue: null, city: null };
+  same(R.runRuleOf(pickShow, here, { key: "both", text: null }), { kind: "pick_show", key: "both", ...none }, "runRuleOf: pick_show both");
+  same(R.runRuleOf(pickShow, here, { key: "skip", text: null }), { kind: "pick_show", key: "skip", ...none }, "runRuleOf: pick_show skip");
+  same(R.runRuleOf(pickShow, here, { key: "tx-1", text: null }), null, "runRuleOf: a TixStock listing id names ONE show - no rule");
+  same(R.runRuleOf(pickShow, here, { key: "live:9", text: null }), null, "runRuleOf: a LiveTickets listing id - no rule");
+  same(R.runRuleOf(pickShow, here, { key: null, text: "the evening one" }), null, "runRuleOf: free text - no rule");
+
+  const pickDate = Q("pick_date", ["tix:2027-05-20", "live:2027-05-21", "both", "skip"]);
+  same(R.runRuleOf(pickDate, here, { key: "tix:2027-05-20", text: null }), { kind: "pick_date", key: "tix", ...none }, "runRuleOf: pick_date tix:<day> -> tix");
+  same(R.runRuleOf(pickDate, here, { key: "live:2027-05-21", text: null }), { kind: "pick_date", key: "live", ...none }, "runRuleOf: pick_date live:<day> -> live");
+  same(R.runRuleOf(pickDate, here, { key: "both", text: null }), { kind: "pick_date", key: "both", ...none }, "runRuleOf: pick_date both");
+  same(R.runRuleOf(pickDate, here, { key: "skip", text: null }), { kind: "pick_date", key: "skip", ...none }, "runRuleOf: pick_date skip");
+  same(R.runRuleOf(pickDate, here, { key: "tix:", text: null }), null, "runRuleOf: a malformed day key - no rule");
+  same(R.runRuleOf(pickDate, here, { key: null, text: "the 20th" }), null, "runRuleOf: pick_date free text - no rule");
+
+  const pickLocation = Q("pick_location", ["4", "9", "skip"], { free_text: true });
+  same(
+    R.runRuleOf(pickLocation, here, { key: "4", text: null }),
+    { kind: "pick_location", key: "4", venue: "craven cottage", city: "london" },
+    "runRuleOf: pick_location - the location id with the show's venue and city, normalized",
+  );
+  same(
+    R.runRuleOf(pickLocation, mk("r2", [], { venue: "Stade de Genève", city: "Genève" }), { key: "skip", text: null }),
+    { kind: "pick_location", key: "skip", venue: "stade de geneve", city: "geneve" },
+    "runRuleOf: pick_location skip - accents and case do not matter",
+  );
+  same(R.runRuleOf(pickLocation, here, { key: null, text: "London" }), null, "runRuleOf: pick_location free text - no rule");
+  same(R.runRuleOf(pickLocation, here, { key: "abc", text: null }), null, "runRuleOf: pick_location - a key that is no id and no skip");
+  same(
+    R.runRuleOf(pickLocation, mk("r3", [], { venue: null, city: "London" }), { key: "4", text: null }),
+    { kind: "pick_location", key: "4", venue: null, city: "london" },
+    "runRuleOf: a show with no venue name has no venue to match on",
+  );
+  same(R.runRuleOf(Q("confirm_subject", ["yes", "skip"]), here, { key: "yes", text: null }), null, "runRuleOf: confirm_subject - no rule");
+
+  // -- applyRuleTo --------------------------------------------------------------------------------
+  const showRule = (key: "both" | "skip") => ({ kind: "pick_show" as const, key, venue: null, city: null });
+  const otherShow = qItem("o1", Q("pick_show", ["tx-7", "tx-8", "both", "skip"]));
+  same(R.applyRuleTo(showRule("both"), otherShow), "both", "applyRuleTo: pick_show both -> both");
+  same(R.applyRuleTo(showRule("skip"), otherShow), "skip", "applyRuleTo: pick_show skip -> skip");
+  same(R.applyRuleTo(showRule("both"), qItem("o2", Q("pick_show", ["tx-7", "skip"]))), null, "applyRuleTo: a question without that option gets no key");
+  same(R.applyRuleTo(showRule("skip"), qItem("o3", Q("pick_date", ["tix:2027-05-21", "both", "skip"]))), null, "applyRuleTo: another kind of question gets no key");
+
+  const dateRule = (key: "tix" | "live" | "both" | "skip") => ({ kind: "pick_date" as const, key, venue: null, city: null });
+  const otherDate = qItem("o4", Q("pick_date", ["tix:2027-05-22", "live:2027-05-23", "both", "skip"]));
+  same(R.applyRuleTo(dateRule("tix"), otherDate), "tix:2027-05-22", "applyRuleTo: pick_date tix -> the other's own tix:<day>");
+  same(R.applyRuleTo(dateRule("live"), otherDate), "live:2027-05-23", "applyRuleTo: pick_date live -> the other's own live:<day>");
+  same(R.applyRuleTo(dateRule("both"), otherDate), "both", "applyRuleTo: pick_date both as is");
+  same(R.applyRuleTo(dateRule("skip"), otherDate), "skip", "applyRuleTo: pick_date skip as is");
+  const liveDateOnly = qItem("o5", Q("pick_date", ["live:2027-05-23", "both", "skip"]));
+  same(R.applyRuleTo(dateRule("tix"), liveDateOnly), null, "applyRuleTo: pick_date tix - the other has no tix:<day> option -> no key");
+  same(R.applyRuleTo(dateRule("live"), liveDateOnly), "live:2027-05-23", "applyRuleTo: pick_date live - the other has one");
+
+  const locRule = { kind: "pick_location" as const, key: "4", venue: "craven cottage", city: "london" };
+  const locOther = (venue: string | null, city: string, keys = ["4", "9", "skip"]) => qItem("o6", Q("pick_location", keys, { free_text: true }), { venue, city });
+  same(R.applyRuleTo(locRule, locOther("CRAVEN COTTAGE", "london")), "4", "applyRuleTo: pick_location - the same hall and city, however it is written -> the id");
+  same(R.applyRuleTo(locRule, locOther("Anfield", "Liverpool")), null, "applyRuleTo: pick_location - another venue -> no key");
+  same(R.applyRuleTo(locRule, locOther("Craven Cottage", "Manchester")), null, "applyRuleTo: pick_location - the same hall name in another city -> no key");
+  same(R.applyRuleTo(locRule, locOther("Craven Cottage", "London", ["9", "skip"])), null, "applyRuleTo: pick_location - the id is not among its options -> no key");
+  same(R.applyRuleTo({ ...locRule, key: "skip" }, locOther("Craven Cottage", "London")), "skip", "applyRuleTo: pick_location skip -> skip at the same hall");
+  same(R.applyRuleTo({ ...locRule, venue: null }, locOther(null, "London")), null, "applyRuleTo: a rule with no venue matches nothing");
+
+  same(R.applyRuleTo(dateRule("skip"), mk("o7", [], { status: "found", question: Q("pick_date", ["tix:2027-05-22", "skip"], { answer: { key: "skip", text: null, by: "u1", at: "2026-10-22T09:30:00.000Z" } }) })), null, "applyRuleTo: an answered sibling gets no key");
+  same(R.applyRuleTo(dateRule("skip"), mk("o8", [], { status: "skipped" })), null, "applyRuleTo: an item with no question gets no key");
+  same(R.applyRuleTo(dateRule("skip"), qItem("o9", null)), null, "applyRuleTo: a question item without its question gets no key");
+
+  // A rule made from one answer applies to the sibling the way the board will use the pair.
+  const source = qItem("p1", Q("pick_date", ["tix:2027-05-20", "live:2027-05-21", "both", "skip"]));
+  const made = R.runRuleOf(source.question as UploaderQuestion, source, { key: "tix:2027-05-20", text: null });
+  same(made && R.applyRuleTo(made, otherDate), "tix:2027-05-22", "runRuleOf -> applyRuleTo: 'TixStock's day' follows to the next show's own TixStock day");
+
+  // -- warnings.ts + decisions.ts: the round's codes ------------------------------------------------
+  same(WARNING_TEXT.all_dropped, "כל הקטגוריות נפסלו - בדקו ידנית", "all_dropped: the spec's words");
+  same(WARNING_TEXT.unzoned_review, "{count} מתוך {total} כרטיסים בלי זון - לבדיקה: {categories}", "unzoned_review: the spec's template");
+  same(warning("all_dropped"), { code: "all_dropped", text: "כל הקטגוריות נפסלו - בדקו ידנית" }, "warning() is exported: a bare code");
+  same(
+    warning("unzoned_review", { count: 2, total: 9, categories: "Longside Lower, Corner" }),
+    { code: "unzoned_review", text: "2 מתוך 9 כרטיסים בלי זון - לבדיקה: Longside Lower, Corner" },
+    "warning(): the placeholders are filled",
+  );
+  same(warning("no_crest", undefined, "/assets?q=x"), { code: "no_crest", text: WARNING_TEXT.no_crest, fix_url: "/assets?q=x" }, "warning(): the fix link rides along when given");
+  same(decision("classified", { zones: 7, dropped: 1, unsure: 2 }).text, "סווגו 7 זונים · 1 נפסלו · 2 לבדיקה", "classified: zones, dropped, unsure");
+  same(
+    decision("categories_dropped_by_template", { count: 2, names: "Away Fans Section, Visitors" }).text,
+    "2 קטגוריות נפסלו לפי תבנית האולם: Away Fans Section, Visitors",
+    "categories_dropped_by_template: the count and the names",
+  );
+  same(decision("categories_dropped_by_template", { count: 1, names: "Away Fans Section" }).text, "קטגוריה אחת נפסלה לפי תבנית האולם: Away Fans Section", "categories_dropped_by_template: one reads as one");
+  same(decision("named_he", { name: "פולהאם - ניוקאסל יונייטד" }).text, "שם בעברית: פולהאם - ניוקאסל יונייטד", "named_he");
+  same(decision("name_from_livetickets", { name: "פולהאם - ניוקאסל" }).text, "שם בעברית מלייב טיקטס: פולהאם - ניוקאסל", "name_from_livetickets");
+  same(decision("taught_venue").text, "האירוע הזה לימד את תבנית האולם", "taught_venue");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

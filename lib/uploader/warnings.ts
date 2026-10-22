@@ -81,6 +81,10 @@ export const WARNING_TEXT: Record<string, string> = {
   single_supplier: "רק {supplier} מוכר את ההופעה (לידיעה)",
   no_hebrew_name: "לא נמצא שם בעברית - האירוע נבנה עם השם באנגלית",
   far_venue: "האולם רחוק מכל מיקום עם טיסות - {offer}",
+  // Round "אלון 1": a classification that dropped every ticket of an event (the event keeps its tickets), and
+  // the card line for tickets whose category stayed unplaced (`{categories}` = the category names).
+  all_dropped: "כל הקטגוריות נפסלו - בדקו ידנית",
+  unzoned_review: "{count} מתוך {total} כרטיסים בלי זון - לבדיקה: {categories}",
   // BLOCKERS (UploaderItem.blockers): approval is refused until fixed in the editor (#fix-price).
   no_base_price: "אין מחיר בסיס לטיסה - מלאו בעורך לפני האישור",
   no_base_price_hotel: "אין מחיר בסיס למלון - מלאו בעורך לפני האישור",
@@ -100,7 +104,8 @@ function fill(code: string, params: Record<string, string | number> = {}): strin
   return (WARNING_TEXT[code] ?? code).replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? ""));
 }
 
-function warning(code: string, params?: Record<string, string | number>, fix_url?: string): Warning {
+/** One warning line: the code and its filled-in Hebrew text (`fix_url` only when given). Exported for the classification and names actions. */
+export function warning(code: string, params?: Record<string, string | number>, fix_url?: string): Warning {
   return fix_url === undefined ? { code, text: fill(code, params) } : { code, text: fill(code, params), fix_url };
 }
 
