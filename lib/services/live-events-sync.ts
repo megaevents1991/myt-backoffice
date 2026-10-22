@@ -5,13 +5,7 @@
 import { supabase } from "@/lib/supabase-server";
 import {
   LiveEvent,
-  LiveCategory,
-  LivePerformer,
-  LiveVenue,
   CategoryClassification,
-  RawLiveCategory,
-  RawLivePerformer,
-  RawLiveCity,
 } from "@/types/live-events.types";
 
 // LIVE API configuration
@@ -25,14 +19,6 @@ export interface LiveSyncResult {
   status: "success" | "error";
   error?: string;
   details?: string;
-}
-
-export interface LiveSyncResults {
-  events?: LiveSyncResult;
-  categories?: LiveSyncResult;
-  performers?: LiveSyncResult;
-  venues?: LiveSyncResult;
-  cities?: LiveSyncResult;
 }
 
 // LIVE API request helper

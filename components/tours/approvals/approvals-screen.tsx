@@ -37,7 +37,7 @@ import type { QueueRun } from "./queue-ui";
 
 const LOAD_FAILED = "Couldn't load the data. Refresh the page, and if it happens again, contact support.";
 
-export function ApprovalsScreen({ companyName }: { companyName: string }) {
+export function ApprovalsScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   /** Bumped after every change, so the data-problems summary counts again. */
   const [changes, setChanges] = useState(0);

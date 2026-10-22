@@ -584,8 +584,6 @@ export function packageSlugOf(path: string | null | undefined): string | null {
 // ---------------------------------------------------------------- booking link
 /** A booking holds 1 to 9 rooms (the site's own cap). */
 export const LINK_ROOMS_MAX = 9;
-/** The case's link token (`lr` on the site, `lead_ref` to tours.booking_create, which checks the same shape). */
-export const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** The rooms of a link: only compositions the date prices, at most 9, in the order chosen. */
 export function cleanRoomKeys(keys: readonly string[], offered: readonly string[]): string[] {

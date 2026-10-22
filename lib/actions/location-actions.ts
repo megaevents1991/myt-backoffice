@@ -151,23 +151,3 @@ export async function findNearestLocation(
   locationsWithDistance.sort((a, b) => a.distance - b.distance);
   return locationsWithDistance[0];
 }
-
-export async function getLocationsWithinRadius(
-  latitude: number, 
-  longitude: number, 
-  radiusKm: number = 100
-): Promise<LocationWithDistance[]> {
-  await requireStaff();
-  const locations = await getLocations();
-
-  // Calculate distances and filter by radius
-  const locationsWithDistance = locations
-    .map(location => ({
-      ...location,
-      distance: calculateDistance(latitude, longitude, location.latitude, location.longitude)
-    }))
-    .filter(location => location.distance <= radiusKm)
-    .sort((a, b) => a.distance - b.distance);
-
-  return locationsWithDistance;
-}

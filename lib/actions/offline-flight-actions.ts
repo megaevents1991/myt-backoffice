@@ -293,37 +293,6 @@ export async function getFlightsByEventId(
   return (data ?? []) as OfflineFlight[];
 }
 
-export async function removeEventFromFlight(
-  flightId: number,
-  eventId: number,
-): Promise<OfflineFlight> {
-  await requireStaff();
-  const { data: current, error: fetchError } = await megaEventsFlights()
-    .select("*")
-    .eq("id", flightId)
-    .single();
-  if (fetchError) throw fetchError;
-
-  const existing = (current.event_ids as number[]) ?? [];
-  if (!existing.includes(eventId)) return current as OfflineFlight;
-
-  const { data, error } = await megaEventsFlights()
-    .update({ event_ids: existing.filter((id) => id !== eventId) })
-    .eq("id", flightId)
-    .select();
-
-  if (error) throw error;
-  await logAudit({
-    action: "update",
-    entityType: "offline_flight",
-    entityId: flightId,
-    metadata: { event_id: eventId },
-  });
-  revalidatePath("/offline-flights");
-  revalidatePath(`/events/${eventId}`);
-  return data[0] as OfflineFlight;
-}
-
 export async function addEventToFlight(
   flightId: number,
   eventId: number,

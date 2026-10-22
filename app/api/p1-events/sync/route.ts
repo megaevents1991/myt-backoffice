@@ -1,6 +1,6 @@
 // app/api/p1-events/sync/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { syncP1Events } from '@/lib/services/p1-events-sync';
 import { guardAdminRoute } from '@/lib/auth/guards';
 import { logAudit } from '@/lib/audit';
@@ -10,7 +10,7 @@ import { logAudit } from '@/lib/audit';
  *
  * Usage: POST /api/p1-events/sync
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   const denied = await guardAdminRoute();
   if (denied) return denied;
   try {

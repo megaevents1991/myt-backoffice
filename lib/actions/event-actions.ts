@@ -386,32 +386,6 @@ export async function bulkUpdateEvents(ids: number[], input: Partial<Event>) {
   return data as Event[];
 }
 
-export async function bulkDuplicateEvents(ids: number[]) {
-  await requireStaff();
-  // Every source checked BEFORE the first copy: a hidden one (see duplicateEvent) refuses the whole
-  // batch, rather than leave half of it duplicated.
-  const { data: sources, error: sourcesError } = await supabase.from("events").select("id,is_hidden").in("id", ids);
-  if (sourcesError) throw sourcesError;
-  if (((sources ?? []) as unknown as { id: number; is_hidden: boolean | null }[]).some((e) => e.is_hidden === true)) {
-    throw new Error(HIDDEN_DUPLICATE_ERROR);
-  }
-  const duplicatedEvents: Event[] = [];
-
-  // We need to duplicate each event one by one
-  for (const id of ids) {
-    const duplicatedEvent = await duplicateEvent(id, { skipAudit: true });
-    duplicatedEvents.push(duplicatedEvent);
-  }
-
-  await logAudit({
-    action: "create",
-    entityType: "event",
-    entityId: null,
-    metadata: { ids, count: ids.length },
-  });
-  return duplicatedEvents;
-}
-
 export async function getActiveEvents() {
   await requireStaff();
   const { data, error } = await supabase

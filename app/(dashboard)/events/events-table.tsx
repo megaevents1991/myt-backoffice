@@ -1541,7 +1541,7 @@ export function EventsTable() {
             </Button>
           </div>
         }
-        getRowClassName={(row, index, sorting) => {
+        getRowClassName={(_row, index, sorting) => {
           const isSortedByPrioritized = sorting.some(
             (s) => s.id === "is_prioritized" && s.desc
           );

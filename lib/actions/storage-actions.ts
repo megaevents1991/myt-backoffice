@@ -154,46 +154,6 @@ export async function uploadFile(formData: FormData) {
   return { success: true, path: filePath };
 }
 
-export async function uploadImageFromUrl(
-  imageUrl: string,
-  bucket: string,
-  fileName: string,
-) {
-  await requireStaff();
-  try {
-    const response = await fetch(imageUrl);
-    if (!response.ok)
-      throw new Error(`Failed to fetch image: ${response.statusText}`);
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, buffer, {
-        contentType: response.headers.get("content-type") || "image/svg+xml",
-        upsert: true,
-      });
-
-    if (error) throw error;
-
-    await logAudit({
-      action: "create",
-      entityType: "storage",
-      entityId: `${bucket}/${fileName}`,
-      metadata: { source: "url" },
-    });
-
-    const { data: publicUrlData } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(fileName);
-    return publicUrlData.publicUrl;
-  } catch (error) {
-    console.error("Error uploading image from URL:", error);
-    return null;
-  }
-}
-
 export type StorageImage = {
   bucket: string;
   path: string;

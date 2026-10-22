@@ -104,14 +104,6 @@ export async function impersonatePartner(
   return { ok: true };
 }
 
-/** Ends the portal impersonation early (the cookie also self-expires). */
-export async function stopImpersonation(): Promise<ImpersonateResult> {
-  await requireSuperadmin();
-  const store = await cookies();
-  store.set(PORTAL_SESSION_COOKIE, "", { maxAge: 0, path: "/portal" });
-  return { ok: true };
-}
-
 /**
  * Dual-role self-switch (אופצייה למוד לשתי רולים כאדמין וכסוכן - 2026-08-06):
  * a STAFF user whose own user_profiles row is linked to a partner code opens

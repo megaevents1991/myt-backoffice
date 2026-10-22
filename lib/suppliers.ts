@@ -13,12 +13,6 @@ import type { EventTicket, EventType } from "@/types/app.types";
 export const SUPPLIERS = ["tixstock", "livetickets", "static"] as const;
 export type TicketSupplier = (typeof SUPPLIERS)[number];
 
-export const SUPPLIER_LABELS: Record<TicketSupplier, string> = {
-  tixstock: "TixStock",
-  livetickets: "LiveTickets",
-  static: "Manual",
-};
-
 const isSupplier = (value: unknown): value is TicketSupplier =>
   typeof value === "string" &&
   (SUPPLIERS as readonly string[]).includes(value);

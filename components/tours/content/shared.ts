@@ -5,7 +5,6 @@
  * Plain module on purpose - no "use client" and no "use server" - so the server
  * actions and the client components import the same types and labels.
  */
-import { matchesSearch } from "@/lib/search";
 import type { FooterTiles, HomeSection, PictureTileMode } from "@/lib/tours/site-content";
 import type { EasyLayout, EasyText, PageNote } from "@/lib/tours/wp-html";
 import type { SiteEditorOptions } from "@/lib/tours/site-options";
@@ -353,15 +352,6 @@ export interface TourReadinessItem {
   detail: string;
   /** The tab of the tour page that fixes it. */
   tab?: string;
-}
-
-export interface TourReadiness {
-  items: TourReadinessItem[];
-  /** Every item but the warnings is done. */
-  ready: boolean;
-  /** The last change to the tour or its dates (ISO) - compared with the last site publish. */
-  changedAt: string | null;
-  lastPublish: SitePublishRecord | null;
 }
 
 export interface ItineraryVariant {
@@ -765,15 +755,6 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   done: "Done",
   spam: "Spam",
 };
-export const leadStatusLabel = (status: string): string => LEAD_STATUS_LABELS[status as LeadStatus] ?? status;
-
-/** What the inbox narrows its list by - the export reads the same rows. Empty = no filter. */
-export interface LeadFilters {
-  kind: string;
-  status: string;
-  /** The search box, matched by leadMatches. */
-  q: string;
-}
 
 export interface LeadRow {
   id: string;
@@ -794,10 +775,6 @@ export interface LeadRow {
   notes: string | null;
 }
 
-/** A lead still being worked on whose follow-up day is today or already passed. */
-export const leadFollowUpDue = (lead: LeadRow, today: string): boolean =>
-  !!lead.followUpDate && lead.followUpDate <= today && (lead.status === "new" || lead.status === "in_progress");
-
 /** A site path as people read it: Hebrew slugs decoded. */
 export function readablePath(path: string | null): string {
   if (!path) return "";
@@ -807,14 +784,6 @@ export function readablePath(path: string | null): string {
     return path;
   }
 }
-
-/**
- * Does a lead match the inbox search? The screen and the Excel export use this
- * one rule, so the file holds the rows the screen shows. The page is matched as
- * people read it (readablePath), so a Hebrew word finds a Hebrew slug.
- */
-export const leadMatches = (lead: LeadRow, q: string): boolean =>
-  matchesSearch(q, lead.name, lead.phone, lead.email, lead.message, readablePath(lead.sourcePath), lead.notes);
 
 export interface LeadAssignee {
   id: string;
@@ -826,19 +795,6 @@ export interface LeadsPage {
   rows: LeadRow[];
   /** The company has more leads than one load reads; the oldest are left out. */
   truncated: boolean;
-}
-
-export interface LeadsMeta {
-  assignees: LeadAssignee[];
-  kinds: string[];
-  currentUserId: string;
-}
-
-export interface LeadsExport {
-  fileName: string;
-  /** The .xlsx file, base64 encoded. */
-  base64: string;
-  rows: number;
 }
 
 // ---------------------------------------------------------------- company settings

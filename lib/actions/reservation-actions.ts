@@ -226,27 +226,6 @@ export async function getReservationAgentLabel(
   return labels.get(reservationId) ?? null;
 }
 
-export async function createReservation(
-  reservation: Omit<Reservation, "id" | "created_at">,
-) {
-  await requireStaff();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("reservations")
-    .insert(reservation)
-    .select();
-
-  if (error) throw error;
-  const created = data[0] as Reservation;
-  await logAudit({
-    action: "create",
-    entityType: "reservation",
-    entityId: created.id,
-    changes: reservation,
-  });
-  return created;
-}
-
 /**
  * Statuses that hold NO offline inventory.
  *

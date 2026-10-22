@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase-server";
 import { guardAdminRoute } from "@/lib/auth/guards";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   try {

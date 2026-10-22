@@ -105,16 +105,6 @@ export interface OfflineFlight {
   reviewed_at?: string | null; // TIMESTAMPTZ - "a manager went over this row"
 }
 
-/** One flight↔event seat quota. Consumed seats are never stored here - they
- *  come from the `flight_event_consumed` view over active reservations. */
-export interface FlightEventAllocation {
-  id: number;
-  flight_id: number;
-  event_id: number;
-  allocated_seats: number;
-  created_at: string;
-}
-
 /** One row of the allocations panel: the quota joined with derived consumption. */
 export interface FlightAllocationRow {
   event_id: number;

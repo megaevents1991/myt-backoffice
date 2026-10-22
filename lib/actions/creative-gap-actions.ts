@@ -17,7 +17,6 @@ import {
   gapKey,
   type GapCounts,
   type GapItem,
-  type GapKind,
 } from "@/types/creative-gap.types";
 
 // Typed against types/database.types.ts (npm run db:types).
@@ -158,12 +157,6 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
     counts,
     total: Object.values(counts).reduce((sum, n) => sum + n, 0),
   };
-}
-
-/** Concrete rows for one gap kind - the drill-down tab. */
-export async function listCreativeGaps(kind: GapKind): Promise<GapItem[]> {
-  await requireStaff();
-  return listGapsOfKind(kind, await buildGapContext());
 }
 
 /**

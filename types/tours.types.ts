@@ -15,13 +15,10 @@ export type TourItinerary = T["package_itineraries"]["Row"];
 export type TourTerm = T["terms"]["Row"];
 export type TourSeries = T["series"]["Row"];
 export type TourDeparture = T["departures"]["Row"];
-export type TourDeparturePrice = T["departure_prices"]["Row"];
 export type TourDepartureOption = T["departure_options"]["Row"];
 export type TourPromotion = T["promotions"]["Row"];
-export type TourSalesEntry = T["departure_sales_entries"]["Row"];
 /** An order from the site: a request for a rep, or a card payment (20261003100000). */
 export type TourBooking = T["bookings"]["Row"];
-export type TourFlightAllocation = T["flight_allocations"]["Row"];
 export type TourHotel = T["hotels"]["Row"];
 export type TourInstructor = T["instructors"]["Row"];
 export type TourCmsPage = T["cms_pages"]["Row"];
@@ -82,7 +79,6 @@ export const PROMOTION_KIND_LABELS: Record<PromotionKind, string> = {
 export const EXCLUSIVE_PROMOTION_KINDS: PromotionKind[] = ["percent_order", "fixed_per_pax"];
 
 export const OPTION_KINDS = ["hotel", "ticket", "villa", "car", "extra"] as const;
-export type OptionKind = (typeof OPTION_KINDS)[number];
 
 // ---------------------------------------------------------------- flight blocks
 /**

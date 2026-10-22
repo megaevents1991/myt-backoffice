@@ -30,7 +30,7 @@ const badId = () =>
 const isNotFound = (error: unknown) =>
   error instanceof Error && error.message === NOT_FOUND;
 
-export async function GET(request: Request, context: RouteContext) {
+export async function GET(_request: Request, context: RouteContext) {
   const denied = await guardAdminRoute({ anyCompany: true });
   if (denied) return denied;
   const id = await flightId(context);
@@ -79,7 +79,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   return PUT(request, context);
 }
 
-export async function DELETE(request: Request, context: RouteContext) {
+export async function DELETE(_request: Request, context: RouteContext) {
   const denied = await guardAdminRoute({ anyCompany: true });
   if (denied) return denied;
   const id = await flightId(context);

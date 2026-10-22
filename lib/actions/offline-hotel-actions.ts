@@ -280,20 +280,6 @@ export async function getHotelsByEventId(
   return (data ?? []) as OfflineHotel[];
 }
 
-export async function getHotelsByFlightId(
-  flightId: number,
-): Promise<OfflineHotel[]> {
-  await requireStaff();
-  const { data, error } = await hotelsTable()
-    .select("*")
-    .contains("flight_ids", [flightId])
-    .eq("is_deleted", false)
-    .order("check_in", { ascending: true });
-
-  if (error) throw error;
-  return (data ?? []) as OfflineHotel[];
-}
-
 export async function removeEventFromHotel(
   hotelId: number,
   eventId: number,
@@ -354,37 +340,6 @@ export async function addEventToHotel(
   });
   revalidatePath("/offline-hotels");
   revalidatePath(`/events/${eventId}`);
-  return data[0] as OfflineHotel;
-}
-
-export async function addFlightToHotel(
-  hotelId: number,
-  flightId: number,
-): Promise<OfflineHotel> {
-  await requireStaff();
-  const { data: current, error: fetchError } = await hotelsTable()
-    .select("flight_ids")
-    .eq("id", hotelId)
-    .single();
-
-  if (fetchError) throw fetchError;
-
-  const existing = (current.flight_ids as number[]) ?? [];
-  if (existing.includes(flightId)) return getOfflineHotel(hotelId);
-
-  const { data, error } = await hotelsTable()
-    .update({ flight_ids: [...existing, flightId] })
-    .eq("id", hotelId)
-    .select();
-
-  if (error) throw error;
-  await logAudit({
-    action: "update",
-    entityType: "offline_hotel",
-    entityId: hotelId,
-    metadata: { flight_id: flightId },
-  });
-  revalidatePath("/offline-hotels");
   return data[0] as OfflineHotel;
 }
 

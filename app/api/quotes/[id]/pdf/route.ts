@@ -12,7 +12,7 @@ export const maxDuration = 30;
 const QUOTE_PDF_BUCKET = "quotes";
 
 export async function POST(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {

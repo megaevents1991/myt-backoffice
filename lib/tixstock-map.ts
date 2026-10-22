@@ -62,10 +62,6 @@ export const TX_DISABLED_STROKE = "#999999";
 export const slugify = (name: string): string =>
   (name || "").trim().toLowerCase().replace(/\s+/g, "-");
 
-/** Normalise a section name for comparison */
-export const normalizeSection = (section: string): string =>
-  (section || "").trim().toLowerCase();
-
 /* ------------------------------------------------------------------ */
 /*  Ticket classification helpers                                      */
 /* ------------------------------------------------------------------ */
@@ -509,7 +505,6 @@ export const paintSection = (
 
   /* ---- fill ---- */
   for (const target of fillTargets) {
-    const node = target as HTMLElement;
     const svgEl = target as unknown as SVGElement;
 
     switch (mode) {
@@ -550,7 +545,6 @@ export const paintSection = (
 
   /* ---- stroke ---- */
   for (const target of strokeTargets) {
-    const node = target as HTMLElement;
     const svgEl = target as unknown as SVGElement;
 
     switch (mode) {

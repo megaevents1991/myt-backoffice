@@ -215,7 +215,7 @@ export default function LiveEventDetailsPage() {
       };
 
       const eventTickets: EventTicket[] = await Promise.all(
-        filteredTickets.map(async (ticket, index) => {
+        filteredTickets.map(async (ticket) => {
           const priceInUSD = Math.round(await convertPriceToUSD(ticket.cost, event.currency));
           
           const mappedTicket = {

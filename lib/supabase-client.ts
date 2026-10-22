@@ -22,7 +22,7 @@ function getSupabaseClient() {
 
 // Export the lazy client getter
 export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
-  get(target, prop) {
+  get(_target, prop) {
     const client = getSupabaseClient();
     const value = client[prop as keyof typeof client];
     return typeof value === 'function' ? value.bind(client) : value;

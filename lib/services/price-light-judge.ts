@@ -16,9 +16,6 @@ export const AI_TIMEOUT_MS = PRICE_LIGHT_AGENT.timeoutMs;
  *  nightly threads through `matchAllForEvent`. Past it, matching carries on
  *  rule-only for the rest of the run instead of eating the whole cron window. */
 export const AI_CALLS_PER_RUN = PRICE_LIGHT_AGENT.callsPerRun;
-export const AI_MODEL_DEFAULT = PRICE_LIGHT_AGENT.defaultModel;
-export const AI_USD_PER_M_INPUT = PRICE_LIGHT_AGENT.usdPerMInput;
-export const AI_USD_PER_M_OUTPUT = PRICE_LIGHT_AGENT.usdPerMOutput;
 /** Prompt-shaping, specific to THIS judge's call - not part of what an agent is. */
 export const AI_MAX_CANDIDATES = 10;
 export const AI_DETAIL_TEXT_MAX = 6_000;

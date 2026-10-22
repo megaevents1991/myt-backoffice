@@ -15,9 +15,7 @@ import {
   ArrowLeft,
   Calendar,
   MapPin,
-  Users,
   Ticket,
-  Trophy,
   ExternalLink,
   Loader2,
 } from "lucide-react";

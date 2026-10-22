@@ -102,8 +102,6 @@ const ALT_DATES_SHOWN = 2;
 const DAY_MS = 86_400_000;
 const shiftDay = (day: string, delta: number): string =>
   new Date(Date.parse(`${day}T00:00:00.000Z`) + delta * DAY_MS).toISOString().slice(0, 10);
-const nightsOf = (depart: string, ret: string): number =>
-  Math.round((Date.parse(`${ret}T00:00:00.000Z`) - Date.parse(`${depart}T00:00:00.000Z`)) / DAY_MS);
 const dayMonth = (day: string): string => `${day.slice(8, 10)}.${day.slice(5, 7)}`;
 
 /**

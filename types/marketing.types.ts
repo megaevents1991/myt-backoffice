@@ -66,24 +66,6 @@ export interface IgMediaRow {
   insights_at: string | null;
 }
 
-export interface IgInsightRow {
-  media_id: string;
-  day: string;
-  reach: number;
-  saved: number;
-  shares: number;
-  views: number;
-  likes: number;
-  comments: number;
-}
-
-export interface IgAccountRow {
-  ig_user_id: string;
-  day: string;
-  followers: number;
-  media_count: number;
-}
-
 export interface MarketingAlertRow {
   kind: "budget_bleed" | "viral_post";
   key: string;

@@ -96,7 +96,7 @@ async function runStep(step: SyncStepId): Promise<SyncStepResult> {
 }
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ step: string }> },
 ) {
   const denied = await guardAdminOnlyRoute();

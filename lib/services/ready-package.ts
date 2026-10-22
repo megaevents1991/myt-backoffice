@@ -54,7 +54,6 @@ import {
   specFromComposition,
   summarizeRefresh,
   swapOf,
-  targetSizes,
   variantSizes,
   type CompositionLike,
   type FlightLike,

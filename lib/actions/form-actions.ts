@@ -31,7 +31,6 @@ const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const formsTable = () => (supabase as any).from("forms");
 const fieldsTable = () => (supabase as any).from("form_fields");
-const responsesTable = () => (supabase as any).from("form_responses");
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 const FORM_COLUMNS =
@@ -729,17 +728,6 @@ export async function softDeleteForm(id: number): Promise<boolean> {
   await logAudit({ action: "delete", entityType: "form", entityId: id });
   revalidatePath("/forms");
   return true;
-}
-
-/** Counts for the responses page header. */
-export async function getFormResponseCount(formId: number): Promise<number> {
-  await requireFormsAccess();
-  const { count, error } = await responsesTable()
-    .select("id", { count: "exact", head: true })
-    .eq("form_id", formId);
-
-  if (error) throw error;
-  return count ?? 0;
 }
 
 /**

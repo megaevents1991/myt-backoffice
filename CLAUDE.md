@@ -1533,8 +1533,7 @@ answers an exact repeat from an earlier run with no model. `createRun` raises at
 `MAX_QUESTION_TASKS_PER_RUN` 20 tasks (and mails); past them a question waits on the board with no task
 (decision `question_untasked`). The Tasks board refuses a status change on a `source = "uploader"` task ("ענו
 על השאלה בלוח ההעלאה") - done there would strand the show as an open question. The toast
-(`components/uploader-waiting-toast.tsx`, admins, store `@/hooks/use-toast` - `components/ui/use-toast` is
-a dead second store) fires when the count ROSE, never on that run's own board, and fires again on a full
+(`components/uploader-waiting-toast.tsx`, admins, store `@/hooks/use-toast`) fires when the count ROSE, never on that run's own board, and fires again on a full
 reload for any open question. The menu BADGE the spec names is NOT built.
 
 **What it learns from** (`learnsFrom`, rows tagged `metadata.agent: "tour-uploader"`): `uploader.plan_edited`

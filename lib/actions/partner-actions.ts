@@ -12,7 +12,7 @@ import {
   type PartnerInput,
   type PartnerType,
 } from "@/types/partner.types";
-import { logAudit, diffChanges, fetchBefore } from "@/lib/audit";
+import { logAudit } from "@/lib/audit";
 import { createManagedUser } from "@/lib/auth/user-create";
 import {
   getOfficeUsersForPartners,
@@ -107,19 +107,6 @@ function toPartnerRow(input: Partial<PartnerInput>): Record<string, unknown> {
     }
   }
   return row;
-}
-
-/** Never log partner passwords - redact before logAudit. */
-function redactPassword<T extends Record<string, unknown>>(obj: T): T {
-  if (!("password" in obj)) return obj;
-  return { ...obj, password: "***" };
-}
-
-function redactPasswordDiff(
-  diff: Record<string, { from: unknown; to: unknown }>,
-): Record<string, { from: unknown; to: unknown }> {
-  if (!("password" in diff)) return diff;
-  return { ...diff, password: { from: "***", to: "***" } };
 }
 
 /**
@@ -223,72 +210,6 @@ export async function getPartner(trackingCode: string) {
     .single();
 
   if (error) throw error;
-  return data as unknown as PartnerListItem;
-}
-
-/**
- * Partner row only, with no portal login. The dashboard now goes through
- * `createPartnerAccount` (lib/actions/partner-account-actions.ts), which keeps
- * the two in step; this stays for scripts and one-off imports.
- */
-export async function createPartner(
-  partner: PartnerInput & { partner_tracking_code: string },
-) {
-  await requireStaff();
-  const trackingCode = partner.partner_tracking_code?.trim();
-  if (!trackingCode) throw new Error("Tracking code is required");
-
-  const row = {
-    ...toPartnerRow(partner),
-    partner_tracking_code: trackingCode,
-    created_at: new Date().toISOString().slice(0, 10),
-  };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("partners")
-    .insert(row)
-    .select(LIST_COLUMNS)
-    .single();
-
-  if (error) throw error;
-  const created = data as unknown as PartnerListItem;
-  await logAudit({
-    action: "create",
-    entityType: "partner",
-    entityId: created.partner_tracking_code,
-    changes: redactPassword(row),
-  });
-  return created;
-}
-
-/** Partner row only - see the note on createPartner. */
-export async function updatePartner(
-  trackingCode: string,
-  partner: Partial<PartnerInput>,
-) {
-  await requireStaff();
-  const row = toPartnerRow(partner);
-  const before = await fetchBefore(
-    "partners",
-    "partner_tracking_code",
-    trackingCode,
-    row,
-  );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("partners")
-    .update(row)
-    .eq("partner_tracking_code", trackingCode)
-    .select(LIST_COLUMNS)
-    .single();
-
-  if (error) throw error;
-  await logAudit({
-    action: "update",
-    entityType: "partner",
-    entityId: trackingCode,
-    changes: redactPasswordDiff(diffChanges(before, row)),
-  });
   return data as unknown as PartnerListItem;
 }
 

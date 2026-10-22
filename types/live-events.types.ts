@@ -147,12 +147,6 @@ export interface LiveEventsApiResponse<T> {
   timestamp: string;
 }
 
-// Mapping types for internal use
-export interface LiveEventProcessed extends LiveEvent {
-  processedType: 'sports_live_event_dynamic' | 'music_live_event_dynamic';
-  internalCategories: string[];
-}
-
 // Seating method constants
 export const SEATING_METHODS = {
   GA: 1,           // General Admission
@@ -168,16 +162,6 @@ export const CURRENCIES = {
   GBP: 3,
   ILS: 4,
   OTHER: 5
-} as const;
-
-// Shipping options constants
-export const SHIPPING_OPTIONS = {
-  LOCAL_DELIVERY: 1,              // Price: 5
-  INTERNATIONAL_SHIPPING: 2,      // Price: 5
-  SPECIAL_LOCAL_DELIVERY: 3,      // Price: 5
-  E_TICKET: 4,                    // Price: 5
-  WORLD_CUP_INTERNATIONAL: 5,     // Price: 5
-  LOCAL_PICKUP: 6                 // Price: Free
 } as const;
 
 // Category classification helpers

@@ -2,8 +2,6 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { XS2Ticket } from "@/types/sports-events.types";
 import { CURRENCIES } from "@/types/live-events.types";
-import type { LiveTicketCategory } from "@/types/live-events.types";
-import type { EventTicket, VipConfig } from "@/types/app.types";
 import type {
   ReservationEventOrderInfo,
   ReservationEventOrderInfoItem,
@@ -66,14 +64,6 @@ export function formatTicketFaceValue(ticket: XS2Ticket): string {
 }
 
 /**
- * Format LIVE ticket price with proper currency
- */
-export function formatLiveTicketPrice(ticket: LiveTicketCategory, currencyId: number): string {
-  const currencyCode = getLiveCurrencyCode(currencyId);
-  return formatCurrency(ticket.cost, currencyCode);
-}
-
-/**
  * Get currency code from LIVE currency ID
  */
 export function getLiveCurrencyCode(currencyId: number): string {
@@ -84,27 +74,6 @@ export function getLiveCurrencyCode(currencyId: number): string {
     case CURRENCIES.ILS: return "ILS";
     default: return "EUR";
   }
-}
-
-/**
- * Check if a ticket is VIP
- */
-export function isVipTicket(ticket: EventTicket): boolean {
-  return ticket.vip?.enabled ?? false;
-}
-
-/**
- * Get VIP details from ticket
- */
-export function getVipDetails(ticket: EventTicket): string {
-  return ticket.vip?.details ?? '';
-}
-
-/**
- * Create default VIP config
- */
-export function createDefaultVipConfig(): VipConfig {
-  return { enabled: false, details: '' };
 }
 
 /**

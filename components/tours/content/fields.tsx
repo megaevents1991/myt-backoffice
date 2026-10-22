@@ -625,6 +625,3 @@ export function StringListEditor({
 
 /** The note every image editor carries. */
 export const IMAGE_FIELDS_NOTE = `Upload a picture (${TOUR_MEDIA_TYPES_LABEL}, up to ${MAX_MB} MB), or enter its address: a path on the site (/media/...) or a full https:// URL. A new picture reaches the site when the page is saved and published.`;
-
-/** @deprecated The old name of IMAGE_FIELDS_NOTE, kept while package-editor.tsx imports it. */
-export const NO_UPLOAD_NOTE = IMAGE_FIELDS_NOTE;

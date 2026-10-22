@@ -469,20 +469,6 @@ export async function getTaxonomyLinkMaps(): Promise<{
   return { cats, tags };
 }
 
-/* ---------- counts (how many events each category/tag collects) ---------- */
-
-export async function getCategoryEventCounts(): Promise<
-  Record<number, number>
-> {
-  await requireStaff();
-  const rows = await allLinkRows<{ category_id: number }>("event_category_links", "category_id");
-  const counts: Record<number, number> = {};
-  rows.forEach((r) => {
-    counts[r.category_id] = (counts[r.category_id] ?? 0) + 1;
-  });
-  return counts;
-}
-
 export async function getTagEventCounts(): Promise<Record<number, number>> {
   await requireStaff();
   const rows = await allLinkRows<{ tag_id: number }>("event_tag_links", "tag_id");

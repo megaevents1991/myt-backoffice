@@ -1,4 +1,4 @@
-import { requireCompany, type Company } from "@/lib/company";
+import { requireCompany } from "@/lib/company";
 import type { SessionPayload } from "@/lib/auth/session";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { ApprovalsScreen } from "@/components/tours/approvals/approvals-screen";
@@ -16,9 +16,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function TourApprovalsPage() {
   let session: SessionPayload;
-  let company: Company;
   try {
-    ({ session, company } = await requireCompany("tours"));
+    ({ session } = await requireCompany("tours"));
   } catch (e) {
     // The active company does not sell tours (Mega Events) - say so, do not crash.
     // Anything else (no staff session) goes to the dashboard error boundary like on every guarded page.
@@ -41,5 +40,5 @@ export default async function TourApprovalsPage() {
     );
   }
 
-  return <ApprovalsScreen companyName={company.name} />;
+  return <ApprovalsScreen />;
 }

@@ -376,7 +376,7 @@ function AvatarCircle({
 export function MatchTemplate({
   kind, homeLogoUrl, awayLogoUrl, homeName, awayName,
   homeHasCutout, awayHasCutout,
-  dateText, timeText, locationText, priceText, ticketOnly, bare,
+  dateText, locationText, priceText, ticketOnly, bare,
   bgKind, colorIndex, shapeIndex,
   imgScale, imgOffsetX, imgOffsetY, bgScale,
   variant, heroPhoto,

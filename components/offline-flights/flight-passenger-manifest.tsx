@@ -14,8 +14,6 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
   return "secondary";
 }
 
-type Passenger = { name: string; reservationId: number; status: string };
-
 // Flattens active reservations into a numbered passenger manifest grouped by
 // reservation - prep for the flights team's group ticketing. Main contact comes
 // first in each reservation, followed by the extra pax.

@@ -276,7 +276,6 @@ const tabRow = z.object({
   tours: z.array(slug).max(24),
   limit: z.number().int().min(1).max(24),
 });
-export type TabRow = z.infer<typeof tabRow>;
 
 const EMPTY_TAB_BANNER = { titleBold: "", titleRest: "", text: "", slides: [] };
 

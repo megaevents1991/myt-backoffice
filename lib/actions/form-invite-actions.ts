@@ -813,9 +813,3 @@ export async function restoreTripLink(
   revalidatePath(`/forms/${formId}/invites`);
   return { ok: true };
 }
-
-/** Absolute public URL for the shared link, shown in the builder. */
-export async function publicFormUrl(slug: string): Promise<string> {
-  await requireStaff();
-  return `${appOrigin()}/f/${slug}`;
-}

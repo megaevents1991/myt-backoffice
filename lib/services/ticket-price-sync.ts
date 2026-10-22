@@ -1170,11 +1170,3 @@ export class TicketPriceSyncService {
 // Export the enhanced service and singleton instance
 export const multiCurrencyExchangeRateService = exchangeRateService;
 export const ticketPriceSyncService = new TicketPriceSyncService();
-
-// Export individual sync methods for flexibility
-export const syncXS2Tickets = () =>
-  ticketPriceSyncService.syncXS2TicketPrices();
-export const syncLiveTickets = () =>
-  ticketPriceSyncService.syncLiveTicketPrices();
-export const syncAllTickets = () =>
-  ticketPriceSyncService.syncAllTicketPrices();

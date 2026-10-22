@@ -242,8 +242,6 @@ const textNode = (value: string, marks: string[]): RichNode => ({
   data: {},
 });
 
-const isInlineTag = (t: string) => ["a", "strong", "b", "em", "i"].includes(t);
-
 /** HTML string -> Contentful rich-text document. */
 export function htmlToRichDoc(html: string): RichNode {
   const collapse = (s: string) => s.replace(/\s+/g, " ");

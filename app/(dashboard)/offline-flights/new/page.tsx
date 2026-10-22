@@ -275,7 +275,7 @@ export default function NewOfflineFlightPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isValidating, setIsValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState<{
+  const [, setValidationResult] = useState<{
     airlineName: string;
     airlineLogo: string;
     icaoCode?: string;

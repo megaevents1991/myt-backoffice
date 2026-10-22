@@ -35,13 +35,6 @@ export const ROLE_LABELS: Partial<Record<Role, { en: string; he: string }>> = {
 };
 
 export const STAFF_ROLES: Role[] = ["superadmin", "admin", "editor"];
-/**
- * forms_operator: a restricted account (e.g. Mega Travel's coordinator) that
- * lives entirely inside /forms - creates trip links, reads responses and the
- * reports, and (since 21.10) builds, edits and publishes the forms opened to
- * operators, series forms included. Never deletes a form or opens one to operators.
- */
-export const FORMS_ACCESS_ROLES: Role[] = [...STAFF_ROLES, "forms_operator"];
 /** Roles allowed into user management. Only superadmin may manage these roles' accounts. */
 export const ADMIN_ROLES: Role[] = ["superadmin", "admin"];
 /** Partner-linked, portal-confined roles. */

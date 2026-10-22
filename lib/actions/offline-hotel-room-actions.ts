@@ -123,26 +123,6 @@ export async function updateOfflineHotelRoom(
   return room;
 }
 
-export async function deleteOfflineHotelRoom(roomId: number): Promise<void> {
-  await requireStaff();
-  const { data: room } = await roomsTable()
-    .select("hotel_id, is_booked")
-    .eq("id", roomId)
-    .single();
-  if (room?.is_booked) throw new Error("Cannot delete a booked room.");
-  const { error } = await roomsTable().delete().eq("id", roomId);
-  if (error) throw error;
-  await logAudit({
-    action: "delete",
-    entityType: "offline_hotel_room",
-    entityId: roomId,
-  });
-  if (room?.hotel_id) {
-    await recomputeHotelMirror(room.hotel_id);
-    revalidatePath(`/offline-hotels/${room.hotel_id}`);
-  }
-}
-
 // Recompute parent num_rooms / consumed_rooms from rooms, then push the
 // cheapest AVAILABLE room's per-person price onto linked events.
 export async function recomputeHotelMirror(hotelId: number): Promise<void> {

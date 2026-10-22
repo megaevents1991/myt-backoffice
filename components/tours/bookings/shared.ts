@@ -111,11 +111,3 @@ export interface BookingChange {
   confirmationSent?: boolean;
   giftPassengers?: number[];
 }
-
-/** Search across what the operator sees in the row. */
-export function bookingMatches(row: BookingRow, q: string): boolean {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return true;
-  return [row.ref, row.customerName, row.customerPhone, row.customerEmail, row.departureCode, row.note, row.receiptNo]
-    .some((v) => (v ?? "").toLowerCase().includes(needle));
-}

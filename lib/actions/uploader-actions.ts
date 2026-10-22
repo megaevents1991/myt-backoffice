@@ -29,7 +29,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { agentEnabled, newBudget, TOUR_UPLOADER_AGENT } from "@/lib/agents";
 import { revalidateMain } from "@/lib/revalidate-main";
-import { distanceKm, loadLocations } from "@/lib/services/nearest-location";
+import { distanceKm } from "@/lib/services/nearest-location";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { parseBriefWithAgent } from "@/lib/services/tour-uploader-parse";
 import { buildItem } from "@/lib/services/uploader-build";
@@ -116,7 +116,6 @@ import type {
   BuildStep,
   CreateRunInput,
   CreateRunResult,
-  LocationOption,
   Ok,
   OpenQuestions,
   ParseBriefResult,
@@ -589,17 +588,6 @@ export async function countOpenQuestionsFor(): Promise<OpenQuestions> {
   } catch (e) {
     console.error("uploader-actions: open questions count failed", errorText(e));
     return { count: 0, newest: null, failed: true };
-  }
-}
-
-/** Every `locations` row, for the "which location" answer and the two-city picker. */
-export async function listLocationOptions(): Promise<LocationOption[]> {
-  await requireAdmin();
-  try {
-    return (await loadLocations()).map((r) => ({ id: r.id, name: r.name, city_iata: r.city_iata }));
-  } catch (e) {
-    console.error("uploader-actions: locations read failed", errorText(e));
-    return [];
   }
 }
 

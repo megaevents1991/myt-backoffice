@@ -6,14 +6,9 @@
 // as the price light's facade so its callers (the nightly, "בדוק עכשיו", the smoke test) keep one
 // obvious import, and so the next agent copies a pattern instead of this feature's plumbing.
 import { PRICE_LIGHT_AGENT } from "@/lib/agents";
-import { loadAgentLessons, loadAgentMemory } from "@/lib/agents/memory";
+import { loadAgentMemory } from "@/lib/agents/memory";
 
 export { priceLightHouseRules as houseRules } from "@/lib/agents/price-light.agent";
-
-/** The newest staff decisions on /price-light, already formatted as lesson lines. */
-export function loadJudgeLessons(): Promise<string[]> {
-  return loadAgentLessons(PRICE_LIGHT_AGENT);
-}
 
 /** House rules + the freshest decisions, ready for the judge's system prompt. Never throws. */
 export function loadJudgeMemory(): Promise<string> {

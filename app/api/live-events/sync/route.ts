@@ -1,6 +1,6 @@
 // app/api/live-events/sync/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { syncLiveEvents } from '@/lib/services/live-events-sync';
 import { guardAdminRoute } from '@/lib/auth/guards';
 import { logAudit } from '@/lib/audit';
@@ -12,11 +12,10 @@ import { logAudit } from '@/lib/audit';
  *
  * Only events are currently synced.
  */
-export async function POST(request: NextRequest) {
+export async function POST() {
   const denied = await guardAdminRoute();
   if (denied) return denied;
   try {
-    const { searchParams } = new URL(request.url);
 
     // Use the shared sync service
     const results = await syncLiveEvents();

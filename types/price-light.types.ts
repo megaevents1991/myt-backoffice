@@ -266,20 +266,6 @@ export interface LightDetail {
   ours?: OurOfferSnapshot | null;
 }
 
-export interface CrawlRunRow {
-  id: number;
-  competitor: CompetitorKey;
-  status: CrawlStatus;
-  trigger: CrawlTrigger;
-  started_at: string;
-  finished_at: string | null;
-  pages: number;
-  listings: number;
-  prev_listings: number | null;
-  note: string | null;
-  browser_mode: "remote" | "local" | "fetch" | "table" | null;
-}
-
 export interface ListingRow {
   id: number;
   competitor: CompetitorKey;
@@ -545,15 +531,4 @@ export interface PriceLightComparison {
   advice: Record<Scope, string[]>;
   /** When other travel days / suppliers were last quoted; null = never (only the older facts show). */
   alt_at: string | null;
-}
-
-export interface PriceSnapshotRow {
-  event_id: number;
-  day: string; // YYYY-MM-DD
-  package_usd: number | null;
-  ticket_usd: number | null;
-  min_ticket: number | null;
-  base_flight: number | null;
-  base_hotel: number | null;
-  markup: number | null;
 }

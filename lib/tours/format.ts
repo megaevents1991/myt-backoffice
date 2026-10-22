@@ -116,9 +116,6 @@ export function formatNumber(value: number | null | undefined): string {
   return value === null || value === undefined || !Number.isFinite(value) ? "" : NUMBER.format(value);
 }
 
-/** The board's price cell: "2,145" (no currency sign), "" when there is none. */
-export const fmtMoney = (value: number | null | undefined): string => formatNumber(value);
-
 /**
  * A price or a cost as every tours screen shows it, in the order of the Mega
  * Events screens: "$2,145", "€1,234.5", "₪350"; a currency with no symbol is

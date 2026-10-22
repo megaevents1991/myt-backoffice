@@ -142,8 +142,6 @@ export async function getMarketingAlerts(q: MarketingQuery): Promise<MarketingAl
   });
 }
 
-export async function getMarketingSettings(): Promise<MarketingSettings> { await requireAdmin(); return readSettings(); }
-
 type CampaignBrandRow = { platform: AdPlatform; id: string; name: string; brand: AdBrand; brand_source: string; status: string | null };
 
 function readCampaignBrands(): Promise<CampaignBrandRow[]> {

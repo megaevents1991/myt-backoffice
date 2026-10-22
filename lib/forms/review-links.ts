@@ -16,5 +16,3 @@ export const GOOGLE_REVIEW_LINKS = [
       "https://www.google.com/search?hl=he-IL&gl=il&q=Mega+Events&ludocid=3588250245740006173#lrd=0x0:0x31cc06964e8a8b1d,3,,,,",
   },
 ] as const;
-
-export type GoogleReviewLinkKey = (typeof GOOGLE_REVIEW_LINKS)[number]["key"];

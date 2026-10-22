@@ -79,15 +79,6 @@ export interface P1EventDB {
   updated_at?: string;
 }
 
-// API Response Types
-export interface P1EventsApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-  timestamp: string;
-}
-
 // Currency constants for P1
 export const P1_CURRENCIES = {
   USD: "USD",
@@ -128,9 +119,3 @@ export const P1_TAGS = {
   PREMIUM: "premium",
   STANDARD: "standard",
 } as const;
-
-export type P1Currency = (typeof P1_CURRENCIES)[keyof typeof P1_CURRENCIES];
-export type P1Category = (typeof P1_CATEGORIES)[keyof typeof P1_CATEGORIES];
-export type P1TicketType =
-  (typeof P1_TICKET_TYPES)[keyof typeof P1_TICKET_TYPES];
-export type P1Tag = (typeof P1_TAGS)[keyof typeof P1_TAGS];

@@ -1,15 +1,6 @@
 // lib/actions/live-events-actions.ts
 
-import { supabase } from '@/lib/supabase-client';
-import { LiveEventDB, LiveTicketCategory, LiveEventsApiResponse } from '@/types/live-events.types';
-// Utility normalizers (duplicated minimally to avoid circular import)
-const normalizeIata = (raw: string | null | undefined) => {
-  if (!raw) return '';
-  const trimmed = raw.trim().toUpperCase();
-  const match = trimmed.match(/[A-Z]{1,3}/);
-  return match ? match[0] : '';
-};
-const safeStr = (v: string | null | undefined) => (v || '').trim();
+import { LiveEventDB, LiveTicketCategory } from '@/types/live-events.types';
 
 /**
  * Fetch live events by type (sports or music)
@@ -26,42 +17,6 @@ export async function getLiveEvents(eventType?: 'sports_live_event_dynamic' | 'm
     }
   });
   if (!res.ok) throw new Error('Failed to fetch live events');
-  const json = await res.json();
-  return json.data || [];
-}
-
-/**
- * Fetch live events by category
- */
-export async function getLiveEventsByCategory(categoryName: string): Promise<LiveEventDB[]> {
-  const url = `/api/live-events/events?category=${encodeURIComponent(categoryName)}&_=${Date.now()}`;
-  const res = await fetch(url, { 
-    cache: 'no-store',
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    }
-  });
-  if (!res.ok) throw new Error('Failed to fetch live events (category)');
-  const json = await res.json();
-  return json.data || [];
-}
-
-/**
- * Fetch live events by performer
- */
-export async function getLiveEventsByPerformer(performerName: string): Promise<LiveEventDB[]> {
-  const url = `/api/live-events/events?performer=${encodeURIComponent(performerName)}&_=${Date.now()}`;
-  const res = await fetch(url, { 
-    cache: 'no-store',
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    }
-  });
-  if (!res.ok) throw new Error('Failed to fetch live events (performer)');
   const json = await res.json();
   return json.data || [];
 }
@@ -164,77 +119,4 @@ export async function triggerLiveSync(type?: string) {
     console.error('Failed to trigger LIVE sync:', error);
     throw error;
   }
-}
-
-/**
- * Search live events by text
- */
-export async function searchLiveEvents(searchTerm: string): Promise<LiveEventDB[]> {
-  // Client-side filter after fetching all (could optimize with API param if needed)
-  const all = await getLiveEvents();
-  const term = searchTerm.toLowerCase();
-  return all.filter(e =>
-    e.event_name.toLowerCase().includes(term) ||
-    (e.event_name_heb || '').toLowerCase().includes(term) ||
-    (e.primary_category || '').toLowerCase().includes(term)
-  ).slice(0,50);
-}
-
-/**
- * Get available categories from live events
- */
-export async function getLiveCategories() {
-  const res = await fetch(`/api/live-events/categories?_=${Date.now()}`, { 
-    cache: 'no-store',
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    }
-  });
-  if (!res.ok) throw new Error('Failed to fetch categories');
-  const json = await res.json();
-  return json.data || [];
-}
-
-/**
- * Get available performers from live events
- */
-export async function getLivePerformers() {
-  const res = await fetch(`/api/live-events/performers?_=${Date.now()}`, { 
-    cache: 'no-store',
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    }
-  });
-  if (!res.ok) throw new Error('Failed to fetch performers');
-  const json = await res.json();
-  return json.data || [];
-}
-
-/**
- * Get cities (for dropdowns, mapping, etc.) ensuring trimmed IATA and empty-string (not null) names for client simplicity
- */
-export async function getLiveCities(options: { limit?: number } = {}) {
-  const { limit = 5000 } = options;
-  const { data, error } = await supabase
-    .from('live_cities')
-    .select('*')
-    .limit(limit)
-    .order('city_name');
-
-  if (error) {
-    console.error('Failed to fetch live cities:', error);
-    throw new Error(`Failed to fetch live cities: ${error.message}`);
-  }
-
-  return (data || []).map(c => ({
-    ...c,
-    city_name: safeStr((c as any).city_name),
-    eng_full_name: safeStr((c as any).eng_full_name) || '',
-    heb_full_name: safeStr((c as any).heb_full_name) || '',
-    iata: normalizeIata((c as any).iata)
-  }));
 }

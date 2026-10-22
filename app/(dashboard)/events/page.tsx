@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { PlusCircle, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { EventsTable } from "./events-table";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 
 export default function EventsPage() {
     const [revalidating, setRevalidating] = useState(false);

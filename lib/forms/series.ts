@@ -46,11 +46,6 @@ export function hotelOf(field: Pick<FormField, "type" | "config">): HotelConfig 
   return normalizeHotelConfig(field.config?.hotel) ?? null;
 }
 
-/** The city in the language asked for, falling back to the other one. */
-export function hotelCity(hotel: HotelConfig, lang: FormLang): string {
-  return lang === "en" ? hotel.city_en || hotel.city_he : hotel.city_he || hotel.city_en || "";
-}
-
 /** The wording a hotel question starts with - staff may rewrite it. */
 export function hotelQuestionLabel(city: string, lang: FormLang): string {
   const place = city.trim();

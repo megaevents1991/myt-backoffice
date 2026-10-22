@@ -23,11 +23,6 @@ export interface P1SyncResult {
   details?: string;
 }
 
-export interface P1SyncResults {
-  events?: P1SyncResult;
-  tickets?: P1SyncResult;
-}
-
 // XML Parser configuration
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
