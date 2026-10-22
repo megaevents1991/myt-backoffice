@@ -13,6 +13,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { TripDialog, tripDate } from "./trip-dialog";
 
+/**
+ * A click on the confirm "מחיקה" counts only this long after the confirm opened. The confirm group renders where
+ * the row's own "מחיקה" was, so a fast double-click (mouse or finger) would otherwise land its second click on the
+ * red button. Longer than a double-click, far shorter than reading "למחוק את הטריפ?" and deciding.
+ */
+const CONFIRM_ARM_MS = 400;
+
 /** The status line of a switched-off trip: the site shows no inactive trip, whatever its events are. */
 const INACTIVE_TEXT = "כבוי - לא מוצג באתר";
 
@@ -31,6 +38,8 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
   // Focus: a row's "מחיקה" is replaced by the confirm group and back, so the page keeps track of where focus goes.
   const deleteButtons = useRef(new Map<number, HTMLButtonElement>());
   const newTripButton = useRef<HTMLButtonElement>(null);
+  // When the confirm last opened (a timestamp, nothing to clean up): see CONFIRM_ARM_MS.
+  const confirmOpenedAt = useRef(0);
   const [focusDeleteOf, setFocusDeleteOf] = useState<number | null>(null);
 
   useEffect(() => {
@@ -85,6 +94,7 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
   }
 
   async function remove(route: ItineraryRouteListItem) {
+    if (Date.now() - confirmOpenedAt.current < CONFIRM_ARM_MS) return;
     setBusyId(route.id);
     try {
       const res = await deleteItineraryRoute(route.id);
@@ -166,7 +176,7 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
                     <div className="flex items-center gap-2">
                       <Switch
                         id={`trip-active-${route.id}`}
-                        aria-label={`פעיל - ${route.title}`}
+                        aria-label={`פעיל: ${route.title}`}
                         checked={active}
                         disabled={locked}
                         onCheckedChange={(on) => toggle(route, on)}
@@ -209,7 +219,7 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          aria-label={`עריכת ${route.title}`}
+                          aria-label={`עריכה: ${route.title}`}
                           disabled={locked}
                           onClick={() => setDialog({ open: true, route })}
                         >
@@ -218,13 +228,16 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
                         <Button
                           size="sm"
                           variant="outline"
-                          aria-label={`מחיקת ${route.title}`}
+                          aria-label={`מחיקה: ${route.title}`}
                           disabled={locked}
                           ref={(el) => {
                             if (el) deleteButtons.current.set(route.id, el);
                             else deleteButtons.current.delete(route.id);
                           }}
-                          onClick={() => setConfirmId(route.id)}
+                          onClick={() => {
+                            confirmOpenedAt.current = Date.now();
+                            setConfirmId(route.id);
+                          }}
                         >
                           מחיקה
                         </Button>
