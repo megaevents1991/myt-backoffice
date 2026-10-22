@@ -30,7 +30,13 @@ export default async function EventTripsPage() {
       ) : read.status === "error" ? (
         <Alert variant="destructive">
           <AlertTitle>לא ניתן לקרוא את הטריפים</AlertTitle>
-          <AlertDescription>{read.message}. רעננו את הדף ונסו שוב.</AlertDescription>
+          <AlertDescription className="space-y-1">
+            <p>
+              <bdi>{read.message}</bdi>
+            </p>
+            {/* Some messages already say to try again (no access: "...ונסו שוב"). */}
+            {!read.message.includes("ונסו שוב") && <p>רעננו את הדף ונסו שוב.</p>}
+          </AlertDescription>
         </Alert>
       ) : (
         <TripsClient routes={read.routes} />

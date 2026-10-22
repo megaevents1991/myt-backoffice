@@ -561,8 +561,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ),
     points: [
       t(
-        "The line under each trip says whether the site will show it: \"לא יוצג באתר: <event> - <reason>\" when an event is deleted, hidden, taken off sale, sold out, already past or not found; \"כבוי - לא מוצג באתר\" when the switch is off; otherwise \"מוצג באתר אם כל האירועים עדיין מתאימים זה לזה\".",
-        "השורה מתחת לכל טריפ אומרת אם האתר יציג אותו: \"לא יוצג באתר: <אירוע> - <סיבה>\" כשאירוע נמחק, מוסתר, הוסר מהמכירה, אזל, כבר עבר או לא נמצא; \"כבוי - לא מוצג באתר\" כשהמתג כבוי; אחרת \"מוצג באתר אם כל האירועים עדיין מתאימים זה לזה\".",
+        "The line under each trip says whether the site will show it: \"לא יוצג באתר: <event> - <reason>\" when an event is deleted, hidden, taken off sale, sold out, already past, a test event, ticket-only, in the US, less than 3 days away (the site sells nothing closer) or not found; \"כבוי - לא מוצג באתר\" when the switch is off; otherwise \"מוצג באתר אם כל האירועים עדיין מתאימים זה לזה\".",
+        "השורה מתחת לכל טריפ אומרת אם האתר יציג אותו: \"לא יוצג באתר: <אירוע> - <סיבה>\" כשאירוע נמחק, מוסתר, הוסר מהמכירה, אזל, כבר עבר, אירוע בדיקה, כרטיס בלבד, בארה״ב, פחות מ-3 ימים מהיום (האתר לא מוכר קרוב מזה) או לא נמצא; \"כבוי - לא מוצג באתר\" כשהמתג כבוי; אחרת \"מוצג באתר אם כל האירועים עדיין מתאימים זה לזה\".",
       ),
       t(
         "The site re-checks, by itself, that the events still fit each other (distance and gap between dates, by the Euro Trip settings). A trip that stopped fitting simply disappears from the site - this screen cannot see that, so \"מוצג באתר אם...\" is a promise of \"not ruled out here\", not of \"is live\".",

@@ -10,8 +10,11 @@
  *   before calling the action and the action runs it again; what it returns is what is written, so the TRIMMED
  *   title goes to the table, never the raw input: the CHECK trims spaces only (`btrim`), the validator also
  *   cuts tabs and newlines.
- * - `routeSiteStatus` - the one-line answer to "will the site show this trip?". The site re-checks distance
- *   and gaps itself (myt-main `lib/itinerary/staffRoutes.ts`), so a green status means "not ruled out here".
+ * - `routeSiteStatus` - the one-line answer to "will the site show this trip?". It repeats the site's own
+ *   per-event eligibility (myt-main `lib/itinerary/eligibility.ts`); the site re-checks distance and gaps itself
+ *   (`lib/itinerary/staffRoutes.ts`), so a green status means "not ruled out here".
+ * - `isEventId` - what an `events.id` can be (a Postgres `integer`): the one check the actions use before they
+ *   hand an id to the database.
  */
 
 import { MAX_TRIP_EVENTS } from "./settings";
@@ -23,6 +26,16 @@ export const ROUTE_TITLE_MAX = 80;
 /** `sort_order` is a Postgres `integer`. */
 const INT4_MIN = -2_147_483_648;
 const INT4_MAX = 2_147_483_647;
+
+/**
+ * An `events.id`: `events.id` is a Postgres `integer`, so a positive whole number up to 2147483647. The validator
+ * takes any positive safe integer (the table's `bigint[]` can hold one); an id past this one cannot be an event,
+ * and handing it to the database (`id.eq.`, `.in("id", ...)`) makes the whole query fail with "out of range",
+ * not return nothing. The actions treat such an id as "not an event" without asking.
+ */
+export function isEventId(n: unknown): n is number {
+  return typeof n === "number" && Number.isSafeInteger(n) && n > 0 && n <= INT4_MAX;
+}
 
 export type ItineraryRouteInput = {
   /** Present when editing a saved trip. */
@@ -140,6 +153,12 @@ export type TripEventLite = {
   deactivated_reason: string | null;
   /** The event's tags; "Sold" = sold out. */
   tags: string[] | null;
+  /** `events.is_test`: a QA event, never listed on the site. */
+  is_test: boolean | null;
+  /** `events.package_mode`: "ticket_only" = sold as a ticket alone, which a trip (flights + hotels) leaves out. */
+  package_mode: string | null;
+  /** `events.location.country_code` (the flight city's): "US" = the site sells no trip there. */
+  country_code: string | null;
   /** City label for the picker / list ("<event city> · טיסה ל<flight city>" on a two-city event). */
   place: string;
 };
@@ -147,20 +166,40 @@ export type TripEventLite = {
 export const ROUTE_STATUS_SHOWN = "מוצג באתר אם כל האירועים עדיין מתאימים זה לזה";
 const ROUTE_STATUS_PREFIX = "לא יוצג באתר: ";
 
-/** Why the site would not sell this event, or null. The order is the status line's: deleted, hidden, deactivated, Sold, past. */
+/** The site sells a trip's event only this many days ahead (myt-main AVAILABILITY_WINDOW_DAYS, the order page's sell window). */
+export const SITE_SELL_WINDOW_DAYS = 3;
+
+/** `b - a` in whole days between two "YYYY-MM-DD" days (UTC); NaN when either is not one. */
+function dayDiff(a: string, b: string): number {
+  const ms = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+    return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : Number.NaN;
+  };
+  return Math.round((ms(b) - ms(a)) / 86_400_000);
+}
+
+/**
+ * Why the site would not sell this event, or null. The order is the status line's: deleted, hidden, deactivated,
+ * Sold, past - then the rest of the site's `isItineraryEligible` (myt-main lib/itinerary/eligibility.ts): a test
+ * event, a ticket-only event, an event in the US, an event less than the sell window (3 days) away.
+ */
 function blockedReason(e: TripEventLite, todayIso: string): string | null {
   if (e.is_deleted) return "האירוע נמחק";
   if (e.is_hidden === true) return "האירוע מוסתר";
   if (e.deactivated_reason && e.deactivated_reason.trim() !== "") return "האירוע הוסר מהמכירה";
   if (e.tags?.some((t) => t === "Sold")) return "אזל";
   if (e.date && e.date.slice(0, 10) < todayIso.slice(0, 10)) return "האירוע כבר עבר";
+  if (e.is_test === true) return "אירוע בדיקה";
+  if (e.package_mode === "ticket_only") return "כרטיס בלבד, בלי חבילה";
+  if (e.country_code?.trim().toUpperCase() === "US") return "אירוע בארה״ב";
+  if (e.date && dayDiff(todayIso, e.date) < SITE_SELL_WINDOW_DAYS) return `פחות מ-${SITE_SELL_WINDOW_DAYS} ימים לאירוע`;
   return null;
 }
 
 /**
  * Walks the trip's events in the trip's own (staff) order and stops at the first that the site would not sell
- * (missing / deleted / hidden / deactivated / Sold / past): that event and why. Nothing wrong = the "shown" text,
- * which promises no more than this file can check.
+ * (missing / deleted / hidden / deactivated / Sold / past / test / ticket-only / US / too close): that event and
+ * why. Nothing wrong = the "shown" text, which promises no more than this file can check.
  */
 export function routeSiteStatus(
   eventIds: number[],

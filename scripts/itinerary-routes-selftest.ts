@@ -1,10 +1,11 @@
 // Run: npx tsx scripts/itinerary-routes-selftest.ts
 // The Euro Trip staff-trips check (lib/itinerary/routes.ts): the form validator (title 2..80 once trimmed,
 // 2..3 distinct positive integer event ids, whole sort order - the DB CHECKs of itinerary_routes) and the
-// "will the site show it" status line.
+// "will the site show it" status line (the site's own per-event rules), and what an events.id can be.
 import assert from "node:assert/strict";
 import {
   ROUTE_STATUS_SHOWN,
+  isEventId,
   routeSiteStatus,
   validateItineraryRoute,
   type TripEventLite,
@@ -120,6 +121,16 @@ for (const junk of [null, undefined, "x", 5, [], [1, 2]]) {
   assert.equal(r.ok, false, `junk ${JSON.stringify(junk)}`);
 }
 
+// --- events.id is a Postgres integer -------------------------------------------------------------------
+{
+  for (const ok of [1, 22, 1_000_000, 2_147_483_647]) assert.equal(isEventId(ok), true, `${ok} can be an event id`);
+  for (const no of [2_147_483_648, Number.MAX_SAFE_INTEGER, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "5", null, undefined]) {
+    assert.equal(isEventId(no), false, `${String(no)} cannot be an event id`);
+  }
+  // The validator itself still takes a bigint[]-sized id (the table can hold it); the actions are what refuse it.
+  assert.equal(validateItineraryRoute({ ...good, eventIds: [2_147_483_648, 5] }).ok, true);
+}
+
 // --- site status ---------------------------------------------------------------------------------------
 const TODAY = "2026-10-22";
 const ev = (id: number, patch: Partial<TripEventLite> = {}): TripEventLite => ({
@@ -130,6 +141,9 @@ const ev = (id: number, patch: Partial<TripEventLite> = {}): TripEventLite => ({
   is_hidden: false,
   deactivated_reason: null,
   tags: null,
+  is_test: false,
+  package_mode: "regular",
+  country_code: "GB",
   place: "לונדון",
   ...patch,
 });
@@ -159,14 +173,36 @@ const NOT_SHOWN = "לא יוצג באתר: ";
   const past = routeSiteStatus([1, 2], [ev(1), ev(2, { date: "2026-10-21" })], TODAY);
   assert.deepEqual(past, { shown: false, text: `${NOT_SHOWN}אירוע 2 - האירוע כבר עבר` });
 
-  // Today itself is not past; a timestamp is compared by its day.
-  assert.equal(routeSiteStatus([1, 2], [ev(1, { date: "2026-10-22" }), ev(2, { date: "2026-10-22T20:00:00+00:00" })], TODAY).shown, true);
+  // Today itself is not past - but it is inside the site's 3-day sell window (below). A timestamp is compared by its day.
+  assert.equal(routeSiteStatus([1, 2], [ev(1, { date: "2026-10-25" }), ev(2, { date: "2026-10-25T20:00:00+00:00" })], TODAY).shown, true);
   // No date: nothing says it is past.
   assert.equal(routeSiteStatus([1, 2], [ev(1, { date: null }), ev(2)], TODAY).shown, true);
   // A tag list that does not hold Sold, or is null, is fine.
   assert.equal(routeSiteStatus([1, 2], [ev(1, { tags: ["Hot"] }), ev(2, { tags: [] })], TODAY).shown, true);
   // is_hidden null (column not read / legacy row) is not hidden.
   assert.equal(routeSiteStatus([1, 2], [ev(1, { is_hidden: null }), ev(2)], TODAY).shown, true);
+}
+
+// The rest of the site's eligibility (myt-main isItineraryEligible), each with its own text.
+{
+  const test = routeSiteStatus([1, 2], [ev(1, { is_test: true }), ev(2)], TODAY);
+  assert.deepEqual(test, { shown: false, text: `${NOT_SHOWN}אירוע 1 - אירוע בדיקה` });
+
+  const ticketOnly = routeSiteStatus([1, 2], [ev(1), ev(2, { package_mode: "ticket_only" })], TODAY);
+  assert.deepEqual(ticketOnly, { shown: false, text: `${NOT_SHOWN}אירוע 2 - כרטיס בלבד, בלי חבילה` });
+
+  const us = routeSiteStatus([1, 2], [ev(1, { country_code: "US" }), ev(2)], TODAY);
+  assert.deepEqual(us, { shown: false, text: `${NOT_SHOWN}אירוע 1 - אירוע בארה״ב` });
+  assert.equal(routeSiteStatus([1, 2], [ev(1, { country_code: "us" }), ev(2)], TODAY).shown, false, "the code is read case-insensitively");
+  assert.equal(routeSiteStatus([1, 2], [ev(1, { country_code: null }), ev(2)], TODAY).shown, true, "no country is not the US");
+
+  const soon = (date: string) => routeSiteStatus([1, 2], [ev(1), ev(2, { date })], TODAY);
+  assert.deepEqual(soon("2026-10-22"), { shown: false, text: `${NOT_SHOWN}אירוע 2 - פחות מ-3 ימים לאירוע` }, "today");
+  assert.equal(soon("2026-10-24").shown, false, "two days away");
+  assert.equal(soon("2026-10-24T23:30:00+00:00").shown, false, "a timestamp is read by its day");
+  assert.equal(soon("2026-10-25").shown, true, "three days away is the first sellable day");
+  assert.equal(soon("2026-10-21").text, `${NOT_SHOWN}אירוע 2 - האירוע כבר עבר`, "yesterday is past, not 'too close'");
+  assert.equal(routeSiteStatus([1, 2], [ev(1, { package_mode: null, is_test: null }), ev(2)], TODAY).shown, true, "null columns are fine");
 }
 
 // The FIRST reason in the order missing / deleted / hidden / deactivated / Sold / past wins - for one event ...
@@ -179,7 +215,14 @@ const NOT_SHOWN = "לא יוצג באתר: ";
   assert.match(text({ ...everything, is_deleted: null }), /מוסתר$/, "then hidden");
   assert.match(text({ ...everything, is_deleted: null, is_hidden: false }), /הוסר מהמכירה$/, "then deactivated");
   assert.match(text({ ...everything, is_deleted: null, is_hidden: false, deactivated_reason: null }), /אזל$/, "then Sold");
-  assert.match(text({ ...everything, is_deleted: null, is_hidden: false, deactivated_reason: null, tags: null }), /עבר$/, "then past");
+  const live = { ...everything, is_deleted: null, is_hidden: false, deactivated_reason: null, tags: null };
+  assert.match(text(live), /עבר$/, "then past");
+  // The site's other rules come after those, in this order: test, ticket-only, US, too close.
+  const future = { ...live, date: "2026-10-23", is_test: true, package_mode: "ticket_only", country_code: "US" };
+  assert.match(text(future), /אירוע בדיקה$/, "then a test event");
+  assert.match(text({ ...future, is_test: false }), /כרטיס בלבד, בלי חבילה$/, "then ticket-only");
+  assert.match(text({ ...future, is_test: false, package_mode: "regular" }), /אירוע בארה״ב$/, "then the US");
+  assert.match(text({ ...future, is_test: false, package_mode: "regular", country_code: "GB" }), /פחות מ-3 ימים לאירוע$/, "then too close");
 }
 
 // ... and across events: the first event of the trip (staff order) that fails names the status.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, PlusCircle } from "lucide-react";
 
@@ -9,6 +9,7 @@ import { deleteItineraryRoute, setItineraryRouteActive } from "@/lib/actions/iti
 import type { ItineraryRouteListItem } from "@/lib/itinerary/routes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { TripDialog, tripDate } from "./trip-dialog";
 
@@ -27,10 +28,26 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
   // The switch answers at once; the list's own value arrives with the refresh below and replaces it.
   const [activeOverride, setActiveOverride] = useState<Record<number, boolean>>({});
   const [refreshing, startRefresh] = useTransition();
+  // Focus: a row's "מחיקה" is replaced by the confirm group and back, so the page keeps track of where focus goes.
+  const deleteButtons = useRef(new Map<number, HTMLButtonElement>());
+  const newTripButton = useRef<HTMLButtonElement>(null);
+  const [focusDeleteOf, setFocusDeleteOf] = useState<number | null>(null);
 
   useEffect(() => {
     setActiveOverride((o) => (Object.keys(o).length > 0 ? {} : o));
   }, [routes]);
+
+  // After "ביטול" the row's own "מחיקה" is mounted again (new element): focus goes back to it once it is there.
+  useEffect(() => {
+    if (focusDeleteOf === null) return;
+    deleteButtons.current.get(focusDeleteOf)?.focus();
+    setFocusDeleteOf(null);
+  }, [focusDeleteOf]);
+
+  const cancelDelete = (id: number) => {
+    setConfirmId(null);
+    setFocusDeleteOf(id);
+  };
 
   const dropOverride = (id: number) =>
     setActiveOverride((o) => {
@@ -76,6 +93,8 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
         return;
       }
       setConfirmId(null);
+      // The row is about to go: leave focus somewhere that stays.
+      newTripButton.current?.focus();
       toast({ title: "הטריפ נמחק" });
       if (res.warning) warn(res.warning);
       refresh();
@@ -93,7 +112,7 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-start">
-        <Button onClick={() => setDialog({ open: true, route: null })}>
+        <Button ref={newTripButton} onClick={() => setDialog({ open: true, route: null })}>
           <PlusCircle className="me-2 h-4 w-4" />
           טריפ חדש
         </Button>
@@ -147,32 +166,66 @@ export function TripsClient({ routes }: { routes: ItineraryRouteListItem[] }) {
                     <div className="flex items-center gap-2">
                       <Switch
                         id={`trip-active-${route.id}`}
+                        aria-label={`פעיל - ${route.title}`}
                         checked={active}
                         disabled={locked}
                         onCheckedChange={(on) => toggle(route, on)}
                       />
-                      <label htmlFor={`trip-active-${route.id}`} className="text-sm">
+                      <Label htmlFor={`trip-active-${route.id}`} className="font-normal">
                         פעיל
-                      </label>
+                      </Label>
                     </div>
 
+                    {/* The two branches are keyed apart on purpose: unkeyed, React reuses the focused "מחיקה"
+                        button as the red confirm one, and a second Enter / key repeat / double tap would delete. */}
                     {confirming ? (
-                      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="אישור מחיקה">
-                        <span className="text-sm font-medium">למחוק את הטריפ?</span>
+                      <div
+                        key="confirm"
+                        role="alertdialog"
+                        aria-label={`אישור מחיקת הטריפ ${route.title}`}
+                        aria-describedby={`trip-confirm-${route.id}`}
+                        className="flex flex-wrap items-center gap-2"
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Escape" && !busy) {
+                            ev.stopPropagation();
+                            cancelDelete(route.id);
+                          }
+                        }}
+                      >
+                        <span id={`trip-confirm-${route.id}`} className="text-sm font-medium">
+                          למחוק את הטריפ?
+                        </span>
                         <Button size="sm" variant="destructive" disabled={locked} onClick={() => remove(route)}>
                           {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                           מחיקה
                         </Button>
-                        <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirmId(null)}>
+                        {/* The safe answer takes focus. */}
+                        <Button size="sm" variant="outline" autoFocus disabled={busy} onClick={() => cancelDelete(route.id)}>
                           ביטול
                         </Button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" disabled={locked} onClick={() => setDialog({ open: true, route })}>
+                      <div key="actions" className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`עריכת ${route.title}`}
+                          disabled={locked}
+                          onClick={() => setDialog({ open: true, route })}
+                        >
                           עריכה
                         </Button>
-                        <Button size="sm" variant="outline" disabled={locked} onClick={() => setConfirmId(route.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          aria-label={`מחיקת ${route.title}`}
+                          disabled={locked}
+                          ref={(el) => {
+                            if (el) deleteButtons.current.set(route.id, el);
+                            else deleteButtons.current.delete(route.id);
+                          }}
+                          onClick={() => setConfirmId(route.id)}
+                        >
                           מחיקה
                         </Button>
                       </div>

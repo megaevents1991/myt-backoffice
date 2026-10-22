@@ -8,6 +8,7 @@ import { isMissingRelation } from "@/lib/services/marketing-db";
 import { revalidateItinerary } from "@/lib/revalidate-itinerary";
 import { placeLabel } from "@/lib/lodging";
 import {
+  isEventId,
   routeErrorsText,
   routeSiteStatus,
   validateItineraryRoute,
@@ -37,7 +38,8 @@ const idb = supabase as any;
 
 const TABLE = "itinerary_routes";
 const ROUTE_COLUMNS = "id, title, event_ids, sort_order, is_active, updated_at";
-const EVENT_COLUMNS = "id, name, date, is_deleted, is_hidden, deactivated_reason, tags, location, event_location";
+const EVENT_COLUMNS =
+  "id, name, date, is_deleted, is_hidden, deactivated_reason, tags, is_test, package_mode, location, event_location";
 
 const NO_ACCESS = "אין הרשאה - התחברו מחדש ונסו שוב";
 const TABLE_MISSING = "הטבלה עוד לא קיימת - המיגרציה תעלה עם הדחיפה הבאה";
@@ -60,6 +62,8 @@ type EventDbRow = {
   is_hidden: boolean | null;
   deactivated_reason: string | null;
   tags: unknown;
+  is_test: boolean | null;
+  package_mode: string | null;
   location: unknown;
   event_location: unknown;
 };
@@ -85,6 +89,13 @@ function tagsOf(raw: unknown): string[] | null {
   return null;
 }
 
+/** `events.location` is the flight city as JSON; its `country_code` is what the site checks for the US. */
+function countryOf(location: unknown): string | null {
+  if (!location || typeof location !== "object") return null;
+  const code = (location as { country_code?: unknown }).country_code;
+  return typeof code === "string" && code.trim() !== "" ? code.trim() : null;
+}
+
 function liteOf(row: EventDbRow): TripEventLite {
   // `placeLabel` wants the flight city (`location`) and, on a two-city event, the event city.
   const lodging = row.location
@@ -98,14 +109,21 @@ function liteOf(row: EventDbRow): TripEventLite {
     is_hidden: row.is_hidden ?? null,
     deactivated_reason: row.deactivated_reason ?? null,
     tags: tagsOf(row.tags),
+    is_test: row.is_test ?? null,
+    package_mode: row.package_mode ?? null,
+    country_code: countryOf(row.location),
     place: placeLabel(lodging),
   };
 }
 
-/** The events with these ids (deleted ones included - the caller decides what that means). THROWS on a read error. */
+/**
+ * The events with these ids (deleted ones included - the caller decides what that means). THROWS on a read error.
+ * An id past `events.id`'s range (`isEventId`) is never sent: it is simply absent from the answer, like an id
+ * that matches nothing - sent, it would fail the whole read with "out of range".
+ */
 async function readEvents(ids: number[]): Promise<Map<number, TripEventLite>> {
   const out = new Map<number, TripEventLite>();
-  const unique = [...new Set(ids)];
+  const unique = [...new Set(ids.filter(isEventId))];
   for (let i = 0; i < unique.length; i += 200) {
     const { data, error } = await idb.from("events").select(EVENT_COLUMNS).in("id", unique.slice(i, i + 200));
     if (error) throw new Error(`events read: ${error.message ?? JSON.stringify(error)}`);
@@ -367,7 +385,8 @@ export async function searchTripEvents(query: string): Promise<TripEventLite[]> 
       .replace(/[,()*"\\]/g, " ")
       .trim()
       .slice(0, 80);
-    const asId = /^\d+$/.test(q) && Number.isSafeInteger(Number(q)) && Number(q) > 0 ? Number(q) : null;
+    // Only a number an event can have (an integer id): past it `id.eq.` would fail the whole search, not match nothing.
+    const asId = /^\d+$/.test(q) && isEventId(Number(q)) ? Number(q) : null;
     if (q.length < 2 && asId === null) return [];
 
     const like = q.replace(/[%_]/g, "\\$&");

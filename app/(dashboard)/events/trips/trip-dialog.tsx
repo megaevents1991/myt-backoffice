@@ -41,6 +41,9 @@ const missingEvent = (id: number): Picked => ({
   is_hidden: null,
   deactivated_reason: null,
   tags: null,
+  is_test: null,
+  package_mode: null,
+  country_code: null,
   place: "",
   missing: true,
 });
@@ -52,6 +55,8 @@ const initialPicked = (route: ItineraryRouteListItem | null): Picked[] => {
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
+const PICKER_TRIGGER_ID = "trip-events-trigger";
+const chipRemoveId = (eventId: number) => `trip-chip-remove-${eventId}`;
 
 /** The server's field errors (typed loosely over the wire) as the form's three. */
 const fieldErrorsOf = (raw: Record<string, string> | undefined): ItineraryRouteErrors => ({
@@ -120,6 +125,8 @@ function EventPicker({
   }, [query]);
 
   const changeOpen = (next: boolean) => {
+    // Full: the trigger stays focusable (aria-disabled, not disabled - a pick hands focus back to it) and opens nothing.
+    if (next && full) return;
     setOpen(next);
     if (!next) {
       setQuery("");
@@ -140,6 +147,7 @@ function EventPicker({
     <Popover open={open} onOpenChange={changeOpen} modal>
       <PopoverTrigger asChild>
         <Button
+          id={PICKER_TRIGGER_ID}
           type="button"
           variant="outline"
           role="combobox"
@@ -147,8 +155,8 @@ function EventPicker({
           aria-labelledby="trip-events-label"
           aria-invalid={invalid ? true : undefined}
           aria-describedby={describedBy}
-          disabled={full}
-          className="w-full justify-between font-normal"
+          aria-disabled={full ? true : undefined}
+          className="w-full justify-between font-normal aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
         >
           <span className="truncate text-muted-foreground">
             {full ? `אפשר עד ${MAX_TRIP_EVENTS} אירועים בטריפ` : "חיפוש אירוע לפי שם או מספר..."}
@@ -198,11 +206,16 @@ function EventPicker({
 function TripForm({
   route,
   defaultSortOrder,
+  saving,
+  onSavingChange,
   onClose,
   onSaved,
 }: {
   route: ItineraryRouteListItem | null;
   defaultSortOrder: number;
+  /** Lives in the dialog, which must not close while a save is in flight. */
+  saving: boolean;
+  onSavingChange: (saving: boolean) => void;
   onClose: () => void;
   onSaved: (outcome: { created: boolean; warning?: string }) => void;
 }) {
@@ -212,7 +225,14 @@ function TripForm({
   const [isActive, setIsActive] = useState(route?.isActive ?? true);
   const [errors, setErrors] = useState<ItineraryRouteErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Where focus goes when the element that had it is removed (a chip's ×).
+  const [focusId, setFocusId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focusId === null) return;
+    document.getElementById(focusId)?.focus();
+    setFocusId(null);
+  }, [focusId]);
 
   /** A change clears its own field's message and the save-level one; Save checks everything again. */
   const touched = (field?: keyof ItineraryRouteErrors) => {
@@ -236,13 +256,15 @@ function TripForm({
       return;
     }
     setErrors({});
-    setSaving(true);
+    onSavingChange(true);
     try {
       const res = await saveItineraryRoute(checked.route);
       if ("error" in res) {
-        setErrors(fieldErrorsOf(res.fieldErrors));
-        // The message of a field error already sits under its field; only a general failure gets the banner.
-        if (!res.fieldErrors || Object.keys(res.fieldErrors).length === 0) setServerError(res.error);
+        const mapped = fieldErrorsOf(res.fieldErrors);
+        setErrors(mapped);
+        // The message of a field error already sits under its field; only a failure with none of the form's
+        // fields to hang it on (unknown keys included) gets the banner - never a failure with no message at all.
+        if (Object.keys(mapped).length === 0) setServerError(res.error);
         return;
       }
       onSaved({ created: !route, warning: res.warning });
@@ -250,7 +272,7 @@ function TripForm({
       console.error("saveItineraryRoute failed", e);
       setServerError(e instanceof Error ? e.message : "שגיאה לא צפויה");
     } finally {
-      setSaving(false);
+      onSavingChange(false);
     }
   }
 
@@ -276,7 +298,7 @@ function TripForm({
         <Label id="trip-events-label">אירועים</Label>
         {picked.length > 0 && (
           <ul className="flex flex-wrap gap-2">
-            {picked.map((e) => {
+            {picked.map((e, index) => {
               const problem = e.missing ? "לא נמצא" : e.is_deleted ? "נמחק" : null;
               return (
                 <li
@@ -295,12 +317,16 @@ function TripForm({
                     </div>
                   </div>
                   <button
+                    id={chipRemoveId(e.id)}
                     type="button"
                     aria-label={`הסרת ${e.name} מהטריפ`}
                     className="shrink-0 rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => {
+                      // The × that had focus is about to unmount: hand focus to the next chip's ×, else to the picker.
+                      const next = picked[index + 1];
                       setPicked((all) => all.filter((p) => p.id !== e.id));
                       touched("eventIds");
+                      setFocusId(next ? chipRemoveId(next.id) : PICKER_TRIGGER_ID);
                     }}
                   >
                     <X className="h-4 w-4" aria-hidden />
@@ -401,9 +427,31 @@ export function TripDialog({
   defaultSortOrder: number;
   onSaved: (outcome: { created: boolean; warning?: string }) => void;
 }) {
+  // Lifted from the form: Esc, a click outside and the X are all ignored while the save is in flight (the answer
+  // would otherwise land on a closed dialog and the toast would be the only sign of what happened).
+  const [saving, setSaving] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dir="rtl" className="max-h-[90vh] max-w-xl overflow-y-auto">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && saving) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        dir="rtl"
+        aria-busy={saving}
+        className={cn(
+          "max-h-[90vh] max-w-xl overflow-y-auto",
+          saving && "[&>button.absolute]:pointer-events-none [&>button.absolute]:opacity-40",
+        )}
+        onEscapeKeyDown={(ev) => {
+          if (saving) ev.preventDefault();
+        }}
+        onInteractOutside={(ev) => {
+          if (saving) ev.preventDefault();
+        }}
+      >
         {/* The dialog's close button sits at the physical right = the title's start in RTL: leave it room. */}
         <DialogHeader className="text-start ps-7 sm:text-start">
           <DialogTitle>{route ? "עריכת טריפ" : "טריפ חדש"}</DialogTitle>
@@ -413,6 +461,8 @@ export function TripDialog({
           key={route?.id ?? "new"}
           route={route}
           defaultSortOrder={defaultSortOrder}
+          saving={saving}
+          onSavingChange={setSaving}
           onClose={() => onOpenChange(false)}
           onSaved={onSaved}
         />
