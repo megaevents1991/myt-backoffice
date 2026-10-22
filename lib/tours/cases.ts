@@ -551,6 +551,60 @@ export function followUpTone(
   return c.followUpDate === today ? "today" : "upcoming";
 }
 
+// ---------------------------------------------------------------- paid drops the follow-up, a deposit needs one (Alon 22.10)
+/** A deposit's balance is chased this many days before the departure. */
+export const DEPOSIT_FOLLOW_UP_DAYS_BEFORE = 30;
+/** ...or, with no departure date on the card, this many days from today. */
+export const DEPOSIT_FOLLOW_UP_DEFAULT_DAYS = 7;
+
+/** `day` plus `days`, both plain YYYY-MM-DD, on UTC midnights (no zone or DST shift can move a day). */
+export function addDaysIso(day: string, days: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The follow-up day the "Deposit paid" dialog starts from: 30 days before the departure, never before today;
+ * a card with no departure (or one that already left) suggests a week from today.
+ */
+export function suggestDepositFollowUp(departureDate: string | null, today: string): string {
+  if (departureDate && /^\d{4}-\d{2}-\d{2}$/.test(departureDate) && departureDate >= today) {
+    const before = addDaysIso(departureDate, -DEPOSIT_FOLLOW_UP_DAYS_BEFORE);
+    return before > today ? before : today;
+  }
+  return addDaysIso(today, DEPOSIT_FOLLOW_UP_DEFAULT_DAYS);
+}
+
+export type FollowUpAfterStatus = { ok: true; followUpDate: string | null | undefined } | { ok: false; error: string };
+const DEPOSIT_NEEDS_DAY = "Pick the day to follow up on the balance.";
+const DAY_IN_PAST = "The follow-up day cannot be in the past.";
+
+/**
+ * What a status change does to the card's follow-up day (Alon 22.10): PAID has nothing left to follow up, so the
+ * day is cleared unless the request carries one (the rep's own plan); a DEPOSIT owes the balance, so a day is
+ * required - the request's, else a stored day of today or later. Any other status keeps the request as sent.
+ * `followUpDate`: undefined = leave the column alone, null = clear it, a day = write it.
+ */
+export function followUpAfterStatus(input: { to: string; requested: string | null | undefined; stored: string | null; today: string }): FollowUpAfterStatus {
+  const { to, requested, stored, today } = input;
+  if (to === "paid") return { ok: true, followUpDate: requested ?? null };
+  if (to === "deposit_paid") {
+    if (requested === null) return { ok: false, error: DEPOSIT_NEEDS_DAY };
+    if (requested !== undefined) return requested < today ? { ok: false, error: DAY_IN_PAST } : { ok: true, followUpDate: requested };
+    return stored && stored >= today ? { ok: true, followUpDate: undefined } : { ok: false, error: DEPOSIT_NEEDS_DAY };
+  }
+  return { ok: true, followUpDate: requested };
+}
+
+/** A status that names a value of its own (a tour + season, a follow-up day) cannot be set on many cards at once. */
+export function bulkStatusBlocker(key: string, label: string): string | null {
+  if (key === "future") return `"${label}" names a tour and a season - set it on each card.`;
+  if (key === "deposit_paid") return `"${label}" names a follow-up day - set it on each card.`;
+  return null;
+}
+
+/** "Take it": a card nobody holds yet. The server's viewer gate keeps another rep's card out of reach. */
+export const canTakeCard = (card: { assignedTo: string | null }): boolean => card.assignedTo === null;
+
 // ---------------------------------------------------------------- people and pages
 /** The key a site booking finds its lead by: the last 9 digits ("" when there are fewer). */
 export function phoneKey(phone: string | null | undefined): string {

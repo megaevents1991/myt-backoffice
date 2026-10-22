@@ -36,6 +36,11 @@ import {
   confirmationPendingOf,
   followUpDue,
   followUpTone,
+  addDaysIso,
+  suggestDepositFollowUp,
+  followUpAfterStatus,
+  bulkStatusBlocker,
+  canTakeCard,
   htmlToText,
   siteHref,
   isClosedStatus,
@@ -147,6 +152,31 @@ assert.equal(followUpTone({ followUpDate: "2099-01-01", status: "new" }, S, TODA
 assert.equal(followUpTone({ followUpDate: "2026-10-10", status: "not_relevant" }, S, TODAY), null, "a closed case is not late");
 assert.equal(followUpTone({ followUpDate: null, status: "new" }, S, TODAY), null, "no day, no pill");
 assert.equal(followUpTone({ followUpDate: "garbage", status: "new" }, S, TODAY), null);
+
+// ---------------------------------------------------------------- paid drops the follow-up, a deposit needs one (Alon 22.10)
+assert.equal(addDaysIso("2026-10-14", 7), "2026-10-21");
+assert.equal(addDaysIso("2026-12-30", 3), "2027-01-02");
+assert.equal(suggestDepositFollowUp("2026-12-01", TODAY), "2026-11-01", "30 days before the departure");
+assert.equal(suggestDepositFollowUp("2026-10-20", TODAY), TODAY, "a departure inside 30 days: today, never before");
+assert.equal(suggestDepositFollowUp(null, TODAY), "2026-10-21", "no departure: a week from today");
+assert.equal(suggestDepositFollowUp("2026-09-01", TODAY), "2026-10-21", "a departure already past: a week from today");
+assert.deepEqual(followUpAfterStatus({ to: "paid", requested: undefined, stored: "2026-10-01", today: TODAY }), { ok: true, followUpDate: null }, "paid clears a stale day");
+assert.deepEqual(followUpAfterStatus({ to: "paid", requested: null, stored: "2026-10-01", today: TODAY }), { ok: true, followUpDate: null });
+assert.deepEqual(followUpAfterStatus({ to: "paid", requested: "2026-11-05", stored: null, today: TODAY }), { ok: true, followUpDate: "2026-11-05" }, "a day sent with the status is the rep's own");
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: "2026-11-01", stored: null, today: TODAY }), { ok: true, followUpDate: "2026-11-01" });
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: undefined, stored: "2026-11-01", today: TODAY }), { ok: true, followUpDate: undefined }, "a stored day ahead stands");
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: undefined, stored: TODAY, today: TODAY }), { ok: true, followUpDate: undefined }, "today counts");
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: undefined, stored: "2026-10-01", today: TODAY }), { ok: false, error: "Pick the day to follow up on the balance." }, "a past day is no plan");
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: undefined, stored: null, today: TODAY }), { ok: false, error: "Pick the day to follow up on the balance." });
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: "2026-10-01", stored: null, today: TODAY }), { ok: false, error: "The follow-up day cannot be in the past." });
+assert.deepEqual(followUpAfterStatus({ to: "deposit_paid", requested: null, stored: "2026-11-01", today: TODAY }), { ok: false, error: "Pick the day to follow up on the balance." }, "clearing the day with a deposit is refused");
+assert.deepEqual(followUpAfterStatus({ to: "no_answer", requested: "2026-10-15", stored: null, today: TODAY }), { ok: true, followUpDate: "2026-10-15" }, "any other status: the request as sent");
+assert.deepEqual(followUpAfterStatus({ to: "offer_sent", requested: undefined, stored: "2026-10-01", today: TODAY }), { ok: true, followUpDate: undefined });
+assert.equal(bulkStatusBlocker("future", "ליד עתידי"), '"ליד עתידי" names a tour and a season - set it on each card.');
+assert.equal(bulkStatusBlocker("deposit_paid", "שולם מקדמה"), '"שולם מקדמה" names a follow-up day - set it on each card.');
+assert.equal(bulkStatusBlocker("paid", "שולם"), null);
+assert.equal(canTakeCard({ assignedTo: null }), true);
+assert.equal(canTakeCard({ assignedTo: "rep-1" }), false);
 
 // ---------------------------------------------------------------- phone key: the last 9 digits, whatever the writing
 assert.equal(phoneKey("054-123 4567"), "541234567");
