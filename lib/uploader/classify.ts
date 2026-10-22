@@ -70,7 +70,7 @@ export type CategoryInput = { category: string; key: string; sections: string[];
 /** A row of the dialog as first shown. */
 export type ClassificationRow = CategoryInput &
   ProposedRow & {
-    /** What `dropRule` says about the name, whether or not a person overruled it before. */
+    /** What `dropRule` says about the key, whether or not a person overruled it before. */
     ruleDrop: "away" | null;
     /** The drawing has sections for the category. */
     onMap: boolean;
@@ -166,7 +166,11 @@ function withoutOrphanedZones(
 
 // ---- The facts the dialog starts from ---------------------------------------------------------------
 
-/** Away stands are never sold to our customers: "away", "visitor(s)", "visiting" as whole words, any case. */
+/**
+ * Away stands are never sold to our customers: "away", "visitor(s)", "visiting" as whole words, any case.
+ * Every caller in this module passes the normalized KEY (`normalizeSupplierCategory`), so the parenthesised
+ * part of a supplier name never decides and the dialog, the confirm and the build always agree.
+ */
 export function dropRule(category: string): { drop: boolean; reason: "away" | null } {
   const text = typeof category === "string" ? category.toLowerCase() : "";
   return AWAY_WORDS.test(text) ? { drop: true, reason: "away" } : { drop: false, reason: null };
@@ -266,18 +270,17 @@ export function parseClassification(
 
 // ---- The dialog's rows ------------------------------------------------------------------------------
 
-/** One entry per key, in first-seen order: shows summed, sections merged, every spelling remembered. */
-function collapseByKey(categories: CategoryInput[]): { input: CategoryInput; names: string[] }[] {
-  const groups = new Map<string, { input: CategoryInput; names: string[] }>();
+/** One entry per key, in first-seen order (its first spelling is the one shown): shows summed, sections merged. */
+function collapseByKey(categories: CategoryInput[]): CategoryInput[] {
+  const groups = new Map<string, CategoryInput>();
   for (const category of categories) {
     const group = groups.get(category.key);
     if (!group) {
-      groups.set(category.key, { input: { ...category, sections: unique(category.sections) }, names: [category.category] });
+      groups.set(category.key, { ...category, sections: unique(category.sections) });
       continue;
     }
-    group.input.shows += category.shows;
-    group.input.sections = unique([...group.input.sections, ...category.sections]);
-    group.names.push(category.category);
+    group.shows += category.shows;
+    group.sections = unique([...group.sections, ...category.sections]);
   }
   return [...groups.values()];
 }
@@ -303,9 +306,9 @@ export function proposalRows(
   const droppedKeys = new Set(dropped.dropped);
   const keptKeys = new Set(dropped.kept);
 
-  return collapseByKey(categories).map(({ input, names }) => {
+  return collapseByKey(categories).map((input) => {
     const { key } = input;
-    const ruleDrop = names.map((name) => dropRule(name)).find((rule) => rule.drop)?.reason ?? null;
+    const ruleDrop = dropRule(key).reason;
     const existing = existingEntry(template, key);
     const proposal = proposed?.get(key) ?? null;
     const kept = keptKeys.has(key);
@@ -410,7 +413,7 @@ export function templateFromRows(
       forget.push(key);
       continue;
     }
-    if (dropRule(row.category).drop) kept.push(key);
+    if (dropRule(key).drop) kept.push(key);
     if (row.unsure) {
       forget.push(key);
       continue;
@@ -510,7 +513,7 @@ export function templateFromEvent(
     zonedKeys.add(key);
     mapped.add(zone.id);
     categoryToZone[key] = zone.id;
-    if (dropRule(ticketCategory(ticket)).drop) ruleKept.push(key);
+    if (dropRule(key).drop) ruleKept.push(key);
 
     const was = before.get(zone.id) ?? { label: zone.label, description: undefined };
     const ticketLabel = cut(ticket.zoneLabel, ZONE_LABEL_MAX);
@@ -590,9 +593,9 @@ export function ticketsFixedByHand(
 /**
  * Drop and zone a list of tickets by a classified venue - the dialog's confirm and the build's ticket step
  * run this same function. A TixStock ticket leaves when its key is in the venue's dropped list or the rule
- * drops its category (any ticket of that key says so), unless the key is in `kept`. The rest go through
- * `zoneFromTemplate` (the zone's description lands on an empty one only). `dropped` = the category of each
- * removed key; `unzoned` = the category of EVERY ticket left without a zone, LiveTickets included.
+ * drops its key, unless the key is in `kept`. The rest go through `zoneFromTemplate` (the zone's
+ * description lands on an empty one only). `dropped` = the category of each removed key;
+ * `unzoned` = the category of EVERY ticket left without a zone, LiveTickets included.
  */
 export function applyClassification(
   tickets: EventTicket[],
@@ -601,15 +604,12 @@ export function applyClassification(
 ): { tickets: EventTicket[]; dropped: string[]; unzoned: string[] } {
   const listed = new Set(dropped.dropped);
   const kept = new Set(dropped.kept);
-  const ruled = new Set(
-    tickets.filter((ticket) => isTixStock(ticket) && dropRule(ticketCategory(ticket)).drop).map(ticketKey),
-  );
 
   const staying: EventTicket[] = [];
   const removed = new Map<string, string>();
   for (const ticket of tickets) {
     const key = ticketKey(ticket);
-    if (isTixStock(ticket) && key && !kept.has(key) && (listed.has(key) || ruled.has(key))) {
+    if (isTixStock(ticket) && key && !kept.has(key) && (listed.has(key) || dropRule(key).drop)) {
       if (!removed.has(key)) removed.set(key, ticket.category);
       continue;
     }
@@ -627,12 +627,16 @@ export function applyClassification(
 // ---- What a person changed ---------------------------------------------------------------------------
 
 /**
- * What a person changed against the proposal - the lessons and the audit rows quote it. Per confirmed row,
- * in this order: its label (a kept, sure row with a non-empty new label), its description, and its drop.
- *  - With a proposal: a key the proposal never held has no label or description to compare (the dialog
- *    prefilled it from the stored template); the drop baseline is the proposal's drop OR the rule's, as the
- *    dialog showed it, so leaving a rule-drop dropped is no change and un-dropping it is.
- *  - With none (`null`): every kept, sure row's label and description, `from: null`.
+ * What a person changed against what the dialog showed them - the lessons and the audit rows quote it
+ * ("a row confirmed as proposed writes nothing"). Per confirmed row, in this order: its label (a kept, sure
+ * row with a non-empty new label), its description, and its drop.
+ *
+ * CONTRACT: `proposed` is the rows AS THE DIALOG SHOWED THEM, keyed by `key` - the `proposalRows` output
+ * (a `ClassificationRow` is a `ProposedRow`), which already carries the rule drops, the venue's dropped /
+ * kept lists and the stored template's labels and descriptions. Nothing is re-derived here (no `dropRule`),
+ * so a row left as shown is no change, whatever put it in that state. A key the dialog did not show has
+ * nothing to compare and is skipped.
+ *  - `null` (nothing was proposed, a manual fill): every kept, sure row's label and description, `from: null`.
  */
 export function classificationDiff(
   proposed: Map<string, ProposedRow> | null,
@@ -647,17 +651,17 @@ export function classificationDiff(
       continue;
     }
 
-    const proposal = proposed.get(normalizeSupplierCategory(row.category));
-    if (named && proposal) {
-      if (row.label_he && row.label_he !== proposal.label_he) {
-        changes.push({ category: row.category, field: "label", from: proposal.label_he || null, to: row.label_he });
+    const shown = proposed.get(normalizeSupplierCategory(row.category));
+    if (!shown) continue;
+    if (named) {
+      if (row.label_he && row.label_he !== shown.label_he) {
+        changes.push({ category: row.category, field: "label", from: shown.label_he || null, to: row.label_he });
       }
-      if (row.description_he !== proposal.description_he) {
-        changes.push({ category: row.category, field: "description", from: proposal.description_he || null, to: row.description_he });
+      if (row.description_he !== shown.description_he) {
+        changes.push({ category: row.category, field: "description", from: shown.description_he || null, to: row.description_he });
       }
     }
-    const proposedDrop = (proposal?.drop ?? false) || dropRule(row.category).drop;
-    if (row.drop !== proposedDrop) changes.push({ category: row.category, field: "drop", from: proposedDrop, to: row.drop });
+    if (row.drop !== shown.drop) changes.push({ category: row.category, field: "drop", from: shown.drop, to: row.drop });
   }
   return changes;
 }

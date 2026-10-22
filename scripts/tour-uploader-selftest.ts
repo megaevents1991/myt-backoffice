@@ -83,6 +83,7 @@ import {
   ticketsFixedByHand,
   ZONE_LABEL_MAX,
   type CategoryInput,
+  type ClassificationRow,
   type ConfirmedRow,
   type ProposedRow,
   type TemplateLike,
@@ -3445,39 +3446,94 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
   same(applyClassification([], applyTemplate, NO_DROPS), { tickets: [], dropped: [], unzoned: [] }, "applyClassification: no tickets, nothing to report");
 
-  // classificationDiff: what a person changed against what the model proposed.
-  const proposedMap = new Map<string, ProposedRow>([
-    ["cat 1", proposed({ label_he: "קטגוריה 1", description_he: "תיאור" })],
-    ["cat 2", proposed({ label_he: "קטגוריה 2" })],
-    ["away fans section", proposed()],
-    ["hospitality box 12", proposed({ drop: true, drop_reason: "other" })],
-    ["cat 3", proposed({ label_he: "קטגוריה 3", description_he: "ישן" })],
-  ]);
+  // The rule is read off the normalized KEY everywhere (the dialog's rows, the confirmed template, the apply):
+  // the parenthesised part of a supplier name is not part of the key, so all three answer alike.
+  for (const [name, key, ruled] of [
+    ["Away Fans Section (Restricted View)", "away fans section", true],
+    ["Lower Tier (Away End)", "lower tier", false],
+  ] as [string, string, boolean][]) {
+    same(
+      [
+        proposalRows([{ category: name, key, sections: [], shows: 1 }], null, null, NO_DROPS)[0].ruleDrop,
+        templateFromRows([confirmed(name, { label_he: "יציע" })], [], null, NO_DROPS).kept,
+        applyClassification([tixTicket(name)], { zones: [], supplier_categories: {} }, NO_DROPS).dropped,
+      ],
+      ruled ? ["away", [key], [name]] : [null, [], []],
+      `the away rule reads the key: "${name}" ${ruled ? "is" : "is not"} an away stand in proposalRows, templateFromRows and applyClassification alike`,
+    );
+  }
+
+  // classificationDiff: what a person changed against the rows AS THE DIALOG SHOWED THEM (the proposalRows output).
+  const shownMap = (rows: ClassificationRow[]): Map<string, ClassificationRow> => new Map(rows.map((r) => [r.key, r]));
+  const cat3: CategoryInput = { category: "Cat 3", key: "cat 3", sections: [], shows: 2 };
+  const visitors: CategoryInput = { category: "Visitors Bar", key: "visitors bar", sections: [], shows: 2 };
+  const cat7: CategoryInput = { category: "Cat 7", key: "cat 7", sections: [], shows: 2 };
+  const shownRows = shownMap(
+    proposalRows(
+      [cat1, cat2, cat3, away, hospitality, visitors, cat7],
+      new Map([
+        ["cat 2", proposed({ label_he: "קטגוריה 2" })],
+        ["cat 3", proposed({ label_he: "קטגוריה 3", description_he: "ישן" })],
+        ["away fans section", proposed({ label_he: "יציע חוץ" })],
+        ["hospitality box 12", proposed({ drop: true, drop_reason: "other" })],
+        ["visitors bar", proposed({ label_he: "בר אורחים" })],
+        ["cat 7", proposed({ label_he: "קטגוריה 7" })],
+      ]),
+      storedTemplate,
+      { dropped: ["cat 7"], kept: ["visitors bar"] },
+    ),
+  );
   same(
-    classificationDiff(proposedMap, [
-      confirmed("Cat 1", { label_he: "יציע 1", description_he: "תיאור" }),
+    [...shownRows.values()].map((r) => [r.key, r.status, r.drop]),
+    [["cat 1", "existing", false], ["cat 2", "ai", false], ["cat 3", "ai", false], ["away fans section", "rule_drop", true], ["hospitality box 12", "ai", true], ["visitors bar", "ai", false], ["cat 7", "existing", true]],
+    "classificationDiff fixture: the rows the dialog opened with (stored label, rule drop, AI drop, a kept rule-drop, a venue drop)",
+  );
+  same(
+    classificationDiff(shownRows, [
+      confirmed("Cat 1", { label_he: "יציע 1", description_he: "באמצע היציע" }),
       confirmed("Cat 2", { label_he: "קטגוריה 2" }),
-      confirmed("Away Fans Section", { drop: true }),
-      confirmed("Hospitality Box 12", { label_he: "בוקס" }),
       confirmed("Cat 3", { label_he: "קטגוריה 3", description_he: "" }),
+      confirmed("Away Fans Section", { label_he: "יציע חוץ", drop: true }),
+      confirmed("Hospitality Box 12", { label_he: "בוקס" }),
+      confirmed("Visitors Bar", { label_he: "בר אורחים" }),
+      confirmed("Cat 7", { drop: true }),
     ]),
     [
       { category: "Cat 1", field: "label", from: "קטגוריה 1", to: "יציע 1" },
+      { category: "Cat 3", field: "description", from: "ישן", to: "" },
       { category: "Hospitality Box 12", field: "label", from: null, to: "בוקס" },
       { category: "Hospitality Box 12", field: "drop", from: true, to: false },
-      { category: "Cat 3", field: "description", from: "ישן", to: "" },
     ],
-    "classificationDiff: renamed, un-dropped and a cleared description are changes; unchanged rows and a rule drop left as the rule had it are not",
+    "classificationDiff: a stored label renamed, a cleared description and an un-dropped AI drop are changes; rows left as shown - a rule drop, a kept rule-drop, a venue drop, an untouched label - are not",
   );
   same(
-    classificationDiff(new Map([["away fans section", proposed({ label_he: "יציע חוץ" })]]), [confirmed("Away Fans Section", { label_he: "יציע חוץ" })]),
+    classificationDiff(shownRows, [confirmed("Away Fans Section", { label_he: "יציע חוץ" })]),
     [{ category: "Away Fans Section", field: "drop", from: true, to: false }],
-    "classificationDiff: un-dropping what the rule flagged is a change even when the model had not dropped it",
+    "classificationDiff: un-dropping what the rule flagged is a change",
+  );
+  same(
+    classificationDiff(shownRows, [confirmed("Visitors Bar", { label_he: "בר אורחים", drop: true })]),
+    [{ category: "Visitors Bar", field: "drop", from: false, to: true }],
+    "classificationDiff: dropping a kept rule-drop again is a change",
+  );
+  same(
+    classificationDiff(shownMap(proposalRows([away], new Map([["away fans section", proposed({ label_he: "יציע אוהדי חוץ" })]]), null, { dropped: [], kept: ["away fans section"] })), [
+      confirmed("Away Fans Section", { label_he: "יציע אוהדי חוץ" }),
+    ]),
+    [],
+    "classificationDiff: re-confirming a venue where the away stand was kept earlier, untouched, writes nothing",
+  );
+  same(
+    classificationDiff(shownMap(proposalRows([hospitality], new Map([["hospitality box 12", proposed({ label_he: "בוקס" })]]), null, { dropped: ["hospitality box 12"], kept: [] })), [
+      confirmed("Hospitality Box 12", { label_he: "בוקס", drop: true }),
+    ]),
+    [],
+    "classificationDiff: re-confirming a category the venue already dropped, untouched, writes nothing",
   );
   same(
     classificationDiff(new Map(), [confirmed("Cat 1", { label_he: "קטגוריה 1" }), confirmed("Cat 2", { drop: true })]),
-    [{ category: "Cat 2", field: "drop", from: false, to: true }],
-    "classificationDiff: a key the proposal never held has no label to compare, a drop of it still counts",
+    [],
+    "classificationDiff: a key the dialog did not show has nothing to compare",
   );
   same(
     classificationDiff(null, [
