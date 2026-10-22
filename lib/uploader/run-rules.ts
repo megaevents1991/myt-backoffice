@@ -351,7 +351,7 @@ export function planPreview(found: {
  * The selftest checks it names every whitelisted field.
  */
 export const EDIT_EVENT_COLUMNS =
-  "id,name,name_english,date,def_date_depart,def_date_return,base_flight_price,base_hotel_price,event_additional_markup,ticket_only_markup,package_mode,location,event_location,lodging_mode,lodging_default,split_default_nights,tickets_and_rates" as const;
+  "id,name,name_english,date,def_date_depart,def_date_return,base_flight_price,base_hotel_price,event_additional_markup,ticket_only_markup,package_mode,location,event_location,lodging_mode,lodging_default,split_default_nights,tickets_and_rates,map_image_url" as const;
 
 // ---- what staff changed on the plan card ----------------------------------------------------------
 

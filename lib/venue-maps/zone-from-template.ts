@@ -1,6 +1,7 @@
 /**
  * Tickets with no zone yet take it from the venue template (supplier +
- * category -> zone). Tickets the operator already zoned are never touched.
+ * category -> zone), and the zone's description when the ticket has none. Tickets the operator
+ * already zoned are never touched.
  *
  * Moved verbatim from components/event-suppliers-panel.tsx (the panel imports it back) so the tour
  * uploader's build can zone a new event's tickets by the same rule. Pure - no DB, no DOM.
@@ -28,6 +29,9 @@ export function zoneFromTemplate(
       supplierCategory: category,
       zoneId: zone.id,
       zoneLabel: zone.label,
+      // The zone's line under the title - only onto a ticket with no description of its own (a LiveTickets
+      // description, or one a person wrote, is never overwritten).
+      ...(zone.description && !ticket.description ? { description: zone.description } : {}),
     };
   });
 }

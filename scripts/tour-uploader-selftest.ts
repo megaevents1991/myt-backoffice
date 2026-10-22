@@ -11,6 +11,7 @@
  * count themselves, so the summary never needs editing.
  */
 import assert from "node:assert/strict";
+import Module from "node:module";
 import {
   BOARD_IDLE_POLL_MS,
   FAR_VENUE_KM,
@@ -70,6 +71,7 @@ import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploade
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { calculateSmartDates } from "@/lib/smart-dates";
+import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
 import { nameFragments, searchWindow, subjectPatterns, tixSlices, TIX_SLICES_MAX } from "@/lib/services/uploader-search";
@@ -2465,8 +2467,8 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   // EDIT_EVENT_COLUMNS covers the edit diff.
   same(
     R.EDIT_EVENT_COLUMNS.split(",").sort(),
-    ["id", "tickets_and_rates", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
-    "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id",
+    ["id", "tickets_and_rates", "map_image_url", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
+    "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id and the map the classification rewrites",
   );
 
   // subjectArtOf (over the row the one candidate read picked)
@@ -2858,6 +2860,93 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     [R.subjectHasPage("artist", { artist: { id: 1 }, team: null }), R.subjectHasPage("artist", { artist: null, team: null }), R.subjectHasPage("team", { artist: null, team: { id: 2 } }), R.subjectHasPage("competition", { artist: null, team: null })],
     [true, false, true, null],
     "C6: an artist / team page is its row; a competition has none to show",
+  );
+}
+
+// ---- Round אלון 1, Task 1: zone description (venue template -> ticket) ---------------------------
+{
+  const described = {
+    zones: [{ id: "z-cat1", label: "קטגוריה 1", sections: ["s1"], description: "מושבים באמצע היציע, מול המגרש" }],
+    supplier_categories: { tixstock: { "cat 1": "z-cat1" } },
+  };
+  const bareTicket: EventTicket = {
+    id: "t-d1",
+    category: "Cat 1",
+    price: 100,
+    description: "",
+    colorOnTheMap: "rgb(5, 32, 60)",
+    supplier: "tixstock",
+  };
+
+  same(
+    zoneFromTemplate([bareTicket], "tx_event", described)[0].description,
+    "מושבים באמצע היציע, מול המגרש",
+    "zoneFromTemplate copies the zone description onto an empty ticket description",
+  );
+  for (const empty of [null, undefined]) {
+    same(
+      zoneFromTemplate([{ ...bareTicket, description: empty } as unknown as EventTicket], "tx_event", described)[0].description,
+      "מושבים באמצע היציע, מול המגרש",
+      `zoneFromTemplate: a ${String(empty)} ticket description counts as empty too`,
+    );
+  }
+  same(
+    zoneFromTemplate([{ ...bareTicket, description: "יציע מערבי, ליד הקו" }], "tx_event", described)[0].description,
+    "יציע מערבי, ליד הקו",
+    "zoneFromTemplate keeps a ticket description that is already there",
+  );
+  const plainMap = { zones: [{ id: "z-cat1", label: "קטגוריה 1", sections: ["s1"] }], supplier_categories: described.supplier_categories };
+  same(
+    zoneFromTemplate([bareTicket], "tx_event", plainMap)[0],
+    { ...bareTicket, supplierCategory: "Cat 1", zoneId: "z-cat1", zoneLabel: "קטגוריה 1" },
+    "zoneFromTemplate: a zone with no description changes nothing about the ticket's own",
+  );
+
+  // zonesOfTemplate lives in a server-only module (`import "server-only"`, which is not a package a plain
+  // tsx run can resolve) - the stub answers that one request while the module loads, then goes away.
+  const loader = Module as unknown as { _load: (request: string, ...rest: unknown[]) => unknown };
+  const realLoad = loader._load;
+  loader._load = function (this: unknown, request: string, ...rest: unknown[]) {
+    return request === "server-only" ? {} : realLoad.call(this, request, ...rest);
+  };
+  let zonesOfTemplate: typeof import("@/lib/services/uploader-prior").zonesOfTemplate;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ({ zonesOfTemplate } = require("@/lib/services/uploader-prior") as typeof import("@/lib/services/uploader-prior"));
+  } finally {
+    loader._load = realLoad;
+  }
+  same(
+    zonesOfTemplate([
+      { id: "a", label: "A", sections: ["s1"], description: "  שורה בעברית  " },
+      { id: "b", label: "B", sections: [], description: "   " },
+      { id: "c", label: "C", sections: [] },
+      { id: "d", label: "D", sections: [], description: 5 },
+      { id: "e", label: "E", sections: [], description: "x".repeat(200) },
+      { id: "f", label: "", sections: [], description: "no label - no zone" },
+    ]),
+    [
+      { id: "a", label: "A", sections: ["s1"], description: "שורה בעברית" },
+      { id: "b", label: "B", sections: [] },
+      { id: "c", label: "C", sections: [] },
+      { id: "d", label: "D", sections: [] },
+      { id: "e", label: "E", sections: [], description: "x".repeat(ZONE_DESCRIPTION_MAX) },
+    ],
+    "zonesOfTemplate keeps description and drops a blank one",
+  );
+  same(ZONE_DESCRIPTION_MAX, 160, "a zone description is cut at 160 characters");
+  same(zonesOfTemplate(null), [], "zonesOfTemplate: a null column reads as no zones");
+  same(
+    [cleanZoneDescription(" ab "), cleanZoneDescription(""), cleanZoneDescription(undefined), cleanZoneDescription(7)],
+    ["ab", undefined, undefined, undefined],
+    "cleanZoneDescription: trimmed text or nothing",
+  );
+
+  // isUnsellableCategory is exported now (the classification rules reuse it).
+  same(
+    ["field", "pitch", "grey fields", "gray field", "cat 1 disabled", "", "cat 1", "west stand"].map(isUnsellableCategory),
+    [true, true, true, true, true, true, false, false],
+    "isUnsellableCategory: the pitch, TixStock's grey fillers, disabled seating and a blank name",
   );
 }
 

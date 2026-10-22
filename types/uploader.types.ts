@@ -133,6 +133,8 @@ export interface UploaderRun {
   ai_cost_usd: number;
   is_test: boolean;
   error: string | null;
+  /** The open task asking staff for the run's Hebrew names (round "Alon 1", spec 7.1); null = none. */
+  names_task_id: string | null;
   created_at: string;
   updated_at: string;
 }

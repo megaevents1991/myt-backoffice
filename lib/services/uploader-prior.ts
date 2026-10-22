@@ -15,7 +15,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { normalizeName } from "@/lib/on-tour";
 import { urlSpellings } from "@/lib/services/venue-memory";
 import { priorItemsOf, priorRunScope, type PriorItem, type PriorItemRow, type PriorRunRow } from "@/lib/uploader/shows";
-import type { SupplierCategoryMap, VenueMap, VenueZone } from "@/lib/venue-maps/svg-zones";
+import { cleanZoneDescription, type SupplierCategoryMap, type VenueMap, type VenueZone } from "@/lib/venue-maps/svg-zones";
 import type { Json } from "@/types/database.types";
 import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
 
@@ -118,7 +118,8 @@ export async function priorMarkups(kind: SubjectKind): Promise<{ ticket_only: nu
 
 // ---- venue template ------------------------------------------------------------------------------
 
-function zonesOf(v: Json): VenueZone[] {
+/** The zones of a `venue_maps.zones` column, each rebuilt field by field (a zone with no id or label is dropped). */
+export function zonesOfTemplate(v: Json): VenueZone[] {
   if (!Array.isArray(v)) return [];
   const out: VenueZone[] = [];
   for (const z of v) {
@@ -126,7 +127,8 @@ function zonesOf(v: Json): VenueZone[] {
     const id = text(z.id);
     const label = text(z.label);
     const sections = Array.isArray(z.sections) ? z.sections.filter((s): s is string => typeof s === "string") : [];
-    if (id && label) out.push({ id, label, sections });
+    const description = cleanZoneDescription(z.description);
+    if (id && label) out.push({ id, label, sections, ...(description ? { description } : {}) });
   }
   return out;
 }
@@ -162,5 +164,5 @@ export async function venueMapFor(sourceUrl: string | null): Promise<Pick<VenueM
   if (error) fail("venue_maps read", error);
   const row = data?.[0];
   if (!row) return null;
-  return { svg_url: row.svg_url, zones: zonesOf(row.zones), supplier_categories: supplierCategoriesOf(row.supplier_categories) };
+  return { svg_url: row.svg_url, zones: zonesOfTemplate(row.zones), supplier_categories: supplierCategoriesOf(row.supplier_categories) };
 }

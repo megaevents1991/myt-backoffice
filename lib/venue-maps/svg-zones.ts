@@ -17,6 +17,21 @@ export type VenueZone = {
   label: string;
   /** `data-section` ids of the source drawing that belong to this zone. */
   sections: string[];
+  /**
+   * The Hebrew line under the zone's title on the ticket card (up to ZONE_DESCRIPTION_MAX characters).
+   * Absent = none. The SVG never carries it - `stampZones` only needs ids.
+   */
+  description?: string;
+};
+
+/** The longest zone description kept, everywhere a zone is read or written. */
+export const ZONE_DESCRIPTION_MAX = 160;
+
+/** A zone description as stored: the trimmed text cut to ZONE_DESCRIPTION_MAX, or undefined when nothing is left. */
+export const cleanZoneDescription = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim().slice(0, ZONE_DESCRIPTION_MAX).trimEnd();
+  return text || undefined;
 };
 
 /** supplier → normalized supplier category → zone id. The venue template. */
@@ -96,7 +111,7 @@ export const sectionCategory = (sectionId: string): string => {
  * Parts of a drawing nobody sells: the pitch, blocked stands, and TixStock's
  * "gray-fields" filler for stands it has no listings category for.
  */
-const isUnsellableCategory = (normalized: string): boolean =>
+export const isUnsellableCategory = (normalized: string): boolean =>
   !normalized ||
   normalized === "field" ||
   normalized === "pitch" ||

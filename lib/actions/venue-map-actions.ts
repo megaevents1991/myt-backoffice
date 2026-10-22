@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { normalizeSupplierCategory, SUPPLIERS } from "@/lib/suppliers";
 import {
+  cleanZoneDescription,
   isValidZoneId,
   listSectionIds,
   stampZones,
@@ -52,12 +53,14 @@ function sanitizeZones(
     if (seen.has(id)) return fail(`Duplicate zone id "${id}"`);
     if (!label) return fail(`Zone "${id}" has no label`);
     seen.add(id);
+    const description = cleanZoneDescription(zone.description);
     clean.push({
       id,
       label,
       sections: [...new Set(zone.sections ?? [])].filter((s) =>
         knownSections.has(s),
       ),
+      ...(description ? { description } : {}),
     });
   }
   return { ok: true, data: clean };
