@@ -1441,8 +1441,8 @@ shows the decisions taken, the warnings and an Approve per event. Admins only: n
 refetches after every step; idle, it polls every `BOARD_IDLE_POLL_MS` 15 s. The waiting toast polls every
 `TOAST_POLL_MS` 60 s.
 
-**One AI call; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
-the only model call: a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
+**Three AI calls; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
+the brief's call (the other two, `classify_venue` and `name_teams`, are in the round "אלון 1" paragraph below; every one a forced tool, code does the rest): a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
 `claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). `callsPerRun` 3 is the agent layer's per-run ceiling, but every
 `parseBrief` call gets a fresh budget - a re-parse ("ערוך את הבריף") is just another call - but a person
 gets at most `PARSE_RATE_MAX` 10 parses per `PARSE_RATE_WINDOW_MS` 10 min (`rate_limited`, counted on the
@@ -1582,7 +1582,7 @@ Alon's first real run (`386c906f`, Fulham: 15 hidden events) printed the SAME fo
 TixStock tickets in raw English with no zone (one was "Away Fans Section" at $4,680) and named the events in English;
 Dor's four rulings are the rules: the AI PROPOSES and a person confirms once; a confirmed opponent name creates the team
 INACTIVE with no image; one event fixed by hand in the editor teaches the rest; the Hebrew name is ours, then
-LiveTickets', else ask. **The panel** (`lib/uploader/run-panel.ts`, pure; `run-panel.tsx`; every Hebrew string in
+LiveTickets', else ask. **The panel** (`lib/uploader/run-panel.ts`, pure, it holds the row texts; `run-panel.tsx`; every other Hebrew string in
 `board-words.ts`): `runLevelRows` = "לטיפול ברמת הריצה" between the header and the filter pills, one row per kind with ONE
 button - a hall per `show.suppliers.tixstock.venue_map_url` in three forms (`new` = no template, `unzoned` = categories
 still "לבדיקה", `fixed` = an event arranged in the editor, `getRun`'s `fixedByHand` via `ticketsFixedByHand`), the Hebrew
@@ -1606,7 +1606,7 @@ rewritten through `applyClassification` (direct `tickets_and_rates` + `map_image
 `unzoned` = TixStock tickets only; an event whose tickets would ALL be dropped is left as it is with `all_dropped`), the
 items' warnings / decisions / payload follow (the approve-time edit diff must not read it as a staff edit), audit
 `uploader.classified` + one `uploader.classify_changed` per change. `zones[].description` (<= 160) sits inside the
-existing `venue_maps.zones` jsonb (no column): `VenueZone`, `sanitizeZones`, `zonesOf`, `zoneFromTemplate` (copies onto an
+existing `venue_maps.zones` jsonb (no column): `VenueZone`, `sanitizeZones`, `zonesOfTemplate`, `zoneFromTemplate` (copies onto an
 EMPTY description only - a LiveTickets one is never overwritten) and the editor's Suppliers & zones board ("תיאור ללקוח"
 box per zone) carry it, and the BUILD (`uploader-build.ts` step 4 -> `applyClassification`) uses the template's drops and
 descriptions from now on (decisions `categories_dropped_by_template` / `zones_from_template`; a show whose template drops
@@ -1634,8 +1634,8 @@ goes through the same per-item path, audited `uploader.answered` with `rule_appl
 (`lib/services/tour-uploader-classify.ts`: `classifyVenueWithAgent`, `nameTeamsWithAgent`) are the parse's discipline -
 same agent and `TOUR_UPLOADER_AI` switch, forced non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row with cost and
 `user_id`, no price / listing / URL in the prompt - and the dialogs share the parse's cap (`PARSE_RATE_MAX` 10 per
-`PARSE_RATE_WINDOW_MS` 10 min per person, checked by the actions); off / no answer / cap -> the SAME dialog with empty
-boxes ("ה-AI כבוי / לא ענה - מלאו את השמות ידנית"). **Learning is per call:** `loadAgentLessons(def, { sources })` -
+`PARSE_RATE_WINDOW_MS` 10 min per person, checked by the actions); off / no answer / the cap -> the SAME dialog with empty
+boxes (`aiLine`: off / no answer -> "ה-AI כבוי / לא ענה - מלאו את השמות ידנית"; the cap -> "יותר מדי קריאות ל-AI בזמן קצר - מלאו את השמות ידנית"). **Learning is per call:** `loadAgentLessons(def, { sources })` -
 `CLASSIFY_LESSON_SOURCES` = `uploader.classify_changed` (a rename, a drop, an un-drop, a name typed by hand),
 `NAMES_LESSON_SOURCES` = `uploader.team_created`, the brief parse keeps its five older sources + feedback; a row
 confirmed as proposed writes nothing; AI Factory's trace shows every source. NOT built: the SVG mini-map under the
