@@ -21,6 +21,7 @@ import {
   agentEnabled, agentModel, anthropicKey, callCostUsd, loadActiveTaughtRules, loadAgentLessons, memoryBlock, takeBudget,
   TOUR_UPLOADER_AGENT, type AgentBudget,
 } from "@/lib/agents";
+import { PARSE_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
 import type { AgentDefinition } from "@/lib/agents/types";
 import { logAudit } from "@/lib/audit";
 import { parsePlanInput, PLAN_TOOL_SCHEMA } from "@/lib/uploader/plan";
@@ -137,7 +138,8 @@ export async function parseBriefWithAgent(brief: string, budget?: AgentBudget, o
   try {
     const model = agentModel(def);
     const [lessons, taught] = await Promise.all([
-      orNone(() => loadAgentLessons(def), "lessons"),
+      // The brief is read with the lessons about reading briefs - not the zone and team-name ones the other calls learn from.
+      orNone(() => loadAgentLessons(def, { sources: PARSE_LESSON_SOURCES }), "lessons"),
       orNone(() => loadActiveTaughtRules(def.key), "taught rules"),
     ]);
     const { system, user } = parsePrompt(def, lessons, taught, brief);

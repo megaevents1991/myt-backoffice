@@ -78,6 +78,14 @@ function taughtBlock(taught: string[]): string | null {
 }
 
 /**
+ * Which of the agent's `learnsFrom` sources a read covers. `sources` (audit action names) narrows it
+ * to those entries - the one agent that makes several AI calls gives each call only the lessons
+ * about ITS job. Omitted = every source (what the AI Factory trace and every older caller read);
+ * a name the agent does not declare reads nothing.
+ */
+export interface LessonSourceOpts { sources?: string[] }
+
+/**
  * The agent's recorded decisions, newest first, already formatted as lesson lines.
  *
  * Reads `audit_log` rather than the live state it describes on purpose: an audit row is immutable
@@ -85,8 +93,8 @@ function taughtBlock(taught: string[]): string | null {
  * fixed has moved on. A failed read returns [] - an agent must keep working without its memory,
  * never throw for the want of it.
  */
-export async function loadAgentLessons(def: AgentDefinition): Promise<string[]> {
-  return (await traceAgentLessons(def)).filter((t) => t.status === "quoted").map((t) => t.line ?? "");
+export async function loadAgentLessons(def: AgentDefinition, opts?: LessonSourceOpts): Promise<string[]> {
+  return (await traceAgentLessons(def, opts)).filter((t) => t.status === "quoted").map((t) => t.line ?? "");
 }
 
 /**
@@ -95,8 +103,10 @@ export async function loadAgentLessons(def: AgentDefinition): Promise<string[]> 
  * `loadAgentLessons` IS the quoted slice of this, in the same order - so the AI Factory's trace
  * can never disagree with what the model actually reads. Quoted lines come first, in prompt order.
  */
-export async function traceAgentLessons(def: AgentDefinition): Promise<LessonTrace[]> {
-  const actions = def.learnsFrom.map((s) => s.action);
+export async function traceAgentLessons(def: AgentDefinition, opts?: LessonSourceOpts): Promise<LessonTrace[]> {
+  const only = opts?.sources;
+  const sources = only ? def.learnsFrom.filter((s) => only.includes(s.action)) : def.learnsFrom;
+  const actions = sources.map((s) => s.action);
   if (actions.length === 0) return [];
   const since = new Date(Date.now() - def.lessonLookbackDays * 86_400_000).toISOString();
   const { data, error } = await db
@@ -113,9 +123,9 @@ export async function traceAgentLessons(def: AgentDefinition): Promise<LessonTra
   // Bucket by source, newest-first WITHIN each bucket, then interleave (see `interleave`).
   // Reading the rows in pure recency order instead would let a busy week of routine decisions
   // push out the one override where a human actually wrote down why the agent was wrong.
-  const buckets = def.learnsFrom.map(() => [] as LessonTrace[]);
+  const buckets = sources.map(() => [] as LessonTrace[]);
   const dropped: LessonTrace[] = [];
-  const indexOf = new Map(def.learnsFrom.map((s, i) => [s.action, i]));
+  const indexOf = new Map(sources.map((s, i) => [s.action, i]));
   for (const row of (data ?? []) as AuditRow[]) {
     const i = indexOf.get(row.action);
     if (i === undefined) continue;
@@ -126,7 +136,7 @@ export async function traceAgentLessons(def: AgentDefinition): Promise<LessonTra
       metadata: row.metadata,
       by: row.actor_email,
     };
-    const source = def.learnsFrom[i];
+    const source = sources[i];
     const line = source.toLesson(lesson);
     const base = { action: row.action, at: row.created_at, by: row.actor_email };
     if (!line) {

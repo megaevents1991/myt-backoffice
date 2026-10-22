@@ -72,6 +72,7 @@ const metaOf = (row: AuditLessonRow): Meta | null => row.metadata;
  * `uploader.plan_edited` first: it is the direct correction of the agent's own work (what it read
  * wrongly, on which brief). The rest say what staff decided where code could not: the option they
  * picked, a show they rejected and why, what they fixed after the build, a venue they built two-city.
+ * Last come the two newer calls' own sources: the zone labels staff changed, the team names they gave.
  */
 export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
   {
@@ -95,7 +96,11 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       // stored key (`live:123` / a TixStock id means nothing to the model on its own).
       const answer = text(m?.label) ?? text(m?.text) ?? text(m?.answer) ?? text(m?.key);
       if (!m || !kind || !subject || !answer) return null;
-      return `for ${subject}${where(m)} staff picked ${answer} (${kind})`;
+      // An answer that became a rule for the run (spec 5.4 / 7) decided MORE than one question: say how far it reached.
+      const n = m.applied;
+      const rule =
+        m.rule_applied === true && typeof n === "number" && Number.isFinite(n) && n >= 0 ? ` (a rule for the run, applied to ${Math.round(n)} more)` : "";
+      return `for ${subject}${where(m)} staff picked ${answer} (${kind})${rule}`;
     },
   },
   {
@@ -145,7 +150,65 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       return `staff marked the parse ${verdict}: ${summary}${note ? ` - ${note}` : ""}`;
     },
   },
+  {
+    // What staff changed in a venue's zone classification between the proposal the dialog showed and
+    // the confirm (spec 5.2 / 6.3). A row confirmed as proposed writes nothing, so every row is a
+    // correction. Read by the classification call only (`CLASSIFY_LESSON_SOURCES`).
+    action: "uploader.classify_changed",
+    toLesson: (row) => {
+      const m = metaOf(row);
+      const venue = text(m?.venue);
+      const category = text(m?.category);
+      if (!m || !venue || !category) return null;
+      const at = `at ${venue} staff`;
+      if (m.field === "label") {
+        const to = text(m.to);
+        if (!to) return null;
+        // `from` is what the dialog SHOWED: nothing there (null) means the person named the zone themselves.
+        const from = text(m.from);
+        return from ? `${at} renamed zone '${category}' from '${from}' to '${to}'` : `${at} named '${category}' '${to}' by hand`;
+      }
+      // The two texts are long and the model proposes its own; the fact that it was reworded is the lesson.
+      if (m.field === "description") return `${at} changed the description of '${category}'`;
+      if (m.field === "drop" && typeof m.to === "boolean") {
+        // Only a zone that was proposed as dropped can be un-dropped: the person overruled the proposal.
+        if (!m.to) return `${at} un-dropped '${category}' (the rule flagged it)`;
+        return `${at} dropped '${category}' (${text(m.reason) ?? "other"})`;
+      }
+      return null;
+    },
+  },
+  {
+    // A team / artist page staff created from a supplier's name, with the names they typed (spec 6.4).
+    // Read by the team-names call only (`NAMES_LESSON_SOURCES`).
+    action: "uploader.team_created",
+    toLesson: (row) => {
+      const m = metaOf(row);
+      const nameHe = text(m?.name_he);
+      const nameEn = text(m?.name_en);
+      const supplierName = text(m?.from_supplier_name);
+      if (!m || !nameHe || !nameEn || !supplierName) return null;
+      return `staff named ${supplierName} '${nameHe}' (English page name ${nameEn})`;
+    },
+  },
 ];
+
+/**
+ * Which `learnsFrom` sources each of the agent's calls reads (`loadAgentLessons(def, { sources })`).
+ * The agent keeps one list and one memory block; a call quotes only the lessons about ITS job, so a
+ * zone rename never crowds a brief-parsing lesson out of the quota and vice versa. Together the three
+ * cover every source exactly once (checked in scripts/agents-selftest.ts).
+ */
+export const PARSE_LESSON_SOURCES: string[] = [
+  "uploader.plan_edited",
+  "uploader.answered",
+  "uploader.rejected",
+  "uploader.edited",
+  "uploader.two_city_chosen",
+  "agent.feedback",
+];
+export const CLASSIFY_LESSON_SOURCES: string[] = ["uploader.classify_changed"];
+export const NAMES_LESSON_SOURCES: string[] = ["uploader.team_created"];
 
 export const TOUR_UPLOADER_AGENT: AgentDefinition = {
   key: "tour-uploader",

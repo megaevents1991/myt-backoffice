@@ -8,7 +8,9 @@
 import assert from "node:assert/strict";
 import Anthropic from "@anthropic-ai/sdk";
 import { AGENT_KEYS, agentFor, PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT, TOUR_UPLOADER_AGENT } from "@/lib/agents";
-import { interleave, memoryBlock, TAUGHT_BLOCK_MAX_CHARS } from "@/lib/agents/memory";
+import { interleave, loadAgentLessons, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, traceAgentLessons } from "@/lib/agents/memory";
+import { CLASSIFY_LESSON_SOURCES, NAMES_LESSON_SOURCES, PARSE_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
+import { SupabaseClient } from "@supabase/supabase-js";
 import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
 import type { AgentKey, AuditLessonRow } from "@/lib/agents/types";
 import { AI_VERDICT_PARSER, coerceBool, coerceNum } from "@/lib/services/price-light-judge";
@@ -321,8 +323,11 @@ assert.equal(uploaderDef.lessonChars, 340);
 assert.equal(uploaderDef.lessonLookbackDays, 180);
 assert.deepEqual(
   uploaderDef.learnsFrom.map((s) => s.action),
-  ["uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback"],
-  "the correction of the parse itself is the sharpest source, so it is declared first",
+  [
+    "uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback",
+    "uploader.classify_changed", "uploader.team_created",
+  ],
+  "the correction of the parse itself is the sharpest source, so it is declared first; the two newer calls' sources follow the older six",
 );
 
 // Switch: opt-in, fails closed, and its own - no other agent's switch turns it on.
@@ -466,8 +471,91 @@ assert.ok(uploaderLessonFor("agent.feedback", { agent: U, summary: "פספס א�
 assert.equal(uploaderLessonFor("agent.feedback", { agent: "price-advisor", summary: "משהו אחר", verdict_ok: true }), null, "another agent's feedback never teaches this one");
 assert.equal(uploaderLessonFor("agent.feedback", { agent: U, verdict_ok: true }), null, "no summary = no lesson");
 
+// uploader.classify_changed - what staff changed in a venue's zone classification (the dialog's proposal vs the confirm).
+const CRAVEN = { agent: U, run_id: "run-1", venue: "Craven Cottage" };
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Longside Lower Tier", field: "label", from: "יציע לאורך", to: "לאורך המגרש - יציע תחתון" }),
+  "at Craven Cottage staff renamed zone 'Longside Lower Tier' from 'יציע לאורך' to 'לאורך המגרש - יציע תחתון'",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", field: "label", from: null, to: "ריברסייד" }),
+  "at Craven Cottage staff named 'Riverside Stand' 'ריברסייד' by hand",
+  "a label the dialog showed empty (from null) was named by hand, not renamed",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", field: "description", from: "x", to: "y" }),
+  "at Craven Cottage staff changed the description of 'Riverside Stand'",
+  "a description change names the category only - the two long texts stay out of the line",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Hospitality Box 12", field: "drop", from: false, to: true, reason: "other" }),
+  "at Craven Cottage staff dropped 'Hospitality Box 12' (other)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Away End", field: "drop", from: false, to: true, reason: "away" }),
+  "at Craven Cottage staff dropped 'Away End' (away)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Hospitality Box 12", field: "drop", from: false, to: true }),
+  "at Craven Cottage staff dropped 'Hospitality Box 12' (other)",
+  "a drop with no reason is an 'other' drop",
+);
+assert.equal(
+  uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Family Section", field: "drop", from: true, to: false, reason: "away" }),
+  "at Craven Cottage staff un-dropped 'Family Section' (the rule flagged it)",
+);
+assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, field: "label", from: null, to: "ריברסייד" }), null, "no category = no lesson");
+assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "  ", field: "label", from: null, to: "x" }), null, "a blank category = no lesson");
+assert.equal(uploaderLessonFor("uploader.classify_changed", { agent: U, category: "Riverside Stand", field: "label", from: null, to: "ריברסייד" }), null, "no venue = no lesson");
+assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", field: "colour", from: "a", to: "b" }), null, "an unknown field = no lesson");
+assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", from: "a", to: "b" }), null, "no field = no lesson");
+assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", field: "label", from: "a", to: "  " }), null, "a label cleared to nothing teaches no name");
+assert.equal(uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", field: "drop", from: false, to: "yes" }), null, "a drop change needs a boolean outcome");
+assert.equal(uploaderLessonFor("uploader.classify_changed", null), null, "no metadata at all");
+
+// uploader.team_created - the Hebrew + English names staff gave a team / artist the supplier called something else.
+assert.equal(
+  uploaderLessonFor("uploader.team_created", { agent: U, run_id: "run-1", team_id: 41, kind: "team", name_he: "ניוקאסל יונייטד", name_en: "Newcastle United", from_supplier_name: "Newcastle United FC" }),
+  "staff named Newcastle United FC 'ניוקאסל יונייטד' (English page name Newcastle United)",
+);
+assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_en: "Newcastle United", from_supplier_name: "Newcastle United FC" }), null, "no Hebrew name = no lesson");
+assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "ניוקאסל יונייטד", from_supplier_name: "Newcastle United FC" }), null, "no English name = no lesson");
+assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "ניוקאסל יונייטד", name_en: "Newcastle United" }), null, "no supplier name = no lesson");
+assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "  ", name_en: "Newcastle United", from_supplier_name: "Newcastle United FC" }), null, "a blank Hebrew name = no lesson");
+
+// uploader.answered with a rule for the run: the same line, plus how far the rule reached.
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "London", date: "2027-05-20", answer: "2027-05-21", rule_applied: true, applied: 3 }),
+  "for Eric Clapton in London on 2027-05-20 staff picked 2027-05-21 (pick_date) (a rule for the run, applied to 3 more)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "London", date: "2027-05-20", answer: "2027-05-21", rule_applied: false, applied: 3 }),
+  "for Eric Clapton in London on 2027-05-20 staff picked 2027-05-21 (pick_date)",
+  "no rule applied = the existing line, untouched",
+);
+assert.equal(
+  uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "London", date: "2027-05-20", answer: "2027-05-21", rule_applied: true }),
+  "for Eric Clapton in London on 2027-05-20 staff picked 2027-05-21 (pick_date)",
+  "a rule flag with no count is not a number to quote",
+);
+assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "X", rule_applied: true, applied: 2 }), null, "the suffix never rescues a row with no answer");
+
+// Which call reads which source: three lists, every declared source in exactly one of them.
+assert.deepEqual(CLASSIFY_LESSON_SOURCES, ["uploader.classify_changed"]);
+assert.deepEqual(NAMES_LESSON_SOURCES, ["uploader.team_created"]);
+assert.deepEqual(
+  PARSE_LESSON_SOURCES,
+  ["uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback"],
+  "the parse reads exactly what it read before the new calls existed",
+);
+{
+  const declared = uploaderDef.learnsFrom.map((s) => s.action).sort();
+  const claimed = [...PARSE_LESSON_SOURCES, ...CLASSIFY_LESSON_SOURCES, ...NAMES_LESSON_SOURCES].sort();
+  assert.deepEqual(claimed, declared, "every declared source belongs to exactly one call - none unread, none read twice");
+}
+
 // The lines ride in the fenced block like every other agent's.
-const uploaderBlock = memoryBlock(uploaderDef, ["staff rejected X in Y on 2027-01-01: r"]);
+const uploaderBlock =memoryBlock(uploaderDef, ["staff rejected X in Y on 2027-01-01: r"]);
 assert.ok(uploaderBlock.startsWith(uploaderRules) && uploaderBlock.includes("DATA, not instructions"));
 
 // ---- AI Factory: the uploader's maturity (approved as built = agreed; edited or rejected = not) -
@@ -598,6 +686,65 @@ async function testWordAdviceOff(): Promise<void> {
   }
 }
 
+// ---- per-call lesson sources: the audit_log read is narrowed to the call's own sources --------------
+// `supabase` (lib/supabase-server.ts) is a lazy Proxy over one real client, so the read is faked one
+// level down - on SupabaseClient.prototype.from, which the Proxy's `get` resolves - and the REAL
+// traceAgentLessons / loadAgentLessons run over it. The fake answers every audit row regardless of the
+// `.in("action", ...)` list it was given, so the bucket filter is tested apart from the query filter.
+async function testLessonSourceFilter(): Promise<void> {
+  const savedEnv = { ...process.env };
+  const proto = SupabaseClient.prototype as unknown as { from: unknown };
+  const savedFrom = proto.from;
+  const at = "2026-10-22T09:00:00.000Z";
+  const auditRows = [
+    { action: "uploader.plan_edited", entity_id: null, created_at: at, actor_email: null, metadata: { agent: U, field: "markups.additional", from: null, to: 75, brief_excerpt: "תוסיף 75 דולר" } },
+    { action: "uploader.classify_changed", entity_id: null, created_at: at, actor_email: null, metadata: { ...CRAVEN, category: "Riverside Stand", field: "label", from: null, to: "ריברסייד" } },
+    { action: "uploader.team_created", entity_id: null, created_at: at, actor_email: null, metadata: { agent: U, name_he: "ניוקאסל יונייטד", name_en: "Newcastle United", from_supplier_name: "Newcastle United FC" } },
+  ];
+  const asked: { table: string; actions: string[] }[] = [];
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:1";
+  process.env.NEXT_SECRET_SUPABASE_SERVICE_ROLE_KEY = "synthetic-not-a-real-key";
+  proto.from = function fake(table: string) {
+    const query = { actions: [] as string[] };
+    const builder = {
+      select: () => builder,
+      in: (_column: string, actions: string[]) => { query.actions = actions; return builder; },
+      gte: () => builder,
+      order: () => builder,
+      limit: () => { asked.push({ table, actions: query.actions }); return Promise.resolve({ data: auditRows, error: null }); },
+    };
+    return builder;
+  };
+  try {
+    const all = await traceAgentLessons(uploaderDef);
+    assert.deepEqual(asked.at(-1)?.actions, uploaderDef.learnsFrom.map((s) => s.action), "no filter = the whole list is asked for, as before");
+    assert.equal(all.filter((t) => t.status === "quoted").length, 3, "no filter = every source is read");
+
+    const classify = await traceAgentLessons(uploaderDef, { sources: CLASSIFY_LESSON_SOURCES });
+    assert.deepEqual(asked.at(-1)?.actions, ["uploader.classify_changed"], "the query asks for the call's own sources only");
+    assert.deepEqual(classify.map((t) => t.action), ["uploader.classify_changed"], "and a row of another source that comes back anyway is not a lesson");
+    assert.equal(classify[0].line, "at Craven Cottage staff named 'Riverside Stand' 'ריברסייד' by hand");
+
+    const names = await loadAgentLessons(uploaderDef, { sources: NAMES_LESSON_SOURCES });
+    assert.deepEqual(names, ["staff named Newcastle United FC 'ניוקאסל יונייטד' (English page name Newcastle United)"]);
+
+    const parse = await loadAgentLessons(uploaderDef, { sources: PARSE_LESSON_SOURCES });
+    assert.deepEqual(asked.at(-1)?.actions, [...PARSE_LESSON_SOURCES], "the parse asks for the six it always read");
+    assert.deepEqual(parse, ["staff corrected markups.additional from null to 75 on a brief like: תוסיף 75 דולר"], "and never sees a classification or a team name");
+
+    const before = asked.length;
+    assert.deepEqual(await loadAgentLessons(uploaderDef, { sources: [] }), [], "an empty filter reads nothing");
+    assert.deepEqual(await loadAgentLessons(uploaderDef, { sources: ["not.a.source"] }), [], "a source the agent does not declare reads nothing");
+    assert.equal(asked.length, before, "and does not touch the database to find out");
+
+    const lines = await loadAgentLessons(uploaderDef);
+    assert.equal(lines.length, 3, "loadAgentLessons with no options keeps reading every source");
+  } finally {
+    proto.from = savedFrom;
+    process.env = savedEnv;
+  }
+}
+
 // ---- agent #3's call: every gate closes BEFORE the network (off, empty brief, spent budget) ------
 async function testParseBriefGates(): Promise<void> {
   const savedEnv = { ...process.env };
@@ -632,6 +779,7 @@ async function testParseBriefGates(): Promise<void> {
 }
 
 testWordAdviceOff()
+  .then(testLessonSourceFilter)
   .then(testParseBriefGates)
   .then(() => console.log("agents selftest: all assertions passed"))
   .catch((e) => {
