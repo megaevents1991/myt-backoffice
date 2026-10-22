@@ -10,12 +10,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useUrlState } from "@/hooks/use-view-state";
 import { answerQuestion, approveAll, approveItem, rebuildTwoCity, rejectItem, resumeRun, retryItem, stopRun } from "@/lib/actions/uploader-actions";
 import type { RunBoard } from "@/lib/uploader/action-types";
-import { canResume } from "@/lib/uploader/run-rules";
+import { runLevelRows } from "@/lib/uploader/run-panel";
+import { applyRuleTo, canResume, runRuleOf } from "@/lib/uploader/run-rules";
 import type { UploaderItem } from "@/types/uploader.types";
 import { actionErrorText } from "../copy";
 import { BoardBar, RebuildConfirm } from "./board-bar";
 import { BoardHeader, FilterBar } from "./board-header";
 import {
+  ANSWERED_MANY,
   countItems,
   farVenueTarget,
   FILTERS,
@@ -28,13 +30,29 @@ import {
   type BusyKind,
   type Filter,
 } from "./board-words";
+import { ClassifyDialog, type PanelVenue } from "./classify-dialog";
+import { LearnConfirm } from "./learn-confirm";
+import { NamesDialog } from "./names-dialog";
 import { QuestionCard } from "./question-card";
 import { RejectDialog } from "./reject-dialog";
+import { RunPanel } from "./run-panel";
 import { ShowCard } from "./show-card";
 import { rtl, useRunBoard } from "./use-run-board";
 
 /** The toast's line for a show put back in the queue of a STOPPED run. */
 const STOPPED_REQUEUE_TEXT = "חוזר לתור - לחצו המשך.";
+
+/** The one run-level dialog open at a time (spec 5.2 / 5.3 / 5.5); null = none. */
+type RunDialog = { kind: "classify"; venue: PanelVenue } | { kind: "names" } | { kind: "learn"; itemId: string } | null;
+
+/** The codes "learn from this event" resolves on a hall's other shows (spec 5.5). */
+const UNZONED_CODES = new Set(["new_venue", "unzoned_tickets"]);
+
+/** The show's TixStock drawing - what makes two shows the same hall for the panel and the learn button. */
+const drawingOf = (item: UploaderItem): string | null => {
+  const url = item.show.suppliers?.tixstock?.venue_map_url;
+  return typeof url === "string" && url.trim() !== "" ? url : null;
+};
 
 // The review board of one run (spec §5.3, §11, §13; mockup B): the header, the filter pills, a card
 // per show, and the sticky bar - and the handlers behind every card's buttons. Reading the run and
@@ -61,6 +79,9 @@ export function BoardClient({
   const [lastResult, setLastResult] = useState("");
   const [runAction, setRunAction] = useState<"stop" | "resume" | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<RunDialog>(null);
+  /** question item id -> the option its card has picked (what "החל גם על השאלות הדומות" counts from). */
+  const [picks, setPicks] = useState<Record<string, string | null>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef<Record<string, BusyKind>>({});
 
@@ -122,21 +143,42 @@ export function BoardClient({
   const backToBuild = runStopped ? STOPPED_REQUEUE_TEXT : "ההופעה חוזרת לבנייה.";
 
   const answer = useCallback(
-    async (item: UploaderItem, a: { key: string | null; text: string | null }): Promise<boolean> => {
-      const r = await act(item, "answer", () => answerQuestion(item.id, a), "התשובה לא נשמרה");
+    async (item: UploaderItem, a: { key: string | null; text: string | null }, opts: { applyToSimilar: boolean }): Promise<boolean> => {
+      const r = await act(item, "answer", () => answerQuestion(item.id, a, { applyToSimilar: opts.applyToSimilar }), "התשובה לא נשמרה");
       if (r === null) return false;
       // `task_not_closed` = the answer IS saved, only the task did not close. Anything else (split_failed
       // included - it is returned before a write) means nothing changed: the card keeps the pick.
       if (r.ok || r.kind === "task_not_closed") {
-        say("התשובה נשמרה", r.ok ? (a.key === "skip" ? "ההופעה דולגה. המשימה נסגרה." : `${backToBuild} המשימה נסגרה.`) : actionErrorText(r.kind));
+        const more = r.applied ?? 0;
+        setPicks((all) => {
+          const next = { ...all };
+          delete next[item.id];
+          return next;
+        });
+        if (r.ok && more > 0) {
+          // A rule for the run (spec 5.4): this question and `more` others answered the same way.
+          say(
+            ANSWERED_MANY(more + 1),
+            a.key === "skip" ? "ההופעות דולגו. המשימות נסגרו." : `${runStopped ? STOPPED_REQUEUE_TEXT : "ההופעות חוזרות לבנייה."} המשימות נסגרו.`,
+          );
+        } else {
+          say("התשובה נשמרה", r.ok ? (a.key === "skip" ? "ההופעה דולגה. המשימה נסגרה." : `${backToBuild} המשימה נסגרה.`) : actionErrorText(r.kind));
+        }
         wake();
         return true;
       }
       say("התשובה לא נשמרה", actionErrorText(r.kind), true);
       return false;
     },
-    [act, say, wake, backToBuild],
+    [act, say, wake, backToBuild, runStopped],
   );
+
+  /** A run-level dialog saved (it showed its own toast): close it and read the run again. */
+  const dialogDone = useCallback(async () => {
+    setDialog(null);
+    await refresh();
+  }, [refresh]);
+  const closeDialog = useCallback(() => setDialog(null), []);
 
   const reject = useCallback(
     async (item: UploaderItem, reason: string, final: boolean): Promise<boolean> => {
@@ -269,6 +311,49 @@ export function BoardClient({
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const people = useMemo(() => new Map((board?.people ?? []).map((p) => [p.id, p.name])), [board]);
   const askerName = board ? (people.get(board.run.asker_id) ?? people.get(board.run.created_by) ?? null) : null;
+
+  // ---- round "אלון 1": the run panel, the learn button, a rule for the run --------------------------------
+
+  const fixedByHand = useMemo(() => board?.fixedByHand ?? {}, [board]);
+  /** The panel's rows (pure, lib/uploader/run-panel.ts); empty = no panel, and the cards keep every warning. */
+  const panelRows = useMemo(
+    () => (board ? runLevelRows(items, fixedByHand, board.run.plan.subject, board.missingNames ?? []) : []),
+    [board, items, fixedByHand],
+  );
+  const panelShown = panelRows.length > 0;
+
+  /** drawing url -> the ready / approved shows of that hall still without zones (`new_venue` / `unzoned_tickets`). */
+  const unzonedByDrawing = useMemo(() => {
+    const out = new Map<string, Set<string>>();
+    for (const i of items) {
+      const url = drawingOf(i);
+      if (url === null || (i.status !== "ready" && i.status !== "approved")) continue;
+      if (!(i.warnings ?? []).some((w) => UNZONED_CODES.has(w.code))) continue;
+      out.set(url, (out.get(url) ?? new Set<string>()).add(i.id));
+    }
+    return out;
+  }, [items]);
+  /** The OTHER shows of this item's hall that "learn from this event" would give zones to. */
+  const siblingsUnzoned = (item: UploaderItem): number => {
+    const url = drawingOf(item);
+    const set = url === null ? undefined : unzonedByDrawing.get(url);
+    return set ? set.size - (set.has(item.id) ? 1 : 0) : 0;
+  };
+
+  /** question item id -> how many OTHER open questions its picked answer's rule would answer (spec 5.4). */
+  const similar = useMemo(() => {
+    const out = new Map<string, number>();
+    const open = items.filter((i) => i.status === "question" && i.question !== null);
+    for (const item of open) {
+      const key = picks[item.id] ?? null;
+      const q = item.question;
+      if (key === null || q === null) continue;
+      const rule = runRuleOf(q, item, { key, text: null });
+      if (rule === null) continue;
+      out.set(item.id, open.filter((other) => other.id !== item.id && applyRuleTo(rule, other) !== null).length);
+    }
+    return out;
+  }, [items, picks]);
   /** The one card Tab lands on (roving focus): the focused one while it is on screen, else the first. */
   const tabStop = focusedId !== null && visible.some((i) => i.id === focusedId) ? focusedId : (visible[0]?.id ?? null);
 
@@ -291,7 +376,7 @@ export function BoardClient({
   // ↑/↓ between cards, A approves the focused ready card, R opens reject. Never while typing or in a dialog.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || rejecting || rebuilding) return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || rejecting || rebuilding || dialog) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (
         target?.closest(
@@ -330,7 +415,7 @@ export function BoardClient({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rejecting, rebuilding, itemsById, approve, focusCard]);
+  }, [rejecting, rebuilding, dialog, itemsById, approve, focusCard]);
 
   // ---- render -------------------------------------------------------------------------------------------------
 
@@ -360,6 +445,16 @@ export function BoardClient({
     <TooltipProvider delayDuration={200}>
       <div ref={rootRef} dir="rtl" className="container mx-auto max-w-6xl space-y-5 pb-4 pt-6">
         <BoardHeader board={board} counts={counts} onJumpToQuestion={jumpToQuestion} />
+
+        {panelShown && (
+          <RunPanel
+            rows={panelRows}
+            items={items}
+            onClassify={(venue) => setDialog({ kind: "classify", venue })}
+            onLearn={(itemId) => setDialog({ kind: "learn", itemId })}
+            onNames={() => setDialog({ kind: "names" })}
+          />
+        )}
 
         {counts.total === 0 ? (
           <div className="rounded-lg border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
@@ -394,7 +489,9 @@ export function BoardClient({
                       askerName={askerName}
                       busy={busy[item.id] ?? null}
                       focused={item.id === tabStop}
+                      similar={similar.get(item.id) ?? 0}
                       onFocusCard={setFocusedId}
+                      onPick={(key) => setPicks((all) => (all[item.id] === key ? all : { ...all, [item.id]: key }))}
                       onAnswer={answer}
                       onReject={setRejecting}
                     />
@@ -405,6 +502,9 @@ export function BoardClient({
                       art={board.subjectArt}
                       subjectNameEn={board.run.plan.subject.name_en}
                       edited={board.edited[item.id] === true}
+                      fixedByHand={fixedByHand[item.id] === true}
+                      siblingsUnzoned={siblingsUnzoned(item)}
+                      panelShown={panelShown}
                       people={people}
                       busy={busy[item.id] ?? null}
                       focused={item.id === tabStop}
@@ -414,6 +514,7 @@ export function BoardClient({
                       onReject={setRejecting}
                       onRetry={(i) => void retry(i)}
                       onRebuild={setRebuilding}
+                      onLearn={(i) => setDialog({ kind: "learn", itemId: i.id })}
                     />
                   ),
                 )}
@@ -437,6 +538,21 @@ export function BoardClient({
       </div>
 
       <RejectDialog item={rejecting} isTest={board.run.is_test} onClose={() => setRejecting(null)} onConfirm={reject} />
+      <ClassifyDialog
+        runId={runId}
+        venue={dialog?.kind === "classify" ? dialog.venue : null}
+        open={dialog?.kind === "classify"}
+        onClose={closeDialog}
+        onDone={dialogDone}
+      />
+      <NamesDialog
+        runId={runId}
+        open={dialog?.kind === "names"}
+        personKind={board.run.plan.subject.kind === "artist" ? "artist" : "team"}
+        onClose={closeDialog}
+        onDone={dialogDone}
+      />
+      <LearnConfirm itemId={dialog?.kind === "learn" ? dialog.itemId : null} open={dialog?.kind === "learn"} onClose={closeDialog} onDone={dialogDone} />
       <RebuildConfirm
         item={rebuilding}
         onCancel={() => setRebuilding(null)}

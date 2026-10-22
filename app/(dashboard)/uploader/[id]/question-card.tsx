@@ -3,13 +3,14 @@
 import { useMemo, useState } from "react";
 import { Check, Loader2, MessageCircleQuestion, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import type { SubjectArt } from "@/lib/uploader/action-types";
 import { ANSWER_TEXT_MAX } from "@/lib/uploader/run-rules";
 import { matchesSearch } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
-import { stampHe, type BusyKind } from "./board-words";
+import { SIMILAR_LINE, stampHe, type BusyKind } from "./board-words";
 import { ACTION, CardShell, RejectButton, StatusPill } from "./card-shell";
 
 // A show the builder could not decide alone (spec §5.3, §10): the loudest card on the board. The
@@ -27,7 +28,9 @@ export function QuestionCard({
   askerName,
   busy,
   focused,
+  similar,
   onFocusCard,
+  onPick,
   onAnswer,
   onReject,
 }: {
@@ -36,14 +39,23 @@ export function QuestionCard({
   askerName: string | null;
   busy: BusyKind | null;
   focused: boolean;
+  /** How many OTHER open questions of the run the picked answer's rule would answer (spec 5.4; the board counts - `runRuleOf` + `applyRuleTo`). */
+  similar: number;
   onFocusCard: (id: string) => void;
-  onAnswer: (item: UploaderItem, answer: { key: string | null; text: string | null }) => Promise<boolean>;
+  /** Every change of the picked option (null = none) - what the board counts `similar` from. */
+  onPick: (key: string | null) => void;
+  onAnswer: (item: UploaderItem, answer: { key: string | null; text: string | null }, opts: { applyToSimilar: boolean }) => Promise<boolean>;
   onReject: (item: UploaderItem) => void;
 }) {
   const q = item.question;
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPickedState] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
+  const [toSimilar, setToSimilar] = useState(false);
+  const setPicked = (key: string | null) => {
+    setPickedState(key);
+    onPick(key);
+  };
 
   const options = useMemo(() => (q?.options ?? []).filter((o) => o.key !== SKIP), [q]);
   const skip = (q?.options ?? []).find((o) => o.key === SKIP) ?? null;
@@ -59,11 +71,16 @@ export function QuestionCard({
 
   async function send() {
     if (!canSend) return;
-    const ok = await onAnswer(item, { key: picked, text: q?.free_text && textValue !== "" ? textValue : null });
+    const ok = await onAnswer(
+      item,
+      { key: picked, text: q?.free_text && textValue !== "" ? textValue : null },
+      { applyToSimilar: toSimilar && similar > 0 },
+    );
     if (ok) {
       setPicked(null);
       setText("");
       setQuery("");
+      setToSimilar(false);
     }
   }
 
@@ -184,6 +201,18 @@ export function QuestionCard({
               )}
               {skip && option(skip.key, skip.label || "דלג", true)}
             </div>
+          )}
+
+          {similar > 0 && (
+            <label htmlFor={`similar-${item.id}`} className="flex cursor-pointer items-center gap-2 rounded-md bg-warning-muted/60 px-2.5 py-1.5 text-[13px]">
+              <Checkbox
+                id={`similar-${item.id}`}
+                checked={toSimilar}
+                disabled={answering}
+                onCheckedChange={(v) => setToSimilar(v === true)}
+              />
+              <span>{SIMILAR_LINE(similar)}</span>
+            </label>
           )}
 
           <p className="text-xs text-muted-foreground">

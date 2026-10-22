@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Check, ExternalLink, Loader2, Palette, Plane, RotateCw, Route, SquarePen } from "lucide-react";
+import { Check, ExternalLink, GraduationCap, Loader2, Palette, Plane, RotateCw, Route, SquarePen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SubjectArt } from "@/lib/uploader/action-types";
@@ -11,6 +11,7 @@ import { WARNING_TEXT } from "@/lib/uploader/warnings";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
 import {
+  BTN_LEARN_CARD,
   builtPrice,
   creativeLine,
   existingEventId,
@@ -177,11 +178,37 @@ const Pill = ({ item }: { item: UploaderItem }) => (
   </div>
 );
 
+/**
+ * "למד מהאירוע הזה והחל על N ההופעות" (spec 5.5): a person arranged this event's tickets in the editor and
+ * other shows of the same hall still have no zones - the board's learn confirm takes it from here.
+ */
+function LearnButton({ item, siblings, busy, onLearn }: { item: UploaderItem; siblings: number; busy: BusyKind | null; onLearn: (item: UploaderItem) => void }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={busy !== null}
+      onClick={() => onLearn(item)}
+      className="h-auto min-h-8 w-full justify-start whitespace-normal border-info/40 py-1.5 text-start text-[13px] leading-snug"
+    >
+      <GraduationCap aria-hidden />
+      <span className="min-w-0">{BTN_LEARN_CARD(siblings)}</span>
+    </Button>
+  );
+}
+
 export type ShowCardProps = {
   item: UploaderItem;
   art: SubjectArt;
   subjectNameEn: string;
   edited: boolean;
+  /** `RunBoard.fixedByHand[item.id]`: a person arranged this event's TixStock tickets in the editor. */
+  fixedByHand: boolean;
+  /** Other ready / approved shows of the same hall (drawing) still carrying `new_venue` / `unzoned_tickets`. */
+  siblingsUnzoned: number;
+  /** The run panel is on screen: the run-level warnings fold into one line that jumps to it. */
+  panelShown: boolean;
   /** user id -> display name */
   people: Map<string, string>;
   busy: BusyKind | null;
@@ -192,10 +219,12 @@ export type ShowCardProps = {
   onReject: (item: UploaderItem) => void;
   onRetry: (item: UploaderItem) => void;
   onRebuild: (item: UploaderItem) => void;
+  onLearn: (item: UploaderItem) => void;
 };
 
 export function ShowCard(props: ShowCardProps) {
-  const { item, art, subjectNameEn, edited, people, busy, focused, now, onFocusCard, onApprove, onReject, onRetry, onRebuild } = props;
+  const { item, art, subjectNameEn, edited, fixedByHand, siblingsUnzoned, panelShown, people, busy, focused, now } = props;
+  const { onFocusCard, onApprove, onReject, onRetry, onRebuild, onLearn } = props;
   const shell = (tone: CardTone, body: ReactNode, footer?: ReactNode) => (
     <CardShell item={item} art={art} tone={tone} focused={focused} onFocusCard={onFocusCard} footer={footer}>
       {body}
@@ -211,7 +240,8 @@ export function ShowCard(props: ShowCardProps) {
           <ShowLine item={item} subjectNameEn={subjectNameEn} />
           <SupplierChips item={item} />
           <Decisions item={item} />
-          <Notices item={item} />
+          <Notices item={item} fold={panelShown} />
+          {fixedByHand && siblingsUnzoned > 0 && <LearnButton item={item} siblings={siblingsUnzoned} busy={busy} onLearn={onLearn} />}
           <FarVenueButton item={item} busy={busy} onRebuild={onRebuild} />
         </>,
         <>
@@ -293,7 +323,7 @@ export function ShowCard(props: ShowCardProps) {
           )}
           <SupplierChips item={item} />
           <Decisions item={item} hide={rejectedLine ? "rejected_before" : undefined} />
-          <Notices item={item} />
+          <Notices item={item} fold={panelShown} />
           <FarVenueButton item={item} busy={busy} onRebuild={onRebuild} />
         </>,
         <Button asChild variant="outline" size="sm" className={ACTION}>

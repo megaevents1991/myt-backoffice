@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { AlertTriangle, Ban, ImageOff, X } from "lucide-react";
+import { AlertTriangle, Ban, ImageOff, Info, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SubjectArt } from "@/lib/uploader/action-types";
+import { cardWarnings } from "@/lib/uploader/run-panel";
 import { cn } from "@/lib/utils";
 import type { ItemStatus, UploaderItem, Warning } from "@/types/uploader.types";
-import { farVenueTarget, ITEM_STATUS_HE, showDate, supplierChips, supplierChipText, type BusyKind } from "./board-words";
+import { farVenueTarget, FOLD_LINE, ITEM_STATUS_HE, showDate, supplierChips, supplierChipText, type BusyKind } from "./board-words";
 
 // The frame every card on the review board wears (spec §5.3, mockup B): focusable, the picture the
 // site would draw with where and when over it, a body, a footer of actions - and the pieces every
@@ -227,15 +228,27 @@ function FixLink({ href }: { href: string }) {
   );
 }
 
+/** Brings the run panel into view and focus (a card's folded line). */
+function goToRunPanel() {
+  const panel = document.getElementById("run-panel");
+  if (!panel) return;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  panel.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  panel.focus({ preventScroll: true });
+}
+
 /**
  * Warnings (amber) and blockers (red), each with its fix link. The far-venue warning becomes the
  * offer button when the card can make the offer; otherwise it is printed like any other warning.
+ * `fold` (the run panel is on screen, spec 5.1): the run-level warnings (`cardWarnings`) leave the card
+ * for one grey line that jumps to the panel - a view only, the stored warnings are untouched.
  */
-export function Notices({ item }: { item: UploaderItem }) {
+export function Notices({ item, fold = false }: { item: UploaderItem; fold?: boolean }) {
   const offer = farVenueTarget(item) !== null;
-  const warnings = (item.warnings ?? []).filter((w) => !(offer && w.code === "far_venue"));
+  const { card, folded } = fold ? cardWarnings({ ...item, warnings: item.warnings ?? [] }) : { card: item.warnings ?? [], folded: 0 };
+  const warnings = card.filter((w) => !(offer && w.code === "far_venue"));
   const blockers = item.blockers ?? [];
-  if (warnings.length === 0 && blockers.length === 0) return null;
+  if (warnings.length === 0 && blockers.length === 0 && folded === 0) return null;
   const row = (w: Warning, i: number, blocker: boolean) => (
     <li key={`${blocker ? "b" : "w"}-${w.code}-${i}`} className={cn("flex items-start gap-1.5", blocker ? "text-destructive" : "text-warning")}>
       {blocker ? <Ban aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
@@ -250,6 +263,18 @@ export function Notices({ item }: { item: UploaderItem }) {
     <ul className="space-y-1 text-[13px] leading-snug">
       {blockers.map((b, i) => row(b, i, true))}
       {warnings.map((w, i) => row(w, i, false))}
+      {folded > 0 && (
+        <li>
+          <button
+            type="button"
+            onClick={goToRunPanel}
+            className="flex items-start gap-1.5 rounded-sm text-start text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {FOLD_LINE(folded)}
+          </button>
+        </li>
+      )}
     </ul>
   );
 }
