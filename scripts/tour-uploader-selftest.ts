@@ -85,6 +85,7 @@ import {
   cleanConfirmedRows,
   drawingCategories,
   dropRule,
+  forgetUnconfirmed,
   parseClassification,
   parseDroppedCategories,
   proposalRows,
@@ -3328,6 +3329,28 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
   same(pruned.zones.map((z) => z.id), ["premium", "loose", "shared"], "templateFromRows: an unsure key loses its zone; a zone another category still maps, and one nothing maps, stay");
   same(pruned.forget, ["hospitality box 12", "premium plus"], "templateFromRows: both are forgotten");
+
+  // forgetUnconfirmed (ruling R16): the venue's keys a confirm left out are unsure - a slug zone (adoptVenueMap's) goes,
+  // an entry the template already labels in Hebrew stays.
+  const adoptedTemplate: TemplateLike = {
+    zones: [
+      { id: "cat-1", label: "cat 1", sections: ["cat-1_a", "cat-1_b"] },
+      { id: "cat-2", label: "cat 2", sections: ["cat-2_a"] },
+      { id: "cat-3", label: "קטגוריה 3", sections: ["cat-3_a"] },
+    ],
+    supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2", "cat 3": "cat-3" } },
+  };
+  const onlyCat1 = [confirmed("Cat 1", { label_he: "קטגוריה 1" })];
+  const answeredOnly = templateFromRows(onlyCat1, drawingForRows, adoptedTemplate, NO_DROPS);
+  const leftOut = forgetUnconfirmed(answeredOnly, adoptedTemplate, ["cat 1", "cat 2", "cat 3", "hospitality box 12"], onlyCat1);
+  same(
+    leftOut.zones.map((z) => [z.id, z.label]),
+    [["cat-1", "קטגוריה 1"], ["cat-3", "קטגוריה 3"]],
+    "forgetUnconfirmed: a left-out key's English slug zone goes; a left-out key the template already labels in Hebrew keeps its zone",
+  );
+  same(leftOut.forget, ["cat 2", "hospitality box 12"], "forgetUnconfirmed: the left-out keys without a Hebrew entry are forgotten (no mapping remains)");
+  same([leftOut.categoryToZone, leftOut.dropped, leftOut.kept], [{ "cat 1": "cat-1" }, [], []], "forgetUnconfirmed: the confirmed mapping and the drop lists are untouched");
+  same(forgetUnconfirmed(answeredOnly, adoptedTemplate, ["cat 1"], onlyCat1), answeredOnly, "forgetUnconfirmed: nothing left out, nothing changes");
   const droppedSharedZone = templateFromRows(
     [confirmed("Cat 9", { drop: true })],
     [],
@@ -3473,7 +3496,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
   same(applied.tickets[0].zoneLabel, "קטגוריה 1", "applyClassification: the zone's label is stamped like zoneFromTemplate does");
   same(applied.dropped, ["Away Fans Section", "Hospitality Box 12"], "applyClassification: the dropped categories, in ticket order");
-  same(applied.unzoned, ["Cat 2", "Standing", "Away End"], "applyClassification: unzoned lists every ticket left without a zone, LiveTickets too");
+  same(applied.unzoned, ["Cat 2"], "applyClassification: unzoned lists TixStock tickets only; a LiveTickets ticket without a zone is not listed");
   const keptApplied = applyClassification(applyInput, applyTemplate, { dropped: ["hospitality box 12"], kept: ["away fans section", "hospitality box 12"] });
   same([keptApplied.tickets.length, keptApplied.dropped], [applyInput.length, []], "applyClassification: a kept category stays, whether the rule or the venue's list dropped it");
   same(

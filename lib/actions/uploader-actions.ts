@@ -107,6 +107,7 @@ import {
   cleanConfirmedRows,
   drawingCategories,
   dropRule,
+  forgetUnconfirmed,
   proposalRows,
   templateFromEvent,
   templateFromRows,
@@ -1041,13 +1042,15 @@ function isDrawingUrl(v: unknown): v is string {
 
 /**
  * The per-person cap on the agent's paid calls (`PARSE_RATE_MAX` per `PARSE_RATE_WINDOW_MS`, shared with
- * the parse), checked BEFORE anything else an AI dialog does: null = under it; `db_error` = the count could
- * not be read. Not checked while the agent is off - no call is made then.
+ * the parse), checked BEFORE anything else an AI dialog does. A dialog never fails for the AI's sake (spec
+ * 5.2, ruling R13): a reason here means "skip the model call, open the rows for a manual fill" -
+ * `rate_limited` = over the cap; `error` = the count could not be read (spending fails closed). null = the
+ * call may be made. Not checked while the agent is off - no call is made then.
  */
-async function aiCallRefusal(userId: string): Promise<"rate_limited" | "db_error" | null> {
+async function aiSkipReason(userId: string): Promise<"rate_limited" | "error" | null> {
   if (!agentEnabled(TOUR_UPLOADER_AGENT)) return null;
   const recent = await countRecentParses(userId, PARSE_RATE_WINDOW_MS);
-  if (recent === null) return "db_error";
+  if (recent === null) return "error";
   return recent >= PARSE_RATE_MAX ? "rate_limited" : null;
 }
 
@@ -1256,7 +1259,8 @@ async function rewriteVenueItems(targets: BuiltItem[], events: Map<number, Event
     }
     const applied = applyClassification(row.tickets_and_rates, tpl, template.dropped);
     if (applied.tickets.length === 0) {
-      patches.push({ item, patch: { warnings: [...item.warnings.filter((w) => !VENUE_WARNINGS.has(w.code)), warning("all_dropped")] } });
+      // The event is NOT rewritten, so its venue warnings stand as they are: `all_dropped` is only added (once).
+      patches.push({ item, patch: { warnings: [...item.warnings.filter((w) => w.code !== "all_dropped"), warning("all_dropped")] } });
       reached += 1;
       continue;
     }
@@ -1287,14 +1291,21 @@ async function rewriteVenueItems(targets: BuiltItem[], events: Map<number, Event
   return { eventIds, reached, live, itemsFailed };
 }
 
-/** `uploader.classify_changed`, one row per change - the classification call's lessons. A drop row names how it was dropped (ruling R10). */
+/**
+ * `uploader.classify_changed`, one row per change - the classification call's lessons. A drop row (a drop or
+ * an un-drop) carries `reason` = the ORIGINAL drop reason (ruling R10): the shown row's `drop_reason`, else
+ * "away" when the code rule drops the key, else "other".
+ */
 async function logClassifyChanges(
   run: UploaderRun,
   venue: string,
   changes: { category: string; field: string; from: unknown; to: unknown }[],
+  shown: Map<string, ProposedRow> | null = null,
 ): Promise<void> {
   for (const change of changes) {
-    const reason = change.field === "drop" ? { reason: dropRule(normalizeSupplierCategory(change.category)).drop ? "away" : "other" } : {};
+    const key = normalizeSupplierCategory(change.category);
+    const original = shown?.get(key)?.drop_reason ?? (dropRule(key).drop ? "away" : "other");
+    const reason = change.field === "drop" ? { reason: original } : {};
     await logAudit({
       action: "uploader.classify_changed",
       entityType: "uploader_run",
@@ -1320,16 +1331,17 @@ function rewriteResult(rewrite: Rewrite, total: number, counts: { zones: number;
 
 /**
  * The classification dialog opens: the venue's categories (the drawing's and the built events' tickets),
- * the stored template's labels, the code rule's drops, and - when any category is not labelled by the
- * template yet - the agent's proposal (`classify_venue`; the labelled ones ride along as `existingLabel`).
- * The per-person AI cap is checked first. AI off or failed = the rows open empty (`ai.reason`), the rule's
- * drops applied. `proposed` = the model's raw proposal; the confirm sends back the rows as SHOWN (`rows`).
+ * the stored template's labels, the code rule's drops, and - when a category the venue does not drop is
+ * not labelled by the template yet - the agent's proposal (`classify_venue`; the labelled ones ride along
+ * as `existingLabel`, the dropped ones are never asked about). The per-person AI cap is checked first; the
+ * dialog never fails for the AI's sake (spec 5.2, ruling R13): AI off, the cap, an unreadable count, a
+ * timeout or a bad answer = the rows open empty (`ai.reason`), the rule's drops applied. `proposed` = the
+ * model's raw proposal; the confirm sends back the rows as SHOWN (`rows`).
  */
 export async function proposeVenueClassification(runId: string, sourceUrl: string): Promise<ProposeResult> {
   const session = await requireAdmin();
   if (!isUuid(runId) || !isDrawingUrl(sourceUrl)) return { ok: false, kind: "bad_input" };
-  const refusal = await aiCallRefusal(session.sub);
-  if (refusal) return { ok: false, kind: refusal };
+  const skip = await aiSkipReason(session.sub);
 
   const ctx = await readVenueContext(runId, sourceUrl);
   if ("kind" in ctx) {
@@ -1338,12 +1350,19 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
   }
   const template = templateLikeOf(ctx.template);
   const dropped = ctx.template?.dropped ?? EMPTY_DROPPED;
+  // What the venue drops - its own list and the code rule, minus what a person kept - is decided: never asked again.
+  const kept = new Set(dropped.kept);
+  const venueDrops = (key: string): boolean => !kept.has(key) && (dropped.dropped.includes(key) || dropRule(key).drop);
+  const askable = ctx.categories.filter((c) => !venueDrops(c.key));
 
   let proposed: Map<string, ProposedRow> | null = null;
   let ai: { used: boolean; reason: string | null; problems: string[] } = { used: false, reason: "not_needed", problems: [] };
-  if (ctx.categories.some((c) => storedLabel(template, c.key) === null)) {
+  const needsProposal = askable.some((c) => storedLabel(template, c.key) === null);
+  if (needsProposal && skip) {
+    ai = { used: false, reason: skip, problems: [] };
+  } else if (needsProposal) {
     // A key too long to hand over whole is not asked about (its row opens for review): a cut name would not map back to it.
-    const asked = ctx.categories.filter((c) => c.key.length <= AI_CATEGORY_MAX);
+    const asked = askable.filter((c) => c.key.length <= AI_CATEGORY_MAX);
     const styleExamples = (await readStyleLabels(sourceUrl, STYLE_EXAMPLES_MAX)).slice(0, STYLE_EXAMPLES_MAX).map((l) => cutText(l, AI_LABEL_MAX));
     const label = (key: string): string | null => {
       const stored = storedLabel(template, key);
@@ -1386,9 +1405,12 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
 }
 
 /**
- * The classification dialog's confirm (spec 6.3). `input = { rows, proposed }`: `rows` = the confirmed rows
- * (`cleanConfirmedRows` against the venue's categories, re-read here - nothing about the venue is taken from
- * the client), `proposed` = the rows as the dialog SHOWED them (null = it carried none). In order:
+ * The classification dialog's confirm (spec 6.3). `input = { rows, proposed, ai }`: `rows` = the confirmed
+ * rows (`cleanConfirmedRows` against the venue's categories, re-read here - nothing about the venue is taken
+ * from the client), `proposed` = the rows as the dialog SHOWED them (null = it carried none), `ai` = whether
+ * the dialog opened with the agent's proposal (recorded on `uploader.classified`, ruling R14). A venue
+ * category the rows leave out is UNSURE (ruling R16): forgotten unless the template already labels it in
+ * Hebrew. In order:
  * 1. the template - adopted first when the venue has none (`adopt_failed` stops here, nothing written),
  *    then its zones, mapping and dropped list written;
  * 2-3. the venue's events rewritten and their items following (`rewriteVenueItems`);
@@ -1402,6 +1424,8 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   if (!isUuid(runId) || !isDrawingUrl(sourceUrl)) return fail("bad_input");
   if (!isRecord(input) || !Array.isArray(input.rows) || input.rows.length === 0 || input.rows.length > CONFIRM_ROWS_MAX) return fail("bad_input");
   if (input.proposed !== undefined && input.proposed !== null && !isRecord(input.proposed)) return fail("bad_input");
+  if (typeof input.ai !== "boolean") return fail("bad_input");
+  const aiShown = input.ai;
 
   const ctx = await readVenueContext(runId, sourceUrl);
   if ("kind" in ctx) return ctx;
@@ -1423,7 +1447,9 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
     if (!adopted.ok) return { ok: false, kind: "adopt_failed", message: adopted.error };
     base = { id: adopted.data.id, zones: adopted.data.zones, supplier_categories: adopted.data.supplier_categories, dropped: EMPTY_DROPPED };
   }
-  const update = templateFromRows(confirmed, ctx.drawing, base, base.dropped);
+  const fromRows = templateFromRows(confirmed, ctx.drawing, base, base.dropped);
+  // A category the rows left out is unsure: the slug zone a fresh adopt gave it (or any entry without a Hebrew label) goes.
+  const update = forgetUnconfirmed(fromRows, base, [...allowed], confirmed);
   const written = await writeTemplate(base.id, update);
   if (!written.ok) return written;
 
@@ -1432,7 +1458,11 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
 
   // 4. The record and the lessons.
   const droppedRows = confirmed.filter((r) => r.drop);
-  const unsureRows = confirmed.filter((r) => !r.drop && r.unsure);
+  const nameOf = new Map(ctx.categories.map((c) => [c.key, c.category]));
+  const unsure = [
+    ...confirmed.filter((r) => !r.drop && r.unsure).map((r) => r.category),
+    ...update.forget.filter((key) => !fromRows.forget.includes(key)).map((key) => nameOf.get(key) ?? key),
+  ];
   await logAudit({
     action: "uploader.classified",
     entityType: "uploader_run",
@@ -1447,16 +1477,16 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
       confirmed: confirmed.length,
       dropped: droppedRows.map((r) => r.category),
       kept: update.kept,
-      unsure: unsureRows.map((r) => r.category),
+      unsure,
       event_ids: rewrite.eventIds,
-      ai: shown !== null,
+      ai: aiShown,
     },
   });
-  await logClassifyChanges(ctx.run, ctx.name, classificationDiff(shown, confirmed));
+  await logClassifyChanges(ctx.run, ctx.name, classificationDiff(shown, confirmed), shown);
 
   // 5. The site.
   await refreshAfterRewrite(rewrite);
-  return rewriteResult(rewrite, ctx.targets.length, { zones: written.template.zones.length, dropped: droppedRows.length, unsure: unsureRows.length });
+  return rewriteResult(rewrite, ctx.targets.length, { zones: written.template.zones.length, dropped: droppedRows.length, unsure: unsure.length });
 }
 
 /** One show a person arranged in the editor, as "learn from this event" reads it. */
@@ -1569,9 +1599,10 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
   const rewrite = await rewriteVenueItems(targets, events, written.template, started);
   const own = ctx.row.tickets_and_rates;
   const marked = await transitionItem(ctx.item.id, REWRITTEN_STATUSES, {
+    // TixStock tickets only, as `applyClassification` counts them (ruling R17: LiveTickets zoning is the editor's board).
     warnings: classifiedWarnings(
       ctx.item.warnings,
-      own.filter((t) => !t.zoneId).map((t) => t.category),
+      own.filter((t) => ticketSupplier(t, "tx_event") === "tixstock" && !t.zoneId).map((t) => t.category),
       own.length,
     ),
     decisions: [...ctx.item.decisions.filter((d) => d.code !== "taught_venue"), decision("taught_venue")],
@@ -1669,22 +1700,25 @@ function namesHints(sides: MissingSide[], items: UploaderItem[], kind: "team" | 
 
 /**
  * The names dialog opens (spec 5.3): every side of the run's shows `teamsHe` does not know (and the subject
- * when it has no page), one `name_teams` call for all of them (the per-person AI cap checked first), the rows
- * (`teamRowsFor`: create / existing / manual), and how many built shows take their Hebrew name from
- * LiveTickets (`liveNamed` - the stored name is English, `eventNames` now answers LiveTickets').
+ * when it has no page), one `name_teams` call for all of them, the rows (`teamRowsFor`: create / existing /
+ * manual), and how many built shows take their Hebrew name from LiveTickets (`liveNamed` - the stored name is
+ * English, `eventNames` now answers LiveTickets'). The per-person AI cap is checked first; the dialog never
+ * fails for the AI's sake (ruling R13): AI off, the cap, an unreadable count or a failed call = the rows open
+ * for a manual fill (`ai.reason`).
  */
 export async function proposeTeamNames(runId: string): Promise<NamesProposeResult> {
   const session = await requireAdmin();
   if (!isUuid(runId)) return fail("bad_input");
-  const refusal = await aiCallRefusal(session.sub);
-  if (refusal) return fail(refusal);
+  const skip = await aiSkipReason(session.sub);
   const ctx = await readNamesContext(runId);
   if ("kind" in ctx) return ctx;
   const { cache, sides, items, personKind: kind } = ctx;
 
   let proposed: Map<string, ProposedName> | null = null;
   let ai: { used: boolean; reason: string | null; problems: string[] } = { used: false, reason: "not_needed", problems: [] };
-  if (sides.length > 0) {
+  if (sides.length > 0 && skip) {
+    ai = { used: false, reason: skip, problems: [] };
+  } else if (sides.length > 0) {
     const outcome = await nameTeamsWithAgent(
       { names: uniqueTexts(sides.map((s) => aiName(s.supplier_name))), kind: cache.subject.kind, hints: namesHints(sides, items, kind) },
       newBudget(TOUR_UPLOADER_AGENT),
@@ -1773,12 +1807,13 @@ async function createPersonInactive(kind: "team" | "artist", row: ConfirmedTeamR
  * that name, else `bad_input`). In order:
  * 1. every row not matched to an existing team is created INACTIVE (audit `uploader.team_created` each) -
  *    a row `teamRowsFor` matches to an existing team after all uses it rather than creating a duplicate;
- * 2. the run's subject cache refreshed (`resolveSubject`), the confirmed names under the supplier's own
- *    spellings too;
+ * 2. the run's subject cache refreshed (`resolveSubject` - which finds an inactive subject row too, ruling
+ *    R15), the confirmed teams under the supplier's own spellings too (an existing team by its stored
+ *    Hebrew name);
  * 3. every ready / approved show renamed by `eventNames` where it now has a Hebrew name and the stored one is
  *    not a person's own Hebrew edit (`events.name`, `payload.name`, `no_hebrew_name` dropped, decision
- *    `named_he` / `name_from_livetickets`); `no_team_page` / `no_artist_page` dropped once the subject's
- *    row exists;
+ *    `named_he` / `name_from_livetickets`); once the subject has a row, `no_team_page` / `no_artist_page`
+ *    leave EVERY item of the run that carries them;
  * 4. the run's names task closed, `uploader.renamed`, the site refreshed once when a live event was renamed.
  */
 export async function createTeamsAndRename(runId: string, rows: unknown): Promise<TeamsResult> {
@@ -1825,8 +1860,11 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
     });
   }
 
-  // 2. The subject cache refreshed (the run's later builds see the rows), the confirmed names under the
-  //    supplier's own spellings too - the club rule may not bridge a name a person typed.
+  // 2. The subject cache refreshed: `resolveSubject` picks the subject among every row that is not deleted
+  //    (an inactive one included - ruling R15), so the run's later builds see the new rows and raise no
+  //    `no_team_page` / `no_artist_page` again. Each confirmed team also under the supplier's own spelling -
+  //    the club rule may not bridge a name a person typed: an existing team by ITS stored Hebrew name, a new
+  //    one by the name just given it.
   let fresh: SubjectCache = cache;
   try {
     fresh = { at: nowIso(), ...(await resolveSubject(run.plan)) };
@@ -1834,18 +1872,23 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
     console.error(`uploader-actions: subject of run ${run.id} not re-resolved - renaming with the cached one`, errorText(e));
   }
   const teamsHe = { ...fresh.teamsHe };
-  if (kind !== "artist") for (const { row, side } of pairs) teamsHe[normalizeName(side.supplier_name)] = row.name_he;
-  const subjectPair = pairs.find((p) => p.side.isSubject);
-  // An artist created inactive is no row `resolveSubject` finds (it reads active artists only): its Hebrew name rides on the subject.
-  const subject = kind === "artist" && subjectPair && !fresh.subject.name_he?.trim() ? { ...fresh.subject, name_he: subjectPair.row.name_he } : fresh.subject;
-  await writeSubjectCache(run.id, { ...fresh, subject, teamsHe });
-  const subjectHasRow = subjectPair !== undefined || (kind === "artist" ? fresh.rows.artist !== null : fresh.rows.team !== null);
+  if (kind !== "artist") {
+    for (const { row, side } of pairs) {
+      const offer = offered.get(normalizeName(row.supplier_name));
+      teamsHe[normalizeName(side.supplier_name)] = offer?.status === "existing" ? offer.name_he : row.name_he;
+    }
+  }
+  const subject = fresh.subject;
+  await writeSubjectCache(run.id, { ...fresh, teamsHe });
+  const subjectHasRow = pairs.some((p) => p.side.isSubject) || (kind === "artist" ? fresh.rows.artist !== null : fresh.rows.team !== null);
 
   // 3. The shows renamed.
   const targets = items.filter(isRewritable);
   const current = await readEventTickets(targets.map((i) => i.event_id));
   if (current === null) return { ok: false, kind: "db_error", message: `${created} created; the events were not read - confirm again to rename them` };
   const renamedIds: number[] = [];
+  /** The items this loop wrote - the no-page pass below covers every other one. */
+  const handled = new Set<string>();
   let live = false;
   let failures = 0;
   for (const item of targets) {
@@ -1885,6 +1928,16 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
     if (!changed) continue;
     const written = await transitionItem(item.id, REWRITTEN_STATUSES, { warnings, decisions, payload });
     if (written === "db_error") failures += 1;
+    else if (written === "ok") handled.add(item.id);
+  }
+  // The subject's row exists: `no_team_page` / `no_artist_page` leave EVERY item that carries them, whatever
+  // its status (the condition is the status it was read in, so a move meanwhile is not overwritten).
+  if (subjectHasRow) {
+    for (const item of items) {
+      if (handled.has(item.id) || !item.warnings.some((w) => NO_PAGE_WARNINGS.has(w.code))) continue;
+      const written = await transitionItem(item.id, [item.status], { warnings: item.warnings.filter((w) => !NO_PAGE_WARNINGS.has(w.code)) });
+      if (written === "db_error") failures += 1;
+    }
   }
 
   // 4. The run's names task closed (the Tasks board refuses to close it by hand), the record, the site.

@@ -102,12 +102,13 @@ export type ProposeResult =
       ok: true;
       venue: { name: string; sourceUrl: string; templateId: string | null };
       rows: ClassificationRow[];
-      /** What the AI proposed per category key; null = it gave nothing (off / failed - `ai.reason` says why). */
+      /** What the AI proposed per category key; null = it gave nothing (off / failed / the per-person cap - `ai.reason` says why). */
       proposed: Record<string, ProposedRow> | null;
       shows: number;
+      /** `reason`: null (used) | "not_needed" | "rate_limited" | "error" | the model call's own failure ("off" / "budget" / "timeout" / "bad_answer"). The dialog opens either way. */
       ai: { used: boolean; reason: string | null; problems: string[] };
     }
-  | { ok: false; kind: "bad_input" | "not_found" | "db_error" | "rate_limited" | "svg_failed"; message?: string };
+  | { ok: false; kind: "bad_input" | "not_found" | "db_error" | "svg_failed"; message?: string };
 
 /** `learnPreview`: what the "learn from this event" confirm lists before it applies. */
 export type LearnPreview =

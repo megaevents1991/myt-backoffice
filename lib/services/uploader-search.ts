@@ -257,6 +257,11 @@ async function twinCategories(hub: "team" | "artist"): Promise<{ hubId: number |
 }
 
 /** The first roster row named like the brief (main's roster order: by name). A team also matches by club tokens. */
+/** Active rows first, each group in the order read (a stable sort): `pickRow` prefers the live page, then a row made inactive. */
+function activeFirst<R extends { is_active: boolean }>(rows: R[]): R[] {
+  return [...rows].sort((a, b) => Number(b.is_active) - Number(a.is_active));
+}
+
 function pickRow<R extends TwinPerson>(roster: R[], plan: UploaderPlan, club: boolean): R | null {
   const wanted = { name: plan.subject.name_he ?? "", name_english: plan.subject.name_en };
   return (
@@ -268,8 +273,9 @@ function pickRow<R extends TwinPerson>(roster: R[], plan: UploaderPlan, club: bo
 
 /**
  * Who the run is about, and the subject's own pages (spec 8.1):
- * - artist: the `artists` row by `namesMatch` (the category-twins rule) - active, not deleted, the
- *   first in main's roster order; its `/c/` twin by `findCategoryTwin`.
+ * - artist: the `artists` row by `namesMatch` (the category-twins rule) - not deleted, ACTIVE rows
+ *   first (an inactive row, e.g. one the names dialog created, is still the subject's row: ruling R15),
+ *   then main's roster order; its `/c/` twin by `findCategoryTwin` over the active roster.
  * - team: the `football_teams` row the same way, or by club tokens (`clubNamesMatch` - "Liverpool
  *   FC" is "Liverpool"); its crest = `logo_url` or a crest-library row (`hasLibraryCrest`).
  * - competition: the TixStock `category_name` that names it (`competitionName`; null = none).
@@ -304,19 +310,21 @@ export async function resolveSubject(plan: UploaderPlan): Promise<{
   let competitionName: string | null = null;
 
   if (kind === "artist") {
-    const roster = await fetchPaged<ArtistRow>(
+    const roster = await fetchPaged<ArtistRow & { is_active: boolean }>(
       () =>
         supabaseTyped
           .from("artists")
-          .select("id,name,name_english,image_url,art_image_url,event_gallery,bio")
-          .eq("is_active", true)
+          .select("id,name,name_english,image_url,art_image_url,event_gallery,bio,is_active")
           .eq("is_deleted", false)
           .order("name")
           .order("id"),
       SEARCH_ROWS_MAX,
     );
     if (roster.error || roster.truncated) fail("artists read", roster.error ?? { message: "too many rows" });
-    const row = pickRow(roster.rows, plan, false);
+    // The subject is any row that is not deleted, active rows first: an inactive one (the names dialog makes
+    // them, picture still to come) IS the subject's row - `no_artist_page` means "no row" (ruling R15). The
+    // `/c/` twin is looked up over the active roster only, as main does.
+    const row = pickRow(activeFirst(roster.rows), plan, false);
     if (row) {
       const twins = await twinCategories("artist");
       found = row;
@@ -327,12 +335,14 @@ export async function resolveSubject(plan: UploaderPlan): Promise<{
         art_image_url: row.art_image_url,
         event_gallery: Array.isArray(row.event_gallery) ? row.event_gallery : [],
         bio: row.bio,
-        hasTwin: findCategoryTwin(row, twins.hubId, twins.leaves, roster.rows) !== null,
+        hasTwin: findCategoryTwin(row, twins.hubId, twins.leaves, roster.rows.filter((r) => r.is_active)) !== null,
       };
     }
   } else if (kind === "team") {
+    // Any team that is not deleted, active rows first (an inactive row is the subject's row too - ruling R15);
+    // the twin over the active roster only.
     const roster = teamsRead.rows.filter((t) => t.is_active && !t.is_deleted);
-    const row = pickRow(roster, plan, true);
+    const row = pickRow(activeFirst(teamsRead.rows.filter((t) => !t.is_deleted)), plan, true);
     if (row) {
       const [twins, logos] = await Promise.all([
         twinCategories("team"),

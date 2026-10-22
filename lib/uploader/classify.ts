@@ -8,8 +8,9 @@
  *  - `dropRule`, `drawingCategories`, `parseDroppedCategories`: the facts the dialog starts from.
  *  - `parseClassification`, `proposalRows`: the model's proposal checked, and the dialog's rows
  *    (stored label > proposal, the code rule for "away" stands first).
- *  - `cleanConfirmedRows`, `templateFromRows`, `classificationDiff`: what a person confirmed -> the
- *    final template (zones, mapping, drops), and what they changed against the proposal.
+ *  - `cleanConfirmedRows`, `templateFromRows`, `forgetUnconfirmed`, `classificationDiff`: what a person
+ *    confirmed -> the final template (zones, mapping, drops; a left-out key is unsure), and what they
+ *    changed against the proposal.
  *  - `templateFromEvent`, `ticketsFixedByHand`: the same template learned from one event a person
  *    arranged in the editor.
  *  - `applyClassification`: drop + zone a list of tickets by the template (confirm AND build).
@@ -452,6 +453,26 @@ export function templateFromRows(
   };
 }
 
+/**
+ * The venue's keys a confirm left out are UNSURE (ruling R16), applied after `templateFromRows` over the
+ * same `existing` template: a key the template already labels in Hebrew keeps its stored entry; every other
+ * one - the English slug zone `adoptVenueMap` gives each drawing category, or no entry at all - is
+ * forgotten, so no mapping remains and a zone only it used goes. `dropped` / `kept` are left as they are
+ * (a left-out key is undecided, never un-dropped).
+ */
+export function forgetUnconfirmed(
+  update: TemplateUpdate,
+  existing: TemplateLike | null,
+  venueKeys: string[],
+  confirmed: ConfirmedRow[],
+): TemplateUpdate {
+  const answered = new Set(confirmed.map((row) => normalizeSupplierCategory(row.category)));
+  const omitted = unique(venueKeys).filter((key) => key !== "" && !answered.has(key) && !hasHebrew(existingEntry(existing, key)?.label ?? ""));
+  if (omitted.length === 0) return update;
+  const forget = unique([...update.forget, ...omitted]);
+  return { ...update, forget, zones: withoutOrphanedZones(update.zones, existing, forget, update.categoryToZone) };
+}
+
 // ---- Learning from one event -------------------------------------------------------------------------
 
 /**
@@ -595,7 +616,9 @@ export function ticketsFixedByHand(
  * run this same function. A TixStock ticket leaves when its key is in the venue's dropped list or the rule
  * drops its key, unless the key is in `kept`. The rest go through `zoneFromTemplate` (the zone's
  * description lands on an empty one only). `dropped` = the category of each removed key;
- * `unzoned` = the category of EVERY ticket left without a zone, LiveTickets included.
+ * `unzoned` = the category of every TIXSTOCK ticket left without a zone. A LiveTickets ticket is never
+ * listed: a classification writes the TixStock template only, and zoning LiveTickets is the editor's board
+ * (ruling R17) - listing it would keep the show's `unzoned_review` (and the panel's venue row) for ever.
  */
 export function applyClassification(
   tickets: EventTicket[],
@@ -620,7 +643,7 @@ export function applyClassification(
   return {
     tickets: zoned,
     dropped: [...removed.values()],
-    unzoned: zoned.filter((ticket) => !ticket.zoneId).map((ticket) => ticket.category),
+    unzoned: zoned.filter((ticket) => isTixStock(ticket) && !ticket.zoneId).map((ticket) => ticket.category),
   };
 }
 
