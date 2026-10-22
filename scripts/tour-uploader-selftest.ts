@@ -69,6 +69,24 @@ import {
 } from "@/lib/uploader/tickets";
 import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploader/decisions";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
+import {
+  applyClassification,
+  classificationDiff,
+  cleanConfirmedRows,
+  drawingCategories,
+  dropRule,
+  parseClassification,
+  parseDroppedCategories,
+  proposalRows,
+  templateFromEvent,
+  templateFromRows,
+  ticketsFixedByHand,
+  ZONE_LABEL_MAX,
+  type CategoryInput,
+  type ConfirmedRow,
+  type ProposedRow,
+  type TemplateLike,
+} from "@/lib/uploader/classify";
 import { farVenueOffer, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
@@ -2948,6 +2966,552 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     [true, true, true, true, true, true, false, false],
     "isUnsellableCategory: the pitch, TixStock's grey fillers, disabled seating and a blank name",
   );
+}
+
+// ---- Round אלון 1, Task 2: classify (lib/uploader/classify.ts) -----------------------------------
+{
+  const proposed = (extra: Partial<ProposedRow> = {}): ProposedRow => ({
+    label_he: "",
+    description_he: "",
+    drop: false,
+    drop_reason: null,
+    unsure: false,
+    ...extra,
+  });
+  const confirmed = (category: string, extra: Partial<ConfirmedRow> = {}): ConfirmedRow => ({
+    category,
+    label_he: "",
+    description_he: "",
+    drop: false,
+    unsure: false,
+    ...extra,
+  });
+  const tixTicket = (category: string, extra: Partial<EventTicket> = {}): EventTicket => ({
+    id: `t-${category}`,
+    category,
+    price: 100,
+    description: "",
+    colorOnTheMap: "rgb(5, 32, 60)",
+    supplier: "tixstock",
+    ...extra,
+  });
+  const NO_DROPS = { dropped: [], kept: [] };
+
+  // dropRule: whole words only, lower-cased.
+  same(
+    ["Away Fans Section", "Visiting Supporters", "Visitors Stand", "away-fans-section", "AWAY END"].map((c) => dropRule(c)),
+    Array(5).fill({ drop: true, reason: "away" }),
+    "dropRule: away / visitor(s) / visiting as whole words drop (any case, a hyphenated slug too)",
+  );
+  same(
+    ["Getaway Lounge", "Riverside View", "Longside Lower Tier (Restricted View)", "Revisiting Lounge", ""].map((c) => dropRule(c)),
+    Array(5).fill({ drop: false, reason: null }),
+    "dropRule: Getaway / Riverside / a restricted view / a word that merely ends in 'visiting' do not drop",
+  );
+
+  // drawingCategories: one per sellable category, document order, the pitch and the grey filler skipped.
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg"><g>' +
+    '<path data-section="longside-lower-tier_L1" d="M0 0"/>' +
+    '<path data-section="longside-lower-tier_L2" d="M1 1"/>' +
+    '<path data-section="away-fans-section_A1" d="M2 2"/>' +
+    '<path data-section="gray-fields_g1" d="M3 3"/>' +
+    '<path data-section="field_f" d="M4 4"/>' +
+    '<path data-section="riverside-stand-upper_R1" d="M5 5"/>' +
+    "</g></svg>";
+  const drawing = drawingCategories(svg);
+  same(
+    drawing,
+    [
+      { category: "longside lower tier", key: "longside lower tier", sections: ["longside-lower-tier_L1", "longside-lower-tier_L2"] },
+      { category: "away fans section", key: "away fans section", sections: ["away-fans-section_A1"] },
+      { category: "riverside stand upper", key: "riverside stand upper", sections: ["riverside-stand-upper_R1"] },
+    ],
+    "drawingCategories: 3 sellable categories in document order, slug dashes read as spaces, gray-fields and field skipped",
+  );
+  same(
+    drawingCategories('<svg><path data-section="Cat-1_a"/><path data-section="cat-1_b"/></svg>').map((c) => [c.key, c.sections]),
+    [["cat 1", ["Cat-1_a", "cat-1_b"]]],
+    "drawingCategories: two spellings of one key are one category holding both sections",
+  );
+  same(drawingCategories("<svg></svg>"), [], "drawingCategories: a drawing with no sections has no categories");
+
+  // parseDroppedCategories: the venue_maps.dropped_categories jsonb.
+  same(
+    parseDroppedCategories({ tixstock: ["Away Fans Section", 5, "", "away fans section", null], tixstock_kept: ["hospitality box 12"] }),
+    { dropped: ["away fans section"], kept: ["hospitality box 12"] },
+    "parseDroppedCategories: strings only, normalized, deduped",
+  );
+  for (const bad of [null, undefined, "x", 7, [], { tixstock: "nope", tixstock_kept: 3 }, {}]) {
+    same(parseDroppedCategories(bad), { dropped: [], kept: [] }, `parseDroppedCategories: ${JSON.stringify(bad)} reads as empty`);
+  }
+
+  // parseClassification: the model's tool output, checked field by field.
+  const KEYS = ["longside lower tier", "away fans section", "riverside stand upper", "hospitality box 12"];
+  const parsed = parseClassification(
+    {
+      categories: [
+        { category: "Longside Lower Tier (Restricted View)", label_he: "יציע ארוך תחתון", description_he: "מושבים ביציע הארוך, בשורות הנמוכות", drop: false, drop_reason: null, unsure: false },
+        { category: "Away Fans Section", label_he: "", description_he: "", drop: true, drop_reason: "away", unsure: false },
+        { category: "Mystery Stand", label_he: "יציע מסתורי", description_he: "", drop: false, drop_reason: null, unsure: false },
+        { category: "Riverside Stand Upper", label_he: "Riverside Upper", description_he: "היציע על הנהר", drop: false, drop_reason: null, unsure: false },
+      ],
+    },
+    KEYS,
+  );
+  same([...parsed.rows.keys()], KEYS, "parseClassification: one row per asked key, the unknown category is not a row");
+  same(
+    parsed.rows.get("longside lower tier"),
+    proposed({ label_he: "יציע ארוך תחתון", description_he: "מושבים ביציע הארוך, בשורות הנמוכות" }),
+    "parseClassification: a key is matched by normalizeSupplierCategory (the parenthesised part does not count)",
+  );
+  same(
+    parsed.rows.get("away fans section"),
+    proposed({ drop: true, drop_reason: "away" }),
+    "parseClassification: a drop with a reason stands, and needs no Hebrew label",
+  );
+  same(
+    parsed.rows.get("riverside stand upper"),
+    proposed({ label_he: "Riverside Upper", description_he: "היציע על הנהר", unsure: true }),
+    "parseClassification: a label without a Hebrew letter is unsure",
+  );
+  same(
+    parsed.rows.get("hospitality box 12"),
+    proposed({ unsure: true }),
+    "parseClassification: a key the model skipped is an unsure row with empty Hebrew",
+  );
+  check(parsed.problems.some((p) => p.includes("Mystery Stand")), "parseClassification: the unknown category is named in a problem line");
+  check(parsed.problems.some((p) => p.includes("hospitality box 12")), "parseClassification: the skipped key is named in a problem line");
+
+  const oneAnswer = (entry: Record<string, unknown>) =>
+    parseClassification({ categories: [{ category: "Away Fans Section", label_he: "", description_he: "", drop: false, drop_reason: null, unsure: false, ...entry }] }, ["away fans section"]).rows.get("away fans section");
+  same(oneAnswer({ drop: true, drop_reason: null })?.drop, false, "parseClassification: drop without a reason is no drop");
+  same(oneAnswer({ drop: true, drop_reason: "bogus" })?.drop, false, "parseClassification: drop with a reason outside away / other is no drop");
+  same(
+    oneAnswer({ drop: true, drop_reason: "other" }),
+    proposed({ drop: true, drop_reason: "other" }),
+    "parseClassification: drop for another reason stands, empty label and all",
+  );
+  same(oneAnswer({ drop: false, drop_reason: "away", label_he: "יציע" })?.drop_reason, null, "parseClassification: a reason without a drop is cleared");
+  same(
+    oneAnswer({ drop: true, drop_reason: "away", unsure: true }),
+    proposed({ unsure: true }),
+    "parseClassification: a row that is both dropped and unsure is unsure - the safe side keeps the ticket",
+  );
+  const capped = oneAnswer({ label_he: ` ${"א".repeat(60)} `, description_he: "ב".repeat(200) });
+  same([capped?.label_he.length, capped?.description_he.length, ZONE_LABEL_MAX], [40, 160, 40], "parseClassification: labels are cut to 40, descriptions to 160");
+  same(
+    parseClassification({ categories: [{ category: "Away Fans Section", label_he: "יציע ראשון" }, { category: "away-fans-section", label_he: "יציע שני" }] }, ["away fans section"]).rows.get("away fans section")?.label_he,
+    "יציע ראשון",
+    "parseClassification: a second answer for one key is ignored",
+  );
+  for (const bad of [null, undefined, "x", {}, { categories: "x" }]) {
+    const r = parseClassification(bad, KEYS);
+    check(r.problems.length > 0 && KEYS.every((k) => r.rows.get(k)?.unsure === true), `parseClassification: ${JSON.stringify(bad)} leaves every key unsure, with a problem`);
+  }
+
+  // proposalRows: the dialog's rows.
+  const cat1: CategoryInput = { category: "Cat 1", key: "cat 1", sections: ["cat-1_a"], shows: 3 };
+  const collapsed = proposalRows(
+    [cat1, { category: "CAT-1", key: "cat 1", sections: ["cat-1_a", "cat-1_b"], shows: 2 }, { category: "Cat 2", key: "cat 2", sections: [], shows: 7 }],
+    new Map([["cat 1", proposed({ label_he: "קטגוריה 1" })], ["cat 2", proposed({ label_he: "קטגוריה 2", description_he: "יציע" })]]),
+    null,
+    NO_DROPS,
+  );
+  same(
+    collapsed.map((r) => [r.key, r.category, r.shows, r.sections, r.onMap, r.status, r.label_he]),
+    [["cat 1", "Cat 1", 5, ["cat-1_a", "cat-1_b"], true, "ai", "קטגוריה 1"], ["cat 2", "Cat 2", 7, [], false, "ai", "קטגוריה 2"]],
+    "proposalRows: categories sharing a key collapse to one row (shows summed, sections merged, off-map = not on the map)",
+  );
+
+  const away: CategoryInput = { category: "Away Fans Section", key: "away fans section", sections: ["away-fans-section_A1"], shows: 15 };
+  const awayProposal = new Map([["away fans section", proposed({ label_he: "יציע אוהדי חוץ" })]]);
+  const ruled = proposalRows([away], awayProposal, null, NO_DROPS)[0];
+  same(
+    [ruled.drop, ruled.drop_reason, ruled.ruleDrop, ruled.status, ruled.unsure],
+    [true, "away", "away", "rule_drop", false],
+    "proposalRows: the rule drop beats the proposal",
+  );
+  const keptRow = proposalRows([away], awayProposal, null, { dropped: [], kept: ["away fans section"] })[0];
+  same(
+    [keptRow.drop, keptRow.drop_reason, keptRow.ruleDrop, keptRow.status, keptRow.label_he],
+    [false, null, "away", "ai", "יציע אוהדי חוץ"],
+    "proposalRows: the rule drop does not apply to a key a person kept (the rule's verdict is still shown)",
+  );
+
+  const storedTemplate: TemplateLike = {
+    zones: [{ id: "cat-1", label: "קטגוריה 1", sections: ["cat-1_a"], description: "באמצע היציע" }],
+    supplier_categories: { tixstock: { "cat 1": "cat-1" } },
+  };
+  const cat2: CategoryInput = { category: "Cat 2", key: "cat 2", sections: ["cat-2_a"], shows: 4 };
+  const onTemplate = proposalRows([cat1, cat2], new Map([["cat 2", proposed({ label_he: "קטגוריה 2" })]]), storedTemplate, NO_DROPS);
+  same(
+    [onTemplate[0].status, onTemplate[0].existing, onTemplate[0].label_he, onTemplate[0].description_he, onTemplate[0].unsure],
+    ["existing", { label: "קטגוריה 1", description: "באמצע היציע" }, "קטגוריה 1", "באמצע היציע", false],
+    "proposalRows: a category the template already maps shows its stored label and description",
+  );
+  same([onTemplate[1].status, onTemplate[1].existing, onTemplate[1].label_he], ["ai", null, "קטגוריה 2"], "proposalRows: the unmapped one takes the proposal");
+
+  const manual = proposalRows([cat1, away], null, null, NO_DROPS);
+  same(
+    manual.map((r) => [r.status, r.label_he, r.description_he, r.drop, r.unsure]),
+    [["manual", "", "", false, false], ["rule_drop", "", "", true, false]],
+    "proposalRows: no proposal = manual rows with empty Hebrew, the rule drop still applied",
+  );
+  const hospitality: CategoryInput = { category: "Hospitality Box 12", key: "hospitality box 12", sections: [], shows: 15 };
+  const venueDrop = proposalRows([hospitality], new Map([["hospitality box 12", proposed({ label_he: "בוקס" })]]), null, { dropped: ["hospitality box 12"], kept: [] })[0];
+  same([venueDrop.drop, venueDrop.drop_reason, venueDrop.status], [true, "other", "existing"], "proposalRows: a category the venue already dropped comes back dropped");
+  const aiDrop = proposalRows([hospitality], new Map([["hospitality box 12", proposed({ drop: true, drop_reason: "other" })]]), null, NO_DROPS)[0];
+  same([aiDrop.drop, aiDrop.drop_reason, aiDrop.status, aiDrop.ruleDrop], [true, "other", "ai", null], "proposalRows: the model's own drop shows as its proposal");
+  const aiUnsure = proposalRows([hospitality], new Map([["hospitality box 12", proposed({ unsure: true })]]), null, NO_DROPS)[0];
+  same([aiUnsure.unsure, aiUnsure.status], [true, "unsure"], "proposalRows: an unsure proposal is an unsure row");
+  const skipped = proposalRows([hospitality], new Map(), null, NO_DROPS)[0];
+  same([skipped.unsure, skipped.status], [true, "unsure"], "proposalRows: a key missing from a real proposal is unsure");
+
+  // cleanConfirmedRows: the dialog's answer, checked on the server.
+  const ALLOWED = new Set(["cat 1", "cat 2", "away fans section", "hospitality box 12"]);
+  const okRows = cleanConfirmedRows(
+    [
+      { category: " Cat 1 ", label_he: "  קטגוריה 1 ", description_he: " באמצע ", drop: false, unsure: false },
+      { category: "Away Fans Section", label_he: "", description_he: "", drop: true, unsure: false },
+      { category: "Hospitality Box 12", label_he: "", description_he: "", drop: false, unsure: true },
+    ],
+    ALLOWED,
+  );
+  same(
+    okRows,
+    [
+      { category: "Cat 1", label_he: "קטגוריה 1", description_he: "באמצע", drop: false, unsure: false },
+      { category: "Away Fans Section", label_he: "", description_he: "", drop: true, unsure: false },
+      { category: "Hospitality Box 12", label_he: "", description_he: "", drop: false, unsure: true },
+    ],
+    "cleanConfirmedRows: trimmed rows; a dropped or unsure row may have an empty label",
+  );
+  same(cleanConfirmedRows([], ALLOWED), [], "cleanConfirmedRows: no rows is an empty list, not an error");
+  const row1 = { category: "Cat 1", label_he: "קטגוריה 1", description_he: "", drop: false, unsure: false };
+  for (const [what, raw] of [
+    ["not a list", { rows: [] }],
+    ["a row that is not an object", [row1, "x"]],
+    ["an unknown key", [{ ...row1, category: "Mystery Stand" }]],
+    ["a duplicate key (another spelling)", [row1, { ...row1, category: "CAT-1" }]],
+    ["a label over the cap", [{ ...row1, label_he: "א".repeat(ZONE_LABEL_MAX + 1) }]],
+    ["a description over the cap", [{ ...row1, description_he: "ב".repeat(161) }]],
+    ["an empty label on a kept, sure row", [{ ...row1, label_he: "   " }]],
+    ["a flag that is not a boolean", [{ ...row1, drop: "yes" }]],
+    ["a label that is not a string", [{ ...row1, label_he: 5 }]],
+    ["more rows than the venue has categories", Array.from({ length: ALLOWED.size + 1 }, () => row1)],
+  ] as [string, unknown][]) {
+    same(cleanConfirmedRows(raw, ALLOWED), null, `cleanConfirmedRows: ${what} is refused whole`);
+  }
+
+  // templateFromRows: the final template.
+  const drawingForRows = [
+    { category: "cat 1", key: "cat 1", sections: ["cat-1_a", "cat-1_b"] },
+    { category: "cat 2", key: "cat 2", sections: ["cat-2_a"] },
+    { category: "cat 3", key: "cat 3", sections: ["cat-3_a"] },
+    { category: "away fans section", key: "away fans section", sections: ["away-fans-section_A1"] },
+    { category: "hospitality box 12", key: "hospitality box 12", sections: ["hospitality-box-12_h"] },
+  ];
+  const first = templateFromRows(
+    [
+      confirmed("Cat 1", { label_he: "קטגוריה 1", description_he: "באמצע היציע" }),
+      confirmed("Cat 2", { label_he: "קטגוריה 2" }),
+      confirmed("Premium Seats", { label_he: "מושבי פרימיום" }),
+      confirmed("Away Fans Section", { drop: true }),
+      confirmed("Hospitality Box 12", { unsure: true }),
+    ],
+    drawingForRows,
+    null,
+    NO_DROPS,
+  );
+  same(
+    first.zones,
+    [
+      { id: "cat-1", label: "קטגוריה 1", sections: ["cat-1_a", "cat-1_b"], description: "באמצע היציע" },
+      { id: "cat-2", label: "קטגוריה 2", sections: ["cat-2_a"] },
+      { id: "premium-seats", label: "מושבי פרימיום", sections: [] },
+    ],
+    "templateFromRows: a zone per confirmed row (sections from the drawing, [] off the map), none for a dropped or unsure one",
+  );
+  same(first.categoryToZone, { "cat 1": "cat-1", "cat 2": "cat-2", "premium seats": "premium-seats" }, "templateFromRows: the mapping covers the confirmed rows only");
+  same(
+    [first.forget, first.dropped, first.kept],
+    [["away fans section", "hospitality box 12"], ["away fans section"], []],
+    "templateFromRows: unsure and dropped keys are forgotten, dropped keys are listed as dropped",
+  );
+
+  // A second confirm (a partial write finished, or another admin) merges over what the first one wrote.
+  const second = templateFromRows(
+    [confirmed("Cat 1", { label_he: "קטגוריה 1", description_he: "באמצע היציע" }), confirmed("Cat 3", { label_he: "קטגוריה 3" })],
+    drawingForRows,
+    { zones: first.zones, supplier_categories: { tixstock: first.categoryToZone } },
+    { dropped: first.dropped, kept: first.kept },
+  );
+  same(
+    second.zones.map((z) => [z.id, z.label]),
+    [["cat-1", "קטגוריה 1"], ["cat-2", "קטגוריה 2"], ["premium-seats", "מושבי פרימיום"], ["cat-3", "קטגוריה 3"]],
+    "templateFromRows: a second confirm reuses zone ids, keeps the Hebrew labels, leaves zones of other keys untouched and appends the new one",
+  );
+  check(new Set(second.zones.map((z) => z.id)).size === second.zones.length, "templateFromRows: a second confirm makes no duplicate zone");
+  same(second.zones[0], first.zones[0], "templateFromRows: an unchanged row rewrites its zone to exactly what it was");
+  same(second.categoryToZone, { "cat 1": "cat-1", "cat 3": "cat-3" }, "templateFromRows: the second mapping holds the second rows only (the write merges)");
+  same([second.dropped, second.kept], [["away fans section"], []], "templateFromRows: the venue's earlier drops survive a confirm that does not mention them");
+
+  // A relabel on the second confirm wins; a stale mapping (zone gone) gets a fresh id.
+  const relabel = templateFromRows(
+    [confirmed("Cat 1", { label_he: "קטגוריה 1 - חדש" })],
+    drawingForRows,
+    { zones: first.zones, supplier_categories: { tixstock: first.categoryToZone } },
+    NO_DROPS,
+  );
+  same([relabel.zones[0].id, relabel.zones[0].label, relabel.zones[0].description], ["cat-1", "קטגוריה 1 - חדש", undefined], "templateFromRows: a row the person edited rewrites its zone (and clears a description they emptied)");
+  const stale = templateFromRows(
+    [confirmed("Cat 2", { label_he: "קטגוריה 2" })],
+    drawingForRows,
+    { zones: [], supplier_categories: { tixstock: { "cat 2": "gone-zone" } } },
+    NO_DROPS,
+  );
+  same(stale.zones.map((z) => z.id), ["cat-2"], "templateFromRows: a mapping to a zone that no longer exists gets a new zone");
+
+  // Dropped / unsure rows take their zone away - unless another category still uses it.
+  const pruned = templateFromRows(
+    [confirmed("Hospitality Box 12", { unsure: true }), confirmed("Premium Plus", { drop: true })],
+    drawingForRows,
+    {
+      zones: [
+        { id: "hosp", label: "אירוח", sections: ["hospitality-box-12_h"] },
+        { id: "premium", label: "פרימיום", sections: ["premium_p"] },
+        { id: "loose", label: "זון יד", sections: [] },
+        { id: "shared", label: "משותף", sections: [] },
+      ],
+      supplier_categories: { tixstock: { "hospitality box 12": "hosp", premium: "premium", "premium plus": "premium", "cat 9": "shared" }, livetickets: { vip: "shared" } },
+    },
+    NO_DROPS,
+  );
+  same(pruned.zones.map((z) => z.id), ["premium", "loose", "shared"], "templateFromRows: an unsure key loses its zone; a zone another category still maps, and one nothing maps, stay");
+  same(pruned.forget, ["hospitality box 12", "premium plus"], "templateFromRows: both are forgotten");
+  const droppedSharedZone = templateFromRows(
+    [confirmed("Cat 9", { drop: true })],
+    [],
+    { zones: [{ id: "shared", label: "משותף", sections: [] }], supplier_categories: { tixstock: { "cat 9": "shared" }, livetickets: { vip: "shared" } } },
+    NO_DROPS,
+  );
+  same(droppedSharedZone.zones.map((z) => z.id), ["shared"], "templateFromRows: a zone another supplier maps is never pruned");
+
+  // Off-map rows and shared zones.
+  const painted = templateFromRows(
+    [confirmed("Premium Seats", { label_he: "מושבי פרימיום" })],
+    drawingForRows,
+    { zones: [{ id: "premium-seats", label: "פרימיום ישן", sections: ["hand_1"] }], supplier_categories: { tixstock: { "premium seats": "premium-seats" } } },
+    NO_DROPS,
+  );
+  same(painted.zones, [{ id: "premium-seats", label: "מושבי פרימיום", sections: ["hand_1"] }], "templateFromRows: an off-map row keeps the sections a person painted on its existing zone");
+  const sharedRows = templateFromRows(
+    [confirmed("Cat 1", { label_he: "יציע" }), confirmed("Cat 2", { label_he: "יציע" })],
+    drawingForRows,
+    { zones: [{ id: "tribune", label: "יציע", sections: [] }], supplier_categories: { tixstock: { "cat 1": "tribune", "cat 2": "tribune" } } },
+    NO_DROPS,
+  );
+  same(sharedRows.zones, [{ id: "tribune", label: "יציע", sections: ["cat-1_a", "cat-1_b", "cat-2_a"] }], "templateFromRows: two categories in one zone give it both their sections");
+
+  // kept: the rule says drop, the person said keep.
+  const keptRows = templateFromRows(
+    [confirmed("Away Fans Section", { label_he: "יציע אוהדי חוץ" }), confirmed("Visitors Bar", { unsure: true }), confirmed("Cat 1", { label_he: "קטגוריה 1" })],
+    drawingForRows,
+    null,
+    { dropped: ["away fans section", "cat 7"], kept: ["old kept", "visitors bar"] },
+  );
+  same(
+    [keptRows.kept, keptRows.dropped],
+    [["old kept", "away fans section", "visitors bar"], ["cat 7"]],
+    "templateFromRows: kept = the rule-drops a person kept (unsure rows included) plus earlier ones; a row's decision replaces its old drop",
+  );
+  same(keptRows.zones.map((z) => z.id), ["away-fans-section", "cat-1"], "templateFromRows: a kept away category gets its zone like any other");
+
+  // templateFromEvent: one event fixed by hand teaches the venue.
+  const eventTemplate: TemplateLike = {
+    zones: [
+      { id: "cat-1", label: "cat 1", sections: ["cat-1_a"] },
+      { id: "cat-2", label: "קטגוריה 2", sections: ["cat-2_a"], description: "ישן" },
+      { id: "away", label: "חוץ", sections: ["away-fans-section_A1"] },
+    ],
+    supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2", "away fans section": "away", "cat 9": "cat-2" } },
+  };
+  const eventDrawing = [...drawingForRows, { category: "cat 4", key: "cat 4", sections: ["cat-4_a"] }];
+  const taught = templateFromEvent(
+    [
+      tixTicket("Cat 1", { zoneId: "cat-1", zoneLabel: "קטגוריה 1", description: "באמצע היציע" }),
+      tixTicket("Cat 2", { zoneId: "cat-2", zoneLabel: "Cat Two", description: "" }),
+      tixTicket("Cat 4", { zoneId: "cat-4", zoneLabel: "קטגוריה 4", description: "יציע חדש" }),
+      tixTicket("Cat 5"),
+      { ...tixTicket("Live Cat"), supplier: "livetickets", zoneId: "cat-1", zoneLabel: "לא יילמד" },
+    ],
+    [tixTicket("Cat 1"), tixTicket("Cat 2"), tixTicket("Cat 4"), tixTicket("Cat 5"), tixTicket("Away Fans Section")],
+    eventTemplate,
+    eventDrawing,
+    NO_DROPS,
+  );
+  same(
+    taught.zones,
+    [
+      { id: "cat-1", label: "קטגוריה 1", sections: ["cat-1_a"], description: "באמצע היציע" },
+      { id: "cat-2", label: "קטגוריה 2", sections: ["cat-2_a"], description: "ישן" },
+      { id: "cat-4", label: "קטגוריה 4", sections: ["cat-4_a"], description: "יציע חדש" },
+    ],
+    "templateFromEvent: a latin zone label becomes the ticket's Hebrew one, a Hebrew label survives a latin ticket label, an empty description changes nothing, a zone only the event has is created, the dropped category's zone goes",
+  );
+  same(taught.categoryToZone, { "cat 1": "cat-1", "cat 2": "cat-2", "cat 4": "cat-4" }, "templateFromEvent: each zoned tixstock ticket maps its category to its zone (an unzoned or LiveTickets one maps nothing)");
+  same(
+    [taught.forget, taught.dropped, taught.kept],
+    [["away fans section"], ["away fans section"], []],
+    "templateFromEvent: a category the payload had and the event lost is a drop",
+  );
+  same(taught.learned, { zones: 3, newZones: 1, dropped: ["Away Fans Section"], descriptions: 2 }, "templateFromEvent: what the confirm line quotes");
+
+  const neverThere = templateFromEvent([tixTicket("Cat 1", { zoneId: "cat-1", zoneLabel: "קטגוריה 1" })], [tixTicket("Cat 1")], eventTemplate, eventDrawing, NO_DROPS);
+  same([neverThere.dropped, neverThere.learned.dropped], [[], []], "templateFromEvent: a template category that was never in the payload is not a drop");
+  const hebrewOverHebrew = templateFromEvent([tixTicket("Cat 2", { zoneId: "cat-2", zoneLabel: "קטגוריה 2 - בלוק" })], [], eventTemplate, eventDrawing, NO_DROPS);
+  same(hebrewOverHebrew.zones.find((z) => z.id === "cat-2")?.label, "קטגוריה 2 - בלוק", "templateFromEvent: a different Hebrew ticket label replaces a Hebrew zone label");
+  const twoTickets = templateFromEvent(
+    [
+      tixTicket("Cat 1", { id: "a", zoneId: "cat-1", zoneLabel: "קטגוריה 1 חדש", description: "תיאור חדש" }),
+      tixTicket("CAT-1", { id: "b", zoneId: "cat-1", zoneLabel: "cat 1", description: "" }),
+    ],
+    [],
+    { zones: [{ id: "cat-1", label: "cat 1", sections: [] }], supplier_categories: { tixstock: { "cat 1": "cat-1" } } },
+    eventDrawing,
+    NO_DROPS,
+  );
+  same(
+    [twoTickets.zones[0].label, twoTickets.zones[0].description, twoTickets.learned.zones, twoTickets.learned.descriptions],
+    ["קטגוריה 1 חדש", "תיאור חדש", 1, 1],
+    "templateFromEvent: a second ticket of the same zone does not undo the first one's edit",
+  );
+  const keptByEvent = templateFromEvent(
+    [tixTicket("Away Fans Section", { zoneId: "away", zoneLabel: "חוץ" }), tixTicket("Cat 5", { zoneId: "away", zoneLabel: "חוץ" })],
+    [],
+    eventTemplate,
+    eventDrawing,
+    { dropped: ["cat 5", "cat 7"], kept: ["old kept"] },
+  );
+  same(
+    [keptByEvent.kept, keptByEvent.dropped],
+    [["old kept", "away fans section"], ["cat 7"]],
+    "templateFromEvent: a zoned ticket of a rule-drop category keeps it, and a zoned ticket of a dropped category un-drops it",
+  );
+  same(templateFromEvent([], [], null, [], NO_DROPS).zones, [], "templateFromEvent: no template and nothing zoned is an empty template");
+
+  // applyClassification: drop, zone, report.
+  const applyTemplate: TemplateLike = {
+    zones: [
+      { id: "cat-1", label: "קטגוריה 1", sections: ["cat-1_a"], description: "באמצע היציע" },
+      { id: "lt-vip", label: "וי איי פי", sections: [], description: "תיאור האזור" },
+    ],
+    supplier_categories: { tixstock: { "cat 1": "cat-1" }, livetickets: { vip: "lt-vip" } },
+  };
+  const live = (category: string, extra: Partial<EventTicket> = {}): EventTicket => tixTicket(category, { id: `lt-${category}`, supplier: "livetickets", ...extra });
+  const applyInput = [
+    tixTicket("Cat 1"),
+    tixTicket("CAT-1", { id: "t-cat1-by-hand", description: "כתוב ביד" }),
+    tixTicket("Cat 2", { description: "כתוב ביד 2" }),
+    tixTicket("Away Fans Section"),
+    tixTicket("Hospitality Box 12"),
+    live("VIP", { description: "תיאור מלייב" }),
+    live("Standing"),
+    live("Away End"),
+  ];
+  const applied = applyClassification(applyInput, applyTemplate, { dropped: ["hospitality box 12"], kept: [] });
+  same(
+    applied.tickets.map((t) => [t.id, t.zoneId ?? null, t.description]),
+    [
+      ["t-Cat 1", "cat-1", "באמצע היציע"],
+      ["t-cat1-by-hand", "cat-1", "כתוב ביד"],
+      ["t-Cat 2", null, "כתוב ביד 2"],
+      ["lt-VIP", "lt-vip", "תיאור מלייב"],
+      ["lt-Standing", null, ""],
+      ["lt-Away End", null, ""],
+    ],
+    "applyClassification: tixstock drops (the rule's and the venue's) leave, the rest is zoned, a description lands on an empty one only, a LiveTickets one is never overwritten and a LiveTickets 'Away End' is not dropped",
+  );
+  same(applied.tickets[0].zoneLabel, "קטגוריה 1", "applyClassification: the zone's label is stamped like zoneFromTemplate does");
+  same(applied.dropped, ["Away Fans Section", "Hospitality Box 12"], "applyClassification: the dropped categories, in ticket order");
+  same(applied.unzoned, ["Cat 2", "Standing", "Away End"], "applyClassification: unzoned lists every ticket left without a zone, LiveTickets too");
+  const keptApplied = applyClassification(applyInput, applyTemplate, { dropped: ["hospitality box 12"], kept: ["away fans section", "hospitality box 12"] });
+  same([keptApplied.tickets.length, keptApplied.dropped], [applyInput.length, []], "applyClassification: a kept category stays, whether the rule or the venue's list dropped it");
+  same(
+    applyClassification(applyInput, { zones: [], supplier_categories: {} }, NO_DROPS).dropped,
+    ["Away Fans Section"],
+    "applyClassification: with no template at all the rule still drops",
+  );
+  same(applyClassification([], applyTemplate, NO_DROPS), { tickets: [], dropped: [], unzoned: [] }, "applyClassification: no tickets, nothing to report");
+
+  // classificationDiff: what a person changed against what the model proposed.
+  const proposedMap = new Map<string, ProposedRow>([
+    ["cat 1", proposed({ label_he: "קטגוריה 1", description_he: "תיאור" })],
+    ["cat 2", proposed({ label_he: "קטגוריה 2" })],
+    ["away fans section", proposed()],
+    ["hospitality box 12", proposed({ drop: true, drop_reason: "other" })],
+    ["cat 3", proposed({ label_he: "קטגוריה 3", description_he: "ישן" })],
+  ]);
+  same(
+    classificationDiff(proposedMap, [
+      confirmed("Cat 1", { label_he: "יציע 1", description_he: "תיאור" }),
+      confirmed("Cat 2", { label_he: "קטגוריה 2" }),
+      confirmed("Away Fans Section", { drop: true }),
+      confirmed("Hospitality Box 12", { label_he: "בוקס" }),
+      confirmed("Cat 3", { label_he: "קטגוריה 3", description_he: "" }),
+    ]),
+    [
+      { category: "Cat 1", field: "label", from: "קטגוריה 1", to: "יציע 1" },
+      { category: "Hospitality Box 12", field: "label", from: null, to: "בוקס" },
+      { category: "Hospitality Box 12", field: "drop", from: true, to: false },
+      { category: "Cat 3", field: "description", from: "ישן", to: "" },
+    ],
+    "classificationDiff: renamed, un-dropped and a cleared description are changes; unchanged rows and a rule drop left as the rule had it are not",
+  );
+  same(
+    classificationDiff(new Map([["away fans section", proposed({ label_he: "יציע חוץ" })]]), [confirmed("Away Fans Section", { label_he: "יציע חוץ" })]),
+    [{ category: "Away Fans Section", field: "drop", from: true, to: false }],
+    "classificationDiff: un-dropping what the rule flagged is a change even when the model had not dropped it",
+  );
+  same(
+    classificationDiff(new Map(), [confirmed("Cat 1", { label_he: "קטגוריה 1" }), confirmed("Cat 2", { drop: true })]),
+    [{ category: "Cat 2", field: "drop", from: false, to: true }],
+    "classificationDiff: a key the proposal never held has no label to compare, a drop of it still counts",
+  );
+  same(
+    classificationDiff(null, [
+      confirmed("Cat 1", { label_he: "א", description_he: "ב" }),
+      confirmed("Cat 2", { drop: true, label_he: "ג" }),
+      confirmed("Cat 3", { unsure: true }),
+      confirmed("Cat 4", { label_he: "ד" }),
+    ]),
+    [
+      { category: "Cat 1", field: "label", from: null, to: "א" },
+      { category: "Cat 1", field: "description", from: null, to: "ב" },
+      { category: "Cat 4", field: "label", from: null, to: "ד" },
+    ],
+    "classificationDiff: no proposal = every confirmed label and description from null (a dropped or unsure row has none)",
+  );
+
+  // ticketsFixedByHand: did a person arrange this event after the build?
+  const built = [tixTicket("Cat 1"), tixTicket("Cat 2", { zoneId: "z2", description: "תיאור" }), live("VIP")];
+  const payloadOf = (tickets: EventTicket[]) => ({ tickets_and_rates: tickets });
+  const rowOf = (tickets: unknown) => ({ tickets_and_rates: tickets });
+  same(ticketsFixedByHand(payloadOf(built), rowOf(built)), false, "ticketsFixedByHand: an untouched event is not fixed by hand");
+  same(ticketsFixedByHand(payloadOf(built), rowOf(built.map((t) => ({ ...t, price: t.price + 50 })))), false, "ticketsFixedByHand: a price change alone is not");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([{ ...built[0], zoneId: "z1" }, built[1], built[2]])), true, "ticketsFixedByHand: a zone added is");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([built[0], { ...built[1], zoneId: "z9" }, built[2]])), true, "ticketsFixedByHand: a zone changed is");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([{ ...built[0], description: "כתוב ביד" }, built[1], built[2]])), true, "ticketsFixedByHand: a description the payload lacked is");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([built[0], { ...built[1], description: "תיאור אחר" }, built[2]])), true, "ticketsFixedByHand: a description rewritten is");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([built[0], { ...built[1], description: "" }, built[2]])), false, "ticketsFixedByHand: a description cleared is not (nothing to teach)");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([built[1], built[2]])), true, "ticketsFixedByHand: a category removed is");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([...built, tixTicket("Cat 3")])), true, "ticketsFixedByHand: a category added is");
+  same(ticketsFixedByHand(payloadOf(built), rowOf([built[0], built[1], live("VIP", { zoneId: "lt-vip", description: "x" })])), false, "ticketsFixedByHand: only tixstock tickets count");
+  same(ticketsFixedByHand(null, rowOf(built)), false, "ticketsFixedByHand: no payload = nothing to compare");
+  same(ticketsFixedByHand(payloadOf(built), null), false, "ticketsFixedByHand: no row = nothing to compare");
+  same(ticketsFixedByHand({ name: "x" }, rowOf(built)), false, "ticketsFixedByHand: a payload with no tickets is not a baseline");
+  same(ticketsFixedByHand(payloadOf(built), rowOf(null)), false, "ticketsFixedByHand: unreadable tickets are not claimed as fixed");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
