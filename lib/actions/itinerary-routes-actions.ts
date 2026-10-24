@@ -17,6 +17,13 @@ import {
   type ItineraryRoutesRead,
   type TripEventLite,
 } from "@/lib/itinerary/routes";
+import {
+  groupRouteRequests,
+  isRequestStatus,
+  requestIdsOf,
+  type RouteRequest,
+  type RouteRequestsRead,
+} from "@/lib/itinerary/requests";
 
 /**
  * "Build Your Euro Trip" - the staff trips' reads and writes (Events > טריפים). A trip is a row of
@@ -222,10 +229,15 @@ export async function listItineraryRoutes(): Promise<ItineraryRoutesRead> {
  * Creates (no `id`) or edits (`id`) a trip. Validates the form, checks every event exists and is not deleted,
  * writes the TRIMMED title the validator returned (never the raw input), audits, tells the site. An edit that
  * changes nothing writes, audits and pings nothing.
+ *
+ * `opts.requestIds` (a NEW trip made from customers' requests, Events > בקשות טריפים): once the trip is in,
+ * those requests that still wait become `published` with the new trip's id. A failure there is a warning next
+ * to the saved trip, never an error - the trip is what matters.
  */
-export async function saveItineraryRoute(form: unknown): Promise<ItineraryRouteWriteResult> {
+export async function saveItineraryRoute(form: unknown, opts?: unknown): Promise<ItineraryRouteWriteResult> {
   const session = await staffOrNull();
   if (!session) return { error: NO_ACCESS };
+  const fromRequests = requestIdsOf((opts as { requestIds?: unknown } | null | undefined)?.requestIds);
 
   try {
     const checked = validateItineraryRoute(form);
@@ -258,14 +270,19 @@ export async function saveItineraryRoute(form: unknown): Promise<ItineraryRouteW
         console.error("itinerary_routes insert:", JSON.stringify(error));
         return { error: `השמירה נכשלה: ${error.message ?? "שגיאה"}` };
       }
+      const newId = (data as { id: number }[] | null)?.[0]?.id ?? null;
       await logAudit({
         action: "itinerary.route.create",
         entityType: TABLE,
-        entityId: (data as { id: number }[] | null)?.[0]?.id ?? null,
+        entityId: newId,
         changes: diffChanges(null, after),
         actor: actorOf(session),
       });
-      return await refreshSite();
+      const marked = fromRequests && newId !== null ? await markRequestsPublished(fromRequests, newId, session) : null;
+      const refreshed = await refreshSite();
+      if (!marked) return refreshed;
+      const warnings = [marked, "warning" in refreshed ? refreshed.warning : undefined].filter(Boolean);
+      return { ok: true, warning: warnings.join(" · ") };
     }
 
     const before = await readRoute(route.id);
@@ -410,5 +427,182 @@ export async function searchTripEvents(query: string): Promise<TripEventLite[]> 
   } catch (e) {
     console.error("searchTripEvents failed:", e);
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Customers' "offer my trip to others" (itinerary_route_requests, migration 20261024084720). myt-main writes
+// the rows with the trip's hold; this screen (Events > בקשות טריפים) publishes them as a trip or rejects them.
+// ---------------------------------------------------------------------------------------------------------
+
+const REQUESTS_TABLE = "itinerary_route_requests";
+const REQUEST_COLUMNS =
+  "id, created_at, title, event_ids, reservation_id, pax, contact_name, contact_email, contact_phone, status, route_id, handled_at";
+/** The screen reads the newest this many: far more than staff handle at once. */
+const REQUESTS_READ_LIMIT = 500;
+
+type RequestDbRow = {
+  id: number;
+  created_at: string;
+  title: string | null;
+  event_ids: (number | string)[] | null;
+  reservation_id: number | string | null;
+  pax: number | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  status: string;
+  route_id: number | string | null;
+  handled_at: string | null;
+};
+
+const numOrNull = (v: number | string | null): number | null => {
+  const n = Number(v);
+  return v !== null && Number.isSafeInteger(n) ? n : null;
+};
+
+function requestOf(row: RequestDbRow): RouteRequest {
+  return {
+    id: Number(row.id),
+    createdAt: row.created_at,
+    title: row.title?.trim() || null,
+    eventIds: idsOf(row.event_ids),
+    reservationId: numOrNull(row.reservation_id),
+    pax: row.pax ?? null,
+    contactName: row.contact_name,
+    contactEmail: row.contact_email,
+    contactPhone: row.contact_phone,
+    status: isRequestStatus(row.status) ? row.status : "new",
+    routeId: numOrNull(row.route_id),
+    handledAt: row.handled_at,
+  };
+}
+
+/**
+ * The trip just made from these requests: the ones still waiting become `published` with its id. Answers a
+ * warning (the trip IS saved) or null. Audited once for the set.
+ */
+async function markRequestsPublished(ids: number[], routeId: number, session: SessionPayload): Promise<string | null> {
+  try {
+    const { data, error } = await idb
+      .from(REQUESTS_TABLE)
+      .update({ status: "published", route_id: routeId, handled_by: session.sub, handled_at: new Date().toISOString() })
+      .in("id", ids)
+      .eq("status", "new")
+      .select("id");
+    if (error) {
+      console.error("itinerary_route_requests publish:", JSON.stringify(error));
+      return `הטריפ נשמר, אבל הבקשות לא סומנו כמטופלות (${error.message ?? "שגיאה"})`;
+    }
+    const done = ((data ?? []) as { id: number }[]).map((r) => Number(r.id));
+    if (done.length > 0) {
+      await logAudit({
+        action: "itinerary.request.publish",
+        entityType: REQUESTS_TABLE,
+        entityId: done[0],
+        changes: { status: { from: "new", to: "published" }, route_id: { from: null, to: routeId }, ids: { from: null, to: done } },
+        actor: actorOf(session),
+      });
+    }
+    return null;
+  } catch (e) {
+    console.error("markRequestsPublished failed:", e);
+    return `הטריפ נשמר, אבל הבקשות לא סומנו כמטופלות (${failText(e)})`;
+  }
+}
+
+/**
+ * Every request (newest 500), grouped by its set of events - waiting groups first, most requests first - each
+ * with its events and the line "would the site show it as a trip". Also the "סדר" a new trip starts with.
+ */
+export async function listRouteRequests(): Promise<RouteRequestsRead> {
+  if (!(await staffOrNull())) return { status: "error", message: NO_ACCESS };
+  try {
+    const { data, error } = await idb
+      .from(REQUESTS_TABLE)
+      .select(REQUEST_COLUMNS)
+      .order("created_at", { ascending: false })
+      .limit(REQUESTS_READ_LIMIT);
+    if (error) {
+      if (isMissingRelation(error)) return { status: "table_missing" };
+      console.error("itinerary_route_requests list:", JSON.stringify(error));
+      return { status: "error", message: error.message ?? "שגיאה בקריאת הבקשות" };
+    }
+    const requests = ((data ?? []) as RequestDbRow[]).map(requestOf);
+
+    // The staff trips: "already a trip" and where a new one goes in "סדר". A missing table = none yet.
+    const routesRead = await idb.from(TABLE).select("id, event_ids, sort_order");
+    if (routesRead.error && !isMissingRelation(routesRead.error)) {
+      console.error("itinerary_routes read for requests:", JSON.stringify(routesRead.error));
+      return { status: "error", message: routesRead.error.message ?? "שגיאה בקריאת הטריפים" };
+    }
+    const routes = ((routesRead.data ?? []) as Pick<RouteDbRow, "id" | "event_ids" | "sort_order">[]).map((r) => ({
+      id: Number(r.id),
+      eventIds: idsOf(r.event_ids),
+      sortOrder: r.sort_order,
+    }));
+    const nextSortOrder = routes.length === 0 ? 0 : Math.max(...routes.map((r) => r.sortOrder)) + 1;
+
+    const events = await readEvents(requests.flatMap((r) => r.eventIds));
+    const today = todayIso();
+    const groups = groupRouteRequests(requests, routes).map((g) => {
+      const found = g.eventIds.flatMap((id) => {
+        const e = events.get(id);
+        return e ? [e] : [];
+      });
+      return {
+        ...g,
+        events: [...found].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.id - b.id),
+        site: routeSiteStatus(g.eventIds, found, today),
+      };
+    });
+    return { status: "ok", groups, nextSortOrder };
+  } catch (e) {
+    console.error("listRouteRequests failed:", e);
+    return { status: "error", message: failText(e) };
+  }
+}
+
+/**
+ * "דחייה" (rejected) or "החזרה לבקשות" (new) for a group's requests. A published request is never touched
+ * here (its trip is managed on the trips tab). Audited; the site is not involved.
+ */
+export async function setRouteRequestsStatus(ids: unknown, status: unknown): Promise<ItineraryRouteWriteResult> {
+  const session = await staffOrNull();
+  if (!session) return { error: NO_ACCESS };
+  const list = requestIdsOf(ids);
+  if (!list || (status !== "rejected" && status !== "new")) return { error: "בקשה לא תקינה - רעננו את הדף ונסו שוב" };
+
+  try {
+    const from = status === "rejected" ? "new" : "rejected";
+    const { data, error } = await idb
+      .from(REQUESTS_TABLE)
+      .update({
+        status,
+        handled_by: status === "rejected" ? session.sub : null,
+        handled_at: status === "rejected" ? new Date().toISOString() : null,
+      })
+      .in("id", list)
+      .eq("status", from)
+      .select("id");
+    if (error) {
+      if (isMissingRelation(error)) return { error: TABLE_MISSING };
+      console.error("itinerary_route_requests status:", JSON.stringify(error));
+      return { error: `השמירה נכשלה: ${error.message ?? "שגיאה"}` };
+    }
+    const done = ((data ?? []) as { id: number }[]).map((r) => Number(r.id));
+    if (done.length > 0) {
+      await logAudit({
+        action: status === "rejected" ? "itinerary.request.reject" : "itinerary.request.reopen",
+        entityType: REQUESTS_TABLE,
+        entityId: done[0],
+        changes: { status: { from, to: status }, ids: { from: null, to: done } },
+        actor: actorOf(session),
+      });
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error("setRouteRequestsStatus failed:", e);
+    return { error: `השמירה נכשלה: ${failText(e)}` };
   }
 }

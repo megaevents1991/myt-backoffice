@@ -553,6 +553,15 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("\"שמירה\". The site refreshes at once - if it could not, a red \"האתר לא התרענן\" toast says so and the site catches up by itself within the hour.", "\"שמירה\". האתר מתרענן מיד - אם לא הצליח, מופיעה הודעה אדומה \"האתר לא התרענן\" והאתר מתעדכן לבד בתוך שעה."),
         ],
       },
+      {
+        title: t("Turn a customer's trip into a ready trip", "להפוך טיול של לקוח לטריפ מוכן"),
+        steps: [
+          t("A customer who built a trip on the site and ticked \"רוצים שנציע את הטיול שלכם גם לאחרים?\" before \"שמרו לי ל-24 שעות\" lands in [Trip requests](/events/trips/requests), with the name they gave it.", "לקוח שבנה טיול באתר וסימן \"רוצים שנציע את הטיול שלכם גם לאחרים?\" לפני \"שמרו לי ל-24 שעות\" מופיע ב[בקשות טריפים](/events/trips/requests), עם השם שנתן לטיול."),
+          t("Requests for the same events are one card - \"3 הציעו\" means three customers built that trip. \"פרטי הלקוחות\" lists who, when, and links each hold's reservation.", "בקשות על אותם אירועים הן כרטיס אחד - \"3 הציעו\" אומר ששלושה לקוחות בנו את הטיול הזה. \"פרטי הלקוחות\" מראה מי ומתי, עם קישור להזמנה של כל אחד."),
+          t("\"הפוך לטריפ\" opens the trip form with the customer's name and events. Edit the title if needed and \"שמירה\" - the trip is created and the card moves to \"טופלו\".", "\"הפוך לטריפ\" פותח את טופס הטריפ עם השם והאירועים של הלקוח. מתקנים את הכותרת אם צריך ו\"שמירה\" - הטריפ נוצר והכרטיס עובר ל\"טופלו\"."),
+          t("Not a fit? \"דחייה\". A rejected card can come back with \"החזרה לבקשות\".", "לא מתאים? \"דחייה\". כרטיס שנדחה אפשר להחזיר עם \"החזרה לבקשות\"."),
+        ],
+      },
     ],
     title: t("Euro Trips (staff trips)", "טריפים (Euro Trip)"),
     intro: t(
@@ -589,6 +598,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     links: [
       { label: t("Trips", "טריפים"), href: "/events/trips" },
+      { label: t("Trip requests", "בקשות טריפים"), href: "/events/trips/requests" },
       { label: t("Events table", "טבלת אירועים"), href: "/events" },
     ],
   },

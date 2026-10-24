@@ -48,10 +48,16 @@ const missingEvent = (id: number): Picked => ({
   missing: true,
 });
 
-const initialPicked = (route: ItineraryRouteListItem | null): Picked[] => {
-  if (!route) return [];
-  const byId = new Map(route.events.map((e) => [e.id, e]));
-  return route.eventIds.map((id) => byId.get(id) ?? missingEvent(id));
+/**
+ * A new trip started from customers' requests (Events > בקשות טריפים): the name they gave and their events.
+ * `key` = the request group's key (one form per group).
+ */
+export type TripDraft = { key: string; title: string; eventIds: number[]; events: TripEventLite[] };
+
+const initialPicked = (from: Pick<ItineraryRouteListItem, "eventIds" | "events"> | null): Picked[] => {
+  if (!from) return [];
+  const byId = new Map(from.events.map((e) => [e.id, e]));
+  return from.eventIds.map((id) => byId.get(id) ?? missingEvent(id));
 };
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -205,6 +211,8 @@ function EventPicker({
 /** The form itself. Mounted fresh on every open (the dialog unmounts its content), so its state starts from `route`. */
 function TripForm({
   route,
+  draft,
+  requestIds,
   defaultSortOrder,
   saving,
   onSavingChange,
@@ -212,6 +220,10 @@ function TripForm({
   onSaved,
 }: {
   route: ItineraryRouteListItem | null;
+  /** A new trip from customers' requests: starts with their name and events. Ignored when `route` is set. */
+  draft?: TripDraft | null;
+  /** The requests the new trip answers: marked published once it is saved. */
+  requestIds?: number[];
   defaultSortOrder: number;
   /** Lives in the dialog, which must not close while a save is in flight. */
   saving: boolean;
@@ -219,8 +231,9 @@ function TripForm({
   onClose: () => void;
   onSaved: (outcome: { created: boolean; warning?: string }) => void;
 }) {
-  const [title, setTitle] = useState(route?.title ?? "");
-  const [picked, setPicked] = useState<Picked[]>(() => initialPicked(route));
+  const start = route ? null : (draft ?? null);
+  const [title, setTitle] = useState(route?.title ?? start?.title ?? "");
+  const [picked, setPicked] = useState<Picked[]>(() => initialPicked(route ?? start));
   const [sortText, setSortText] = useState(String(route?.sortOrder ?? defaultSortOrder));
   const [isActive, setIsActive] = useState(route?.isActive ?? true);
   const [errors, setErrors] = useState<ItineraryRouteErrors>({});
@@ -258,7 +271,8 @@ function TripForm({
     setErrors({});
     onSavingChange(true);
     try {
-      const res = await saveItineraryRoute(checked.route);
+      const fromRequests = !route && requestIds && requestIds.length > 0 ? { requestIds } : undefined;
+      const res = await saveItineraryRoute(checked.route, fromRequests);
       if ("error" in res) {
         const mapped = fieldErrorsOf(res.fieldErrors);
         setErrors(mapped);
@@ -416,6 +430,8 @@ export function TripDialog({
   open,
   onOpenChange,
   route,
+  draft = null,
+  requestIds,
   defaultSortOrder,
   onSaved,
 }: {
@@ -423,6 +439,10 @@ export function TripDialog({
   onOpenChange: (open: boolean) => void;
   /** The trip being edited; null = a new one. */
   route: ItineraryRouteListItem | null;
+  /** A new trip from customers' requests (the requests screen): their name and events to start from. */
+  draft?: TripDraft | null;
+  /** The requests a new trip answers (marked published on save). */
+  requestIds?: number[];
   /** What a new trip starts with in "סדר": after the last one. */
   defaultSortOrder: number;
   onSaved: (outcome: { created: boolean; warning?: string }) => void;
@@ -454,12 +474,18 @@ export function TripDialog({
       >
         {/* The dialog's close button sits at the physical right = the title's start in RTL: leave it room. */}
         <DialogHeader className="text-start ps-7 sm:text-start">
-          <DialogTitle>{route ? "עריכת טריפ" : "טריפ חדש"}</DialogTitle>
-          <DialogDescription>2-3 אירועים שמוצגים יחד בעמוד Build Your Euro Trip, עם כותרת משלכם.</DialogDescription>
+          <DialogTitle>{route ? "עריכת טריפ" : draft ? "טריפ חדש מבקשה של לקוח" : "טריפ חדש"}</DialogTitle>
+          <DialogDescription>
+            {draft && !route
+              ? "השם והאירועים כפי שהלקוח בנה. ערכו לפי הצורך ושמרו - הבקשה תסומן כמטופלת."
+              : "2-3 אירועים שמוצגים יחד בעמוד Build Your Euro Trip, עם כותרת משלכם."}
+          </DialogDescription>
         </DialogHeader>
         <TripForm
-          key={route?.id ?? "new"}
+          key={route?.id ?? (draft ? `draft-${draft.key}` : "new")}
           route={route}
+          draft={draft}
+          requestIds={requestIds}
           defaultSortOrder={defaultSortOrder}
           saving={saving}
           onSavingChange={setSaving}
