@@ -25,8 +25,10 @@ import {
   duplicateEvent,
   updateEvent,
   bulkUpdateEvents,
+  bulkSetEventMarkup,
   bulkSoftDeleteEvents,
 } from "@/lib/actions/event-actions";
+import { MARKUP_COLUMN_LABEL, MARKUP_MAX_USD, parseBulkMarkup, type BulkMarkupColumn } from "@/lib/event-markup";
 import {
   listCategories,
   listTags,
@@ -256,6 +258,8 @@ export function EventsTable() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkMarkupOpen, setBulkMarkupOpen] = useState(false);
   const [bulkMarkupInput, setBulkMarkupInput] = useState("");
+  const [bulkAddMarkupOpen, setBulkAddMarkupOpen] = useState(false);
+  const [bulkAddMarkupInput, setBulkAddMarkupInput] = useState("");
   const { toast } = useToast();
   const confirm = useConfirm();
 
@@ -630,25 +634,70 @@ export function EventsTable() {
     }
   };
 
-  const handleBulkTicketMarkup = async () => {
-    const value = Number(bulkMarkupInput);
-    if (bulkMarkupInput.trim() === "" || !Number.isFinite(value) || value < 0) {
-      toast({
-        variant: "destructive",
-        title: "Invalid value",
-        description: "Enter a non-negative number (USD per ticket).",
-      });
-      return;
+  // Both markup popovers write through bulkSetEventMarkup: one explicit column, validated on the
+  // server (lib/event-markup.ts), audited with the previous values, and the site revalidated.
+  // `raw` null = clear the column.
+  const handleBulkMarkup = async (column: BulkMarkupColumn, raw: string | null) => {
+    if (selectedIds.length === 0) return false;
+    if (raw !== null) {
+      const parsed = parseBulkMarkup(column, raw);
+      if (!parsed.ok || parsed.value === null) {
+        toast({
+          variant: "destructive",
+          title: "Invalid value",
+          description: parsed.ok ? "Enter a value, or use Clear." : parsed.error,
+        });
+        return false;
+      }
     }
-    setBulkMarkupOpen(false);
-    await handleBulkUpdate({ ticket_only_markup: value });
-    setBulkMarkupInput("");
+    setBulkLoading(true);
+    try {
+      const result = await bulkSetEventMarkup(selectedIds, column, raw);
+      if (!result.ok) {
+        toast({ variant: "destructive", title: "Not saved", description: result.error });
+        return false;
+      }
+      const value = raw === null ? null : Number(raw);
+      const ids = new Set(selectedIds);
+      setEvents((prev) => prev.map((e) => (ids.has(e.id) ? { ...e, [column]: value } : e)));
+      setRowSelection({});
+      toast({
+        title: `${MARKUP_COLUMN_LABEL[column]} ${value === null ? "cleared" : `set to $${value}`}`,
+        description: `${result.updated} event(s) updated · site refreshed.`,
+      });
+      return true;
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Bulk update failed." });
+      return false;
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkTicketMarkup = async () => {
+    if (await handleBulkMarkup("ticket_only_markup", bulkMarkupInput)) {
+      setBulkMarkupOpen(false);
+      setBulkMarkupInput("");
+    }
   };
 
   const handleBulkTicketMarkupClear = async () => {
     setBulkMarkupOpen(false);
     setBulkMarkupInput("");
-    await handleBulkUpdate({ ticket_only_markup: null });
+    await handleBulkMarkup("ticket_only_markup", null);
+  };
+
+  const handleBulkAdditionalMarkup = async () => {
+    if (await handleBulkMarkup("event_additional_markup", bulkAddMarkupInput)) {
+      setBulkAddMarkupOpen(false);
+      setBulkAddMarkupInput("");
+    }
+  };
+
+  const handleBulkAdditionalMarkupClear = async () => {
+    setBulkAddMarkupOpen(false);
+    setBulkAddMarkupInput("");
+    await handleBulkMarkup("event_additional_markup", null);
   };
 
   const handleBulkDelete = async () => {
@@ -1419,6 +1468,56 @@ export function EventsTable() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Popover open={bulkAddMarkupOpen} onOpenChange={setBulkAddMarkupOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={bulkLoading}>
+                  Additional Markup
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Additional Event Markup (USD per person)
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Applied to all {selectedIds.length} selected event(s) - the
+                    same field as the editor&apos;s &quot;Additional Event
+                    Markup&quot;, added on top of the site markup in every flow.
+                    Whole dollars, -{MARKUP_MAX_USD} to {MARKUP_MAX_USD}. Clear =
+                    none.
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  min={-MARKUP_MAX_USD}
+                  max={MARKUP_MAX_USD}
+                  step={1}
+                  placeholder="e.g. 75"
+                  value={bulkAddMarkupInput}
+                  onChange={(e) => setBulkAddMarkupInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleBulkAdditionalMarkup();
+                  }}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleBulkAdditionalMarkup}
+                    disabled={bulkLoading}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBulkAdditionalMarkupClear}
+                    disabled={bulkLoading}
+                  >
+                    Clear markup
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <Popover open={bulkMarkupOpen} onOpenChange={setBulkMarkupOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" disabled={bulkLoading}>

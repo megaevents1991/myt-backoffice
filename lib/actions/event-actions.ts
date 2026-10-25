@@ -11,6 +11,8 @@ import {
 } from "@/lib/services/tixstock-price-sync";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { applyTagRules } from "@/lib/services/auto-tagger";
+import { revalidateMain } from "@/lib/revalidate-main";
+import { cleanEventIds, parseBulkMarkup, type BulkMarkupColumn } from "@/lib/event-markup";
 
 // Exactly the columns the events LIST page reads (table cells, filters,
 // auto-calc, price-light column). Sole consumer is events-table.tsx; the
@@ -384,6 +386,96 @@ export async function bulkUpdateEvents(ids: number[], input: Partial<Event>) {
     metadata: { ids, count: ids.length },
   });
   return data as Event[];
+}
+
+export type BulkMarkupResult =
+  | { ok: true; updated: number; lightsRecomputed: number }
+  | { ok: false; error: string };
+
+/** A bulk markup re-derives the lights of at most this long a run; the rest wait for the nightly. */
+const BULK_MARKUP_LIGHTS_MS = 20_000;
+/** `.in()` travels in the URL - keep id lists short (CLAUDE.md, purgeTixstockEvents). */
+const BULK_MARKUP_CHUNK = 200;
+
+/**
+ * Sets ONE markup column (`event_additional_markup` or `ticket_only_markup`) on the selected
+ * events - the events table's "Additional Markup" / "Ticket Markup" popovers. An explicit column,
+ * validated by `parseBulkMarkup`, never a spread payload. The previous values ride in the audit row;
+ * the site is revalidated at once, so the new price shows without waiting for its hourly cache.
+ * Returns instead of throwing (Next masks a thrown action error in production).
+ */
+export async function bulkSetEventMarkup(
+  ids: number[],
+  column: BulkMarkupColumn,
+  raw: number | string | null,
+): Promise<BulkMarkupResult> {
+  await requireStaff();
+  const eventIds = cleanEventIds(ids);
+  if (!eventIds) return { ok: false, error: "Select between 1 and 1000 events." };
+  const parsed = parseBulkMarkup(column, raw);
+  if (!parsed.ok) return parsed;
+  const { value } = parsed;
+
+  const chunks: number[][] = [];
+  for (let i = 0; i < eventIds.length; i += BULK_MARKUP_CHUNK) {
+    chunks.push(eventIds.slice(i, i + BULK_MARKUP_CHUNK));
+  }
+
+  const before: Record<number, number | null> = {};
+  for (const chunk of chunks) {
+    const { data, error } = await supabase.from("events").select(`id,${parsed.column}`).in("id", chunk);
+    if (error) {
+      console.error("bulkSetEventMarkup: read before failed", JSON.stringify(error));
+      return { ok: false, error: "Could not read the selected events." };
+    }
+    for (const row of (data ?? []) as unknown as Array<Record<string, number | null>>) {
+      before[row.id as number] = row[parsed.column] ?? null;
+    }
+  }
+
+  let updated = 0;
+  for (const chunk of chunks) {
+    const { data, error } = await supabase
+      .from("events")
+      .update({ [parsed.column]: value } as never)
+      .in("id", chunk)
+      .select("id");
+    if (error) {
+      console.error("bulkSetEventMarkup: update failed", JSON.stringify(error));
+      return { ok: false, error: updated > 0 ? `Stopped after ${updated} event(s) - try again.` : "The update failed." };
+    }
+    updated += data?.length ?? 0;
+  }
+
+  await logAudit({
+    action: "update",
+    entityType: "event",
+    entityId: null,
+    changes: { [parsed.column]: value },
+    metadata: { ids: eventIds, count: eventIds.length, bulk: "markup", before },
+  });
+
+  // Same as updateEvent: a markup moves OUR side of every price-light comparison. Best-effort and
+  // bounded - a big selection finishes its lights in tonight's pass.
+  let lightsRecomputed = 0;
+  const deadline = Date.now() + BULK_MARKUP_LIGHTS_MS;
+  try {
+    const { recomputeEventLights } = await import("@/lib/services/price-light-store");
+    for (const id of eventIds) {
+      if (Date.now() > deadline) break;
+      try {
+        await recomputeEventLights(id, "manual");
+        lightsRecomputed++;
+      } catch (e) {
+        console.error(`bulkSetEventMarkup: light recompute for ${id} failed`, e);
+      }
+    }
+  } catch (e) {
+    console.error("bulkSetEventMarkup: light recompute unavailable", e);
+  }
+  invalidatePriceLight("rows");
+  await revalidateMain();
+  return { ok: true, updated, lightsRecomputed };
 }
 
 export async function getActiveEvents() {
