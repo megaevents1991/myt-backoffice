@@ -4,6 +4,7 @@
  * import these from here.
  */
 import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
+import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
 import type { TeamRow } from "@/lib/uploader/team-names";
 import type { ItemStatus, UploaderItem, UploaderPlan, UploaderRun } from "@/types/uploader.types";
@@ -126,3 +127,25 @@ export type NamesProposeResult =
 
 /** `createTeamsAndRename`: teams created and events renamed. */
 export type TeamsResult = { ok: true; created: number; renamed: number } | { ok: false; kind: string; message?: string };
+
+/** `getDescriptionTemplate`: the family's standing template (Alon 25.10), the tokens it may use, and one built show's values for the live preview. */
+export type DescriptionTemplateView =
+  | {
+      ok: true;
+      family: TemplateFamily;
+      template: string | null;
+      /** false = the settings table is not migrated yet - nothing can be saved. */
+      ready: boolean;
+      tokens: { token: string; hint: string }[];
+      /** The first built show's token values (null = the run has none yet) and its event's name. */
+      sample: DescriptionValues | null;
+      sampleName: string | null;
+      /** The run's built events (ready / approved) "apply" would visit. */
+      targets: number;
+    }
+  | { ok: false; kind: string };
+
+/** `saveDescriptionTemplate`: saved; `applied` = what the run's rewrite did (null when not asked to apply). */
+export type DescriptionSaveResult =
+  | { ok: true; applied: { events: number; editedByHand: number; english: number } | null }
+  | { ok: false; kind: string; problem?: string };

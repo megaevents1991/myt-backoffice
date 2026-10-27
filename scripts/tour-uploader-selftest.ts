@@ -69,6 +69,7 @@ import {
 } from "@/lib/uploader/tickets";
 import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploader/decisions";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
+import { cleanTemplate, DESCRIPTION_MAX, DESCRIPTION_TEMPLATE_MAX, DESCRIPTION_TOKENS, descriptionValues, familyOf, fillDescription, leagueHebrew, templateKey, usesCompetition } from "@/lib/uploader/description";
 import {
   cleanClubName,
   cleanTeamRows,
@@ -1621,6 +1622,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "categories_dropped_by_template",
       "classified",
       "dates_smart",
+      "description_from_template",
       "duplicate_dropped",
       "live_from_snapshot",
       "location_found",
@@ -1639,7 +1641,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "two_city_from_memory",
       "zones_from_template",
     ],
-    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue)",
+    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue) + Alon 25.10 (description_from_template)",
   );
   same(decision("dates_smart", { depart: "18.05", ret: "21.05" }), { code: "dates_smart", text: "טיסות 18.05 → 21.05" }, "dates_smart: the spec's text");
   same(decision("base_prices", { flight: 310, hotel: 290 }).text, "בסיס מהכלל: טיסה $310 · מלון $290", "base_prices: the spec's text");
@@ -1703,6 +1705,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     named_he: { name: "פולהאם - ניוקאסל יונייטד" },
     name_from_livetickets: { name: "פולהאם - ניוקאסל" },
     taught_venue: {},
+    description_from_template: { english: "מפעל" },
   };
   for (const code of Object.keys(DECISION_TEXT) as (keyof typeof DECISION_TEXT)[]) {
     const d = decision(code, samples[code]);
@@ -4231,6 +4234,15 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const reviewBesideNew = runLevelRows([u1, mk("u6", [W("new_venue")])], {}, team, []);
   same([reviewBesideNew.length, reviewBesideNew[0].venue?.state, reviewBesideNew[0].count], [1, "new", 2], "runLevelRows: any new_venue carrier on the drawing makes the row 'new', unzoned_review shows counted");
   same(runLevelRows([u1, mk("u7", [], { event_id: 77 })], { u7: true }, team, [])[0].venue?.state, "fixed", "runLevelRows: an edited show on the drawing makes the row 'fixed' whatever the warnings");
+  // Alon 25.10: the hall was classified first (no venue warning left on any show), then one event fixed in the editor
+  const zonedHall = [mk("z1", [], { event_id: 81 }), mk("z2", [], { event_id: 82 }), mk("z3", [], { event_id: 83 })];
+  same(runLevelRows(zonedHall, {}, team, []), [], "runLevelRows: a zoned hall nobody touched has no row");
+  const zonedRow = runLevelRows(zonedHall, { z2: true }, team, [])[0];
+  same(
+    [zonedRow?.venue?.state, zonedRow?.action, zonedRow?.venue?.fixedItemId, zonedRow?.count, zonedRow?.text],
+    ["fixed", "learn", "z2", 3, `אולם: ${iso("Craven Cottage")} · אירוע 82 סודר בעורך`],
+    "runLevelRows: a zoned hall with one event fixed by hand still offers learn, counting every show of the hall",
+  );
   same(runLevelRows([mk("u8", [review(["Corner"])], { tix: false })], {}, team, []), [], "runLevelRows: unzoned_review on a LiveTickets-only show has no drawing to classify - no row");
 
   // -- the invariant: every code cardWarnings folds has a panel row -----------------------------------------
@@ -4758,6 +4770,80 @@ async function supplierSvgFetchChecks(): Promise<void> {
     globalThis.fetch = realFetch;
     console.error = realError;
   }
+}
+
+// ---- Alon 25.10: the description template (lib/uploader/description.ts) ----------------------------------
+{
+  const fixture: ShowIdentity = {
+    name_english: "Fulham FC vs Newcastle United FC",
+    city: "London",
+    country_code: "GB",
+    venue: "Craven Cottage",
+    date: "2027-03-06",
+    lat: 51.47,
+    lon: -0.22,
+    suppliers: { tixstock: null, livetickets: null },
+    competition: "English Premier League",
+    home_team: "Fulham FC",
+    away_team: "Newcastle United FC",
+    fallback: [],
+  };
+  const teamsHe = withSupplierSpellings({ fulham: "פולהאם", "newcastle united": "ניוקאסל יונייטד" }, [fixture.home_team, fixture.away_team]);
+  const leagues = { "premier league": "פרמייר ליג", "fa cup": "גביע האנגלי" };
+  const subject = { name_he: null, name_en: "Fulham" };
+
+  same([familyOf("team"), familyOf("competition"), familyOf("artist")], ["football", "football", "artist"], "familyOf: a team or a competition run is football");
+  same(templateKey("football"), "description_template:football", "templateKey: one row per family");
+
+  // -- cleanTemplate ----------------------------------------------------------------------------
+  same(cleanTemplate("  משחק {בית} נגד {חוץ}  ", "football"), { ok: true, template: "משחק {בית} נגד {חוץ}" }, "cleanTemplate: trimmed");
+  same(cleanTemplate("   ", "football"), { ok: true, template: null }, "cleanTemplate: blank = no template (cleared)");
+  same(cleanTemplate(null, "football"), { ok: true, template: null }, "cleanTemplate: null = no template");
+  same(cleanTemplate(5, "football").ok, false, "cleanTemplate: not text is refused");
+  same(cleanTemplate("x".repeat(DESCRIPTION_TEMPLATE_MAX + 1), "football").ok, false, "cleanTemplate: too long is refused");
+  same(cleanTemplate("{בית} מול {יריבה}", "football"), { ok: false, problem: "לא מוכר: {יריבה}" }, "cleanTemplate: an unknown token is named");
+  same(cleanTemplate("{אמן} ב{עיר}", "football").ok, false, "cleanTemplate: {אמן} is an artist token, not a football one");
+  same(cleanTemplate("{ בית }", "football").ok, true, "cleanTemplate: spaces inside the braces are fine");
+  check(DESCRIPTION_TOKENS.football.every((t) => cleanTemplate(`{${t.token}}`, "football").ok), "cleanTemplate: every listed football token is accepted");
+  check(DESCRIPTION_TOKENS.artist.every((t) => cleanTemplate(`{${t.token}}`, "artist").ok), "cleanTemplate: every listed artist token is accepted");
+
+  same([usesCompetition("ב{מפעל}"), usesCompetition("ב{ מפעל }"), usesCompetition("{בית} נגד {חוץ}")], [true, true, false], "usesCompetition: the league names are read only when the template prints {מפעל}");
+
+  // -- leagueHebrew -------------------------------------------------------------------------------
+  same(leagueHebrew("Premier League", leagues), "פרמייר ליג", "leagueHebrew: exact");
+  same(leagueHebrew("English Premier League", leagues), "פרמייר ליג", "leagueHebrew: the supplier's longer name contains the tag's");
+  same(leagueHebrew("Emirates FA Cup", leagues), "גביע האנגלי", "leagueHebrew: a sponsor prefix still matches");
+  same(leagueHebrew("Carabao Cup", leagues), null, "leagueHebrew: no tag = no Hebrew");
+  same(leagueHebrew(null, leagues), null, "leagueHebrew: no competition = no Hebrew");
+  same(leagueHebrew("cup", { cup: "גביע" }), "גביע", "leagueHebrew: a short name matches exactly");
+  same(leagueHebrew("league cup", { cup: "גביע" }), null, "leagueHebrew: a tag name under 4 letters never matches by containment");
+
+  // -- fill -----------------------------------------------------------------------------------------
+  const values = descriptionValues({ show: fixture, eventName: "פולהאם - ניוקאסל יונייטד", teamsHe, leagueHe: leagues, cityHe: "לונדון", subject });
+  same(
+    fillDescription("חבילה למשחק {בית} נגד {חוץ} ב{מפעל}, ב{אולם} ({עיר}, {תאריך})", values),
+    { text: "חבילה למשחק פולהאם נגד ניוקאסל יונייטד בפרמייר ליג, בCraven Cottage (לונדון, 06/03/2027)", english: [] },
+    "fillDescription: every football token in Hebrew, the venue and the date as they are",
+  );
+  const noTeams = descriptionValues({ show: fixture, eventName: fixture.name_english, teamsHe: {}, leagueHe: {}, cityHe: null, subject });
+  same(
+    fillDescription("{בית} נגד {חוץ} · {מפעל} · {אירוע} · {עיר}", noTeams),
+    { text: "Fulham FC נגד Newcastle United FC · English Premier League · Fulham FC vs Newcastle United FC · London", english: ["בית", "חוץ", "מפעל", "אירוע", "עיר"] },
+    "fillDescription: a token with no Hebrew prints its English value and is named once in `english`",
+  );
+  same(fillDescription("{בית} {בית}", noTeams).english, ["בית"], "fillDescription: a token used twice is named once");
+  same(
+    fillDescription("משחק {מפעל} ב{אולם}", descriptionValues({ show: { ...fixture, competition: null }, eventName: "x", teamsHe, leagueHe: leagues, cityHe: null, subject })),
+    { text: "משחק בCraven Cottage", english: [] },
+    "fillDescription: a token with no value at all prints nothing and leaves one space",
+  );
+  same(fillDescription("שורה\n\n\n\nשנייה", values).text, "שורה\n\nשנייה", "fillDescription: blank lines collapse to one");
+  same(fillDescription("x".repeat(DESCRIPTION_MAX + 50), values).text.length, DESCRIPTION_MAX, "fillDescription: cut to DESCRIPTION_MAX");
+  same(fillDescription("{לא קיים} כאן", values), { text: "כאן", english: [] }, "fillDescription: an unknown token prints nothing (cleanTemplate refuses it before it is saved)");
+  const artist = descriptionValues({ show: { ...fixture, home_team: null, away_team: null, competition: null, venue: "O2 Arena" }, eventName: "אריק קלפטון", teamsHe: {}, leagueHe: {}, cityHe: "לונדון", subject: { name_he: "אריק קלפטון", name_en: "Eric Clapton" } });
+  same(fillDescription("{אמן} בהופעה ב{עיר}, {אולם}", artist).text, "אריק קלפטון בהופעה בלונדון, O2 Arena", "fillDescription: the artist tokens");
+  same(fillDescription("{אמן}", descriptionValues({ show: fixture, eventName: "Eric Clapton", teamsHe: {}, leagueHe: {}, cityHe: null, subject: { name_he: null, name_en: "Eric Clapton" } })), { text: "Eric Clapton", english: ["אמן"] }, "fillDescription: an artist with no Hebrew name prints in English");
+  same(fillDescription("{אולם}", descriptionValues({ show: { ...fixture, venue: null }, eventName: "x", teamsHe: {}, leagueHe: {}, cityHe: null, subject })).text, "London", "fillDescription: no venue prints the city");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

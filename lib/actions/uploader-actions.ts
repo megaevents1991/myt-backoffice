@@ -45,6 +45,14 @@ import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { classifyVenueWithAgent, nameTeamsWithAgent } from "@/lib/services/tour-uploader-classify";
 import { parseBriefWithAgent } from "@/lib/services/tour-uploader-parse";
 import { buildItem } from "@/lib/services/uploader-build";
+import {
+  readDescriptionTemplate,
+  readLeagueHebrew,
+  rewriteRunDescriptions,
+  sampleDescriptionValues,
+  writeDescriptionTemplate,
+  type DescriptionRewrite,
+} from "@/lib/services/uploader-description";
 import { closeNamesTask, countOpenQuestions, openNamesTask } from "@/lib/services/uploader-questions";
 import { findShows, resolveSubject } from "@/lib/services/uploader-search";
 import { loadPriorItems, priorMarkups } from "@/lib/services/uploader-prior";
@@ -127,6 +135,7 @@ import {
 } from "@/lib/uploader/classify";
 import { FAR_VENUE_KM, MAX_QUESTION_TASKS_PER_RUN, PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS, REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { decision, editDiff } from "@/lib/uploader/decisions";
+import { cleanTemplate, DESCRIPTION_TOKENS, familyOf, usesCompetition } from "@/lib/uploader/description";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { applyPriorDefaults, emptyPlan, parsePlanInput } from "@/lib/uploader/plan";
 import { planTokenFor, verifyPlanToken } from "@/lib/uploader/plan-token";
@@ -166,6 +175,8 @@ import type {
   ClassifyResult,
   CreateRunInput,
   CreateRunResult,
+  DescriptionSaveResult,
+  DescriptionTemplateView,
   LearnPreview,
   NamesProposeResult,
   Ok,
@@ -192,7 +203,7 @@ import { cleanZoneDescription, type SupplierCategoryMap, type VenueZone } from "
 import { fetchSupplierSvg, isAdoptableHost } from "@/lib/venue-maps/supplier-svg";
 import type { EventTicket } from "@/types/app.types";
 import type { CreatePersonData } from "@/types/person.types";
-import type { ItemStatus, UploaderItem, UploaderPlan, UploaderQuestion, UploaderRun, Warning } from "@/types/uploader.types";
+import type { ItemStatus, SubjectKind, UploaderItem, UploaderPlan, UploaderQuestion, UploaderRun, Warning } from "@/types/uploader.types";
 
 // ---- the plan ----------------------------------------------------------------------------------------
 
@@ -436,6 +447,16 @@ async function resolvedSubjectOf(run: UploaderRun): Promise<SubjectCache> {
 }
 
 /**
+ * The family's standing description template for a build, with the league names `{מפעל}` reads; null =
+ * none saved (or not readable - a build never fails over its description; it keeps the English default).
+ */
+async function descriptionContextFor(kind: SubjectKind): Promise<{ template: string; leagueHe: Record<string, string> } | null> {
+  const read = await readDescriptionTemplate(familyOf(kind));
+  if (!read.ok || read.template === null) return null;
+  return { template: read.template, leagueHe: usesCompetition(read.template) ? await readLeagueHebrew() : {} };
+}
+
+/**
  * Build the run's next item - one per call; the board calls again until `done`. The claim is an
  * optimistic conditional update (`found` -> `building` only while it is still `found`), so two
  * boards on one run never build the same show twice. A stopped run builds nothing.
@@ -466,7 +487,8 @@ export async function buildNextItem(runId: string): Promise<BuildStep> {
     // shows up within the hour): a competition's resolve is the whole sliced TixStock read.
     const { subject, rows, teamsHe } = await resolvedSubjectOf(run);
     const twoCity = twoCityOf(item.show);
-    const result = await buildItem(run, item, { subject, rows, teamsHe, ...(twoCity ? { twoCity } : {}) });
+    const description = await descriptionContextFor(subject.kind);
+    const result = await buildItem(run, item, { subject, rows, teamsHe, ...(twoCity ? { twoCity } : {}), ...(description ? { description } : {}) });
     status = result.status;
     patch = { ...itemPatch(result.item), status };
     if (result.status === "question" && result.item.question) {
@@ -1668,6 +1690,104 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
   return rewriteResult(rewrite, targets.length, { zones: written.template.zones.length, dropped: learned.dropped.length, unsure: 0 });
 }
 
+// ---- Alon 25.10: the description template --------------------------------------------------------------
+
+const NO_REWRITE: DescriptionRewrite = { eventIds: [], live: false, editedByHand: 0, english: 0, failed: 0 };
+
+/**
+ * The family's standing description template over the run's built events, read fresh (items and events).
+ * No template saved = nothing to do. "db_error" = the template, the items or the events could not be read,
+ * or an event / item could not be written.
+ */
+async function describeAgain(
+  run: UploaderRun,
+  subject: { name_he: string | null; name_en: string },
+  teamsHe: Record<string, string>,
+  via: "board" | "names",
+): Promise<DescriptionRewrite | "db_error"> {
+  const family = familyOf(run.plan.subject.kind);
+  const read = await readDescriptionTemplate(family);
+  if (!read.ok) return "db_error";
+  if (read.template === null) return NO_REWRITE;
+  const items = await readRunItems(run.id);
+  if (items === null) return "db_error";
+  const leagueHe = usesCompetition(read.template) ? await readLeagueHebrew() : {};
+  const done = await rewriteRunDescriptions({ runId: run.id, items, family, template: read.template, teamsHe, leagueHe, subject, via });
+  if (done === null || done.failed > 0) return "db_error";
+  return done;
+}
+
+/** The template editor opens on a run: the run's family's template, its tokens, and the first built show's values for the live preview. */
+export async function getDescriptionTemplate(runId: string): Promise<DescriptionTemplateView> {
+  await requireAdmin();
+  if (!isUuid(runId)) return fail("bad_input");
+  const { run, failed } = await readRun(runId);
+  if (failed) return fail("db_error");
+  if (!run) return fail("not_found");
+  const family = familyOf(run.plan.subject.kind);
+  const [read, items] = await Promise.all([readDescriptionTemplate(family), readRunItems(run.id)]);
+  if (!read.ok || items === null) return fail("db_error");
+  const built = items.filter(isRewritable);
+  let sample: Awaited<ReturnType<typeof sampleDescriptionValues>> = null;
+  if (built.length > 0) {
+    try {
+      // a preview only: a subject or league read that fails leaves the editor without it, never closed
+      const cache = await resolvedSubjectOf(run);
+      sample = await sampleDescriptionValues(built[0], { teamsHe: cache.teamsHe, leagueHe: await readLeagueHebrew(), subject: cache.subject });
+    } catch (e) {
+      console.error(`uploader-actions: description preview of run ${run.id} not read`, errorText(e));
+    }
+  }
+  return {
+    ok: true,
+    family,
+    template: read.template,
+    ready: read.ready,
+    tokens: [...DESCRIPTION_TOKENS[family]],
+    sample,
+    sampleName: built[0] ? (typeof built[0].payload?.name === "string" ? built[0].payload.name : built[0].show.name_english) : null,
+    targets: built.length,
+  };
+}
+
+/**
+ * Save the run's family's standing template (null / empty clears it) - every later build of that family
+ * fills it - and, with `apply`, rewrite this run's built events now (`describeAgain`: a description a
+ * person typed is left alone). Audited `uploader.description_template`.
+ */
+export async function saveDescriptionTemplate(runId: string, template: unknown, apply: boolean): Promise<DescriptionSaveResult> {
+  const session = await requireAdmin();
+  if (!isUuid(runId) || typeof apply !== "boolean") return fail("bad_input");
+  const { run, failed } = await readRun(runId);
+  if (failed) return fail("db_error");
+  if (!run) return fail("not_found");
+  const family = familyOf(run.plan.subject.kind);
+  const clean = cleanTemplate(template, family);
+  if (!clean.ok) return { ok: false, kind: "bad_template", problem: clean.problem };
+  const saved = await writeDescriptionTemplate(family, clean.template, session.sub);
+  if (saved === "missing_table") return fail("not_ready");
+  if (saved === "db_error") return fail("db_error");
+  await logAudit({
+    action: "uploader.description_template",
+    entityType: "uploader_run",
+    entityId: run.id,
+    metadata: { agent: AGENT, run_id: run.id, family, template: clean.template },
+  });
+  if (!apply || clean.template === null) return { ok: true, applied: null };
+
+  let cache: SubjectCache;
+  try {
+    cache = await resolvedSubjectOf(run);
+  } catch (e) {
+    console.error(`uploader-actions: subject of run ${run.id} not resolved - template saved, not applied`, errorText(e));
+    return fail("roster_read_failed");
+  }
+  const done = await describeAgain(run, cache.subject, cache.teamsHe, "board");
+  if (done === "db_error") return { ok: false, kind: "db_error", problem: "התבנית נשמרה, אבל לא כל האירועים עודכנו - החילו שוב" };
+  if (done.live) await revalidateMain();
+  return { ok: true, applied: { events: done.eventIds.length, editedByHand: done.editedByHand, english: done.english } };
+}
+
 // ---- round "אלון 1": the Hebrew names ----------------------------------------------------------------
 //
 // Spec 5.3 / 6.4 / 7.1. Teams (or the artist) are created INACTIVE - no crest, no picture, no taxonomy
@@ -1973,6 +2093,13 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
       if (written === "db_error") failures += 1;
     }
   }
+
+  // 3b. The description template again, now that the teams have Hebrew names (Alon 25.10) - over the items
+  //     as this pass left them (their decisions just changed), never over a description a person typed.
+  //     A description that could not be rewritten never holds the names task open: the board's "apply" redoes it.
+  const described = await describeAgain(run, subject, teamsHe, "names");
+  if (described === "db_error") console.error(`uploader-actions: descriptions of run ${run.id} not rewritten after the rename`);
+  else if (described.live) live = true;
 
   // 4. The run's names task closed (the Tasks board refuses to close it by hand), the record, the site.
   if (failures === 0 && run.names_task_id) {

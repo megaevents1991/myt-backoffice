@@ -1646,6 +1646,31 @@ badge and "בנה בכל זאת" (older gaps). **Deploy:** the migration (`venue
 21.10. First use: Alon's run `386c906f` (the panel shows the Craven Cottage row and the names row at once - the warnings
 are already on its items; his steps: `docs/superpowers/guides/2026-10-21-tour-uploader-how-to-he.md`).
 
+**Alon's notes on the 22.10 brief (27.10.2026, migration `20261027120500_uploader_settings.sql`).** (1) **"Learn from
+this event" after a classification:** the card's button counted only the hall's UNZONED shows and the panel built a
+venue row only from venue warnings, so once "סווג כרטיסים" had zoned the hall an event fixed in the editor had no way
+to teach the rest ("לא רואה את האפשרות"). Now the card counts every other ready / approved show of the drawing with an
+event (`hallmates`, what `learnFromEvent` rewrites anyway) and shows on an approved card too; `venueRows` adds a
+`fixed` row for a drawing with an event fixed by hand even with no venue warning left (count = the hall's shows).
+(2) **Description template** - `events.description` (the order page's line under the title, the Meta feed's text) was
+"Fulham FC vs Arsenal FC at Craven Cottage" and the rename never touched it. ONE standing template per family
+(`football` = team / competition runs, `artist`), table `uploader_settings` (key `description_template:<family>`,
+value `{ template }`, RLS on, no policies, anon / authenticated revoked) - deliberately NOT in `UploaderPlan` (the plan
+mirrors the AI's tool schema key for key and feeds the `plan_edited` lessons). Rules pure in `lib/uploader/description.ts`
+(`cleanTemplate` refuses an unknown token, `fillDescription`, `descriptionValues`, `leagueHebrew` = `{מפעל}` from the
+`league` tags' `name_english`, exact then longest containment of 4+ letters; selftest section "Alon 25.10"). Tokens:
+football `{בית} {חוץ} {מפעל} {אירוע} {אולם} {עיר} {תאריך}`, artist `{אמן} {אירוע} {אולם} {עיר} {תאריך}`; a token with
+no Hebrew prints its English value and is named (decision `description_from_template` "עדיין באנגלית: ..."), the venue
+and date print as they are. Filled by the build (step 7, `BuildContext.description`, read per item by
+`descriptionContextFor` - a failed read keeps the English default), again after the names dialog (`describeAgain`,
+over the items re-read so the rename's decisions stand), and by the board's "תבנית תיאור" dialog
+(`getDescriptionTemplate` / `saveDescriptionTemplate(runId, template, apply)`, live preview on one of the run's own
+shows). A rewrite (`rewriteRunDescriptions`, `lib/services/uploader-description.ts`) touches an event only while its
+description still equals the item's `payload.description` (which follows every rewrite) - one a person typed stays
+(`editedByHand`); audited `uploader.description_applied` / `uploader.description_template`. Before the migration the
+dialog says it is not ready and builds keep the English line. (3) Tours board: the "⋯" menu + "Take it" on
+RESERVATIONS rows too, and the folded card on the customer page names its rep.
+
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
 light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own

@@ -136,15 +136,18 @@ function venueRow(sourceUrl: string, group: Carrier[], carriers: Carrier[], fixe
   const name = venueName(group);
   const count = group.length;
   const base = { kind: "venue" as const, key: `venue:${sourceUrl}`, count };
-  const edited = carriers
+  const hall = carriers.filter((c) => drawingOf(c.item) === sourceUrl);
+  const edited = hall
     .map((c) => c.item)
-    .filter((i) => drawingOf(i) === sourceUrl && fixedByHand[i.id] === true)
+    .filter((i) => fixedByHand[i.id] === true)
     .sort(newestFirst);
   if (edited.length > 0) {
-    const waiting = group.filter((c) => fixedByHand[c.item.id] !== true).length;
+    const waiting = group.filter((c) => fixedByHand[c.item.id] !== true && hasVenueWarning(c.item)).length;
     const head = `אולם: ${iso(name)} · ${edited[0].event_id === null ? "אירוע סודר בעורך" : `אירוע ${edited[0].event_id} סודר בעורך`}`;
     return {
       ...base,
+      // a learn rewrites every show of the hall, zoned or not - the row touches all of them
+      count: hall.length,
       text: waiting > 0 ? `${head} · ${shows(waiting)} עדיין בלי זונים` : head,
       action: "learn",
       secondary: "classify",
@@ -162,12 +165,19 @@ function venueRow(sourceUrl: string, group: Carrier[], carriers: Carrier[], fixe
   };
 }
 
-/** One venue row per exact drawing url among the shows with a venue warning, in the order the drawings first appear. */
+const hasVenueWarning = (item: UploaderItem): boolean => item.warnings.some((w) => VENUE_ROW_CODES.has(w.code));
+
+/**
+ * One venue row per exact drawing url among the shows with a venue warning OR arranged by hand, in the
+ * order the drawings first appear. The second half is Alon's 25.10 "I don't see the learn option": a hall
+ * "סווג כרטיסים" had zoned carries no venue warning any more, so an event he then fixed in the editor had
+ * no row to teach the rest from.
+ */
 function venueRows(carriers: Carrier[], fixedByHand: Record<string, boolean>): PanelRow[] {
   const byDrawing = new Map<string, Carrier[]>();
   for (const c of carriers) {
     const url = drawingOf(c.item);
-    if (url === null || !c.item.warnings.some((w) => VENUE_ROW_CODES.has(w.code))) continue;
+    if (url === null || (!hasVenueWarning(c.item) && fixedByHand[c.item.id] !== true)) continue;
     byDrawing.set(url, [...(byDrawing.get(url) ?? []), c]);
   }
   return [...byDrawing].map(([url, group]) => venueRow(url, group, carriers, fixedByHand));

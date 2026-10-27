@@ -205,8 +205,8 @@ export type ShowCardProps = {
   edited: boolean;
   /** `RunBoard.fixedByHand[item.id]`: a person arranged this event's TixStock tickets in the editor. */
   fixedByHand: boolean;
-  /** Other ready / approved shows of the same hall (drawing) still carrying `new_venue` / `unzoned_tickets`. */
-  siblingsUnzoned: number;
+  /** Other ready / approved shows of the same hall (drawing) with an event - what "learn from this event" rewrites, zoned or not. */
+  hallmates: number;
   /** The run panel is on screen: the run-level warnings fold into one line that jumps to it. */
   panelShown: boolean;
   /** user id -> display name */
@@ -223,8 +223,9 @@ export type ShowCardProps = {
 };
 
 export function ShowCard(props: ShowCardProps) {
-  const { item, art, subjectNameEn, edited, fixedByHand, siblingsUnzoned, panelShown, people, busy, focused, now } = props;
+  const { item, art, subjectNameEn, edited, fixedByHand, hallmates, panelShown, people, busy, focused, now } = props;
   const { onFocusCard, onApprove, onReject, onRetry, onRebuild, onLearn } = props;
+  const learn = fixedByHand && hallmates > 0 ? <LearnButton item={item} siblings={hallmates} busy={busy} onLearn={onLearn} /> : null;
   const shell = (tone: CardTone, body: ReactNode, footer?: ReactNode) => (
     <CardShell item={item} art={art} tone={tone} focused={focused} onFocusCard={onFocusCard} footer={footer}>
       {body}
@@ -241,7 +242,7 @@ export function ShowCard(props: ShowCardProps) {
           <SupplierChips item={item} />
           <Decisions item={item} />
           <Notices item={item} fold={panelShown} />
-          {fixedByHand && siblingsUnzoned > 0 && <LearnButton item={item} siblings={siblingsUnzoned} busy={busy} onLearn={onLearn} />}
+          {learn}
           <FarVenueButton item={item} busy={busy} onRebuild={onRebuild} />
         </>,
         <>
@@ -275,6 +276,8 @@ export function ShowCard(props: ShowCardProps) {
             <span>{creativeLine(item, art)}</span>
           </p>
           <Decisions item={item} />
+          {/* an approved event is arranged in the editor too - it teaches its hall the same way (learnFromEvent takes approved items) */}
+          {learn}
         </>,
         item.event_id !== null ? (
           <>

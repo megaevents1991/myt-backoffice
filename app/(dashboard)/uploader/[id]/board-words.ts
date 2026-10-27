@@ -445,3 +445,31 @@ export const ANSWERED_MANY = (n: number): string => `נענו ${n} שאלות`;
 export const ANSWERED_MANY_SKIPPED = "ההופעות דולגו.";
 export const ANSWERED_MANY_REQUEUED = "ההופעות חוזרות לבנייה.";
 export const ANSWERED_MANY_TASKS = "המשימות נסגרו.";
+
+// The description template (Alon 25.10): one standing template per family, filled per show.
+export const BTN_DESCRIPTION = "תבנית תיאור";
+export const DESCRIPTION_TITLE = (family: "football" | "artist"): string =>
+  family === "football" ? "תבנית תיאור קבועה - כדורגל" : "תבנית תיאור קבועה - הופעות";
+export const DESCRIPTION_INTRO =
+  "התיאור מופיע באתר מתחת לשם האירוע, ונכנס לטקסט של הפיד במטא. כותבים פעם אחת, והמערכת משלימה לכל הופעה את המקומות בסוגריים. התבנית נשמרת לכל הריצות הבאות.";
+export const DESCRIPTION_READING = "קורא את התבנית…";
+export const DESCRIPTION_OPEN_FAILED = "לא הצלחתי לקרוא את התבנית";
+export const DESCRIPTION_PLACEHOLDER = "לדוגמה: חבילת טיסה, מלון וכרטיס למשחק {בית} נגד {חוץ} ב{מפעל}, ב{אולם}.";
+export const DESCRIPTION_TOKENS_LINE = "לחיצה מוסיפה במקום הסמן:";
+export const DESCRIPTION_PREVIEW = (name: string | null): string => (name ? `כך זה ייראה ב: ${name}` : "כך זה ייראה");
+export const DESCRIPTION_NO_SAMPLE = "אין עדיין אירוע בנוי בריצה הזו - התצוגה תופיע אחרי שאירוע ייבנה.";
+export const DESCRIPTION_STILL_ENGLISH = (tokens: string[]): string =>
+  `עדיין באנגלית: ${tokens.join(", ")}. יתעדכן לבד אחרי "תן שמות בעברית" (קבוצות), או אחרי הוספת תגית ליגה עם שם באנגלית (מפעל).`;
+export const DESCRIPTION_NOT_READY = "התבנית תהיה זמינה אחרי עדכון המערכת הבא.";
+export const DESCRIPTION_HAND_LINE = "תיאור שמישהו כבר כתב ידנית בעורך לא יידרס.";
+export const BTN_DESCRIPTION_SAVE = "שמור לריצות הבאות";
+export const BTN_DESCRIPTION_APPLY = (n: number): string => (n === 1 ? "שמור והחל על האירוע בריצה" : `שמור והחל על ${n} האירועים בריצה`);
+export const DESCRIPTION_SAVED = "התבנית נשמרה";
+export const DESCRIPTION_CLEARED = "התבנית נמחקה - אירועים חדשים ייבנו עם התיאור באנגלית";
+export const DESCRIPTION_SAVE_FAILED = "התבנית לא נשמרה";
+export const DESCRIPTION_APPLIED = (r: { events: number; editedByHand: number; english: number }): string => {
+  const done = r.events === 0 ? "אף אירוע לא השתנה" : r.events === 1 ? "התיאור עודכן באירוע אחד" : `התיאור עודכן ב-${r.events} אירועים`;
+  const hand = r.editedByHand === 0 ? "" : ` · ${r.editedByHand === 1 ? "אחד נערך ידנית ולא נגעתי בו" : `${r.editedByHand} נערכו ידנית ולא נגעתי בהם`}`;
+  const english = r.english === 0 ? "" : ` · ב-${r.english} נשאר חלק באנגלית`;
+  return `${done}${hand}${english}`;
+};

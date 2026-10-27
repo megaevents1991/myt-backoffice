@@ -2,13 +2,13 @@
 
 import { Fragment, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RunBoard } from "@/lib/uploader/action-types";
 import { cn } from "@/lib/utils";
 import type { RunStatus } from "@/types/uploader.types";
 import { SUBJECT_KIND_HE } from "../copy";
-import { FILTER_HE, filterCount, FILTERS, showDate, stampHe, SUBJECT_WARNING_CHIP, type BoardCounts, type Filter } from "./board-words";
+import { BTN_DESCRIPTION, FILTER_HE, filterCount, FILTERS, showDate, stampHe, SUBJECT_WARNING_CHIP, type BoardCounts, type Filter } from "./board-words";
 
 // The board's head (spec §5.3, mockup B): who the run is about, when and by whom, the brief, the
 // five steps with their counts, the plan as chips, and - while the AI waits on a person - the amber
@@ -228,10 +228,13 @@ export function BoardHeader({
   board,
   counts,
   onJumpToQuestion,
+  onDescription,
 }: {
   board: RunBoard;
   counts: BoardCounts;
   onJumpToQuestion: (itemId: string) => void;
+  /** Opens the standing description template (Alon 25.10). */
+  onDescription: () => void;
 }) {
   const { run, people } = board;
   const nameOf = (id: string | null | undefined) => (id ? (people.find((p) => p.id === id)?.name ?? null) : null);
@@ -254,6 +257,15 @@ export function BoardHeader({
               <ChevronRight aria-hidden className="h-3.5 w-3.5" />
               כל הריצות
             </Link>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={onDescription}
+              className="inline-flex items-center gap-1 rounded-sm text-xs text-sidebar-foreground/80 hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            >
+              <FileText aria-hidden className="h-3.5 w-3.5" />
+              {BTN_DESCRIPTION}
+            </button>
             <span
               title={run.error ?? undefined}
               className={cn(

@@ -40,6 +40,7 @@ import { logAudit } from "@/lib/audit";
 import { loadLocations } from "@/lib/services/nearest-location";
 import { quoteFlight, quoteHotel, type QuoteResult } from "@/lib/services/price-quote";
 import { loadPriorItems, venueMapFor } from "@/lib/services/uploader-prior";
+import { descriptionFor } from "@/lib/services/uploader-description";
 import { softDeleteBuiltEvent } from "@/lib/services/uploader-store";
 import { existingForShow } from "@/lib/services/uploader-search";
 import { findVenueMemory } from "@/lib/services/venue-memory";
@@ -68,6 +69,8 @@ export type BuildContext = {
   subject: Subject;
   rows: SubjectRows;
   teamsHe: Record<string, string>;
+  /** The family's standing description template (Alon 25.10) and the league tags' Hebrew names; absent = the English default. */
+  description?: { template: string; leagueHe: Record<string, string> };
   /** The far-venue offer was clicked: rebuild as a package flying to this `locations` row, lodging split with the venue city. */
   twoCity?: { flightCityId: number };
 };
@@ -545,6 +548,21 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
   }
 
   // 7. Create - hidden, through the same function every path uses (auto-tags, price light rule-only).
+  //    The description: staff's standing Hebrew template when there is one (Alon 25.10), else the English default.
+  const filled = ctx.description
+    ? descriptionFor({
+        template: ctx.description.template,
+        item: { show },
+        eventName: names.name,
+        location: placed.location,
+        eventLocation: placed.lodging.event_location ?? null,
+        teamsHe: ctx.teamsHe,
+        leagueHe: ctx.description.leagueHe,
+        subject: ctx.subject,
+      })
+    : null;
+  const fromTemplate = filled !== null && filled.text !== "";
+  if (fromTemplate) decisions.push(decision("description_from_template", { english: filled.english.join(", ") }));
   const draft: Omit<Event, "id"> = {
     name: names.name,
     name_english: names.name_english,
@@ -552,7 +570,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
     date: show.date,
     location: placed.location,
     map_image_url: mapImageUrl,
-    description: `${names.name_english} at ${show.venue || show.city}`,
+    description: fromTemplate ? filled.text : `${names.name_english} at ${show.venue || show.city}`,
     card_image_url: "",
     tickets_and_rates: tickets,
     def_date_depart: smart.departure,

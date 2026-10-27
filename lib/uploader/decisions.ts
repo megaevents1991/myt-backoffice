@@ -82,6 +82,9 @@ export const DECISION_TEXT = {
   named_he: (p) => `שם בעברית: ${str(p, "name")}`,
   name_from_livetickets: (p) => `שם בעברית מלייב טיקטס: ${str(p, "name")}`,
   taught_venue: () => "האירוע הזה לימד את תבנית האולם",
+  // Alon 25.10: the standing description template (lib/uploader/description.ts); `english` = the tokens still printed in English
+  description_from_template: (p) =>
+    str(p, "english") === "" ? "תיאור בעברית לפי התבנית" : `תיאור לפי התבנית · עדיין באנגלית: ${str(p, "english")}`,
 } satisfies Record<string, DecisionText>;
 
 export type DecisionCode = keyof typeof DECISION_TEXT;

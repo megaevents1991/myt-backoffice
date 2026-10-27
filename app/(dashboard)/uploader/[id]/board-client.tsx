@@ -34,6 +34,7 @@ import {
   type Filter,
 } from "./board-words";
 import { ClassifyDialog, type PanelVenue } from "./classify-dialog";
+import { DescriptionDialog } from "./description-dialog";
 import { LearnConfirm } from "./learn-confirm";
 import { NamesDialog } from "./names-dialog";
 import { QuestionCard } from "./question-card";
@@ -46,10 +47,7 @@ import { rtl, useRunBoard } from "./use-run-board";
 const STOPPED_REQUEUE_TEXT = "חוזר לתור - לחצו המשך.";
 
 /** The one run-level dialog open at a time (spec 5.2 / 5.3 / 5.5); null = none. */
-type RunDialog = { kind: "classify"; venue: PanelVenue } | { kind: "names" } | { kind: "learn"; itemId: string } | null;
-
-/** The codes "learn from this event" resolves on a hall's other shows (spec 5.5). */
-const UNZONED_CODES = new Set(["new_venue", "unzoned_tickets"]);
+type RunDialog = { kind: "classify"; venue: PanelVenue } | { kind: "names" } | { kind: "learn"; itemId: string } | { kind: "description" } | null;
 
 /** The show's TixStock drawing - what makes two shows the same hall for the panel and the learn button. */
 const drawingOf = (item: UploaderItem): string | null => {
@@ -323,21 +321,24 @@ export function BoardClient({
   );
   const panelShown = panelRows.length > 0;
 
-  /** drawing url -> the ready / approved shows of that hall still without zones (`new_venue` / `unzoned_tickets`). */
-  const unzonedByDrawing = useMemo(() => {
+  /**
+   * drawing url -> the ready / approved shows of that hall with an event - every show `learnFromEvent`
+   * rewrites, zoned or not (Alon 25.10: once "סווג כרטיסים" had zoned the hall, counting only the unzoned
+   * ones hid the learn button for good).
+   */
+  const builtByDrawing = useMemo(() => {
     const out = new Map<string, Set<string>>();
     for (const i of items) {
       const url = drawingOf(i);
-      if (url === null || (i.status !== "ready" && i.status !== "approved")) continue;
-      if (!(i.warnings ?? []).some((w) => UNZONED_CODES.has(w.code))) continue;
+      if (url === null || i.event_id === null || (i.status !== "ready" && i.status !== "approved")) continue;
       out.set(url, (out.get(url) ?? new Set<string>()).add(i.id));
     }
     return out;
   }, [items]);
-  /** The OTHER shows of this item's hall that "learn from this event" would give zones to. */
-  const siblingsUnzoned = (item: UploaderItem): number => {
+  /** The OTHER shows of this item's hall that "learn from this event" would rewrite. */
+  const hallmates = (item: UploaderItem): number => {
     const url = drawingOf(item);
-    const set = url === null ? undefined : unzonedByDrawing.get(url);
+    const set = url === null ? undefined : builtByDrawing.get(url);
     return set ? set.size - (set.has(item.id) ? 1 : 0) : 0;
   };
 
@@ -445,7 +446,7 @@ export function BoardClient({
   return (
     <TooltipProvider delayDuration={200}>
       <div ref={rootRef} dir="rtl" className="container mx-auto max-w-6xl space-y-5 pb-4 pt-6">
-        <BoardHeader board={board} counts={counts} onJumpToQuestion={jumpToQuestion} />
+        <BoardHeader board={board} counts={counts} onJumpToQuestion={jumpToQuestion} onDescription={() => setDialog({ kind: "description" })} />
 
         {panelShown && (
           <RunPanel
@@ -504,7 +505,7 @@ export function BoardClient({
                       subjectNameEn={board.run.plan.subject.name_en}
                       edited={board.edited[item.id] === true}
                       fixedByHand={fixedByHand[item.id] === true}
-                      siblingsUnzoned={siblingsUnzoned(item)}
+                      hallmates={hallmates(item)}
                       panelShown={panelShown}
                       people={people}
                       busy={busy[item.id] ?? null}
@@ -554,6 +555,7 @@ export function BoardClient({
         onDone={dialogDone}
       />
       <LearnConfirm itemId={dialog?.kind === "learn" ? dialog.itemId : null} open={dialog?.kind === "learn"} onClose={closeDialog} onDone={dialogDone} />
+      <DescriptionDialog runId={board.run.id} open={dialog?.kind === "description"} onClose={closeDialog} onDone={dialogDone} />
       <RebuildConfirm
         item={rebuilding}
         onCancel={() => setRebuilding(null)}
