@@ -266,6 +266,13 @@ function CardRow({
             </span>
           ))}
           {travelers > 0 && <span className="text-xs text-muted-foreground">{travelers} travelers</span>}
+          {/* whose card it is, without opening it (Alon 25.10); an unassigned card has "Take it" in the shortcuts below */}
+          {card.assignedTo && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Rep">
+              <UserRound className="h-3.5 w-3.5 shrink-0" />
+              <span dir="auto">{data.reps.find((p) => p.id === card.assignedTo)?.name ?? "Another teammate"}</span>
+            </span>
+          )}
           <span className="flex-1" />
           <StageBar status={card.status} hasOrder={orders.length > 0} statuses={statuses} />
           {reason && <TodayBadge reason={reason} followUpDate={card.followUpDate} today={today} />}

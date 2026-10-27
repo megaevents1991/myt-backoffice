@@ -452,8 +452,25 @@ export function BoardScreen() {
         ),
       },
       { id: "rep", accessorFn: (r) => repName(r.card.assignedTo), header: "Rep", cell: ({ row }) => <span className="text-sm">{repName(row.original.card.assignedTo) || EMPTY}</span> },
+      // the same shortcuts as TODAY / LEADS - notes, booking link, follow-up - acting on the order's card (Alon 25.10)
+      {
+        id: "actions",
+        enableHiding: false,
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => {
+          const { card } = row.original;
+          const working = busy === card.id;
+          return (
+            <InRow className="flex items-center justify-end gap-1">
+              {working && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              <TakeCardButton card={card} host={hostFor(card)} currentUserId={currentUserId} busy={working} />
+              <CardActionsMenu card={card} host={hostFor(card)} today={today} currentUserId={currentUserId} busy={working} />
+            </InRow>
+          );
+        },
+      },
     ],
-    [repName, statuses],
+    [busy, currentUserId, hostFor, repName, statuses, today],
   );
 
   const leadColumns = useMemo<ColumnDef<CaseRow>[]>(
