@@ -14,6 +14,9 @@
  * one event a person arranged (`learnPreview` / `learnFromEvent`), the Hebrew names
  * (`proposeTeamNames` / `createTeamsAndRename`), and one answer applied to the run's similar questions
  * (`answerQuestion(..., { applyToSimilar })`).
+ * Round 2 (docs/superpowers/specs/2026-10-28-uploader-alon-round-2-design.md): a show with no location asks to
+ * create one - `proposeLocation` fills the form, `createLocationAndAnswer` writes the `locations` row a person
+ * confirmed and answers the question (and the run's other questions of the same city) with it.
  *
  * Rules every action keeps:
  * - `await requireAdmin()` first, then every input is validated BEFORE any read (`bad_input`).
@@ -40,11 +43,12 @@ import { createFootballTeamInactive } from "@/lib/actions/football-actions";
 import { adoptVenueMap, getVenueMapDrawing, rememberSupplierCategories, saveVenueZones } from "@/lib/actions/venue-map-actions";
 import { normalizeName } from "@/lib/on-tour";
 import { revalidateMain } from "@/lib/revalidate-main";
-import { distanceKm } from "@/lib/services/nearest-location";
+import { distanceKm, loadLocations, type LocationRow } from "@/lib/services/nearest-location";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { classifyVenueWithAgent, nameTeamsWithAgent } from "@/lib/services/tour-uploader-classify";
+import { LOCATION_EXAMPLES_MAX, proposeLocationWithAgent } from "@/lib/services/tour-uploader-location";
 import { parseBriefWithAgent } from "@/lib/services/tour-uploader-parse";
-import { recordAlias } from "@/lib/services/uploader-aliases";
+import { loadEquivalence, recordAlias } from "@/lib/services/uploader-aliases";
 import { buildItem } from "@/lib/services/uploader-build";
 import {
   readDescriptionTemplate,
@@ -71,6 +75,7 @@ import {
   errorText,
   fail,
   insertDraftItems,
+  insertLocation,
   insertRun,
   insertSplitItems,
   itemPatch,
@@ -136,6 +141,16 @@ import {
 } from "@/lib/uploader/classify";
 import { FAR_VENUE_KM, MAX_QUESTION_TASKS_PER_RUN, PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS, REJECT_REASON_MIN } from "@/lib/uploader/constants";
 import { decision, editDiff } from "@/lib/uploader/decisions";
+import {
+  aiProposedFlags,
+  isLocationQuestion,
+  locationFallback,
+  parseLocationProposal,
+  sameCityItems,
+  validateLocationInput,
+  withLocationOption,
+  type LocationInput,
+} from "@/lib/uploader/location";
 import { cleanTemplate, DESCRIPTION_TOKENS, familyOf, usesCompetition } from "@/lib/uploader/description";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { applyPriorDefaults, emptyPlan, parsePlanInput } from "@/lib/uploader/plan";
@@ -180,6 +195,8 @@ import type {
   DescriptionSaveResult,
   DescriptionTemplateView,
   LearnPreview,
+  LocationCreateResult,
+  LocationProposeResult,
   NamesProposeResult,
   Ok,
   OpenQuestions,
@@ -778,6 +795,164 @@ async function recordSameCity(q: UploaderQuestion, key: string | null, actorId: 
 
 async function logAnswered(audit: Answered["audit"], rule: { rule_applied?: true; applied?: number; rule_child?: true }): Promise<void> {
   await logAudit({ action: "uploader.answered", entityType: "uploader_item", entityId: audit.itemId, metadata: { ...audit.metadata, ...rule } });
+}
+
+// ---- create a location from a question (round 2, spec 4.2) ---------------------------------------------------------
+
+/** What a location question's dialog starts from when the model proposes nothing (the show's own values). */
+const NO_PROPOSAL: LocationInput = { name_he: "", iata: "", latitude: 0, longitude: 0, country_code: null, aliases: [] };
+
+/**
+ * The create-location form's starting values: the show's own coordinates, country and city spelling, filled over
+ * by ONE `propose_location` call (the city's Hebrew name, IATA, centre and spellings) when the agent is on, the
+ * per-person cap allows and it answers. Anything else - off, capped, a failed or unusable answer, a show with no
+ * city - opens the same form with what the show knows (`ai` says why). Nothing is written.
+ */
+export async function proposeLocation(itemId: string): Promise<LocationProposeResult> {
+  const session = await requireAdmin();
+  if (!isUuid(itemId)) return fail("bad_input");
+  const read = await readItemAndRun(itemId);
+  if ("kind" in read) return fail(read.kind);
+  const { item, run } = read;
+  if (!isLocationQuestion(item)) return fail("not_question");
+
+  const fallback = locationFallback(item.show);
+  if (!agentEnabled(TOUR_UPLOADER_AGENT)) return { ok: true, proposal: fallback, ai: "off" };
+  const skip = await aiSkipReason(session.sub);
+  if (skip) return { ok: true, proposal: fallback, ai: skip === "rate_limited" ? "rate_limited" : "no_answer" };
+
+  // A few of our own names, so the model writes "<city>, <country>" the way the table does. A failed read
+  // costs the examples, never the proposal.
+  let exampleNames: string[] = [];
+  try {
+    exampleNames = (await loadLocations())
+      .map((l) => l.name)
+      .filter((name) => name.includes(",") && /[א-ת]/.test(name))
+      .slice(0, LOCATION_EXAMPLES_MAX);
+  } catch (e) {
+    console.error("uploader-actions: example locations not read - proposing without them", errorText(e));
+  }
+  const outcome = await proposeLocationWithAgent(
+    {
+      city: item.show.city,
+      countryCode: item.show.country_code,
+      venue: item.show.venue,
+      latitude: item.show.lat,
+      longitude: item.show.lon,
+      subject: run.plan.subject.name_en,
+      kind: run.plan.subject.kind,
+      exampleNames,
+    },
+    fallback,
+    newBudget(TOUR_UPLOADER_AGENT),
+    { userId: session.sub },
+  );
+  if (outcome.ok) return { ok: true, proposal: outcome.proposal, ai: "ok" };
+  return { ok: true, proposal: fallback, ai: outcome.kind === "off" ? "off" : "no_answer" };
+}
+
+/**
+ * The run's one rule for "the same city" as a plain function, read AFTER the new location exists (its short name and
+ * aliases join the city's group). `cities` = the city names in play, for a supplier's broken character. A failed read
+ * of the rule falls back to the normalized name alone - the cities of the same spelling still match.
+ */
+async function cityKeyOf(cities: string[]): Promise<(city: string) => string> {
+  try {
+    const equivalence = await loadEquivalence();
+    return (city) => equivalence.cityKey(city, cities);
+  } catch (e) {
+    console.error("uploader-actions: the city rule was not read - matching shows by their normalized name", errorText(e));
+    return (city) => normalizeName(city);
+  }
+}
+
+/**
+ * "צור מיקום ובנה": the form a person confirmed becomes a `locations` row, and the question it came from is
+ * answered with it (`answerOne`, the path every answer takes - the task closes, the item is re-queued as `found`,
+ * `uploader.answered` is audited). Every OTHER open `create_location` / `pick_location` question of the run whose
+ * show is in the same city (`sameCityItems`, the run's city rule) is answered with the same location, each audited
+ * as a rule's child so the agent learns once. The shape is checked before any read; the duplicate check (the same
+ * IATA AND the same city) after the `locations` read. `input.proposed` (optional) = the AI's proposal as the
+ * dialog showed it - only for the audit row's `ai_proposed` flags and what the agent learns, never for a value.
+ *
+ * A refusal is returned with a `problem` in the dialog's words. Once the row is written it stays whatever
+ * happens next: if this question then cannot be answered (answered meanwhile, a database failure) the result
+ * says the location exists, and a second attempt is refused as a duplicate.
+ */
+export async function createLocationAndAnswer(itemId: string, input: unknown): Promise<LocationCreateResult> {
+  const session = await requireAdmin();
+  if (!isUuid(itemId) || !isRecord(input)) return fail("bad_input");
+  const shape = validateLocationInput(input, []);
+  if (!shape.ok) return { ...fail("invalid"), problem: shape.problem };
+
+  const read = await readItemAndRun(itemId);
+  if ("kind" in read) return fail(read.kind);
+  const { item, run } = read;
+  if (item.question === null || !isLocationQuestion(item)) return fail("not_question");
+
+  let rows: LocationRow[];
+  try {
+    rows = await loadLocations();
+  } catch (e) {
+    console.error("uploader-actions: locations not read - nothing created", errorText(e));
+    return fail("db_error");
+  }
+  const checked = validateLocationInput(input, rows);
+  if (!checked.ok) return { ...fail("invalid"), problem: checked.problem };
+  const value = checked.value;
+
+  const created = await insertLocation(value);
+  if (!created.ok) return fail("db_error");
+  const key = String(created.id);
+  const proposed = isRecord(input.proposed) ? parseLocationProposal(input.proposed, NO_PROPOSAL) : null;
+  await logAudit({
+    action: "uploader.location_created",
+    entityType: "location",
+    entityId: created.id,
+    metadata: {
+      agent: AGENT,
+      run_id: run.id,
+      item_id: item.id,
+      location_id: created.id,
+      name_he: value.name_he,
+      iata: value.iata,
+      city: item.show.city,
+      country_code: value.country_code,
+      aliases: value.aliases,
+      aliases_saved: created.aliasesSaved,
+      ai_proposed: aiProposedFlags(proposed, value),
+      ...(proposed && proposed.name_he !== "" ? { proposed_name_he: proposed.name_he } : {}),
+      ...(proposed && proposed.iata !== "" ? { proposed_iata: proposed.iata } : {}),
+    },
+  });
+
+  const own = await answerOne({ ...item, question: withLocationOption(item.question, key, value.name_he) }, run, { key, text: null }, session.sub);
+  if (!own.ok) {
+    console.error(`uploader-actions: location ${created.id} created but item ${item.id} was not answered (${own.kind})`);
+    return { ...fail(own.kind), problem: `המיקום נוצר (#${created.id}) אבל התשובה להופעה לא נשמרה - רעננו את הלוח ובדקו את ההופעה` };
+  }
+
+  let applied = 0;
+  const open = await readRunItems(run.id, "question");
+  if (open === null) console.error(`uploader-actions: open questions of run ${run.id} not read - location ${created.id} answered no other question`);
+  const others = (open ?? []).filter((other) => other.id !== item.id);
+  if (others.length > 0) {
+    const cityKey = await cityKeyOf([item.show.city, ...others.map((other) => other.show.city)]);
+    for (const other of sameCityItems(item, others, cityKey)) {
+      if (other.question === null) continue;
+      const done = await answerOne({ ...other, question: withLocationOption(other.question, key, value.name_he) }, run, { key, text: null }, session.sub);
+      if (!done.ok) {
+        // A database failure stops it (what was answered stays answered); a question answered meanwhile is passed by.
+        if (done.kind === "db_error" || done.kind === "split_failed") break;
+        continue;
+      }
+      await logAnswered(done.audit, { rule_applied: true, rule_child: true });
+      applied += 1;
+    }
+  }
+  await logAnswered(own.audit, applied > 0 ? { rule_applied: true, applied } : {});
+  await recomputeRun(run.id);
+  return { ok: true, location_id: created.id, applied, task_closed: own.taskClosed };
 }
 
 /**

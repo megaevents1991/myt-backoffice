@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Loader2, MessageCircleQuestion, Search } from "lucide-react";
+import { Check, Loader2, MapPinPlus, MessageCircleQuestion, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,8 @@ import { ACTION, CardShell, RejectButton, StatusPill } from "./card-shell";
 // the server re-checks them against the stored question (`checkAnswer`).
 
 const SKIP = "skip";
+/** A location question's option that opens the create-location form instead of answering (spec 4.2). */
+const CREATE = "create";
 /** A `pick_location` question lists every location - past this many options the list gets a search box. */
 const SEARCH_FROM = 8;
 
@@ -33,6 +35,7 @@ export function QuestionCard({
   onPick,
   onAnswer,
   onReject,
+  onCreateLocation,
 }: {
   item: UploaderItem;
   art: SubjectArt;
@@ -46,6 +49,8 @@ export function QuestionCard({
   onPick: (key: string | null) => void;
   onAnswer: (item: UploaderItem, answer: { key: string | null; text: string | null }, opts: { applyToSimilar: boolean }) => Promise<boolean>;
   onReject: (item: UploaderItem) => void;
+  /** The `create` option of a location question: opens the form that creates the location and answers with it. */
+  onCreateLocation: (item: UploaderItem) => void;
 }) {
   const q = item.question;
   const [picked, setPickedState] = useState<string | null>(null);
@@ -57,7 +62,12 @@ export function QuestionCard({
     onPick(key);
   };
 
-  const options = useMemo(() => (q?.options ?? []).filter((o) => o.key !== SKIP), [q]);
+  // A location question's "create" is an action, not a search result: on `pick_location` (which lists every
+  // location and has a search box) it sits beside "skip", always in view.
+  const locationQuestion = q?.kind === "pick_location" || q?.kind === "create_location";
+  const create = locationQuestion ? ((q?.options ?? []).find((o) => o.key === CREATE) ?? null) : null;
+  const pinCreate = create !== null && q?.kind === "pick_location";
+  const options = useMemo(() => (q?.options ?? []).filter((o) => o.key !== SKIP && !(pinCreate && o.key === CREATE)), [q, pinCreate]);
   const skip = (q?.options ?? []).find((o) => o.key === SKIP) ?? null;
   const searchable = q?.kind === "pick_location" || options.length > SEARCH_FROM;
   const visible = useMemo(
@@ -85,6 +95,27 @@ export function QuestionCard({
   }
 
   const option = (key: string, label: string, quiet = false) => {
+    // "create" answers nothing by itself: it opens the form, whose confirm answers with the new location.
+    if (create !== null && key === CREATE) {
+      return (
+        <button
+          key={key}
+          type="button"
+          aria-haspopup="dialog"
+          disabled={answering || busy !== null}
+          onClick={() => onCreateLocation(item)}
+          className={cn(
+            "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-md border border-dashed border-warning px-2.5 py-1 text-start text-[13px] font-medium leading-snug transition-colors duration-150 ease-out",
+            "hover:bg-warning-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:opacity-50",
+          )}
+        >
+          <MapPinPlus aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          <span dir="auto" className="min-w-0 break-words">
+            {label}
+          </span>
+        </button>
+      );
+    }
     const on = picked === key;
     return (
       <button
@@ -185,7 +216,7 @@ export function QuestionCard({
             </div>
           )}
 
-          {(q.free_text || skip) && (
+          {(q.free_text || skip || pinCreate) && (
             <div className="flex flex-wrap items-center gap-1.5">
               {q.free_text && (
                 <Input
@@ -199,6 +230,7 @@ export function QuestionCard({
                   className="h-8 min-w-0 flex-1 basis-40 text-[13px]"
                 />
               )}
+              {pinCreate && create && option(create.key, create.label)}
               {skip && option(skip.key, skip.label || "דלג", true)}
             </div>
           )}

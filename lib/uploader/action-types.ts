@@ -5,6 +5,7 @@
  */
 import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
+import type { LocationInput } from "@/lib/uploader/location";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
 import type { TeamRow } from "@/lib/uploader/team-names";
 import type { ItemStatus, UploaderItem, UploaderPlan, UploaderRun } from "@/types/uploader.types";
@@ -148,4 +149,26 @@ export type DescriptionTemplateView =
 /** `saveDescriptionTemplate`: saved; `applied` = what the run's rewrite did (null when not asked to apply). */
 export type DescriptionSaveResult =
   | { ok: true; applied: { events: number; editedByHand: number; english: number } | null }
+  | { ok: false; kind: string; problem?: string };
+
+// ---- round 2: create a location from a question -------------------------------------------------------------
+
+/**
+ * `proposeLocation`: the form's starting values (the show's own coordinates, country and city spelling, plus
+ * whatever the AI proposed) and what the AI did: `ok` = it proposed, `off` = the agent is switched off,
+ * `rate_limited` = the per-person cap, `no_answer` = it failed, timed out or had nothing to ask. The dialog opens
+ * either way.
+ */
+export type LocationProposeResult =
+  | { ok: true; proposal: LocationInput; ai: "ok" | "off" | "no_answer" | "rate_limited" }
+  | { ok: false; kind: string };
+
+/**
+ * `createLocationAndAnswer`: the location was created (`location_id`) and the question answered with it;
+ * `applied` = how many OTHER open questions of the same city it answered too, `task_closed` = false when this
+ * question's own task did not close (the answer is saved). A refusal carries a `problem` in the dialog's words
+ * (`kind: "invalid"` - the form; or a created location whose question could not be answered).
+ */
+export type LocationCreateResult =
+  | { ok: true; location_id: number; applied: number; task_closed: boolean }
   | { ok: false; kind: string; problem?: string };

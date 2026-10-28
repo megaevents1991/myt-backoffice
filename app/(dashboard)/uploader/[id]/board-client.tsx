@@ -34,6 +34,7 @@ import {
   type Filter,
 } from "./board-words";
 import { ClassifyDialog, type PanelVenue } from "./classify-dialog";
+import { CreateLocationDialog } from "./create-location-dialog";
 import { DescriptionDialog } from "./description-dialog";
 import { LearnConfirm } from "./learn-confirm";
 import { NamesDialog } from "./names-dialog";
@@ -46,8 +47,14 @@ import { rtl, useRunBoard } from "./use-run-board";
 /** The toast's line for a show put back in the queue of a STOPPED run. */
 const STOPPED_REQUEUE_TEXT = "חוזר לתור - לחצו המשך.";
 
-/** The one run-level dialog open at a time (spec 5.2 / 5.3 / 5.5); null = none. */
-type RunDialog = { kind: "classify"; venue: PanelVenue } | { kind: "names" } | { kind: "learn"; itemId: string } | { kind: "description" } | null;
+/** The one run-level dialog open at a time (spec 5.2 / 5.3 / 5.5; round 2's create-location form); null = none. */
+type RunDialog =
+  | { kind: "classify"; venue: PanelVenue }
+  | { kind: "names" }
+  | { kind: "learn"; itemId: string }
+  | { kind: "description" }
+  | { kind: "location"; itemId: string }
+  | null;
 
 /** The show's TixStock drawing - what makes two shows the same hall for the panel and the learn button. */
 const drawingOf = (item: UploaderItem): string | null => {
@@ -178,6 +185,12 @@ export function BoardClient({
     await refresh();
   }, [refresh]);
   const closeDialog = useCallback(() => setDialog(null), []);
+  /** A location created and the question answered with it (its toast already shown): the show builds now - wake the loop. */
+  const locationDone = useCallback(async () => {
+    setDialog(null);
+    await refresh();
+    wake();
+  }, [refresh, wake]);
 
   const reject = useCallback(
     async (item: UploaderItem, reason: string, final: boolean): Promise<boolean> => {
@@ -496,6 +509,7 @@ export function BoardClient({
                       onPick={(key) => setPicks((all) => (all[item.id] === key ? all : { ...all, [item.id]: key }))}
                       onAnswer={answer}
                       onReject={setRejecting}
+                      onCreateLocation={(i) => setDialog({ kind: "location", itemId: i.id })}
                     />
                   ) : (
                     <ShowCard
@@ -553,6 +567,11 @@ export function BoardClient({
         personKind={board.run.plan.subject.kind === "artist" ? "artist" : "team"}
         onClose={closeDialog}
         onDone={dialogDone}
+      />
+      <CreateLocationDialog
+        item={dialog?.kind === "location" ? (board.items.find((i) => i.id === dialog.itemId) ?? null) : null}
+        onClose={closeDialog}
+        onDone={locationDone}
       />
       <LearnConfirm itemId={dialog?.kind === "learn" ? dialog.itemId : null} open={dialog?.kind === "learn"} onClose={closeDialog} onDone={dialogDone} />
       <DescriptionDialog runId={board.run.id} open={dialog?.kind === "description"} onClose={closeDialog} onDone={dialogDone} />

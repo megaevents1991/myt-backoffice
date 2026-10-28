@@ -55,6 +55,8 @@ function title(run: UploaderRun, item: UploaderItem, q: UploaderQuestion): strin
   const subject = run.plan.subject.name_en;
   // `same_show`: the question is "is this ONE show" - its two cities are in the text, the title names the show's day.
   if (q.kind === "same_show") return `אותה הופעה? ${subject} ${dayLabel(item.show.date)}`;
+  // `create_location`: the city is in the question's text and in the "create" option, the title names the show and its day.
+  if (q.kind === "create_location") return `חסר מיקום: ${subject} ${dayLabel(item.show.date)}`;
   return `שאלה מהמעלה · ${subject} · ${item.show.city} ${dayLabel(item.show.date)}`;
 }
 

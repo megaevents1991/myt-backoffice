@@ -24,6 +24,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
 import { editDiff } from "@/lib/uploader/decisions";
+import type { LocationInput } from "@/lib/uploader/location";
 import {
   artSearchPattern,
   EDIT_EVENT_COLUMNS,
@@ -655,6 +656,38 @@ export async function readLocation(
     return { row: null, failed: true };
   }
   return { row: data, failed: false };
+}
+
+/**
+ * Inserts the `locations` row a person confirmed (`validateLocationInput` has already checked it); the columns are
+ * mapped one by one, never a spread. `aliases` is newer than the generated types and its column may not be
+ * migrated yet: on 42703 / PGRST204 the row is written without it (`aliasesSaved: false`, logged) - a location
+ * without its other spellings is still the one the show needs. Never throws.
+ */
+export async function insertLocation(input: LocationInput): Promise<{ ok: true; id: number; aliasesSaved: boolean } | { ok: false }> {
+  const row: Record<string, unknown> = {
+    name: input.name_he,
+    city_iata: input.iata,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    country_code: input.country_code,
+    aliases: input.aliases,
+  };
+  const write = (r: Record<string, unknown>) => db.from("locations").insert([r]).select("id").single() as Promise<DbResult<{ id: number }>>;
+  let aliasesSaved = true;
+  let { data, error } = await write(row);
+  if (error && isMissingColumn(error)) {
+    console.warn("uploader: locations.aliases is not migrated yet - the location is saved without its aliases");
+    aliasesSaved = false;
+    const withoutAliases = { ...row };
+    delete withoutAliases.aliases;
+    ({ data, error } = await write(withoutAliases));
+  }
+  if (error || !data) {
+    logDb("location insert", error);
+    return { ok: false };
+  }
+  return { ok: true, id: data.id, aliasesSaved };
 }
 
 // ---- approve ----------------------------------------------------------------------------------------

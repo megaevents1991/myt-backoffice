@@ -473,3 +473,25 @@ export const DESCRIPTION_APPLIED = (r: { events: number; editedByHand: number; e
   const english = r.english === 0 ? "" : ` · ב-${r.english} נשאר חלק באנגלית`;
   return `${done}${hand}${english}`;
 };
+
+// The create-location dialog (round 2, spec 4.2): opened by a location question's "create" option.
+export const LOCATION_TITLE = (city: string): string => `יצירת מיקום ל-${city || "העיר"}`;
+export const LOCATION_INTRO =
+  "המיקום נכנס לטבלת המיקומים - ממנו טסים ובו מחפשים מלון. אחרי היצירה ההופעה הזו, וכל הופעה פתוחה באותה עיר, ייבנו כחבילה.";
+export const LOCATION_OPEN_FAILED = "הטופס לא נפתח";
+export const LOCATION_WAIT = "ה-AI ממלא את הטופס…";
+export const LOCATION_NAME_LABEL = "שם בעברית (עיר, מדינה)";
+export const LOCATION_NAME_PLACEHOLDER = "ולנסיה, ספרד";
+export const LOCATION_IATA_LABEL = "קוד שדה תעופה (IATA)";
+export const LOCATION_LAT_LABEL = "קו רוחב";
+export const LOCATION_LON_LABEL = "קו אורך";
+export const LOCATION_COORDS_HINT = "מרכז העיר - לפיו מחפשים טיסות ומלונות";
+export const LOCATION_NO_COORDS_HINT = "לאולם אין קואורדינטות - הזינו את מרכז העיר";
+export const LOCATION_COUNTRY_LABEL = "קוד מדינה (ISO-2)";
+export const LOCATION_ALIASES_LABEL = "כתיבים נוספים של העיר";
+export const LOCATION_ALIASES_HINT = "מופרדים בפסיק - כך הספקים מדפיסים את העיר (Valencia, València). ההופעות באותה עיר מזוהות לפיהם.";
+export const BTN_CREATE_LOCATION = "צור מיקום ובנה";
+export const LOCATION_TASK_OPEN = "משימת השאלה לא נסגרה - סגרו אותה ידנית";
+/** The success toast: the new location and how many shows (this one included) now build as a package. */
+export const LOCATION_DONE = (name: string, shows: number): string =>
+  shows === 1 ? `נוצר מיקום ${name} · הופעה אחת תיבנה כחבילה` : `נוצר מיקום ${name} · ${shows} הופעות ייבנו כחבילה`;

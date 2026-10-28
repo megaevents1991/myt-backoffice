@@ -57,6 +57,8 @@ const ACTION_ERROR_HE: Record<string, string> = {
   svg_failed: "לא הצלחתי לקרוא את המפה של הספק",
   adopt_failed: "לא הצלחתי לאמץ את המפה",
   no_template: "לאירוע הזה אין תבנית אולם ללמוד ממנה",
+  // Round 2: the create-location form (its own `problem` says what is wrong when the server gives one).
+  invalid: "פרטי המיקום לא תקינים - בדקו את הטופס",
 };
 
 /** The composer's words for its `bad_input` (the brief is empty) - the generic line belongs to the board. */

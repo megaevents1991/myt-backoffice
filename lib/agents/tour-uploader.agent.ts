@@ -1,14 +1,17 @@
 // AGENT #3 - the tour uploader ("סוכן העלאת סיורים").
 //
 // Staff type a free-text brief about a tour ("העלה את הסיור של אריק קלפטון באירופה, בלי ברלין, תוסיף
-// 75 דולר"). This agent makes THREE kinds of AI call, each a proposal a person confirms before anything is
+// 75 דולר"). This agent makes FOUR kinds of AI call, each a proposal a person confirms before anything is
 // written:
 //  - the brief -> a plan (types/uploader.types.ts `UploaderPlan`) - lib/services/tour-uploader-parse.ts,
 //    checked by `parsePlanInput` (lib/uploader/plan.ts);
 //  - `classify_venue` (round "אלון 1"): a venue's TixStock ticket categories -> a Hebrew zone label, a
 //    description, a drop / unsure flag each - checked by `parseClassification` (lib/uploader/classify.ts);
 //  - `name_teams` (round "אלון 1"): the run's club names (or the artist) -> a clean English and a Hebrew name -
-//    checked by `parseTeamNames` (lib/uploader/team-names.ts). The two live in lib/services/tour-uploader-classify.ts.
+//    checked by `parseTeamNames` (lib/uploader/team-names.ts). The two live in lib/services/tour-uploader-classify.ts;
+//  - `propose_location` (round 2): a show with no location near it -> the city's Hebrew name, IATA, centre and
+//    other spellings, to pre-fill the "create a location" form - checked by `parseLocationProposal`
+//    (lib/uploader/location.ts); lives in lib/services/tour-uploader-location.ts.
 // Finding the shows at TixStock / LiveTickets, placing each near a flight-and-hotel location, tickets, prices
 // and the hidden events themselves are all deterministic code (lib/uploader/*) - the agent never sees a
 // listing, never prices and never creates anything. Specs: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md,
@@ -77,7 +80,8 @@ const metaOf = (row: AuditLessonRow): Meta | null => row.metadata;
  * `uploader.plan_edited` first: it is the direct correction of the agent's own work (what it read
  * wrongly, on which brief). The rest say what staff decided where code could not: the option they
  * picked, a show they rejected and why, what they fixed after the build, a venue they built two-city.
- * Last come the two newer calls' own sources: the zone labels staff changed, the team names they gave.
+ * Last come the newer calls' own sources: the zone labels staff changed, the team names they gave, the
+ * locations they created.
  */
 export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
   {
@@ -201,12 +205,31 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       return `staff named ${supplierName} '${nameHe}' (English page name ${nameEn})`;
     },
   },
+  {
+    // A location staff created from a `create_location` / `pick_location` question, with what they kept or changed
+    // of the proposal (round 2, spec 4.2). `proposed_*` are written only when the AI's proposal was shown and
+    // non-empty. Read by the location call only (`LOCATION_LESSON_SOURCES`).
+    action: "uploader.location_created",
+    toLesson: (row) => {
+      const m = metaOf(row);
+      const nameHe = text(m?.name_he);
+      const iata = text(m?.iata);
+      const city = text(m?.city);
+      if (!m || !nameHe || !iata || !city) return null;
+      const fixes: string[] = [];
+      const proposedName = text(m.proposed_name_he);
+      const proposedIata = text(m.proposed_iata);
+      if (proposedName && proposedName !== nameHe) fixes.push(`name '${proposedName}' -> '${nameHe}'`);
+      if (proposedIata && proposedIata !== iata) fixes.push(`IATA ${proposedIata} -> ${iata}`);
+      return `for the show city ${city} staff created the location '${nameHe}' (${iata})${fixes.length > 0 ? ` - corrected the proposal: ${fixes.join(", ")}` : ""}`;
+    },
+  },
 ];
 
 /**
  * Which `learnsFrom` sources each of the agent's calls reads (`loadAgentLessons(def, { sources })`).
  * The agent keeps one list and one memory block; a call quotes only the lessons about ITS job, so a
- * zone rename never crowds a brief-parsing lesson out of the quota and vice versa. Together the three
+ * zone rename never crowds a brief-parsing lesson out of the quota and vice versa. Together the four
  * cover every source exactly once (checked in scripts/agents-selftest.ts).
  */
 export const PARSE_LESSON_SOURCES: string[] = [
@@ -219,6 +242,7 @@ export const PARSE_LESSON_SOURCES: string[] = [
 ];
 export const CLASSIFY_LESSON_SOURCES: string[] = ["uploader.classify_changed"];
 export const NAMES_LESSON_SOURCES: string[] = ["uploader.team_created"];
+export const LOCATION_LESSON_SOURCES: string[] = ["uploader.location_created"];
 
 export const TOUR_UPLOADER_AGENT: AgentDefinition = {
   key: "tour-uploader",
@@ -227,17 +251,19 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
     "סוכן העלאת הסיורים נכנס לתמונה כשאיש צוות מקליד בריף חופשי על סיור - בעברית או באנגלית: אמן, קבוצה " +
     "או ליגה, טווח תאריכים, ערים להוציא או להשאיר, מארקאפ שהוא מבקש להוסיף. הוא קורא את הבריף ומחזיר " +
     "תוכנית מובנית אחת (נושא יחיד, טווח, כללי מיקום, מארקאפים, ספקים) שהצוות מאשר או מתקן לפני שנבנה " +
-    "משהו. בלוח הריצה הוא עושה עוד שתי קריאות, כל אחת הצעה שאדם מאשר: שם בעברית ותיאור לכל קטגוריית " +
-    "כרטיסים של אולם (וסימון מה לפסול או מה לא ברור), ושמות בעברית ובאנגלית לקבוצות (או לאמן) שאין להן עמוד. " +
+    "משהו. בלוח הריצה הוא עושה עוד שלוש קריאות, כל אחת הצעה שאדם מאשר: שם בעברית ותיאור לכל קטגוריית " +
+    "כרטיסים של אולם (וסימון מה לפסול או מה לא ברור), שמות בעברית ובאנגלית לקבוצות (או לאמן) שאין להן עמוד, " +
+    "ושם בעברית, קוד שדה תעופה ומרכז עיר למיקום חדש כשלהופעה אין מיקום קרוב. " +
     "מציאת ההופעות אצל TixStock ו-LiveTickets, התאמת מיקום לטיסה ומלון, כרטיסים, מחירים ויצירת האירועים " +
     "(מוסתרים, לבדיקה) הם קוד דטרמיניסטי שהסוכן לא רואה. מה שלא נאמר לו נשאר ריק - הוא לא מנחש, וכל תשובה " +
-    "שלו נבדקת שדה שדה (lib/uploader/plan.ts, classify.ts, team-names.ts) לפני שהיא מגיעה לאדם.",
+    "שלו נבדקת שדה שדה (lib/uploader/plan.ts, classify.ts, team-names.ts, location.ts) לפני שהיא מגיעה לאדם.",
   decides: [
     "איך לפרש את הבריף לתוכנית: נושא יחיד, טווח תאריכים, ערים לכלול או להוציא, משחקי בית או כולם, סבב",
     "אילו מארקאפים הבריף מבקש - רק מספר שנאמר בו במפורש",
     "מה לעשות בהופעה בלי מיקום קרוב לטיסה ומלון: כרטיס בלבד או דילוג - לפי מה שהבריף אומר",
     "איזה שם בעברית ואיזה תיאור להציע לכל קטגוריית כרטיסים באולם, ומה להציע לפסול (יציע אוהדי חוץ) או לסמן לבדיקה",
     "איזה שם באנגלית ובעברית להציע לכל קבוצה (או אמן) שחסר לה שם בעברית",
+    "איזה שם בעברית, קוד שדה תעופה, מרכז עיר וכינויים להציע לעיר שאין לנו בה מיקום",
   ],
   neverDoes: [
     "לא קובע, לא מחשב ולא מציע מחיר - מארקאפ הוא רק מספר שהבריף עצמו מציין",
@@ -250,6 +276,7 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
     "תשובה לשאלות שהבונה לא מצליח להכריע לבד - איזו הופעה, איזה תאריך, איזה מיקום",
     "אישור סיווג הכרטיסים של אולם (שמות, תיאורים, מה נפסל) לפני שהוא נכתב לתבנית ולאירועים",
     "אישור השמות בעברית לפני שנוצרות קבוצות (לא פעילות) והאירועים מקבלים שם",
+    "אישור הטופס של מיקום חדש (שם, קוד שדה תעופה, קואורדינטות) לפני שהוא נכתב לטבלת המיקומים",
     "אישור או דחייה של כל אירוע שנבנה (דחייה דורשת סיבה)",
   ],
   switchEnv: "TOUR_UPLOADER_AI",
@@ -257,7 +284,7 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
   defaultModel: "claude-opus-5",
   // A staff member waits on the plan card (or a dialog) while this runs, so the timeout is longer than the
   // nightly agents' - but there is still no SDK retry: a hung call falls back to the manual form. The
-  // brief and `name_teams` wait this long; `classify_venue` waits CLASSIFY_TIMEOUT_MS (lib/uploader/classify.ts,
+  // brief, `name_teams` and `propose_location` wait this long; `classify_venue` waits CLASSIFY_TIMEOUT_MS (lib/uploader/classify.ts,
   // 40 s - a big stadium's Hebrew labels are ~2.5K output tokens, ruling R28).
   timeoutMs: 20_000,
   callsPerRun: 3,

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import Anthropic from "@anthropic-ai/sdk";
 import { AGENT_KEYS, agentFor, PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT, TOUR_UPLOADER_AGENT } from "@/lib/agents";
 import { interleave, loadAgentLessons, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, traceAgentLessons } from "@/lib/agents/memory";
-import { CLASSIFY_LESSON_SOURCES, NAMES_LESSON_SOURCES, PARSE_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
+import { CLASSIFY_LESSON_SOURCES, LOCATION_LESSON_SOURCES, NAMES_LESSON_SOURCES, PARSE_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
 import type { AgentKey, AuditLessonRow } from "@/lib/agents/types";
@@ -325,9 +325,9 @@ assert.deepEqual(
   uploaderDef.learnsFrom.map((s) => s.action),
   [
     "uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback",
-    "uploader.classify_changed", "uploader.team_created",
+    "uploader.classify_changed", "uploader.team_created", "uploader.location_created",
   ],
-  "the correction of the parse itself is the sharpest source, so it is declared first; the two newer calls' sources follow the older six",
+  "the correction of the parse itself is the sharpest source, so it is declared first; the newer calls' sources follow the older six",
 );
 
 // Switch: opt-in, fails closed, and its own - no other agent's switch turns it on.
@@ -534,6 +534,28 @@ assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "נ
 assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "ניוקאסל יונייטד", name_en: "Newcastle United" }), null, "no supplier name = no lesson");
 assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "  ", name_en: "Newcastle United", from_supplier_name: "Newcastle United FC" }), null, "a blank Hebrew name = no lesson");
 
+// uploader.location_created - a location staff created for a show city, and what they changed of the proposal.
+assert.equal(
+  uploaderLessonFor("uploader.location_created", { agent: U, location_id: 91, name_he: "ולנסיה, ספרד", iata: "VLC", city: "Valencia", ai_proposed: { name_he: true, iata: true } }),
+  "for the show city Valencia staff created the location 'ולנסיה, ספרד' (VLC)",
+  "a proposal kept as it was is just the fact",
+);
+assert.equal(
+  uploaderLessonFor("uploader.location_created", { agent: U, name_he: "ולנסיה, ספרד", iata: "VLC", city: "Valencia", proposed_name_he: "ולנסיה", proposed_iata: "VAL" }),
+  "for the show city Valencia staff created the location 'ולנסיה, ספרד' (VLC) - corrected the proposal: name 'ולנסיה' -> 'ולנסיה, ספרד', IATA VAL -> VLC",
+  "a corrected name and IATA are named, from what the AI proposed",
+);
+assert.equal(
+  uploaderLessonFor("uploader.location_created", { agent: U, name_he: "ולנסיה, ספרד", iata: "VLC", city: "Valencia", proposed_name_he: "ולנסיה, ספרד", proposed_iata: "VLC" }),
+  "for the show city Valencia staff created the location 'ולנסיה, ספרד' (VLC)",
+  "a proposed value equal to the saved one is no correction",
+);
+assert.equal(uploaderLessonFor("uploader.location_created", { agent: U, iata: "VLC", city: "Valencia" }), null, "no name = no lesson");
+assert.equal(uploaderLessonFor("uploader.location_created", { agent: U, name_he: "ולנסיה, ספרד", city: "Valencia" }), null, "no IATA = no lesson");
+assert.equal(uploaderLessonFor("uploader.location_created", { agent: U, name_he: "ולנסיה, ספרד", iata: "VLC" }), null, "no show city = no lesson");
+assert.equal(uploaderLessonFor("uploader.location_created", { agent: U, name_he: "  ", iata: "VLC", city: "Valencia" }), null, "a blank name = no lesson");
+assert.equal(uploaderLessonFor("uploader.location_created", null), null, "no metadata at all");
+
 // uploader.answered with a rule for the run: the same line, plus how far the rule reached.
 assert.equal(
   uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "Eric Clapton", city: "London", date: "2027-05-20", answer: "2027-05-21", rule_applied: true, applied: 3 }),
@@ -563,9 +585,10 @@ assert.equal(
   "the first item's rule row is still the lesson",
 );
 
-// Which call reads which source: three lists, every declared source in exactly one of them.
+// Which call reads which source: four lists, every declared source in exactly one of them.
 assert.deepEqual(CLASSIFY_LESSON_SOURCES, ["uploader.classify_changed"]);
 assert.deepEqual(NAMES_LESSON_SOURCES, ["uploader.team_created"]);
+assert.deepEqual(LOCATION_LESSON_SOURCES, ["uploader.location_created"]);
 assert.deepEqual(
   PARSE_LESSON_SOURCES,
   ["uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback"],
@@ -573,7 +596,7 @@ assert.deepEqual(
 );
 {
   const declared = uploaderDef.learnsFrom.map((s) => s.action).sort();
-  const claimed = [...PARSE_LESSON_SOURCES, ...CLASSIFY_LESSON_SOURCES, ...NAMES_LESSON_SOURCES].sort();
+  const claimed = [...PARSE_LESSON_SOURCES, ...CLASSIFY_LESSON_SOURCES, ...NAMES_LESSON_SOURCES, ...LOCATION_LESSON_SOURCES].sort();
   assert.deepEqual(claimed, declared, "every declared source belongs to exactly one call - none unread, none read twice");
 }
 
