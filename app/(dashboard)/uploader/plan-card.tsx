@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { createRun, previewPlan } from "@/lib/actions/uploader-actions";
 import type { PlanPreview } from "@/lib/uploader/action-types";
 import { MARKUP_MAX, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
-import { parsePlanInput } from "@/lib/uploader/plan";
+import { parsePlanInput, planNonInstant } from "@/lib/uploader/plan";
 import { cn } from "@/lib/utils";
 import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
 import { actionErrorText, AGENT_OFF_LINE, SUBJECT_KIND_HE } from "./copy";
@@ -64,10 +64,12 @@ const PREVIEW_DEBOUNCE_MS = 600;
 const CITIES_SHOWN = 14;
 
 /**
- * The fields that decide which shows the plan finds - a markup edit does not search again. The test
- * switch is in it: a test run's preview counts test events as existing (previewPlan's `isTest`).
+ * The fields that decide which shows the plan finds - a markup edit does not search again, nor does
+ * the LiveTickets non-instant switch (it changes which tickets a show gets, not which shows exist).
+ * The test switch is in it: a test run's preview counts test events as existing (previewPlan's `isTest`).
  */
-const searchKeyOf = (p: UploaderPlan, isTest: boolean): string => JSON.stringify({ subject: p.subject, scope: p.scope, rules: p.rules, isTest });
+const searchKeyOf = (p: UploaderPlan, isTest: boolean): string =>
+  JSON.stringify({ subject: p.subject, scope: p.scope, rules: { without_location: p.rules.without_location }, isTest });
 
 /** "" = no markup (null); a whole number 0..MARKUP_MAX; anything else = undefined (not valid). */
 function markupValue(raw: string): number | null | undefined {
@@ -417,6 +419,15 @@ export function PlanCard({
               ))}
             </div>
           </div>
+          <label className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+            <span className="text-sm">
+              כולל קטגוריות <bdi>LiveTickets</bdi> ללא אישור מיידי
+            </span>
+            <Switch
+              checked={planNonInstant(plan)}
+              onCheckedChange={(on) => setPlan((p) => ({ ...p, rules: { ...p.rules, livetickets_non_instant: on } }))}
+            />
+          </label>
         </Group>
 
         <Group title="מארק אפ">

@@ -162,10 +162,13 @@ export const NO_PRICE_REASON = "no price";
 /**
  * The LiveTickets tickets of one of their events. `stock` is what `fetchLiveTicketsStock` answers:
  * the stock, "SOLD_OUT" (they have the event, no categories on sale) or null (no answer and no
- * snapshot). Only `sellable` categories become tickets; a category that is blocked - including the
- * one blocked ONLY for not confirming instantly - is dropped with its `blockedReason`, so the
- * operator can name it ("3 non-instant categories left out"). An unusable stock is a `state`, never
- * an empty "ok": the build must tell "sold out" and "LiveTickets did not answer" apart.
+ * snapshot). `sellable` categories become tickets; a category that is blocked is dropped with its
+ * `blockedReason`, so the operator can name it ("3 categories left out"). The one exception is the
+ * category blocked ONLY for not confirming instantly: with `opts.nonInstant` it becomes a ticket
+ * marked `nonInstant: true` (the shape the attach flow writes and the price sync keeps on sale; the
+ * site sells it with a warning) as long as it has a usable cost, and `nonInstant` counts those
+ * tickets. Without the option it is dropped like any blocked category. An unusable stock is a
+ * `state`, never an empty "ok": the build must tell "sold out" and "LiveTickets did not answer" apart.
  * Ticket shape = `buildLiveTicketsDrafts`: `id` is THEIR category id (what the price sync and main
  * match on), `eid` their event id, the price is `priceUsd(cost, currency)`. Input order is kept.
  */
@@ -173,19 +176,24 @@ export function ticketsFromLiveStock(
   stock: LiveTicketsStock | "SOLD_OUT" | null,
   eid: string,
   priceUsd: (cost: number, currency: SupplierCurrency) => number,
+  opts: { nonInstant: boolean } = { nonInstant: false },
 ): {
   tickets: EventTicket[];
   dropped: { title: string; reason: string }[];
   state: "ok" | "sold_out" | "unreachable";
+  /** How many of `tickets` are marked `nonInstant` (always 0 without `opts.nonInstant`). */
+  nonInstant: number;
 } {
-  if (stock === null) return { tickets: [], dropped: [], state: "unreachable" };
-  if (stock === "SOLD_OUT") return { tickets: [], dropped: [], state: "sold_out" };
+  if (stock === null) return { tickets: [], dropped: [], state: "unreachable", nonInstant: 0 };
+  if (stock === "SOLD_OUT") return { tickets: [], dropped: [], state: "sold_out", nonInstant: 0 };
 
   const tickets: EventTicket[] = [];
   const dropped: { title: string; reason: string }[] = [];
+  let nonInstant = 0;
   for (const category of stock.categories) {
     const title = category.title || category.hebTitle;
-    if (!category.sellable || category.nonInstantOnly) {
+    const asNonInstant = opts.nonInstant && category.nonInstantOnly;
+    if (!asNonInstant && (!category.sellable || category.nonInstantOnly)) {
       dropped.push({ title, reason: category.blockedReason || "Not sellable" });
       continue;
     }
@@ -207,7 +215,9 @@ export function ticketsFromLiveStock(
       price,
       colorOnTheMap: SUPPLIER_TICKET_COLOR,
       available: true,
+      ...(asNonInstant ? { nonInstant: true } : {}),
     });
+    if (asNonInstant) nonInstant += 1;
   }
-  return { tickets, dropped, state: "ok" };
+  return { tickets, dropped, state: "ok", nonInstant };
 }

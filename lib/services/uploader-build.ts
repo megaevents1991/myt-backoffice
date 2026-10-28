@@ -4,7 +4,9 @@
  *
  * Order matters - the cheapest checks first, the paid searches last:
  *   1. tickets   - TixStock's feed and LiveTickets' stock through the pure `lib/uploader/tickets.ts`
- *                  (retry once; LiveTickets then falls back to our `live_events` snapshot). Zero
+ *                  (retry once; LiveTickets then falls back to our `live_events` snapshot; its categories
+ *                  blocked only for not confirming instantly are brought, marked `nonInstant`, unless
+ *                  the plan's `livetickets_non_instant` switch is off). Zero
  *                  tickets = `skipped no_tickets`; zero because a supplier never answered = `error`
  *                  (never read a silence as "sells nothing").
  *   2. location  - the reads (locations, the run's city rule, the venue memory STRICT, LiveTickets'
@@ -55,6 +57,7 @@ import { decision } from "@/lib/uploader/decisions";
 import { clearsOwnEvent } from "@/lib/uploader/run-rules";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { decidePlace, type PlaceInput } from "@/lib/uploader/place";
+import { planNonInstant } from "@/lib/uploader/plan";
 import { buildDuplicateFor, existingEventFor, ownEventToClean, priorAnswerFor, questionKey, type Subject } from "@/lib/uploader/shows";
 import { NO_PRICE_REASON, ticketsFromLiveStock, ticketsFromTixStockFeed, type TixDropReason } from "@/lib/uploader/tickets";
 import { WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
@@ -171,14 +174,17 @@ function liveRowReader(eventId: number): () => Promise<LiveRowRead> {
 
 /**
  * LiveTickets: their live stock, once more on no answer, then our `live_events` snapshot (the
- * `buildLiveTicketsDrafts` fallback) - SELLABLE categories only; the rest are named in a decision
- * line. Prices taken from the snapshot say so (`live_from_snapshot`). `reached: false` = the API did
- * not answer AND the snapshot sells nothing (a snapshot's categories are usually blocked - that is
- * an outage, not "LiveTickets has no tickets"). A failed snapshot READ throws.
+ * `buildLiveTicketsDrafts` fallback) - SELLABLE categories, plus (`nonInstant`, the plan's switch)
+ * the ones blocked only for not confirming instantly, marked `nonInstant` on the ticket and named in
+ * their own decision line; the rest are named in a decision line too (the "not instant" one only
+ * when the switch is off). Prices taken from the snapshot say so (`live_from_snapshot`).
+ * `reached: false` = the API did not answer AND the snapshot sells nothing (a snapshot's categories
+ * are usually blocked - that is an outage, not "LiveTickets has no tickets"). A failed snapshot READ throws.
  */
 async function liveTickets(
   eventId: number,
   liveRow: () => Promise<LiveRowRead>,
+  nonInstant: boolean,
 ): Promise<{ tickets: EventTicket[]; decisions: Decision[]; reached: boolean }> {
   const offers = await import("@/lib/services/livetickets-offers");
   const eid = String(eventId);
@@ -194,10 +200,13 @@ async function liveTickets(
       fromSnapshot = true;
     }
   }
-  const out = ticketsFromLiveStock(stock, eid, offers.liveTicketsPriceUsd);
+  const out = ticketsFromLiveStock(stock, eid, offers.liveTicketsPriceUsd, { nonInstant });
   if (out.state === "unreachable" || (fromSnapshot && out.tickets.length === 0)) return { tickets: [], decisions: [], reached: false };
   const decisions: Decision[] = [];
-  if (out.tickets.length > 0) decisions.push(decision("tickets_livetickets", { count: out.tickets.length }));
+  // Two additive lines: the instant categories, then the non-instant ones (a ticket is in exactly one).
+  const instant = out.tickets.length - out.nonInstant;
+  if (instant > 0) decisions.push(decision("tickets_livetickets", { count: instant }));
+  if (out.nonInstant > 0) decisions.push(decision("tickets_livetickets_non_instant", { count: out.nonInstant }));
   if (fromSnapshot) decisions.push(decision("live_from_snapshot", { count: out.tickets.length }));
   decisions.push(
     ...droppedLines(
@@ -479,7 +488,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
   const liveRow = liveRef ? liveRowReader(liveRef.event_id) : null;
   const [tix, live] = await Promise.all([
     tixRef ? tixstockTickets(tixRef.event_id) : null,
-    liveRef && liveRow ? liveTickets(liveRef.event_id, liveRow) : null,
+    liveRef && liveRow ? liveTickets(liveRef.event_id, liveRow, planNonInstant(run.plan)) : null,
   ]);
   const unreachable: Supplier[] = [];
   if (tix && !tix.reached) unreachable.push("tixstock");

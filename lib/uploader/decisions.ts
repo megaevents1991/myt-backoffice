@@ -40,7 +40,8 @@ function withPrefix(prefix: string, name: string): string {
 
 /**
  * The text of each decision code. Params per code:
- *  location_found {city, iata, km?} · tickets_tixstock / tickets_livetickets / live_from_snapshot {count} ·
+ *  location_found {city, iata, km?} · tickets_tixstock / tickets_livetickets / tickets_livetickets_non_instant /
+ *  live_from_snapshot {count} ·
  *  categories_dropped {count, reason} · zones_from_template {zoned, total} · dates_smart {depart, ret} ·
  *  base_prices {flight, hotel} · prior_answer {name, run} · lodging_from_memory {event} ·
  *  tribute_excluded {name} · duplicate_dropped {name, event_id} ·
@@ -58,6 +59,8 @@ export const DECISION_TEXT = {
   location_by_city: (p) => `מיקום לפי שם העיר: ${str(p, "city")} (${str(p, "iata")})`,
   tickets_tixstock: (p) => `${categories(p)} מ-TixStock`,
   tickets_livetickets: (p) => `${categories(p)} מ-LiveTickets (ניתנות למכירה בלבד)`,
+  // Alon round 2 (spec 3.5): categories LiveTickets does not confirm instantly, brought with the site's warning on the ticket.
+  tickets_livetickets_non_instant: (p) => `${categories(p)} LiveTickets ללא אישור מיידי (יסומנו באתר)`,
   live_from_snapshot: (p) => `LiveTickets לא ענה - ${categories(p)} תומחרו מתמונת המצב השמורה; בדקו את המחיר לפני האישור`,
   categories_dropped: (p) =>
     Number(p.count) === 1 ? `קטגוריה אחת ${str(p, "reason")} הושמטה` : `${categories(p)} ${str(p, "reason")} הושמטו`,

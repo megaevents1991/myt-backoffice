@@ -28,11 +28,20 @@ export function emptyPlan(): UploaderPlan {
   return {
     subject: { kind: "artist", name_he: null, name_en: "" },
     scope: { date_from: null, date_to: null, home_only: true, round: null, exclude_cities: [], include_cities: [] },
-    rules: { with_location: "package", without_location: "skip" },
+    rules: { with_location: "package", without_location: "skip", livetickets_non_instant: true },
     markups: { ticket_only: null, additional: null },
     suppliers: ["tixstock", "livetickets"],
     notes: [],
   };
+}
+
+/**
+ * Does this plan bring the LiveTickets categories that are blocked only for not confirming instantly?
+ * The ONE reader of `rules.livetickets_non_instant`: a plan stored before the field existed has none,
+ * and a missing value means "bring them" (Dor's ruling D1) - only an explicit `false` turns it off.
+ */
+export function planNonInstant(plan: UploaderPlan): boolean {
+  return plan.rules.livetickets_non_instant !== false;
 }
 
 /**
@@ -93,13 +102,17 @@ export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
     },
     rules: {
       type: "object",
-      description: "How to treat a show by whether a flight-and-hotel location exists near it.",
+      description: "How to treat a show by whether a flight-and-hotel location exists near it, and which LiveTickets categories to bring.",
       properties: {
         with_location: { type: "string", enum: ["package"], description: "Always package: flight + hotel + ticket." },
         without_location: {
           type: "string",
           enum: [...WITHOUT_LOCATION],
           description: "ticket_only = sell the ticket alone; skip = do not build the show. skip unless the brief asks for ticket-only.",
+        },
+        livetickets_non_instant: {
+          type: "boolean",
+          description: "false only when the brief asks for instant-confirm tickets only",
         },
       },
       required: ["with_location", "without_location"],
@@ -326,7 +339,12 @@ function readPlan(raw: unknown, problems: string[], now: Date): UploaderPlan {
       include_cities: readList(scope.include_cities, "scope.include_cities", NAME_MAX, problems),
     },
     // Not the model's choices: a location always means a package, and the suppliers are fixed.
-    rules: { with_location: "package", without_location: withoutLocation ?? emptyPlan().rules.without_location },
+    rules: {
+      with_location: "package",
+      without_location: withoutLocation ?? emptyPlan().rules.without_location,
+      // Absent = bring them (an older stored plan, a model that said nothing about it).
+      livetickets_non_instant: readBool(rules.livetickets_non_instant, "rules.livetickets_non_instant", true, problems),
+    },
     markups: {
       ticket_only: readMarkup(markups.ticket_only, "markups.ticket_only", problems),
       additional: readMarkup(markups.additional, "markups.additional", problems),
@@ -364,6 +382,8 @@ const DIFF_LEAVES: { field: string; get: (p: UploaderPlan) => unknown }[] = [
   { field: "scope.include_cities", get: (p) => p.scope.include_cities },
   { field: "rules.with_location", get: (p) => p.rules.with_location },
   { field: "rules.without_location", get: (p) => p.rules.without_location },
+  // Through the reader, so a plan that predates the field reads the default and a card nobody touched teaches nothing.
+  { field: "rules.livetickets_non_instant", get: (p) => planNonInstant(p) },
   { field: "markups.ticket_only", get: (p) => p.markups.ticket_only },
   { field: "markups.additional", get: (p) => p.markups.additional },
   { field: "notes", get: (p) => p.notes },

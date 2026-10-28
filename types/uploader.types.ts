@@ -17,7 +17,12 @@ export type UploaderPlan = {
     exclude_cities: string[];
     include_cities: string[];
   };
-  rules: { with_location: "package"; without_location: "ticket_only" | "skip" };
+  /**
+   * `livetickets_non_instant` (Alon round 2, D1): bring a LiveTickets category that is blocked ONLY for not
+   * confirming instantly, marked `nonInstant` on the ticket. A plan stored before the field existed has none -
+   * read it through `planNonInstant` (lib/uploader/plan.ts), never directly: absent = true.
+   */
+  rules: { with_location: "package"; without_location: "ticket_only" | "skip"; livetickets_non_instant: boolean };
   markups: { ticket_only: number | null; additional: number | null };
   suppliers: ["tixstock", "livetickets"];
   notes: string[];

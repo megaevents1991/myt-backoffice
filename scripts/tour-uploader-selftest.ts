@@ -34,6 +34,7 @@ import {
   parsePlanInput,
   PLAN_TOOL_SCHEMA,
   planDiff,
+  planNonInstant,
   planWindowCap,
   planWindowStart,
   type PlanParse,
@@ -197,7 +198,7 @@ const clapton = (): UploaderPlan => ({
     exclude_cities: ["Skokie"],
     include_cities: [],
   },
-  rules: { with_location: "package", without_location: "ticket_only" },
+  rules: { with_location: "package", without_location: "ticket_only", livetickets_non_instant: true },
   markups: { ticket_only: 200, additional: null },
   suppliers: ["tixstock", "livetickets"],
   notes: ["no hotel in Zurich"],
@@ -220,12 +221,12 @@ same(PRICED_PARTY, 2, "the priced party is the TixStock sync's own constant (lib
     {
       subject: { kind: "artist", name_he: null, name_en: "" },
       scope: { date_from: null, date_to: null, home_only: true, round: null, exclude_cities: [], include_cities: [] },
-      rules: { with_location: "package", without_location: "skip" },
+      rules: { with_location: "package", without_location: "skip", livetickets_non_instant: true },
       markups: { ticket_only: null, additional: null },
       suppliers: ["tixstock", "livetickets"],
       notes: [],
     },
-    "emptyPlan: artist, skip without a location, nulls, both suppliers",
+    "emptyPlan: artist, skip without a location, LiveTickets non-instant brought, nulls, both suppliers",
   );
   e.notes.push("x");
   e.scope.exclude_cities.push("y");
@@ -451,7 +452,7 @@ for (const empty of ["", "   ", null, undefined, 7]) {
 {
   const input = clapton();
   input.rules.without_location = "skip";
-  same(parsePlanInput(input).plan.rules, { with_location: "package", without_location: "skip" }, "skip is valid");
+  same(parsePlanInput(input).plan.rules, { with_location: "package", without_location: "skip", livetickets_non_instant: true }, "skip is valid");
   (input.rules as { without_location: unknown }).without_location = "hotel_only";
   const bad = parsePlanInput(input);
   problemFor(bad, "rules.without_location", "an unknown without_location");
@@ -1448,8 +1449,8 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     [[["יציע", "יציע", 30]], [{ title: "Pit", reason: "Single seats" }]],
     "an empty title falls back to hebTitle; any other blocked category is dropped with its reason too",
   );
-  same(ticketsFromLiveStock("SOLD_OUT", "LT-7", livePrice), { tickets: [], dropped: [], state: "sold_out" }, "SOLD_OUT: no tickets, state sold_out");
-  same(ticketsFromLiveStock(null, "LT-7", livePrice), { tickets: [], dropped: [], state: "unreachable" }, "null (no answer, no snapshot): state unreachable");
+  same(ticketsFromLiveStock("SOLD_OUT", "LT-7", livePrice), { tickets: [], dropped: [], state: "sold_out", nonInstant: 0 }, "SOLD_OUT: no tickets, state sold_out");
+  same(ticketsFromLiveStock(null, "LT-7", livePrice), { tickets: [], dropped: [], state: "unreachable", nonInstant: 0 }, "null (no answer, no snapshot): state unreachable");
 
   // zoneFromTemplate: the venue template zones a ticket with no zone and never touches one already zoned.
   const map = {
@@ -1662,13 +1663,14 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "rejected_before",
       "taught_venue",
       "tickets_livetickets",
+      "tickets_livetickets_non_instant",
       "tickets_tixstock",
       "tribute_excluded",
       "two_city_chosen",
       "two_city_from_memory",
       "zones_from_template",
     ],
-    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue) + Alon 25.10 (description_from_template) + Alon round 2 (location_by_city)",
+    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue) + Alon 25.10 (description_from_template) + Alon round 2 (location_by_city, tickets_livetickets_non_instant)",
   );
   same(decision("dates_smart", { depart: "18.05", ret: "21.05" }), { code: "dates_smart", text: "טיסות 18.05 → 21.05" }, "dates_smart: the spec's text");
   same(decision("base_prices", { flight: 310, hotel: 290 }).text, "בסיס מהכלל: טיסה $310 · מלון $290", "base_prices: the spec's text");
@@ -1715,6 +1717,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     location_by_city: { city: "ברלין", iata: "BER" },
     tickets_tixstock: { count: 4 },
     tickets_livetickets: { count: 2 },
+    tickets_livetickets_non_instant: { count: 2 },
     live_from_snapshot: { count: 2 },
     categories_dropped: { count: 2, reason: "restricted view" },
     zones_from_template: { zoned: 9, total: 12 },
@@ -5753,6 +5756,141 @@ async function supplierSvgFetchChecks(): Promise<void> {
   if (answered.ok) same(answered.proposal, parseLocationProposal(good, fallback), "location outcome: the proposal is parseLocationProposal's over the show's own values");
   const salvaged = locationOutcomeFromAnswer(toolUse("propose_location", { ...good, iata: "VLCX", latitude: 95 }), fallback, 0.02);
   check(salvaged.ok && salvaged.proposal.iata === "" && salvaged.proposal.latitude === 39.45, "location outcome: a bad field is salvaged (IATA dropped, coordinates kept from the show), never a failure");
+}
+
+// ---- Alon round 2, Task 6: LiveTickets categories that are not instant-confirm (tickets.ts + plan.ts + decisions.ts) ----
+{
+  const liveCat = (over: Partial<LiveTicketsCategory>): LiveTicketsCategory => ({
+    id: "601",
+    title: "Gold",
+    hebTitle: "זהב",
+    description: "ליד הבמה",
+    cost: 80,
+    maxPerOrder: 6,
+    seatingGroupMax: null,
+    sellable: true,
+    nonInstantOnly: false,
+    blockedReason: "",
+    ...over,
+  });
+  const price = (cost: number): number => Math.round(cost * 1.1);
+  const stock: LiveTicketsStock = {
+    currency: "EUR",
+    categories: [
+      liveCat({}),
+      liveCat({ id: "602", title: "Silver", hebTitle: "כסף", cost: 60, sellable: false, nonInstantOnly: true, blockedReason: "Not instant-confirm" }),
+      liveCat({ id: "603", title: "Pit", hebTitle: "פיט", cost: 40, sellable: false, blockedReason: "Single seats" }),
+    ],
+  };
+
+  // -- ticketsFromLiveStock: the switch ----------------------------------------------------------
+  const brought = ticketsFromLiveStock(stock, "LT-9", price, { nonInstant: true });
+  same(brought.tickets.map((t) => t.id), ["601", "602"], "non-instant on: the sellable and the non-instant-only category are tickets, in stock order");
+  same(brought.tickets[0].nonInstant, undefined, "non-instant on: an instant ticket does not carry the flag");
+  check(!("nonInstant" in brought.tickets[0]), "non-instant on: an instant ticket has no nonInstant key at all (the shape the price sync writes)");
+  same(brought.tickets[1].nonInstant, true, "non-instant on: the non-instant-only category's ticket is marked nonInstant: true");
+  same(
+    [brought.tickets[1].supplier, brought.tickets[1].vendor, brought.tickets[1].category, brought.tickets[1].price, brought.tickets[1].available, brought.tickets[1].eid],
+    ["livetickets", "LiveTickets", "Silver", 66, true, "LT-9"],
+    "the non-instant ticket is built like any other LiveTickets ticket (their category id, the priced cost, on sale)",
+  );
+  same(brought.nonInstant, 1, "non-instant on: the return counts the non-instant tickets");
+  same(brought.dropped, [{ title: "Pit", reason: "Single seats" }], "non-instant on: a category blocked for another reason is still dropped with its reason");
+  same(brought.state, "ok", "non-instant on: the stock is ok");
+
+  const off = ticketsFromLiveStock(stock, "LT-9", price, { nonInstant: false });
+  same(off.tickets.map((t) => t.id), ["601"], "non-instant off: today's result - the sellable category only");
+  same(off.dropped, [{ title: "Silver", reason: "Not instant-confirm" }, { title: "Pit", reason: "Single seats" }], "non-instant off: today's dropped lines, both with their reasons");
+  same(off.nonInstant, 0, "non-instant off: none counted");
+  const noOpts = ticketsFromLiveStock(stock, "LT-9", price);
+  same([noOpts.tickets, noOpts.dropped, noOpts.nonInstant], [off.tickets, off.dropped, 0], "no options = non-instant off (the old callers' behaviour)");
+
+  // A non-instant category still needs a usable cost; zero / NaN is dropped as "no price", never a ticket at the markup alone.
+  const noCost = ticketsFromLiveStock(
+    { currency: "USD", categories: [liveCat({ id: "604", title: "Free", cost: 0, sellable: false, nonInstantOnly: true, blockedReason: "Not instant-confirm" })] },
+    "LT-9",
+    price,
+    { nonInstant: true },
+  );
+  same([noCost.tickets, noCost.dropped, noCost.nonInstant], [[], [{ title: "Free", reason: NO_PRICE_REASON }], 0], "non-instant on, no usable cost: dropped as no price and not counted");
+
+  // Only non-instant categories: the show is no longer empty (the bug Alon met) - and still empty with the switch off.
+  const onlyNonInstant: LiveTicketsStock = { currency: "EUR", categories: [stock.categories[1]] };
+  same(ticketsFromLiveStock(onlyNonInstant, "LT-9", price, { nonInstant: true }).tickets.length, 1, "a show sold only non-instant has a ticket now");
+  same(ticketsFromLiveStock(onlyNonInstant, "LT-9", price, { nonInstant: false }).tickets.length, 0, "with the switch off it still has none");
+  same(ticketsFromLiveStock("SOLD_OUT", "LT-9", price, { nonInstant: true }), { tickets: [], dropped: [], state: "sold_out", nonInstant: 0 }, "SOLD_OUT is the same with the switch on");
+  same(ticketsFromLiveStock(null, "LT-9", price, { nonInstant: true }), { tickets: [], dropped: [], state: "unreachable", nonInstant: 0 }, "no answer is the same with the switch on");
+
+  // -- the plan: rules.livetickets_non_instant ---------------------------------------------------
+  const rawPlan = (): Record<string, unknown> => JSON.parse(JSON.stringify(clapton()));
+  const withoutField = rawPlan();
+  delete (withoutField.rules as Record<string, unknown>).livetickets_non_instant;
+  const missing = parsePlanInput(withoutField);
+  check(missing.ok, "parsePlanInput: a plan with no livetickets_non_instant is fine (an older stored plan, a model that said nothing)");
+  same(missing.plan.rules.livetickets_non_instant, true, "parsePlanInput: no livetickets_non_instant = true (bring them)");
+  const falsy = rawPlan();
+  (falsy.rules as Record<string, unknown>).livetickets_non_instant = false;
+  const falsePlan = parsePlanInput(falsy);
+  check(falsePlan.ok, "parsePlanInput: livetickets_non_instant false is valid");
+  same(falsePlan.plan.rules.livetickets_non_instant, false, "parsePlanInput: livetickets_non_instant false stays false");
+  const truthy = rawPlan();
+  (truthy.rules as Record<string, unknown>).livetickets_non_instant = true;
+  same(parsePlanInput(truthy).plan.rules.livetickets_non_instant, true, "parsePlanInput: livetickets_non_instant true stays true");
+  const junk = rawPlan();
+  (junk.rules as Record<string, unknown>).livetickets_non_instant = "no";
+  const junkParse = parsePlanInput(junk);
+  problemFor(junkParse, "rules.livetickets_non_instant", "a livetickets_non_instant that is a string");
+  same(junkParse.plan.rules.livetickets_non_instant, true, "a bad livetickets_non_instant falls back to the default (true) and the rest survives");
+  same(junkParse.plan.subject.name_en, "Eric Clapton", "a bad livetickets_non_instant does not hide the rest of the plan");
+  same(emptyPlan().rules.livetickets_non_instant, true, "emptyPlan: LiveTickets non-instant is brought by default");
+
+  // planNonInstant: every reader of a stored plan goes through it.
+  same(planNonInstant(clapton()), true, "planNonInstant: true on a plan that says true");
+  const offPlan = clapton();
+  offPlan.rules.livetickets_non_instant = false;
+  same(planNonInstant(offPlan), false, "planNonInstant: false on a plan that says false");
+  const oldStored = clapton();
+  delete (oldStored.rules as { livetickets_non_instant?: boolean }).livetickets_non_instant;
+  same(planNonInstant(oldStored), true, "planNonInstant: an old stored plan with no field reads true (old plan)");
+
+  // The tool schema asks for it, never requires it.
+  const rulesSchema = (PLAN_TOOL_SCHEMA as { properties: { rules: { properties: Record<string, { type?: unknown; description?: string }>; required: string[] } } }).properties.rules;
+  same(rulesSchema.properties.livetickets_non_instant?.type, "boolean", "schema: rules.livetickets_non_instant is a boolean");
+  same(
+    rulesSchema.properties.livetickets_non_instant?.description,
+    "false only when the brief asks for instant-confirm tickets only",
+    "schema: the model sets it false only when the brief asks for instant-confirm tickets only",
+  );
+  check(!rulesSchema.required.includes("livetickets_non_instant"), "schema: it is not required - silence means bring them");
+
+  // planDiff: a person flipping the switch is one lesson; an old plan with no field against an untouched card is none.
+  const flipped = clapton();
+  flipped.rules.livetickets_non_instant = false;
+  same(planDiff(clapton(), flipped), [{ field: "rules.livetickets_non_instant", from: true, to: false }], "planDiff: the switch flipped off is one change");
+  same(planDiff(oldStored, clapton()), [], "planDiff: a plan with no field against one that says true is no change (the default)");
+  same(planDiff(oldStored, flipped), [{ field: "rules.livetickets_non_instant", from: true, to: false }], "planDiff: from an old plan the 'from' reads the default (true)");
+  const swapped = clapton();
+  swapped.rules.without_location = "skip";
+  swapped.rules.livetickets_non_instant = false;
+  same(
+    planDiff(clapton(), swapped).map((c) => c.field),
+    ["rules.without_location", "rules.livetickets_non_instant"],
+    "planDiff: the switch is listed after without_location (plan order)",
+  );
+  // applyPriorDefaults keeps the switch (it clones the whole plan).
+  same(applyPriorDefaults(flipped, null).plan.rules.livetickets_non_instant, false, "applyPriorDefaults keeps the switch as the plan has it");
+
+  // -- the decision line -------------------------------------------------------------------------
+  same(
+    decision("tickets_livetickets_non_instant", { count: 2 }),
+    { code: "tickets_livetickets_non_instant", text: "2 קטגוריות LiveTickets ללא אישור מיידי (יסומנו באתר)" },
+    "tickets_livetickets_non_instant: the spec's text",
+  );
+  same(
+    decision("tickets_livetickets_non_instant", { count: 1 }).text,
+    "קטגוריה אחת LiveTickets ללא אישור מיידי (יסומנו באתר)",
+    "tickets_livetickets_non_instant: one category reads as one",
+  );
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
