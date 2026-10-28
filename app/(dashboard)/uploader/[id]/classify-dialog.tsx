@@ -44,6 +44,7 @@ import {
   COL_STATUS,
   COL_VENUE_HE,
   DESCRIBE_FAILED_LINE,
+  LEARN_RECIPE,
   MAP_EXCLUDED_LINE,
   MAP_HINT,
   MAP_PRICES_LINE,
@@ -450,6 +451,9 @@ export function ClassifyDialog({
             </div>
           </form>
         )}
+
+        {/* Round 2, Alon: "not clear which flow" - the other way to teach a hall, one line above the buttons. */}
+        <p className="text-xs text-muted-foreground">{LEARN_RECIPE}</p>
 
         <DialogFooter className="gap-2 sm:space-x-0">
           <Button type="button" variant="outline" disabled={saving} onClick={onClose}>

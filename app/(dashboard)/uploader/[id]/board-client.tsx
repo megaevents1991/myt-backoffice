@@ -22,7 +22,9 @@ import {
   ANSWERED_MANY_SKIPPED,
   ANSWERED_MANY_TASKS,
   countItems,
+  DEFAULT_FILTER,
   farVenueTarget,
+  FILTER_HE,
   FILTERS,
   inFilter,
   isApprovable,
@@ -79,7 +81,7 @@ export function BoardClient({
 }) {
   const { toast } = useToast();
   const { board, loadError, loopActive, now, refresh, wake } = useRunBoard(runId, initial, initialError);
-  const [filter, setFilter] = useUrlState<Filter>("f", "all", FILTERS);
+  const [filter, setFilter] = useUrlState<Filter>("f", DEFAULT_FILTER, FILTERS);
   const [busy, setBusy] = useState<Record<string, BusyKind>>({});
   const [rejecting, setRejecting] = useState<UploaderItem | null>(null);
   const [rebuilding, setRebuilding] = useState<UploaderItem | null>(null);
@@ -494,12 +496,13 @@ export function BoardClient({
             {visible.length === 0 ? (
               <div className="rounded-lg border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
                 אין הופעות בסינון הזה.{" "}
+                {/* From any other pill back to the default view; from an empty default (everything rejected / skipped) to all. */}
                 <button
                   type="button"
-                  onClick={() => setFilter("all")}
+                  onClick={() => setFilter(filter === DEFAULT_FILTER ? "all" : DEFAULT_FILTER)}
                   className="rounded-sm font-medium text-foreground underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  הצג הכל
+                  {filter === DEFAULT_FILTER ? "הצג הכל" : `הצג ${FILTER_HE[DEFAULT_FILTER]}`}
                 </button>
               </div>
             ) : (

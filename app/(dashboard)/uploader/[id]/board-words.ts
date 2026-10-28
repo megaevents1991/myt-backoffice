@@ -242,11 +242,16 @@ export function countItems(items: UploaderItem[]): BoardCounts {
   return c;
 }
 
-export const FILTERS = ["all", "questions", "ready", "attention", "approved", "skipped", "rejected", "errors"] as const;
+/**
+ * The pills, in order. "פעילים" (round 2, Alon: "give me a reject option that filters out") is the board's default - everything
+ * but the shows a person rejected or the build skipped; "הכל" stays, last, for the ones who want them back on screen.
+ */
+export const FILTERS = ["active", "questions", "ready", "attention", "approved", "skipped", "rejected", "errors", "all"] as const;
 export type Filter = (typeof FILTERS)[number];
+export const DEFAULT_FILTER: Filter = "active";
 
 export const FILTER_HE: Record<Filter, string> = {
-  all: "הכל",
+  active: "פעילים",
   questions: "שאלות",
   ready: "מוכנים",
   attention: "דורשים תשומת לב",
@@ -254,10 +259,13 @@ export const FILTER_HE: Record<Filter, string> = {
   skipped: "דולגו",
   rejected: "נדחו",
   errors: "שגיאות",
+  all: "הכל",
 };
 
 export function inFilter(filter: Filter, item: UploaderItem): boolean {
   switch (filter) {
+    case "active":
+      return item.status !== "rejected" && item.status !== "skipped";
     case "all":
       return true;
     case "questions":
@@ -279,6 +287,8 @@ export function inFilter(filter: Filter, item: UploaderItem): boolean {
 
 export function filterCount(filter: Filter, c: BoardCounts): number {
   switch (filter) {
+    case "active":
+      return c.total - c.rejected - c.skipped;
     case "all":
       return c.total;
     case "questions":
@@ -462,8 +472,14 @@ export function TEAMS_DONE(r: { created: number; linked?: number; renamed: numbe
 }
 
 // Learn from an event a person arranged in the editor (5.5).
-export const BTN_LEARN_CARD = (n: number): string =>
-  n === 1 ? "למד מהאירוע הזה והחל על ההופעה הנוספת" : `למד מהאירוע הזה והחל על ${n} ההופעות`;
+// Learn in two clear steps (round 2, Alon: "not clear which flow"): the button used to appear only AFTER an event was
+// fixed in the editor, with nothing saying the editor comes first. A card whose hall has other shows now shows both steps.
+export const LEARN_STEP_1 = "1. סדרו את האירוע בעורך";
+export const LEARN_STEP_1_DONE = "1. האירוע סודר בעורך";
+export const LEARN_STEP_2 = (n: number): string => (n === 1 ? "2. למדו והחילו על ההופעה הנוספת" : `2. למדו והחילו על ${n} ההופעות`);
+export const LEARN_LOCKED_LINE = "אחרי השמירה בעורך הכפתור נפתח";
+/** The one-line recipe under the panel's venue rows and in the classify dialog's footer. */
+export const LEARN_RECIPE = 'רוצים לסדר ידנית? סדרו אירוע אחד בעורך, חזרו ולחצו "למדו והחילו" בכרטיס שלו';
 export const LEARN_TITLE = "ללמוד מהאירוע הזה?";
 export const LEARN_DESCRIPTION = "תבנית האולם תתעדכן מהאירוע שסודר בעורך, ושאר ההופעות באולם בריצה ייכתבו לפיה. בלי AI. האירוע עצמו לא משתנה.";
 export const LEARN_READING = "קורא את האירוע…";

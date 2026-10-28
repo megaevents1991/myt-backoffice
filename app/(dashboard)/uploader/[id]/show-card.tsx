@@ -11,11 +11,14 @@ import { WARNING_TEXT } from "@/lib/uploader/warnings";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
 import {
-  BTN_LEARN_CARD,
   builtPrice,
   creativeLine,
   existingEventId,
   farVenueTarget,
+  LEARN_LOCKED_LINE,
+  LEARN_STEP_1,
+  LEARN_STEP_1_DONE,
+  LEARN_STEP_2,
   rejectedBeforeLine,
   SKIP_REASON_HE,
   stampHe,
@@ -179,22 +182,66 @@ const Pill = ({ item }: { item: UploaderItem }) => (
 );
 
 /**
- * "למד מהאירוע הזה והחל על N ההופעות" (spec 5.5): a person arranged this event's tickets in the editor and
- * other shows of the same hall still have no zones - the board's learn confirm takes it from here.
+ * Learn from an event in two clear steps (spec 5.5, round 2 - Alon: "not clear which flow"). A card whose hall has other
+ * shows always shows both: 1. arrange this event's tickets in the editor (a link, new tab); 2. "למדו והחילו" - disabled,
+ * with the line that says it opens after the editor's save, until `fixedByHand` says a person did arrange it. Then the
+ * board's learn confirm takes it from there.
  */
-function LearnButton({ item, siblings, busy, onLearn }: { item: UploaderItem; siblings: number; busy: BusyKind | null; onLearn: (item: UploaderItem) => void }) {
+function LearnSteps({
+  item,
+  eventId,
+  siblings,
+  fixed,
+  busy,
+  onLearn,
+}: {
+  item: UploaderItem;
+  eventId: number;
+  siblings: number;
+  fixed: boolean;
+  busy: BusyKind | null;
+  onLearn: (item: UploaderItem) => void;
+}) {
+  const lockedId = `learn-locked-${item.id}`;
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={busy !== null}
-      onClick={() => onLearn(item)}
-      className="h-auto min-h-8 w-full justify-start whitespace-normal border-info/40 py-1.5 text-start text-[13px] leading-snug"
-    >
-      <GraduationCap aria-hidden />
-      <span className="min-w-0">{BTN_LEARN_CARD(siblings)}</span>
-    </Button>
+    <div className="space-y-1.5 rounded-md border border-info/40 px-2.5 py-2">
+      {fixed ? (
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-success">
+          <Check aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          {LEARN_STEP_1_DONE}
+        </p>
+      ) : (
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="h-auto min-h-8 w-full justify-start whitespace-normal py-1.5 text-start text-[13px] leading-snug"
+        >
+          <a href={`/events/${eventId}`} target="_blank" rel="noreferrer">
+            <SquarePen aria-hidden />
+            <span className="min-w-0">{LEARN_STEP_1}</span>
+            <span className="sr-only"> (נפתח בלשונית חדשה)</span>
+          </a>
+        </Button>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!fixed || busy !== null}
+        aria-describedby={fixed ? undefined : lockedId}
+        onClick={() => onLearn(item)}
+        className="h-auto min-h-8 w-full justify-start whitespace-normal py-1.5 text-start text-[13px] leading-snug"
+      >
+        <GraduationCap aria-hidden />
+        <span className="min-w-0">{LEARN_STEP_2(siblings)}</span>
+      </Button>
+      {!fixed && (
+        <p id={lockedId} className="text-xs text-muted-foreground">
+          {LEARN_LOCKED_LINE}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -205,7 +252,7 @@ export type ShowCardProps = {
   edited: boolean;
   /** `RunBoard.fixedByHand[item.id]`: a person arranged this event's TixStock tickets in the editor. */
   fixedByHand: boolean;
-  /** Other ready / approved shows of the same hall (drawing) with an event - what "learn from this event" rewrites, zoned or not. */
+  /** Other ready / approved shows of the same hall (drawing) with an event - what "learn from this event" rewrites, zoned or not; above 0 the card shows the two learn steps. */
   hallmates: number;
   /** The run panel is on screen: the run-level warnings fold into one line that jumps to it. */
   panelShown: boolean;
@@ -225,7 +272,10 @@ export type ShowCardProps = {
 export function ShowCard(props: ShowCardProps) {
   const { item, art, subjectNameEn, edited, fixedByHand, hallmates, panelShown, people, busy, focused, now } = props;
   const { onFocusCard, onApprove, onReject, onRetry, onRebuild, onLearn } = props;
-  const learn = fixedByHand && hallmates > 0 ? <LearnButton item={item} siblings={hallmates} busy={busy} onLearn={onLearn} /> : null;
+  const learn =
+    hallmates > 0 && item.event_id !== null ? (
+      <LearnSteps item={item} eventId={item.event_id} siblings={hallmates} fixed={fixedByHand} busy={busy} onLearn={onLearn} />
+    ) : null;
   const shell = (tone: CardTone, body: ReactNode, footer?: ReactNode) => (
     <CardShell item={item} art={art} tone={tone} focused={focused} onFocusCard={onFocusCard} footer={footer}>
       {body}

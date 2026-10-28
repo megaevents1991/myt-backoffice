@@ -154,7 +154,23 @@ import { PRICED_PARTY } from "@/lib/tixstock-listings";
 import type { EventTicket } from "@/types/app.types";
 import { ITEM_STATUSES } from "@/types/uploader.types";
 import type { ShowIdentity, UploaderItem, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
-import { CLASSIFY_DONE, creativeSubject, existingEventId, LOCATION_DONE, LOCATION_TITLE, MAP_EXCLUDED_LINE, MAP_PRICES_LINE, RENAMABLE_LINE } from "@/app/(dashboard)/uploader/[id]/board-words";
+import {
+  CLASSIFY_DONE,
+  countItems,
+  creativeSubject,
+  DEFAULT_FILTER,
+  existingEventId,
+  FILTER_HE,
+  FILTERS,
+  filterCount,
+  inFilter,
+  LEARN_STEP_2,
+  LOCATION_DONE,
+  LOCATION_TITLE,
+  MAP_EXCLUDED_LINE,
+  MAP_PRICES_LINE,
+  RENAMABLE_LINE,
+} from "@/app/(dashboard)/uploader/[id]/board-words";
 import * as runRules from "@/lib/uploader/run-rules";
 import { TOUR_UPLOADER_AGENT } from "@/lib/agents";
 import { normalizeSupplierCategory } from "@/lib/suppliers";
@@ -5720,6 +5736,20 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(LOCATION_DONE("ולנסיה, ספרד", 3), "נוצר מיקום ולנסיה, ספרד · 3 הופעות ייבנו כחבילה", "LOCATION_DONE: the toast names the location and how many shows build as a package (applied + 1)");
   same(LOCATION_DONE("ולנסיה, ספרד", 1), "נוצר מיקום ולנסיה, ספרד · הופעה אחת תיבנה כחבילה", "LOCATION_DONE: one show reads in the singular");
   same([LOCATION_TITLE("Valencia"), LOCATION_TITLE("")], ["יצירת מיקום ל-Valencia", "יצירת מיקום ל-העיר"], "LOCATION_TITLE: the show's city, or a generic word when it has none");
+
+  // -- the board's filters (round 2, Task 12): "פעילים" is the default, and a rejected / skipped show leaves it -------------
+  {
+    const statuses = ["found", "building", "question", "ready", "approved", "skipped", "rejected", "error"] as const;
+    const items = statuses.map((status) => ({ id: status, status, warnings: [], blockers: [] }) as unknown as UploaderItem);
+    same([FILTERS[0], DEFAULT_FILTER, FILTERS[FILTERS.length - 1]], ["active", "active", "all"], "the pills start with פעילים (the default) and end with הכל");
+    same(FILTER_HE.active, "פעילים", "FILTER_HE: the new pill's word");
+    same(items.filter((i) => inFilter("active", i)).map((i) => i.status), ["found", "building", "question", "ready", "approved", "error"], "active: everything but rejected and skipped shows");
+    same(items.filter((i) => inFilter("all", i)).length, statuses.length, "all: still every show");
+    const counts = countItems(items);
+    same(filterCount("active", counts), items.filter((i) => inFilter("active", i)).length, "the active pill's count is the number of cards it lists (total - rejected - skipped)");
+    for (const f of FILTERS) same(filterCount(f, counts), items.filter((i) => inFilter(f, i)).length, `filterCount agrees with inFilter for ${f}`);
+    same([LEARN_STEP_2(1), LEARN_STEP_2(7)], ["2. למדו והחילו על ההופעה הנוספת", "2. למדו והחילו על 7 ההופעות"], "LEARN_STEP_2: singular for one other show, the count otherwise");
+  }
 
   // -- the propose_location call: prompt, tool, answer -> outcome (the call itself needs the key and is not run here) --
   const def = TOUR_UPLOADER_AGENT;

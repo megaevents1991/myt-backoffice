@@ -13,6 +13,7 @@ import {
   BTN_NAMES,
   BTN_OPEN_TASK,
   BTN_OPEN_TEMPLATES,
+  LEARN_RECIPE,
   PANEL_COLLAPSE,
   PANEL_COUNT_TITLE,
   PANEL_EXPAND,
@@ -219,6 +220,14 @@ export function RunPanel({
             );
           })}
         </ul>
+      )}
+
+      {/* The way to arrange a hall by hand (round 2, Alon: "not clear which flow") - said once, under the hall rows. */}
+      {open && rows.some((r) => r.kind === "venue") && (
+        <p className="flex items-start gap-1.5 border-t px-4 py-2 text-xs text-muted-foreground">
+          <GraduationCap aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span>{LEARN_RECIPE}</span>
+        </p>
       )}
 
       {/* Remounted per task (price-changes' pattern): the dialog reads its prefill once, when it mounts. */}
