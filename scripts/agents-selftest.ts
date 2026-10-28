@@ -484,8 +484,8 @@ assert.equal(
 );
 assert.equal(
   uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Riverside Stand", field: "description", from: "x", to: "y" }),
-  "at Craven Cottage staff changed the description of 'Riverside Stand'",
-  "a description change names the category only - the two long texts stay out of the line",
+  null,
+  "a description change is no lesson since round 2 (D4): the classify call is never asked for a description, old rows included",
 );
 assert.equal(
   uploaderLessonFor("uploader.classify_changed", { ...CRAVEN, category: "Hospitality Box 12", field: "drop", from: false, to: true, reason: "other" }),

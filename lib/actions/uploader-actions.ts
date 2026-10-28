@@ -122,6 +122,7 @@ import { normalizeSupplierCategory, ticketSupplier } from "@/lib/suppliers";
 import {
   applyClassification,
   classificationDiff,
+  classifyResultOf,
   cleanConfirmedRows,
   drawingCategories,
   dropRule,
@@ -1583,20 +1584,6 @@ async function refreshAfterRewrite(rewrite: { eventIds: number[]; live: boolean 
 }
 
 /**
- * The confirm's answer: an item that could not be recorded makes it a `db_error` (a second confirm is a no-op merge that records it),
- * and so does a description rewrite that did not finish (`describeFailed` - the next confirm fills what is left).
- */
-function rewriteResult(rewrite: Rewrite, total: number, counts: { zones: number; dropped: number; unsure: number }, describeFailed = false): ClassifyResult {
-  if (rewrite.itemsFailed > 0) {
-    return { ok: false, kind: "db_error", message: `${rewrite.eventIds.length} events were rewritten, but ${rewrite.itemsFailed} show(s) could not be saved - confirm again` };
-  }
-  if (describeFailed) {
-    return { ok: false, kind: "db_error", message: "the venue was classified, but not every event description could be rewritten with the hall's name - confirm again" };
-  }
-  return { ok: true, events: rewrite.eventIds.length, reached: rewrite.reached, total, ...counts };
-}
-
-/**
  * The classification dialog opens: the venue's categories (the drawing's and the built events' tickets),
  * the stored template's labels, the code rule's drops, and - when a category the venue does not drop has no
  * HEBREW label in the template yet - the agent's proposal (`classify_venue`). The ask set (ruling R26) = the
@@ -1700,7 +1687,8 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
  *    it changed;
  * 2-3. the venue's events rewritten, each item following right after its event (`rewriteVenueItems`), then
  *    their descriptions - the ones the uploader wrote itself - filled again, for `{אולם}` prints the hall's
- *    Hebrew name (`rewriteRunDescriptions`; none when no template is saved or the hall has no name at all);
+ *    Hebrew name (`rewriteRunDescriptions`; none when no template is saved or the hall has no name at all;
+ *    a failure there is only flagged - `describeFailed` on the OK answer - never a failed classification);
  * 4. `uploader.classified` (the record) and one `uploader.classify_changed` per change (the lessons);
  * 5. the site refreshed once when a live event changed, the price light's list when any did.
  * `reached < total` = the time budget or a failed event write stopped it - a second confirm finishes it (the
@@ -1788,9 +1776,11 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   });
   await logClassifyChanges(ctx.run, ctx.name, classificationDiff(shown, confirmed), shown);
 
+  if (described === "db_error") console.error(`uploader-actions: the descriptions of run ${ctx.run.id}'s shows at ${ctx.name} were not all rewritten - the classification itself is saved`);
+
   // 5. The site (a description that failed half-way may still have changed a live event - ask anyway).
   await refreshAfterRewrite({ eventIds: rewrite.eventIds, live: rewrite.live || described === "db_error" || described.live });
-  return rewriteResult(rewrite, ctx.targets.length, { zones: written.template.zones.length, dropped: droppedRows.length, unsure: unsure.length }, described === "db_error");
+  return classifyResultOf(rewrite, ctx.targets.length, { zones: written.template.zones.length, dropped: droppedRows.length, unsure: unsure.length }, described === "db_error");
 }
 
 /** One show a person arranged in the editor, as "learn from this event" reads it. */
@@ -1940,7 +1930,7 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
 
   // 5. The site.
   await refreshAfterRewrite(rewrite);
-  return rewriteResult(rewrite, targets.length, { zones: written.template.zones.length, dropped: learned.dropped.length, unsure: 0 });
+  return classifyResultOf(rewrite, targets.length, { zones: written.template.zones.length, dropped: learned.dropped.length, unsure: 0 });
 }
 
 // ---- Alon 25.10: the description template --------------------------------------------------------------

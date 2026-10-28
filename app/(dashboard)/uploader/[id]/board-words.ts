@@ -392,6 +392,8 @@ export function CLASSIFY_DONE(r: { events: number; zones: number; dropped: numbe
   return parts.join(" · ");
 }
 const notReached = (left: number): string => (left === 1 ? "הופעה אחת לא הספיקה להתעדכן" : `${left} הופעות לא הספיקו להתעדכן`);
+/** A classification confirm that was saved but could not rewrite every event description with the hall's Hebrew name (round 2, D3). */
+export const DESCRIBE_FAILED_LINE = "תיאורי האירועים לא עודכנו - אשרו שוב";
 /** A classification confirm that ran out of time before every show was rewritten (the panel's "סווג כרטיסים" reopens it). */
 export const PARTIAL_LINE = (left: number): string => `${notReached(left)} - פתחו שוב את הסיווג ואשרו כדי לסיים את שאר ההופעות.`;
 /** The same for learn-from-event (the panel's / the card's learn button runs it again). */

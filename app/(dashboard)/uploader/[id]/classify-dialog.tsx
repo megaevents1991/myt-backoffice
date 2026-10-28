@@ -32,6 +32,7 @@ import {
   COL_LABEL,
   COL_STATUS,
   COL_VENUE_HE,
+  DESCRIBE_FAILED_LINE,
   NETWORK_TEXT,
   PARTIAL_LINE,
   STATUS_AI,
@@ -259,7 +260,11 @@ export function ClassifyDialog({
         });
         return;
       }
-      toast({ title: CLASSIFY_DONE(r), description: r.reached < r.total ? rtl(PARTIAL_LINE(r.total - r.reached)) : undefined });
+      // Saved either way: a partial run and event descriptions that could not be rewritten are warning lines under the normal toast.
+      const lines = [r.reached < r.total ? PARTIAL_LINE(r.total - r.reached) : null, r.describeFailed ? DESCRIBE_FAILED_LINE : null].filter(
+        (line): line is string => line !== null,
+      );
+      toast({ title: CLASSIFY_DONE(r), description: lines.length === 0 ? undefined : rtl(lines.map((line) => <p key={line}>{line}</p>)) });
       await onDone();
     } catch {
       toast({ variant: "destructive", title: CLASSIFY_FAILED, description: rtl(NETWORK_TEXT) });

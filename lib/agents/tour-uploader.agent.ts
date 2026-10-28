@@ -181,8 +181,10 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
         const from = text(m.from);
         return from ? `${at} renamed zone '${category}' from '${from}' to '${to}'` : `${at} named '${category}' '${to}' by hand`;
       }
-      // The two texts are long and the model proposes its own; the fact that it was reworded is the lesson.
-      if (m.field === "description") return `${at} changed the description of '${category}'`;
+      // The model no longer proposes a zone description (round 2, D4), so a description change - old audit rows
+      // (kept for up to 120 days), or one a learn-from-event / the editor still writes - is no lesson for the
+      // classify call: quoting it would teach the model about a field it is never asked for. Still audited.
+      if (m.field === "description") return null;
       if (m.field === "drop" && typeof m.to === "boolean") {
         // Only a zone that was proposed as dropped can be un-dropped. `reason` is how it was dropped:
         // "away" = the code rule flagged it; anything else (or nothing) = the proposal itself, so the

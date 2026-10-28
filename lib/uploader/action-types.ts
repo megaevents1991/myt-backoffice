@@ -95,9 +95,13 @@ export type LocationOption = { id: number; name: string; city_iata: string | nul
 
 // ---- round "אלון 1": classification, names, learn ------------------------------------------------------
 
-/** `classifyVenue` / `learnFromEvent`: how many events were rewritten and what the template ended up with. */
+/**
+ * `classifyVenue` / `learnFromEvent`: how many events were rewritten and what the template ended up with.
+ * `describeFailed` (`classifyVenue` only): everything was saved, but the venue's event descriptions could not all be
+ * rewritten with the hall's Hebrew name - that never fails a classification; the dialog says so and a second confirm fills them.
+ */
 export type ClassifyResult =
-  | { ok: true; events: number; reached: number; total: number; zones: number; dropped: number; unsure: number }
+  | { ok: true; events: number; reached: number; total: number; zones: number; dropped: number; unsure: number; describeFailed?: boolean }
   | { ok: false; kind: string; message?: string };
 
 /** `proposeVenueClassification`: the dialog's rows (and what the AI proposed, for the confirm's diff). */

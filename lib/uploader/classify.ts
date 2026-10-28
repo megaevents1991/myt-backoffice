@@ -794,6 +794,28 @@ export function isAppliedState(
   return row.map_image_url === mapUrl && JSON.stringify(sortedKeys(row.tickets_and_rates)) === JSON.stringify(sortedKeys(tickets));
 }
 
+// ---- The confirm's answer -----------------------------------------------------------------------------
+
+/**
+ * The classification confirm's / the learn's answer once the events were rewritten. An item that could not be
+ * recorded makes it a `db_error` (a second confirm is a no-op merge that records it). A description rewrite
+ * that did not finish never does (`describeFailed`, round 2 D3): the classification itself is saved by then, so
+ * the answer stays `ok` with the flag - the dialog says so, and the next confirm fills what is left.
+ */
+export function classifyResultOf(
+  rewrite: { eventIds: number[]; reached: number; itemsFailed: number },
+  total: number,
+  counts: { zones: number; dropped: number; unsure: number },
+  describeFailed = false,
+):
+  | { ok: true; events: number; reached: number; total: number; zones: number; dropped: number; unsure: number; describeFailed?: boolean }
+  | { ok: false; kind: string; message?: string } {
+  if (rewrite.itemsFailed > 0) {
+    return { ok: false, kind: "db_error", message: `${rewrite.eventIds.length} events were rewritten, but ${rewrite.itemsFailed} show(s) could not be saved - confirm again` };
+  }
+  return { ok: true, events: rewrite.eventIds.length, reached: rewrite.reached, total, ...counts, ...(describeFailed ? { describeFailed: true } : {}) };
+}
+
 // ---- What a person changed ---------------------------------------------------------------------------
 
 /**

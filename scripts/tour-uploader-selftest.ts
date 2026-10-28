@@ -92,6 +92,7 @@ import {
   applyClassification,
   CLASSIFY_TIMEOUT_MS,
   classificationDiff,
+  classifyResultOf,
   cleanConfirmedRows,
   cleanVenueHe,
   drawingCategories,
@@ -6394,6 +6395,22 @@ async function supplierSvgFetchChecks(): Promise<void> {
     NO_DROPPED,
   );
   same(twoKeysOneZone.zones[0].description, "מאחורי השער", "templateFromRows: two keys of one zone, both empty - the description stays");
+
+  // -- the confirm's answer: a description rewrite that fails never fails the classification --------------------
+  const counts = { zones: 7, dropped: 1, unsure: 0 };
+  same(
+    classifyResultOf({ eventIds: [1, 2, 3], reached: 3, itemsFailed: 0 }, 3, counts),
+    { ok: true, events: 3, reached: 3, total: 3, zones: 7, dropped: 1, unsure: 0 },
+    "classifyResultOf: everything saved - ok, and no describeFailed key at all",
+  );
+  same(
+    classifyResultOf({ eventIds: [1, 2, 3], reached: 3, itemsFailed: 0 }, 3, counts, true),
+    { ok: true, events: 3, reached: 3, total: 3, zones: 7, dropped: 1, unsure: 0, describeFailed: true },
+    "classifyResultOf: descriptions that could not be rewritten - still ok, flagged describeFailed (the dialog shows its normal done toast and refreshes)",
+  );
+  const itemsLost = classifyResultOf({ eventIds: [1], reached: 3, itemsFailed: 2 }, 3, counts, true);
+  check(!itemsLost.ok && itemsLost.kind === "db_error" && (itemsLost.message ?? "").includes("2 show(s)"), "classifyResultOf: an item that could not be recorded is still a db_error (a second confirm records it)");
+  same(classifyResultOf({ eventIds: [], reached: 1, itemsFailed: 0 }, 5, counts), { ok: true, events: 0, reached: 1, total: 5, zones: 7, dropped: 1, unsure: 0 }, "classifyResultOf: a partial run is ok too (reached < total)");
 
   // -- the tool and the prompt --------------------------------------------------------------------------
   type ToolSchema = { required: string[]; properties: Record<string, { type?: unknown; maxLength?: number; items?: { properties: Record<string, unknown> } }> };
