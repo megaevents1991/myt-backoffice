@@ -2,8 +2,9 @@
 
 import type React from "react";
 
-import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type Column,
   type ColumnDef,
   type ColumnFiltersState,
   type SortingState,
@@ -14,6 +15,7 @@ import {
   type Updater,
   flexRender,
   getCoreRowModel,
+  getFacetedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -27,12 +29,28 @@ import {
   GripVertical,
   Inbox,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { matchesSearch } from "@/lib/search";
 import { tableStateKey } from "@/lib/view-state";
+import {
+  cleanStoredFilters,
+  filterSummary,
+  matchesHeaderFilter,
+  rowsLeftFilter,
+  type HeaderFilterKind,
+  type HeaderFilterValue,
+} from "@/lib/table-filters";
 import { useSessionState } from "@/hooks/use-view-state";
+import { useToast } from "@/hooks/use-toast";
+import {
+  HeaderFilterPopover,
+  headerFilterCell,
+  headerValueLabel,
+  type HeaderFilterSpec,
+} from "@/components/data-table-header-filter";
 import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/search-input";
 import {
@@ -444,7 +462,30 @@ export function DataTable<TData, TValue>({
     `${memory}:sort`,
     defaultSorting ?? [],
   );
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  // Header filters (a column's `meta.filter`, Alon 28.10) are remembered like the search - and read back only where
+  // they still fit the columns (cleanStoredFilters), so a stale one never hides rows nobody can see why.
+  const filterSpecs = useMemo(() => {
+    const specs = new Map<string, HeaderFilterSpec<TData>>();
+    for (const column of columns) {
+      const spec = column.meta?.filter;
+      const id = columnIdOf(column);
+      if (spec && id) specs.set(id, spec);
+    }
+    return specs;
+  }, [columns]);
+  const filterKindsKey = [...filterSpecs].map(([id, spec]) => `${id}:${spec.kind}`).join("|");
+  const filterKinds = useMemo(
+    () => Object.fromEntries([...filterSpecs].map(([id, spec]) => [id, spec.kind])) as Record<string, HeaderFilterKind>,
+    // the kinds, not the specs' identity: a column list rebuilt every render must not re-clean
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filterKindsKey],
+  );
+  const [storedFilters, setStoredFilters] = useSessionState<ColumnFiltersState>(`${memory}:filters`, []);
+  const columnFilters = useMemo<ColumnFiltersState>(() => cleanStoredFilters(storedFilters, filterKinds), [storedFilters, filterKinds]);
+  const [openFilter, setOpenFilter] = useState<string | null>(null);
+  // a double-click is two clicks first: a sortable header sorted twice - the sort before the first click comes back
+  const sortBeforeClick = useRef<SortingState>([]);
+  const { toast } = useToast();
   const [columnVisibility, setColumnVisibility] = useSessionState<VisibilityState>(
     `${memory}:columns`,
     {},
@@ -460,12 +501,13 @@ export function DataTable<TData, TValue>({
   });
   const [globalFilter, setGlobalFilter] = useSessionState<string>(`${memory}:search`, "");
 
-  // Dragging is live only in the order column's own ascending sort (or no sort) with no search: anything else
-  // would hand the screen a slice that is not the list it keeps.
+  // Dragging is live only in the order column's own ascending sort (or no sort) with no search and no header filter:
+  // anything else would hand the screen a slice that is not the list it keeps.
   const reorderLive =
     !!rowReorder &&
     rowReorder.enabled &&
     !globalFilter &&
+    columnFilters.length === 0 &&
     (sorting.length === 0 || (sorting.length === 1 && sorting[0].id === rowReorder.orderColumnId && !sorting[0].desc));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -517,13 +559,30 @@ export function DataTable<TData, TValue>({
       ]
     : [];
 
-  const allColumns = [...reorderColumns, ...selectionColumns, ...columns];
+  // a column that opts into a header filter gets its filter function here (a column's own filterFn stays its own)
+  const filterableColumns = columns.map((column) => {
+    const spec = column.meta?.filter;
+    if (!spec || column.filterFn) return column;
+    return {
+      ...column,
+      filterFn: (row: Row<TData>, columnId: string, value: unknown) =>
+        matchesHeaderFilter(headerFilterCell(spec, row, columnId), value as HeaderFilterValue),
+    } as ColumnDef<TData, TValue>;
+  });
+  const allColumns = [...reorderColumns, ...selectionColumns, ...filterableColumns];
 
   const table = useReactTable({
     data,
     columns: allColumns,
     onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
+    // a filter change lands on page 1 of what it leaves, like the search
+    onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) => {
+      setStoredFilters((previous) => {
+        const base = cleanStoredFilters(previous, filterKinds);
+        return typeof updater === "function" ? updater(base) : updater;
+      });
+      setPagination((p) => ({ ...p, pageIndex: 0 }));
+    },
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: (updater: Updater<RowSelectionState>) => {
       const next = typeof updater === "function" ? updater(rowSelection) : updater;
@@ -536,6 +595,7 @@ export function DataTable<TData, TValue>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     state: {
       sorting,
@@ -573,6 +633,12 @@ export function DataTable<TData, TValue>({
   const firstRow = filteredCount === 0 ? 0 : pageIndex * pageSize + 1;
   const lastRow = Math.min((pageIndex + 1) * pageSize, filteredCount);
   const searchValue = (table.getState().globalFilter as string) ?? "";
+  const activeFilters = columnFilters.flatMap((f) => {
+    const spec = filterSpecs.get(f.id);
+    return spec ? [{ id: f.id, value: f.value as HeaderFilterValue, spec }] : [];
+  });
+  const totalCount = table.getCoreRowModel().rows.length;
+  const shownIds = table.getFilteredRowModel().rows.map((row) => row.id);
   // A search typed on page 3 has to land on page 1 of what it found - the page
   // index does not reset by itself (that would throw you back on every inline edit).
   const setSearchValue = (value: string) => {
@@ -586,6 +652,20 @@ export function DataTable<TData, TValue>({
     visibleColumns[visibleColumns.length - 1]?.id === PINNED_COLUMN_ID && !edges.lastTooWide;
   // Columns still hidden past the trailing edge (the left one in an RTL table).
   const trailingHidden = edges.rtl ? edges.left : edges.right;
+
+  // A filter is live: a row an edit took out of the filtered list leaves it at once - and says so, or a saved row
+  // would seem to vanish. Only when the DATA changed and the filters did not (a filter change explains itself).
+  const lastView = useRef<{ data: TData[]; filters: ColumnFiltersState; search: string; shown: string[] } | null>(null);
+  useEffect(() => {
+    const before = lastView.current;
+    lastView.current = { data, filters: columnFilters, search: globalFilter, shown: shownIds };
+    if (!before || before.data === data || before.filters !== columnFilters || before.search !== globalFilter) return;
+    if (activeFilters.length === 0) return;
+    const left = rowsLeftFilter(before.shown, shownIds, table.getCoreRowModel().rows.map((row) => row.id));
+    if (left.length > 0) {
+      toast({ title: left.length === 1 ? "The row no longer matches the filter" : `${left.length} rows no longer match the filter` });
+    }
+  });
 
   // Rows can also shrink from outside (a filter chip, a bulk delete): never sit
   // on a page past the last one, which showed as an empty table with rows in it.
@@ -690,6 +770,39 @@ export function DataTable<TData, TValue>({
         </div>
       </div>
 
+      {/* A narrowed list says so: one chip per header filter (a click opens it, the cross drops it). */}
+      {activeFilters.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Filters">
+          {activeFilters.map(({ id, value, spec }) => (
+            <span
+              key={id}
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/30 bg-primary/5 ps-2.5 text-xs"
+            >
+              <button
+                type="button"
+                className="min-w-0 truncate py-1 text-start"
+                onClick={() => setOpenFilter(id)}
+                title={`Change the ${spec.label} filter`}
+              >
+                <span className="font-semibold">{spec.label}:</span>{" "}
+                <span dir="auto">{filterSummary(value, (v) => headerValueLabel(spec, v))}</span>
+              </button>
+              <button
+                type="button"
+                className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={`Remove the ${spec.label} filter`}
+                onClick={() => table.getColumn(id)?.setFilterValue(undefined)}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => table.resetColumnFilters()}>
+            Clear all
+          </Button>
+        </div>
+      )}
+
       {/* The table scrolls inside this card in both directions: on a long page
           the header stays in view and the sideways bar stays within reach,
           instead of sitting under row 50. Phones keep plain page scrolling. */}
@@ -702,13 +815,35 @@ export function DataTable<TData, TValue>({
               <TableRow key={headerGroup.id} className="bg-muted/60 hover:bg-muted/60">
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
+                  const filterSpec = header.isPlaceholder ? undefined : filterSpecs.get(header.column.id);
                   return (
                     <TableHead
                       key={header.id}
                       aria-sort={
                         sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
                       }
+                      // Alon's gesture: a double-click on the header opens its filter. Only clicks on the header
+                      // itself count - React bubbles the popover's own clicks (a portal) up to here.
+                      onMouseDown={
+                        filterSpec
+                          ? (event) => {
+                              if (event.detail === 1 && event.currentTarget.contains(event.target as Node)) {
+                                sortBeforeClick.current = sorting;
+                              }
+                            }
+                          : undefined
+                      }
+                      onDoubleClick={
+                        filterSpec
+                          ? (event) => {
+                              if (!event.currentTarget.contains(event.target as Node)) return;
+                              setSorting(sortBeforeClick.current);
+                              setOpenFilter(header.column.id);
+                            }
+                          : undefined
+                      }
                       className={cn(
+                        filterSpec && "group/th select-none",
                         "h-10 whitespace-nowrap px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
                         // A collapsed border does not travel with a sticky cell.
                         "shadow-[inset_0_-1px_0_hsl(var(--border))]",
@@ -722,6 +857,17 @@ export function DataTable<TData, TValue>({
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
+                      {filterSpec && (
+                        // in a span: HEADER_BUTTON styles the header's direct button children (the sort button)
+                        <span className="inline-flex align-middle">
+                          <HeaderFilterPopover
+                            column={header.column as Column<TData, unknown>}
+                            spec={filterSpec}
+                            open={openFilter === header.column.id}
+                            onOpenChange={(next) => setOpenFilter(next ? header.column.id : null)}
+                          />
+                        </span>
+                      )}
                     </TableHead>
                   );
                 })}
@@ -787,9 +933,9 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={allColumns.length} className="h-40">
-                  {searchValue ? (
+                  {searchValue || activeFilters.length > 0 ? (
                     <EmptyState
-                      title="Nothing matches that search"
+                      title={activeFilters.length > 0 ? "Nothing matches the filters" : "Nothing matches that search"}
                       description="Try a shorter search, or clear the filters above."
                     />
                   ) : (
@@ -843,6 +989,7 @@ export function DataTable<TData, TValue>({
               <span className="font-medium tabular text-foreground">{filteredCount}</span>
             </>
           )}
+          {activeFilters.length > 0 && <span className="tabular"> ({totalCount} in all)</span>}
         </span>
 
         <div className="flex items-center gap-1.5">
