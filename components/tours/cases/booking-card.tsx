@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CreditCard, FileText, Gift, Loader2 } from "lucide-react";
+import { CreditCard, FileText, Gift, Link2, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -17,6 +18,7 @@ import { Fact, FactList, Notice } from "@/components/tours/ui";
 import { sameCustomer, type CaseGift } from "@/lib/tours/cases";
 import type { CancellationRule } from "@/lib/tours/cancellation";
 import { CancelFeeToday, OrderPayments } from "@/components/tours/cases/order-money";
+import { openPaymentLinkDialog } from "@/components/tours/cases/payment-links";
 import {
   BOOKING_STATUS_HINTS,
   BOOKING_STATUS_LABELS,
@@ -226,6 +228,13 @@ export function BookingCard({
               <strong className="tabular">{money(booking.total)}</strong>
             </Fact>
           </FactList>
+          {/* a card payment from the summary (Dor 28.10) - the same dialog as under "Payments" */}
+          {withMoney && booking.status !== "cancelled" && booking.status !== "failed" && (
+            <Button size="sm" variant="outline" onClick={() => openPaymentLinkDialog(booking.id)}>
+              <Link2 className="h-4 w-4" />
+              Card payment link
+            </Button>
+          )}
         </div>
         <div className="space-y-2">
           <h4 className="text-sm font-semibold">Passengers · {paxLabel(booking)}</h4>

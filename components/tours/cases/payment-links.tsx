@@ -8,7 +8,7 @@
  * into the payments above. Rules are pure in lib/tours/payment-links.ts; writes go through
  * lib/actions/tours-payment-link-actions.ts.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, Link2, Loader2, Mail, MessageCircle, XCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -53,6 +53,12 @@ const STATE_CLASSES: Record<LinkState, string> = {
 
 type Draft = { kind: LinkKind; amount: string; payments: string; days: string };
 
+/** The order summary's "Card payment link" button opens this order's dialog here (Dor 28.10: a pay button in the summary). */
+const OPEN_EVENT = "tours:open-payment-link";
+export function openPaymentLinkDialog(bookingId: string): void {
+  window.dispatchEvent(new CustomEvent<string>(OPEN_EVENT, { detail: bookingId }));
+}
+
 export function PaymentLinks({ booking, due, onChanged }: { booking: BookingRow; due: number; onChanged: () => void }) {
   const run = useActionToast();
   const confirm = useConfirm();
@@ -78,6 +84,16 @@ export function PaymentLinks({ booking, due, onChanged }: { booking: BookingRow;
     setDraft(null);
     setMade(null);
   };
+  // the summary's button (an event, so the list and the dialog keep one state)
+  const openRef = useRef(open);
+  openRef.current = open;
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === booking.id) openRef.current();
+    };
+    window.addEventListener(OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_EVENT, onOpen);
+  }, [booking.id]);
 
   const create = async () => {
     if (!draft) return;
