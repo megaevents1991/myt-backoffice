@@ -108,6 +108,10 @@ export type ProposeResult =
       rows: ClassificationRow[];
       /** What the AI proposed per category key; null = it gave nothing (off / failed / the per-person cap - `ai.reason` says why). */
       proposed: Record<string, ProposedRow> | null;
+      /** The hall's Hebrew name the dialog's box opens with: the stored one (`venue_maps.name_he`), else the AI's proposal, else null (round 2, D3). */
+      venue_he: string | null;
+      /** `venue_he` is the AI's proposal (not a stored name) - the dialog says so beside the box. */
+      venue_he_ai: boolean;
       shows: number;
       /** `reason`: null (used) | "not_needed" | "rate_limited" | "error" | the model call's own failure ("off" / "budget" / "timeout" / "bad_answer"). The dialog opens either way. */
       ai: { used: boolean; reason: string | null; problems: string[] };

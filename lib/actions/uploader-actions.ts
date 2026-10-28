@@ -114,6 +114,7 @@ import {
   writeEventName,
   writeNamesTaskId,
   writeSubjectCache,
+  writeVenueNameHe,
   type EventTicketsRow,
   type VenueTemplateRow,
 } from "@/lib/services/uploader-store";
@@ -128,6 +129,7 @@ import {
   forgetUnconfirmed,
   isAppliedState,
   isFixedByHand,
+  parseVenueHeInput,
   proposalRows,
   readyToConfirm,
   templateFromEvent,
@@ -1256,6 +1258,8 @@ const VENUE_WARNINGS = new Set(["new_venue", "unzoned_tickets", "unzoned_review"
 const NO_PAGE_WARNINGS = new Set(["no_team_page", "no_artist_page"]);
 const HEBREW_LETTER = /[א-ת]/;
 const EMPTY_DROPPED: DroppedCategories = { dropped: [], kept: [] };
+/** A description rewrite that had nothing to do (no template saved, or no hall name to print). */
+const NO_REWRITE: DescriptionRewrite = { eventIds: [], live: false, editedByHand: 0, english: 0, failed: 0 };
 
 type Refusal = { ok: false; kind: string; message?: string };
 type BuiltItem = UploaderItem & { event_id: number };
@@ -1578,10 +1582,16 @@ async function refreshAfterRewrite(rewrite: { eventIds: number[]; live: boolean 
   if (rewrite.eventIds.length > 0) invalidatePriceLight("rows");
 }
 
-/** The confirm's answer: an item that could not be recorded makes it a `db_error` (a second confirm is a no-op merge that records it). */
-function rewriteResult(rewrite: Rewrite, total: number, counts: { zones: number; dropped: number; unsure: number }): ClassifyResult {
+/**
+ * The confirm's answer: an item that could not be recorded makes it a `db_error` (a second confirm is a no-op merge that records it),
+ * and so does a description rewrite that did not finish (`describeFailed` - the next confirm fills what is left).
+ */
+function rewriteResult(rewrite: Rewrite, total: number, counts: { zones: number; dropped: number; unsure: number }, describeFailed = false): ClassifyResult {
   if (rewrite.itemsFailed > 0) {
     return { ok: false, kind: "db_error", message: `${rewrite.eventIds.length} events were rewritten, but ${rewrite.itemsFailed} show(s) could not be saved - confirm again` };
+  }
+  if (describeFailed) {
+    return { ok: false, kind: "db_error", message: "the venue was classified, but not every event description could be rewritten with the hall's name - confirm again" };
   }
   return { ok: true, events: rewrite.eventIds.length, reached: rewrite.reached, total, ...counts };
 }
@@ -1596,6 +1606,9 @@ function rewriteResult(rewrite: Rewrite, total: number, counts: { zones: number;
  * dialog never fails for the AI's sake (spec 5.2, ruling R13): AI off, the cap, an unreadable count, a
  * timeout or a bad answer = the rows open empty (`ai.reason`), the rule's drops applied. `proposed` = the
  * model's raw proposal; the confirm sends back the rows as SHOWN (`rows`).
+ * The hall's Hebrew name (round 2, D3) rides the same call: asked for while the template has none - even
+ * when every category is labelled already - and handed back as `venue_he` (the stored name wins over the
+ * proposal; `venue_he_ai` says which it is). No zone description is proposed or shown any more (D4).
  */
 export async function proposeVenueClassification(runId: string, sourceUrl: string): Promise<ProposeResult> {
   const session = await requireAdmin();
@@ -1614,15 +1627,22 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
   const venueDrops = (key: string): boolean => !kept.has(key) && (dropped.dropped.includes(key) || dropRule(key).drop);
   // The ask set: what the venue does not drop and the template has no Hebrew label for.
   const unlabelled = ctx.categories.filter((c) => !venueDrops(c.key) && hebrewStoredLabel(template, c.key) === null);
+  // The hall's Hebrew name is asked for while none is stored (a hall with no categories has no dialog rows to carry it).
+  const storedHe = ctx.template?.name_he ?? null;
+  const askName = storedHe === null && ctx.categories.length > 0;
+  const needsAi = unlabelled.length > 0 || askName;
 
   let proposed: Map<string, ProposedRow> | null = null;
+  let proposedHe: string | null = null;
   let ai: { used: boolean; reason: string | null; problems: string[] } = { used: false, reason: "not_needed", problems: [] };
-  if (unlabelled.length > 0 && skip) {
+  if (needsAi && skip) {
     ai = { used: false, reason: skip, problems: [] };
-  } else if (unlabelled.length > 0) {
+  } else if (needsAi) {
     // A key too long to hand over whole is not asked about (its row opens for review): a cut name would not map back to it.
     const asked = unlabelled.filter((c) => c.key.length <= AI_CATEGORY_MAX);
-    const styleExamples = (await readStyleLabels(sourceUrl, STYLE_EXAMPLES_MAX)).slice(0, STYLE_EXAMPLES_MAX).map((l) => cutText(l, AI_LABEL_MAX));
+    // Style examples only teach the voice of the labels - a call that asks for the hall's name alone needs none.
+    const styleExamples =
+      asked.length === 0 ? [] : (await readStyleLabels(sourceUrl, STYLE_EXAMPLES_MAX)).slice(0, STYLE_EXAMPLES_MAX).map((l) => cutText(l, AI_LABEL_MAX));
     const outcome = await classifyVenueWithAgent(
       {
         venue: cutText(ctx.name, AI_CATEGORY_MAX),
@@ -1638,12 +1658,14 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
           existingLabel: null,
         })),
         styleExamples,
+        askVenueName: askName,
       },
       newBudget(TOUR_UPLOADER_AGENT),
       { userId: session.sub },
     );
     if (outcome.ok) {
       proposed = outcome.rows;
+      proposedHe = outcome.venueHe;
       ai = { used: true, reason: null, problems: outcome.problems };
     } else {
       ai = { used: false, reason: outcome.kind, problems: outcome.problems };
@@ -1655,22 +1677,30 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
     venue: { name: ctx.name, sourceUrl, templateId: ctx.template?.id ?? null },
     rows: proposalRows(ctx.categories, proposed, template, dropped),
     proposed: proposed ? Object.fromEntries(proposed) : null,
+    venue_he: storedHe ?? proposedHe,
+    venue_he_ai: storedHe === null && proposedHe !== null,
     shows: ctx.targets.length,
     ai,
   };
 }
 
 /**
- * The classification dialog's confirm (spec 6.3). `input = { rows, proposed, ai }`: `rows` = the confirmed
+ * The classification dialog's confirm (spec 6.3). `input = { rows, proposed, ai, venueHe? }`: `rows` = the confirmed
  * rows (`cleanConfirmedRows` against the venue's categories, re-read here - nothing about the venue is taken
  * from the client), `proposed` = the rows as the dialog SHOWED them (null = it carried none), `ai` = whether
- * the dialog opened with the agent's proposal (recorded on `uploader.classified`, ruling R14). A venue
+ * the dialog opened with the agent's proposal (recorded on `uploader.classified`, ruling R14), `venueHe` = the
+ * hall's Hebrew name from the dialog's top box (round 2, D3; `parseVenueHeInput`: absent = the stored name stays,
+ * empty = cleared, a Hebrew name = set, anything else `bad_input`). Round 2's other option, `excludedSections`,
+ * joins `venueHe` in this record. A venue
  * category the rows leave out is UNSURE (ruling R16): forgotten unless the template already labels it in
  * Hebrew. A venue with no template needs one NAMED row (ruling R25 - `readyToConfirm`), else `bad_input`
  * with FIRST_CONFIRM_NEEDS_NAME and nothing is written. In order:
  * 1. the template - adopted first when the venue has none (`adopt_failed` stops here, nothing written),
- *    then its zones, mapping and dropped list written;
- * 2-3. the venue's events rewritten, each item following right after its event (`rewriteVenueItems`);
+ *    then its zones, mapping and dropped list written, and the hall's Hebrew name (`venue_maps.name_he`) when
+ *    it changed;
+ * 2-3. the venue's events rewritten, each item following right after its event (`rewriteVenueItems`), then
+ *    their descriptions - the ones the uploader wrote itself - filled again, for `{אולם}` prints the hall's
+ *    Hebrew name (`rewriteRunDescriptions`; none when no template is saved or the hall has no name at all);
  * 4. `uploader.classified` (the record) and one `uploader.classify_changed` per change (the lessons);
  * 5. the site refreshed once when a live event changed, the price light's list when any did.
  * `reached < total` = the time budget or a failed event write stopped it - a second confirm finishes it (the
@@ -1684,6 +1714,8 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   if (input.proposed !== undefined && input.proposed !== null && !isRecord(input.proposed)) return fail("bad_input");
   if (typeof input.ai !== "boolean") return fail("bad_input");
   const aiShown = input.ai;
+  const venueHeInput = parseVenueHeInput(input.venueHe);
+  if (!venueHeInput.ok) return fail("bad_input");
 
   const ctx = await readVenueContext(runId, sourceUrl);
   if ("kind" in ctx) return ctx;
@@ -1712,9 +1744,20 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   const update = forgetUnconfirmed(fromRows, base, [...allowed], confirmed);
   const written = await writeTemplate(base.id, update);
   if (!written.ok) return written;
+  // The hall's Hebrew name (round 2, D3): not sent = the stored one stays; a column the migration has not added yet saves nothing and the confirm goes on.
+  const storedHe = ctx.template?.name_he ?? null;
+  const venueHe = venueHeInput.value === undefined ? storedHe : venueHeInput.value;
+  if (venueHe !== storedHe) {
+    const named = await writeVenueNameHe(base.id, venueHe);
+    if (named === "db_error") return { ok: false, kind: "db_error", message: "the hall's Hebrew name could not be saved - confirm again" };
+  }
 
   // 2-3. Each event, then its item (zoned tickets follow the template as it stood before this write - `base`).
   const rewrite = await rewriteVenueItems(ctx.targets, ctx.events, written.template, base, started);
+  // ... then their descriptions, read fresh (the rewrite above just changed the items): `{אולם}` prints the hall's name.
+  // Not when the rewrite stopped early (its budget, a failed write): the second confirm that finishes it describes too.
+  const hallNamed = venueHe !== null || storedHe !== null;
+  const described = hallNamed && rewrite.reached >= ctx.targets.length ? await describeHall(ctx.run, sourceUrl) : NO_REWRITE;
 
   // 4. The record and the lessons.
   const droppedRows = confirmed.filter((r) => r.drop);
@@ -1740,13 +1783,14 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
       unsure,
       event_ids: rewrite.eventIds,
       ai: aiShown,
+      venue_he: venueHe,
     },
   });
   await logClassifyChanges(ctx.run, ctx.name, classificationDiff(shown, confirmed), shown);
 
-  // 5. The site.
-  await refreshAfterRewrite(rewrite);
-  return rewriteResult(rewrite, ctx.targets.length, { zones: written.template.zones.length, dropped: droppedRows.length, unsure: unsure.length });
+  // 5. The site (a description that failed half-way may still have changed a live event - ask anyway).
+  await refreshAfterRewrite({ eventIds: rewrite.eventIds, live: rewrite.live || described === "db_error" || described.live });
+  return rewriteResult(rewrite, ctx.targets.length, { zones: written.template.zones.length, dropped: droppedRows.length, unsure: unsure.length }, described === "db_error");
 }
 
 /** One show a person arranged in the editor, as "learn from this event" reads it. */
@@ -1901,8 +1945,6 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
 
 // ---- Alon 25.10: the description template --------------------------------------------------------------
 
-const NO_REWRITE: DescriptionRewrite = { eventIds: [], live: false, editedByHand: 0, english: 0, failed: 0 };
-
 /**
  * The family's standing description template over the run's built events, read fresh (items and events).
  * No template saved = nothing to do. "db_error" = the template, the items or the events could not be read,
@@ -1912,18 +1954,41 @@ async function describeAgain(
   run: UploaderRun,
   subject: { name_he: string | null; name_en: string },
   teamsHe: Record<string, string>,
-  via: "board" | "names",
+  via: "board" | "names" | "classify",
+  /** Only the shows at this TixStock drawing (a classification confirm rewrites its own hall); absent = the whole run. */
+  drawingUrl?: string,
 ): Promise<DescriptionRewrite | "db_error"> {
   const family = familyOf(run.plan.subject.kind);
   const read = await readDescriptionTemplate(family);
   if (!read.ok) return "db_error";
   if (read.template === null) return NO_REWRITE;
-  const items = await readRunItems(run.id);
-  if (items === null) return "db_error";
+  const all = await readRunItems(run.id);
+  if (all === null) return "db_error";
+  const items = drawingUrl === undefined ? all : all.filter((i) => drawingUrlOf(i) === drawingUrl);
   const leagueHe = usesCompetition(read.template) ? await readLeagueHebrew() : {};
   const done = await rewriteRunDescriptions({ runId: run.id, items, family, template: read.template, teamsHe, leagueHe, subject, via });
   if (done === null || done.failed > 0) return "db_error";
   return done;
+}
+
+/**
+ * A classification confirm's description step: the hall's shows in the run get the family's template filled
+ * again (`describeAgain`, scoped to the drawing), now that `{אולם}` has a Hebrew name to print. No template
+ * saved = nothing to do, and the subject is then not even resolved. "db_error" = the subject, the template,
+ * the items or an event could not be read or written.
+ */
+async function describeHall(run: UploaderRun, drawingUrl: string): Promise<DescriptionRewrite | "db_error"> {
+  const read = await readDescriptionTemplate(familyOf(run.plan.subject.kind));
+  if (!read.ok) return "db_error";
+  if (read.template === null) return NO_REWRITE;
+  let cache: SubjectCache;
+  try {
+    cache = await resolvedSubjectOf(run);
+  } catch (e) {
+    console.error(`uploader-actions: subject of run ${run.id} not resolved - the hall's descriptions were not rewritten`, errorText(e));
+    return "db_error";
+  }
+  return describeAgain(run, cache.subject, cache.teamsHe, "classify", drawingUrl);
 }
 
 /** The template editor opens on a run: the run's family's template, its tokens, and the first built show's values for the live preview. */
@@ -1942,7 +2007,14 @@ export async function getDescriptionTemplate(runId: string): Promise<Description
     try {
       // a preview only: a subject or league read that fails leaves the editor without it, never closed
       const cache = await resolvedSubjectOf(run);
-      sample = await sampleDescriptionValues(built[0], { teamsHe: cache.teamsHe, leagueHe: await readLeagueHebrew(), subject: cache.subject });
+      const drawing = drawingUrlOf(built[0]);
+      const hall = drawing ? await readVenueTemplate(drawing) : null;
+      sample = await sampleDescriptionValues(built[0], {
+        teamsHe: cache.teamsHe,
+        leagueHe: await readLeagueHebrew(),
+        subject: cache.subject,
+        venueHe: hall?.row?.name_he ?? null,
+      });
     } catch (e) {
       console.error(`uploader-actions: description preview of run ${run.id} not read`, errorText(e));
     }

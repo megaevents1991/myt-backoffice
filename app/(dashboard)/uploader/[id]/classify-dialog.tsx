@@ -11,9 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { classifyVenue, proposeVenueClassification } from "@/lib/actions/uploader-actions";
 import type { ProposeResult } from "@/lib/uploader/action-types";
-import { CLASSIFY_TIMEOUT_MS, readyToConfirm, ZONE_LABEL_MAX, type ClassificationRow, type ConfirmedRow, type ProposedRow } from "@/lib/uploader/classify";
+import { CLASSIFY_TIMEOUT_MS, parseVenueHeInput, readyToConfirm, VENUE_HE_MAX, ZONE_LABEL_MAX, type ClassificationRow, type ConfirmedRow, type ProposedRow } from "@/lib/uploader/classify";
 import type { PanelRow } from "@/lib/uploader/run-panel";
-import { ZONE_DESCRIPTION_MAX } from "@/lib/venue-maps/svg-zones";
 import { cn } from "@/lib/utils";
 import { actionErrorText } from "../copy";
 import { AiWait } from "./ai-wait";
@@ -26,14 +25,13 @@ import {
   CLASSIFY_DONE,
   CLASSIFY_EMPTY,
   CLASSIFY_FAILED,
-  CLASSIFY_NEEDS_LABEL,
   CLASSIFY_OPEN_FAILED,
   CLASSIFY_TITLE,
   COL_CATEGORY,
-  COL_DESCRIPTION,
   COL_DROP,
   COL_LABEL,
   COL_STATUS,
+  COL_VENUE_HE,
   NETWORK_TEXT,
   PARTIAL_LINE,
   STATUS_AI,
@@ -48,58 +46,67 @@ import {
   STATUS_RULE_DROP,
   STATUS_SHOWS,
   STATUS_UNSURE,
+  VENUE_HE_HINT,
+  VENUE_HE_HINT_AI,
+  VENUE_HE_NEEDS_HEBREW,
 } from "./board-words";
 import { rtl } from "./use-run-board";
 
-// "סיווג כרטיסים - <venue>" (spec 5.2): one row per category of the hall - the drawing's and the
-// TixStock tickets' of the run - with a Hebrew zone name (the ticket card's title on the site), a
-// Hebrew description (the line under it) and a drop switch. Opening asks the AI for a proposal
-// (`proposeVenueClassification` - it never fails for the AI's sake: off / timeout / the cap = empty
-// boxes and one line above the table); the confirm (`classifyVenue`) writes the venue template and
-// rewrites every show of the hall in the run. The confirm sends EVERY row the dialog showed, the rows
-// as they were SHOWN before any edit (`proposed` - the server diffs the two for the agent's lessons),
-// and whether the AI proposed (`ai`). Mounted once by the board; every opening is a fresh proposal.
+// "סיווג כרטיסים - <venue>" (spec 5.2): the hall's Hebrew name on top (round 2, D3 - what `{אולם}` prints
+// in the event description) and one row per category of the hall - the drawing's and the TixStock
+// tickets' of the run - with a Hebrew zone name (the ticket card's title on the site) and a drop switch.
+// There is no description box (D4): a zone's stored description stays as it is. Opening asks the AI for a
+// proposal (`proposeVenueClassification` - it never fails for the AI's sake: off / timeout / the cap = empty
+// boxes and one line above the table); the confirm (`classifyVenue`) writes the venue template and the
+// hall's name and rewrites every show of the hall in the run. The confirm sends EVERY row the dialog showed,
+// the rows as they were SHOWN before any edit (`proposed` - the server diffs the two for the agent's
+// lessons), whether the AI proposed (`ai`) and the hall's name (`venueHe`). Mounted once by the board; every
+// opening is a fresh proposal.
 
 export type PanelVenue = NonNullable<PanelRow["venue"]>;
 
 /**
  * What a person can change on a row. `aiUnsure`: the AI marked the row unsure - the label it may still
  * have proposed ("Box 12", a latin one) is shown but doubtful, and the row stays "לבדיקה" until a person
- * touches either box (the first edit makes the boxes theirs).
+ * touches the box (the first edit makes it theirs).
  */
-type RowEdit = { label: string; description: string; drop: boolean; aiUnsure: boolean };
+type RowEdit = { label: string; drop: boolean; aiUnsure: boolean };
 type Loaded = Extract<ProposeResult, { ok: true }>;
 type Phase = { kind: "loading" } | { kind: "ready"; data: Loaded };
 
-/** "לבדיקה" (a kept row): the AI was unsure and nobody touched it, or both Hebrew boxes are empty - the ticket stays, unzoned, the category stays out of the template. */
-const isUnsure = (e: RowEdit): boolean => !e.drop && (e.aiUnsure || (e.label.trim() === "" && e.description.trim() === ""));
-/** A kept row with a description but no name: neither a zone nor "לבדיקה" - the confirm waits for it. */
-const needsLabel = (e: RowEdit): boolean => !e.drop && !e.aiUnsure && e.label.trim() === "" && e.description.trim() !== "";
+/** "לבדיקה" (a kept row): the AI was unsure and nobody touched it, or its Hebrew box is empty - the ticket stays, unzoned, the category stays out of the template. */
+const isUnsure = (e: RowEdit): boolean => !e.drop && (e.aiUnsure || e.label.trim() === "");
 
 const editOf = (row: ClassificationRow): RowEdit => ({
   label: row.label_he,
-  description: row.description_he,
   drop: row.drop,
   aiUnsure: row.unsure && !row.drop,
 });
 
-/** The rows exactly as the dialog showed them before any edit, keyed by category key (`classifyVenue`'s `proposed`). */
+/**
+ * The rows exactly as the dialog showed them before any edit, keyed by category key (`classifyVenue`'s `proposed`).
+ * The dialog shows no description (round 2, D4), so every row carries "" - what the server's diff compares the
+ * confirmed rows' "" with: a zone's stored description is neither edited here nor a lesson.
+ */
 function shownAsProposed(rows: ClassificationRow[]): Record<string, ProposedRow> {
   return Object.fromEntries(
     rows.map((r): [string, ProposedRow] => [
       r.key,
-      { label_he: r.label_he, description_he: r.description_he, drop: r.drop, drop_reason: r.drop_reason, unsure: r.unsure },
+      { label_he: r.label_he, description_he: "", drop: r.drop, drop_reason: r.drop_reason, unsure: r.unsure },
     ]),
   );
 }
 
-/** The row as `classifyVenue` takes it: a dropped or "לבדיקה" row carries no label - an untouched AI-unsure row's doubtful label never becomes a zone. */
+/**
+ * The row as `classifyVenue` takes it: a dropped or "לבדיקה" row carries no label - an untouched AI-unsure row's
+ * doubtful label never becomes a zone. No description (D4): "" makes the server keep the one stored on the zone.
+ */
 function confirmedOf(row: ClassificationRow, e: RowEdit): ConfirmedRow {
   const named = !e.drop && !isUnsure(e);
   return {
     category: row.category,
     label_he: named ? e.label.trim() : "",
-    description_he: named ? e.description.trim() : "",
+    description_he: "",
     drop: e.drop,
     unsure: isUnsure(e),
   };
@@ -151,6 +158,8 @@ export function ClassifyDialog({
   const { toast } = useToast();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
+  // The hall's Hebrew name box (round 2, D3): opens with the stored name, else the AI's proposal.
+  const [venueHe, setVenueHe] = useState("");
   const [saving, setSaving] = useState(false);
   // The hall on screen - kept after `venue` turns null so the dialog closes with its title.
   const [shown, setShown] = useState<PanelVenue | null>(venue);
@@ -171,6 +180,7 @@ export function ClassifyDialog({
     if (sourceUrl !== null) {
       setPhase({ kind: "loading" });
       setEdits({});
+      setVenueHe("");
     }
   }
 
@@ -186,6 +196,7 @@ export function ClassifyDialog({
         if (id !== seq.current) return;
         if (!r.ok) return fail(actionErrorText(r.kind));
         setEdits(Object.fromEntries(r.rows.map((row) => [row.key, editOf(row)])));
+        setVenueHe(r.venue_he ?? "");
         setPhase({ kind: "ready", data: r });
       })
       .catch(() => {
@@ -203,25 +214,34 @@ export function ClassifyDialog({
   const setEdit = (key: string, patch: Partial<RowEdit>) =>
     setEdits((all) => {
       const row = rows.find((r) => r.key === key);
-      const base = all[key] ?? (row ? editOf(row) : { label: "", description: "", drop: false, aiUnsure: false });
+      const base = all[key] ?? (row ? editOf(row) : { label: "", drop: false, aiUnsure: false });
       return { ...all, [key]: { ...base, ...patch } };
     });
 
   const current = rows.map((row) => ({ row, e: editFor(row) }));
-  const blocked = current.some(({ e }) => needsLabel(e));
   const confirmed: ConfirmedRow[] = current.map(({ row, e }) => confirmedOf(row, e));
+  // The hall's name: empty clears it, anything typed must be Hebrew and fit the box (the server refuses the same).
+  const venueHeCheck = parseVenueHeInput(venueHe);
+  const venueHeBad = !venueHeCheck.ok;
+  // Still the AI's proposal as it came: the hint says to check it; a person's edit makes it theirs.
+  const venueHeFromAi = data !== null && data.venue_he_ai && venueHe.trim() === data.venue_he;
   // Something must be decided (ruling R19 - stricter than 5.2's "every row labelled or for review"), and a hall
   // with no template needs a NAMED zone (ruling R25 - the rule's away drop alone would adopt the drawing with
   // nothing lit and move every show onto it). The server refuses the same.
   const decided = readyToConfirm(confirmed, data !== null && data.venue.templateId !== null);
-  const canConfirm = data !== null && rows.length > 0 && !blocked && decided && !saving;
+  const canConfirm = data !== null && rows.length > 0 && !venueHeBad && decided && !saving;
   const line = data ? aiLine(data.ai) : null;
 
   async function confirm() {
     if (!data || !canConfirm) return;
     setSaving(true);
     try {
-      const r = await classifyVenue(runId, data.venue.sourceUrl, { rows: confirmed, proposed: shownAsProposed(data.rows), ai: data.ai.used });
+      const r = await classifyVenue(runId, data.venue.sourceUrl, {
+        rows: confirmed,
+        proposed: shownAsProposed(data.rows),
+        ai: data.ai.used,
+        venueHe: venueHe.trim(),
+      });
       if (!r.ok) {
         toast({
           variant: "destructive",
@@ -284,21 +304,38 @@ export function ClassifyDialog({
                 {line}
               </p>
             )}
-            <Table containerClassName="max-h-[55vh] rounded-md border" className="min-w-[52rem] text-[13px]">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="uploader-classify-venue-he" className="text-[13px] font-medium">
+                {COL_VENUE_HE}
+              </label>
+              <Input
+                id="uploader-classify-venue-he"
+                data-box
+                dir="rtl"
+                value={venueHe}
+                maxLength={VENUE_HE_MAX}
+                disabled={saving}
+                aria-invalid={venueHeBad || undefined}
+                onChange={(ev) => setVenueHe(ev.target.value)}
+                className={cn("h-8 max-w-sm text-[13px]", venueHeFromAi && "italic text-muted-foreground", venueHeBad && "border-destructive")}
+              />
+              <p className={cn("text-[11px] leading-snug", venueHeBad ? "text-destructive" : "text-muted-foreground")}>
+                {venueHeBad ? VENUE_HE_NEEDS_HEBREW : venueHeFromAi ? VENUE_HE_HINT_AI : VENUE_HE_HINT}
+              </p>
+            </div>
+            <Table containerClassName="max-h-[50vh] rounded-md border" className="min-w-[40rem] text-[13px]">
               <TableHeader className="sticky top-0 z-10 bg-background">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-9 w-[20%] text-start">{COL_CATEGORY}</TableHead>
-                  <TableHead className="h-9 w-[24%] text-start">{COL_LABEL}</TableHead>
-                  <TableHead className="h-9 w-[28%] text-start">{COL_DESCRIPTION}</TableHead>
-                  <TableHead className="h-9 w-[6%] text-center">{COL_DROP}</TableHead>
-                  <TableHead className="h-9 w-[22%] text-start">{COL_STATUS}</TableHead>
+                  <TableHead className="h-9 w-[24%] text-start">{COL_CATEGORY}</TableHead>
+                  <TableHead className="h-9 w-[34%] text-start">{COL_LABEL}</TableHead>
+                  <TableHead className="h-9 w-[8%] text-center">{COL_DROP}</TableHead>
+                  <TableHead className="h-9 w-[34%] text-start">{COL_STATUS}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {current.map(({ row, e }) => {
                   const status = statusText(row, e);
                   const unsure = isUnsure(e);
-                  const missing = needsLabel(e);
                   return (
                     <TableRow key={row.key} className={cn("align-top", e.drop && "bg-muted/40")}>
                       <TableCell className="py-2">
@@ -316,21 +353,7 @@ export function ClassifyDialog({
                           maxLength={ZONE_LABEL_MAX}
                           disabled={e.drop || saving}
                           aria-label={`${COL_LABEL}: ${row.category}`}
-                          aria-invalid={missing || undefined}
                           onChange={(ev) => setEdit(row.key, { label: ev.target.value, aiUnsure: false })}
-                          className={cn("h-8 text-[13px]", e.aiUnsure && "italic text-muted-foreground", missing && "border-destructive")}
-                        />
-                        {missing && <p className="mt-1 text-[11px] leading-snug text-destructive">{CLASSIFY_NEEDS_LABEL}</p>}
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <Input
-                          data-box
-                          dir="rtl"
-                          value={e.description}
-                          maxLength={ZONE_DESCRIPTION_MAX}
-                          disabled={e.drop || saving}
-                          aria-label={`${COL_DESCRIPTION}: ${row.category}`}
-                          onChange={(ev) => setEdit(row.key, { description: ev.target.value, aiUnsure: false })}
                           className={cn("h-8 text-[13px]", e.aiUnsure && "italic text-muted-foreground")}
                         />
                       </TableCell>

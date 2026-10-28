@@ -602,6 +602,8 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
         teamsHe: ctx.teamsHe,
         leagueHe: ctx.description.leagueHe,
         subject: ctx.subject,
+        // the hall's Hebrew name from the template read at step 4 (null: no template / no name -> the supplier's venue)
+        venueHe: template?.name_he ?? null,
       })
     : null;
   const fromTemplate = filled !== null && filled.text !== "";

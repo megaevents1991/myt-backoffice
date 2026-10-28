@@ -7,6 +7,9 @@
  * `payload.description`, which follows every rewrite) - one a person typed in the editor stays theirs and
  * is counted as `editedByHand`. A fill that prints nothing never blanks an event.
  *
+ * `{אולם}` prints the hall's Hebrew name (`venue_maps.name_he`, round 2 D3): the build reads it with the
+ * template it already has, a rewrite reads it once per drawing (`hallNames`).
+ *
  * Migration 20261027120500_uploader_settings.sql. Before it is applied every read answers "no template"
  * (`ready: false`) and the build keeps its English default.
  */
@@ -14,7 +17,7 @@ import "server-only";
 import { logAudit } from "@/lib/audit";
 import { eventCityName, type LodgingEvent } from "@/lib/lodging";
 import { normalizeName } from "@/lib/on-tour";
-import { AGENT, logDb, nowIso, transitionItem } from "@/lib/services/uploader-store";
+import { AGENT, logDb, nowIso, readVenueTemplate, transitionItem } from "@/lib/services/uploader-store";
 import { supabase } from "@/lib/supabase-server";
 import { decision } from "@/lib/uploader/decisions";
 import { cleanTemplate, descriptionValues, fillDescription, templateKey, type DescriptionValues, type TemplateFamily } from "@/lib/uploader/description";
@@ -134,7 +137,30 @@ type ValuesInput = {
   teamsHe: Record<string, string>;
   leagueHe: Record<string, string>;
   subject: { name_he: string | null; name_en: string };
+  /** The hall's Hebrew name (`venue_maps.name_he` of the show's drawing); null = none, `{אולם}` prints the supplier's venue. */
+  venueHe: string | null;
 };
+
+/** The show's TixStock drawing url - what its hall's template is found by (null: a LiveTickets-only show). */
+const drawingOf = (item: Pick<UploaderItem, "show">): string | null => {
+  const url = item.show.suppliers.tixstock?.venue_map_url;
+  return typeof url === "string" && url.trim() !== "" ? url : null;
+};
+
+/**
+ * The Hebrew name of each hall the items play at (`venue_maps.name_he` of their drawing), one read per
+ * drawing, keyed by drawing url; a drawing with no template or no name is not in the map. null = a read failed (logged).
+ */
+export async function hallNames(items: Pick<UploaderItem, "show">[]): Promise<Map<string, string> | null> {
+  const urls = [...new Set(items.map(drawingOf).filter((u): u is string => u !== null))];
+  const reads = await Promise.all(urls.map(async (url) => ({ url, read: await readVenueTemplate(url) })));
+  const out = new Map<string, string>();
+  for (const { url, read } of reads) {
+    if (read.failed) return null;
+    if (read.row?.name_he) out.set(url, read.row.name_he);
+  }
+  return out;
+}
 
 /** Every token's value for one show as its event stands (the city as the site prints it). */
 function valuesFor(input: ValuesInput): DescriptionValues {
@@ -147,6 +173,7 @@ function valuesFor(input: ValuesInput): DescriptionValues {
     leagueHe: input.leagueHe,
     cityHe: city === "" ? null : city,
     subject: input.subject,
+    venueHe: input.venueHe,
   });
 }
 
@@ -158,7 +185,7 @@ export function descriptionFor(input: ValuesInput & { template: string }): { tex
 /** The token values of one built show, for the editor's live preview (its event read now); null = no such event. */
 export async function sampleDescriptionValues(
   item: UploaderItem & { event_id: number },
-  ctx: Pick<ValuesInput, "teamsHe" | "leagueHe" | "subject">,
+  ctx: Pick<ValuesInput, "teamsHe" | "leagueHe" | "subject" | "venueHe">,
 ): Promise<DescriptionValues | null> {
   const rows = await readDescriptionRows([item.event_id]);
   const row = rows?.get(item.event_id);
@@ -187,8 +214,8 @@ const REWRITTEN: UploaderItem["status"][] = ["ready", "approved"];
 
 /**
  * The template over a run's built events (ready / approved): each event whose description is still the
- * uploader's gets the fill; the item's payload and decision follow. null = the events could not be read.
- * Audited once, `uploader.description_applied`.
+ * uploader's gets the fill; the item's payload and decision follow. null = the events or a hall's template
+ * could not be read. Audited once, `uploader.description_applied`.
  */
 export async function rewriteRunDescriptions(input: {
   runId: string;
@@ -198,7 +225,7 @@ export async function rewriteRunDescriptions(input: {
   teamsHe: Record<string, string>;
   leagueHe: Record<string, string>;
   subject: { name_he: string | null; name_en: string };
-  via: "board" | "names";
+  via: "board" | "names" | "classify";
 }): Promise<DescriptionRewrite | null> {
   const targets = input.items.filter(
     (i): i is UploaderItem & { event_id: number } => REWRITTEN.includes(i.status) && typeof i.event_id === "number",
@@ -207,6 +234,8 @@ export async function rewriteRunDescriptions(input: {
   if (targets.length === 0) return out;
   const rows = await readDescriptionRows(targets.map((i) => i.event_id));
   if (rows === null) return null;
+  const halls = await hallNames(targets);
+  if (halls === null) return null;
 
   for (const item of targets) {
     const row = rows.get(item.event_id);
@@ -227,6 +256,7 @@ export async function rewriteRunDescriptions(input: {
       teamsHe: input.teamsHe,
       leagueHe: input.leagueHe,
       subject: input.subject,
+      venueHe: halls.get(drawingOf(item) ?? "") ?? null,
     });
     if (text === "" || text === current) continue;
     if (!(await writeEventDescription(item.event_id, text))) {

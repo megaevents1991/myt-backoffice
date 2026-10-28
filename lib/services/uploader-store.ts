@@ -22,7 +22,7 @@ import { findShows, resolveSubject } from "@/lib/services/uploader-search";
 import { urlSpellings } from "@/lib/services/venue-memory";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
-import { parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
+import { cleanVenueHe, parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
 import { editDiff } from "@/lib/uploader/decisions";
 import type { LocationInput } from "@/lib/uploader/location";
 import {
@@ -844,10 +844,11 @@ export async function loadPeople(): Promise<{ id: string; name: string }[]> {
 
 // ---- round "אלון 1": venue templates, the events a classification rewrites, team rows ----------------
 
-/** A `venue_maps` row as the classification actions read it (`dropped` = `dropped_categories` as keys). */
+/** A `venue_maps` row as the classification actions read it (`dropped` = `dropped_categories` as keys; `name_he` = the hall's Hebrew name, null when none / the column is not there yet). */
 export type VenueTemplateRow = {
   id: string;
   name: string;
+  name_he: string | null;
   source_url: string | null;
   svg_url: string | null;
   zones: VenueZone[];
@@ -855,12 +856,15 @@ export type VenueTemplateRow = {
   dropped: DroppedCategories;
 };
 
-// `dropped_categories` is newer than types/database.types.ts (migration 20261022170000) - read through `db`.
-const VENUE_TEMPLATE_COLUMNS = "id,name,source_url,svg_url,zones,supplier_categories,dropped_categories";
+// `dropped_categories` and `name_he` are newer than types/database.types.ts (migrations 20261022170000 and
+// 20261028114031) - read through `db`. A read falls back to the columns without `name_he` while the latter is not applied.
+const VENUE_TEMPLATE_BASE_COLUMNS = "id,name,source_url,svg_url,zones,supplier_categories,dropped_categories";
+const VENUE_TEMPLATE_COLUMNS = `${VENUE_TEMPLATE_BASE_COLUMNS},name_he`;
 
 type VenueTemplateDbRow = {
   id: string;
   name: string | null;
+  name_he?: string | null;
   source_url: string | null;
   svg_url: string | null;
   zones: Json;
@@ -872,12 +876,26 @@ function venueTemplateOf(row: VenueTemplateDbRow): VenueTemplateRow {
   return {
     id: row.id,
     name: row.name ?? "",
+    name_he: cleanVenueHe(row.name_he),
     source_url: row.source_url ?? null,
     svg_url: row.svg_url ?? null,
     zones: zonesOfTemplate(row.zones),
     supplier_categories: supplierCategoriesOf(row.supplier_categories),
     dropped: parseDroppedCategories(row.dropped_categories),
   };
+}
+
+let nameHeWarned = false;
+
+/** A `venue_maps` template read with `name_he`, again without it when that column is not there yet (logged once). */
+async function withNameHe(run: (columns: string) => PromiseLike<DbResult<VenueTemplateDbRow[]>>): Promise<DbResult<VenueTemplateDbRow[]>> {
+  const full = await run(VENUE_TEMPLATE_COLUMNS);
+  if (!isMissingColumn(full.error)) return full;
+  if (!nameHeWarned) {
+    nameHeWarned = true;
+    console.warn("uploader: venue_maps.name_he is not there yet - the hall's Hebrew name reads as none");
+  }
+  return run(VENUE_TEMPLATE_BASE_COLUMNS);
 }
 
 /**
@@ -891,12 +909,9 @@ export async function readVenueTemplate(url: string): Promise<{ row: VenueTempla
   // A spelling holding `"` would break out of PostgREST's quoted `in.(...)` list - a supplier URL never has one.
   const spellings = urlSpellings(clean).filter((u) => !u.includes('"'));
   if (spellings.length > 0) {
-    const bySource = (await db
-      .from("venue_maps")
-      .select(VENUE_TEMPLATE_COLUMNS)
-      .in("source_url", spellings)
-      .order("updated_at", { ascending: false })
-      .limit(1)) as DbResult<VenueTemplateDbRow[]>;
+    const bySource = await withNameHe(
+      (columns) => db.from("venue_maps").select(columns).in("source_url", spellings).order("updated_at", { ascending: false }).limit(1),
+    );
     if (bySource.error) {
       logDb("venue template (source url) read", bySource.error);
       return { row: null, failed: true };
@@ -904,18 +919,29 @@ export async function readVenueTemplate(url: string): Promise<{ row: VenueTempla
     const found = bySource.data?.[0];
     if (found) return { row: venueTemplateOf(found), failed: false };
   }
-  const bySvg = (await db
-    .from("venue_maps")
-    .select(VENUE_TEMPLATE_COLUMNS)
-    .eq("svg_url", clean)
-    .order("updated_at", { ascending: false })
-    .limit(1)) as DbResult<VenueTemplateDbRow[]>;
+  const bySvg = await withNameHe((columns) => db.from("venue_maps").select(columns).eq("svg_url", clean).order("updated_at", { ascending: false }).limit(1));
   if (bySvg.error) {
     logDb("venue template (svg url) read", bySvg.error);
     return { row: null, failed: true };
   }
   const found = bySvg.data?.[0];
   return { row: found ? venueTemplateOf(found) : null, failed: false };
+}
+
+/**
+ * `venue_maps.name_he` set (null clears it): the hall's Hebrew name a person confirmed in the classify dialog.
+ * "missing_column" = migration 20261028114031 is not applied yet (logged) - nothing was saved, and a confirm
+ * goes on without it; "db_error" = the write failed (logged).
+ */
+export async function writeVenueNameHe(id: string, nameHe: string | null): Promise<"ok" | "missing_column" | "db_error"> {
+  const { error } = (await db.from("venue_maps").update({ name_he: nameHe, updated_at: nowIso() }).eq("id", id)) as DbResult<null>;
+  if (!error) return "ok";
+  if (isMissingColumn(error)) {
+    console.warn("uploader: venue_maps.name_he is not there yet - the hall's Hebrew name was not saved");
+    return "missing_column";
+  }
+  logDb(`venue map ${id} name_he write`, error);
+  return "db_error";
 }
 
 /** `venue_maps.dropped_categories` replaced: the keys the venue never sells and the rule-drops a person kept. false = the write failed (logged). */

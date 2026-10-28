@@ -351,18 +351,22 @@ export const BTN_CLOSE = "סגור";
 
 // The classification dialog (5.2).
 export const CLASSIFY_TITLE = (venue: string): string => `סיווג כרטיסים - ${venue}`;
-export const CLASSIFY_DESCRIPTION = "כותרת הזון היא כותרת הכרטיס באתר, התיאור הוא השורה שמתחתיה. קטגוריה שנפסלת יורדת מהאירועים.";
+export const CLASSIFY_DESCRIPTION = "כותרת הזון היא כותרת הכרטיס באתר. קטגוריה שנפסלת יורדת מהאירועים.";
 export const COL_CATEGORY = "קטגוריה (TixStock)";
 export const COL_LABEL = "שם הזון בעברית (כותרת הכרטיס באתר)";
-export const COL_DESCRIPTION = "תיאור בעברית (שורה מתחת)";
 export const COL_DROP = "לפסול";
+/** The box above the table: the hall's Hebrew name - what `{אולם}` prints in the event description (round 2, D3). */
+export const COL_VENUE_HE = "שם האולם בעברית";
+export const VENUE_HE_HINT = "מודפס בתיאור האירוע במקום {אולם}. ריק - יודפס שם האולם כפי שהספק כותב אותו.";
+export const VENUE_HE_HINT_AI = "הצעת ה-AI - בדקו ואשרו. מודפס בתיאור האירוע במקום {אולם}.";
+export const VENUE_HE_NEEDS_HEBREW = "השם חייב להכיל אותיות בעברית (או שתשאירו ריק)";
 export const COL_STATUS = "סטטוס";
 export const BTN_CONFIRM_CLASSIFY = (n: number): string =>
   n === 0 ? "אשר - יישמר כתבנית האולם" : n === 1 ? "אשר - יחול על ההופעה ויישמר כתבנית האולם" : `אשר - יחול על ${n} ההופעות ויישמר כתבנית האולם`;
 export const STATUS_AI = "הצעת ה-AI";
 export const STATUS_RULE_DROP = "נפסל: יציע אוהדי חוץ (כלל)";
 export const STATUS_UNSURE = "לבדיקה - ה-AI לא בטוח (יישאר בלי זון)";
-/** A row a person emptied (both boxes) - "לבדיקה" without blaming the AI. */
+/** A row a person emptied (its label box) - "לבדיקה" without blaming the AI. */
 export const STATUS_REVIEW = "לבדיקה (יישאר בלי זון)";
 export const STATUS_DROPPED = "נפסל";
 export const STATUS_DROPPED_AI = (away: boolean): string => (away ? "נפסל: יציע אוהדי חוץ (הצעת ה-AI)" : "נפסל (הצעת ה-AI)");
@@ -374,7 +378,6 @@ export const STATUS_EXISTING = (label: string): string => `בתבנית: ${iso(l
 export const STATUS_NOT_SOLD = "לא במכירה בריצה הזו";
 export const STATUS_SHOWS = showsHe;
 export const STATUS_OFF_MAP = "לא מסומן במפה - יקבל כותרת בלי סימון";
-export const CLASSIFY_NEEDS_LABEL = "חסר שם לזון - או רוקנו גם את התיאור (לבדיקה)";
 export const CLASSIFY_EMPTY = "לא נמצאו קטגוריות לסווג באולם הזה.";
 export const CLASSIFY_FAILED = "הסיווג לא נשמר";
 export const CLASSIFY_OPEN_FAILED = "לא הצלחתי לפתוח את הסיווג";

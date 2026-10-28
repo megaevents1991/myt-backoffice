@@ -5,8 +5,9 @@
 // written:
 //  - the brief -> a plan (types/uploader.types.ts `UploaderPlan`) - lib/services/tour-uploader-parse.ts,
 //    checked by `parsePlanInput` (lib/uploader/plan.ts);
-//  - `classify_venue` (round "אלון 1"): a venue's TixStock ticket categories -> a Hebrew zone label, a
-//    description, a drop / unsure flag each - checked by `parseClassification` (lib/uploader/classify.ts);
+//  - `classify_venue` (round "אלון 1"): a venue's TixStock ticket categories -> a Hebrew zone label and a
+//    drop / unsure flag each, plus the hall's Hebrew name (round 2) - checked by `parseClassification`
+//    (lib/uploader/classify.ts);
 //  - `name_teams` (round "אלון 1"): the run's club names (or the artist) -> a clean English and a Hebrew name -
 //    checked by `parseTeamNames` (lib/uploader/team-names.ts). The two live in lib/services/tour-uploader-classify.ts;
 //  - `propose_location` (round 2): a show with no location near it -> the city's Hebrew name, IATA, centre and

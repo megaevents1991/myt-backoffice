@@ -93,6 +93,7 @@ import {
   CLASSIFY_TIMEOUT_MS,
   classificationDiff,
   cleanConfirmedRows,
+  cleanVenueHe,
   drawingCategories,
   dropRule,
   FIRST_CONFIRM_NEEDS_NAME,
@@ -101,11 +102,13 @@ import {
   isFixedByHand,
   parseClassification,
   parseDroppedCategories,
+  parseVenueHeInput,
   proposalRows,
   readyToConfirm,
   templateFromEvent,
   templateFromRows,
   ticketsFixedByHand,
+  VENUE_HE_MAX,
   ZONE_LABEL_MAX,
   type CategoryInput,
   type ClassificationRow,
@@ -150,6 +153,7 @@ import { LESSONS_CLOSE, LESSONS_OPEN } from "@/lib/services/tour-uploader-parse"
 import {
   CLASSIFY_MAX_TOKENS,
   CLASSIFY_TOOL,
+  classifyNothingToAsk,
   classifyOutcomeFromAnswer,
   classifyPrompt,
   NAMES_MAX_TOKENS,
@@ -3164,8 +3168,8 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same([...parsed.rows.keys()], KEYS, "parseClassification: one row per asked key, the unknown category is not a row");
   same(
     parsed.rows.get("longside lower tier"),
-    proposed({ label_he: "יציע ארוך תחתון", description_he: "מושבים ביציע הארוך, בשורות הנמוכות" }),
-    "parseClassification: a key is matched by normalizeSupplierCategory (the parenthesised part does not count)",
+    proposed({ label_he: "יציע ארוך תחתון" }),
+    "parseClassification: a key is matched by normalizeSupplierCategory (the parenthesised part does not count); a description the model sent is ignored (D4)",
   );
   same(
     parsed.rows.get("away fans section"),
@@ -3174,7 +3178,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   );
   same(
     parsed.rows.get("riverside stand upper"),
-    proposed({ label_he: "Riverside Upper", description_he: "היציע על הנהר", unsure: true }),
+    proposed({ label_he: "Riverside Upper", unsure: true }),
     "parseClassification: a label without a Hebrew letter is unsure",
   );
   same(
@@ -3201,7 +3205,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     "parseClassification: a row that is both dropped and unsure is unsure - the safe side keeps the ticket",
   );
   const capped = oneAnswer({ label_he: ` ${"א".repeat(100)} `, description_he: "ב".repeat(200) });
-  same([capped?.label_he.length, capped?.description_he.length, ZONE_LABEL_MAX], [80, 160, 80], "parseClassification: labels are cut to 80 (ruling R23), descriptions to 160");
+  same([capped?.label_he.length, capped?.description_he, ZONE_LABEL_MAX], [80, "", 80], "parseClassification: labels are cut to 80 (ruling R23); the model's description is never read (D4)");
   same(
     parseClassification({ categories: [{ category: "Away Fans Section", label_he: "יציע ראשון" }, { category: "away-fans-section", label_he: "יציע שני" }] }, ["away fans section"]).rows.get("away fans section")?.label_he,
     "יציע ראשון",
@@ -3365,7 +3369,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     { zones: first.zones, supplier_categories: { tixstock: first.categoryToZone } },
     NO_DROPS,
   );
-  same([relabel.zones[0].id, relabel.zones[0].label, relabel.zones[0].description], ["cat-1", "קטגוריה 1 - חדש", undefined], "templateFromRows: a row the person edited rewrites its zone (and clears a description they emptied)");
+  same([relabel.zones[0].id, relabel.zones[0].label, relabel.zones[0].description], ["cat-1", "קטגוריה 1 - חדש", "באמצע היציע"], "templateFromRows: a row the person edited rewrites its zone's label and keeps the stored description (D4: the dialog has no description box, an empty one clears nothing)");
   const stale = templateFromRows(
     [confirmed("Cat 2", { label_he: "קטגוריה 2" })],
     drawingForRows,
@@ -4539,11 +4543,11 @@ const supplierSvg = ((): typeof import("@/lib/venue-maps/supplier-svg") => {
   type Schema = { type: string; required: string[]; properties: Record<string, { type?: unknown; enum?: unknown[]; items?: { required: string[]; properties: Record<string, { type?: unknown; enum?: unknown[] }> } }> };
   const classifySchema = CLASSIFY_TOOL.input_schema as unknown as Schema;
   same(CLASSIFY_TOOL.name, "classify_venue", "CLASSIFY_TOOL: the tool name");
-  same(classifySchema.required, ["categories"], "CLASSIFY_TOOL: one required list");
+  same(classifySchema.required, ["categories", "venue_he"], "CLASSIFY_TOOL: the list and the hall's Hebrew name are required");
   same(
     [...(classifySchema.properties.categories.items?.required ?? [])].sort(),
-    ["category", "description_he", "drop", "drop_reason", "label_he", "unsure"],
-    "CLASSIFY_TOOL: every row key is required (the six the parser reads)",
+    ["category", "drop", "drop_reason", "label_he", "unsure"],
+    "CLASSIFY_TOOL: every row key is required (the five the parser reads - no description since D4)",
   );
   same(classifySchema.properties.categories.items?.properties.drop_reason.enum, ["away", "other", null], "CLASSIFY_TOOL: drop_reason is away / other / null");
   check(!("strict" in CLASSIFY_TOOL) && !("strict" in NAMES_TOOL), "the tools are forced but NOT strict (the parsers enforce the shape)");
@@ -4876,13 +4880,13 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(leagueHebrew("league cup", { cup: "גביע" }), null, "leagueHebrew: a tag name under 4 letters never matches by containment");
 
   // -- fill -----------------------------------------------------------------------------------------
-  const values = descriptionValues({ show: fixture, eventName: "פולהאם - ניוקאסל יונייטד", teamsHe, leagueHe: leagues, cityHe: "לונדון", subject });
+  const values = descriptionValues({ show: fixture, eventName: "פולהאם - ניוקאסל יונייטד", teamsHe, leagueHe: leagues, cityHe: "לונדון", subject, venueHe: null });
   same(
     fillDescription("חבילה למשחק {בית} נגד {חוץ} ב{מפעל}, ב{אולם} ({עיר}, {תאריך})", values),
     { text: "חבילה למשחק פולהאם נגד ניוקאסל יונייטד בפרמייר ליג, בCraven Cottage (לונדון, 06/03/2027)", english: [] },
     "fillDescription: every football token in Hebrew, the venue and the date as they are",
   );
-  const noTeams = descriptionValues({ show: fixture, eventName: fixture.name_english, teamsHe: {}, leagueHe: {}, cityHe: null, subject });
+  const noTeams = descriptionValues({ show: fixture, eventName: fixture.name_english, teamsHe: {}, leagueHe: {}, cityHe: null, subject, venueHe: null });
   same(
     fillDescription("{בית} נגד {חוץ} · {מפעל} · {אירוע} · {עיר}", noTeams),
     { text: "Fulham FC נגד Newcastle United FC · English Premier League · Fulham FC vs Newcastle United FC · London", english: ["בית", "חוץ", "מפעל", "אירוע", "עיר"] },
@@ -4890,17 +4894,17 @@ async function supplierSvgFetchChecks(): Promise<void> {
   );
   same(fillDescription("{בית} {בית}", noTeams).english, ["בית"], "fillDescription: a token used twice is named once");
   same(
-    fillDescription("משחק {מפעל} ב{אולם}", descriptionValues({ show: { ...fixture, competition: null }, eventName: "x", teamsHe, leagueHe: leagues, cityHe: null, subject })),
+    fillDescription("משחק {מפעל} ב{אולם}", descriptionValues({ show: { ...fixture, competition: null }, eventName: "x", teamsHe, leagueHe: leagues, cityHe: null, subject, venueHe: null })),
     { text: "משחק בCraven Cottage", english: [] },
     "fillDescription: a token with no value at all prints nothing and leaves one space",
   );
   same(fillDescription("שורה\n\n\n\nשנייה", values).text, "שורה\n\nשנייה", "fillDescription: blank lines collapse to one");
   same(fillDescription("x".repeat(DESCRIPTION_MAX + 50), values).text.length, DESCRIPTION_MAX, "fillDescription: cut to DESCRIPTION_MAX");
   same(fillDescription("{לא קיים} כאן", values), { text: "כאן", english: [] }, "fillDescription: an unknown token prints nothing (cleanTemplate refuses it before it is saved)");
-  const artist = descriptionValues({ show: { ...fixture, home_team: null, away_team: null, competition: null, venue: "O2 Arena" }, eventName: "אריק קלפטון", teamsHe: {}, leagueHe: {}, cityHe: "לונדון", subject: { name_he: "אריק קלפטון", name_en: "Eric Clapton" } });
+  const artist = descriptionValues({ show: { ...fixture, home_team: null, away_team: null, competition: null, venue: "O2 Arena" }, eventName: "אריק קלפטון", teamsHe: {}, leagueHe: {}, cityHe: "לונדון", subject: { name_he: "אריק קלפטון", name_en: "Eric Clapton" }, venueHe: null });
   same(fillDescription("{אמן} בהופעה ב{עיר}, {אולם}", artist).text, "אריק קלפטון בהופעה בלונדון, O2 Arena", "fillDescription: the artist tokens");
-  same(fillDescription("{אמן}", descriptionValues({ show: fixture, eventName: "Eric Clapton", teamsHe: {}, leagueHe: {}, cityHe: null, subject: { name_he: null, name_en: "Eric Clapton" } })), { text: "Eric Clapton", english: ["אמן"] }, "fillDescription: an artist with no Hebrew name prints in English");
-  same(fillDescription("{אולם}", descriptionValues({ show: { ...fixture, venue: null }, eventName: "x", teamsHe: {}, leagueHe: {}, cityHe: null, subject })).text, "London", "fillDescription: no venue prints the city");
+  same(fillDescription("{אמן}", descriptionValues({ show: fixture, eventName: "Eric Clapton", teamsHe: {}, leagueHe: {}, cityHe: null, subject: { name_he: null, name_en: "Eric Clapton" }, venueHe: null })), { text: "Eric Clapton", english: ["אמן"] }, "fillDescription: an artist with no Hebrew name prints in English");
+  same(fillDescription("{אולם}", descriptionValues({ show: { ...fixture, venue: null }, eventName: "x", teamsHe: {}, leagueHe: {}, cityHe: null, subject, venueHe: null })).text, "London", "fillDescription: no venue prints the city");
 }
 
 // ---- Alon round 2, Task 2: one equivalence rule (lib/uploader/equivalence.ts) + the same_show question ----
@@ -6299,6 +6303,131 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(subjectRowId("artist", rowsOf(55, null)), null, "subjectRowId: an artist run with no artist row has none");
   same(subjectRowId("competition", rowsOf(55, 9)), null, "subjectRowId: a competition has no page of its own");
   same(subjectRowId("team", rowsOf(null, null)), null, "subjectRowId: nothing resolved - none");
+}
+
+// ---- Round אלון 2, Task 9: the hall's Hebrew name, no description line --------------------------------------
+// Spec docs/superpowers/specs/2026-10-28-uploader-alon-round-2-design.md section 6 (D3, D4). `{אולם}` prints the hall's Hebrew name
+// (`venue_maps.name_he`, proposed by `classify_venue` as `venue_he`, confirmed in the dialog); the Hebrew zone description left the
+// dialog and the model stops proposing it, while one already stored on a zone stays.
+{
+  const camp: ShowIdentity = {
+    name_english: "FC Barcelona vs Villarreal CF",
+    city: "Barcelona",
+    country_code: "ES",
+    venue: "Camp Nou",
+    date: "2027-03-14",
+    lat: 41.38,
+    lon: 2.12,
+    suppliers: { tixstock: null, livetickets: null },
+    competition: "La Liga",
+    home_team: "FC Barcelona",
+    away_team: "Villarreal CF",
+    fallback: [],
+  };
+  const teams = withSupplierSpellings({ barcelona: "ברצלונה", villarreal: "ויאריאל" }, [camp.home_team, camp.away_team]);
+  const leagues = { "la liga": "הלה ליגה" };
+  const subject = { name_he: null, name_en: "FC Barcelona" };
+  const base = { show: camp, eventName: "ברצלונה - ויאריאל", teamsHe: teams, leagueHe: leagues, cityHe: "ברצלונה", subject };
+  const template = "{בית} נגד {חוץ} ב{אולם}, במסגרת {מפעל}.";
+
+  // -- {אולם} = the hall's Hebrew name, else the English venue ---------------------------------------
+  same(
+    fillDescription(template, descriptionValues({ ...base, venueHe: "קאמפ נאו" })),
+    { text: "ברצלונה נגד ויאריאל בקאמפ נאו, במסגרת הלה ליגה.", english: [] },
+    "descriptionValues: {אולם} prints the hall's Hebrew name",
+  );
+  same(
+    fillDescription(template, descriptionValues({ ...base, venueHe: null })).text,
+    "ברצלונה נגד ויאריאל בCamp Nou, במסגרת הלה ליגה.",
+    "descriptionValues: no Hebrew name - the English venue, as before",
+  );
+  same(fillDescription("{אולם}", descriptionValues({ ...base, venueHe: "   " })).text, "Camp Nou", "descriptionValues: a blank name is no name");
+  same(fillDescription("{אולם}", descriptionValues({ ...base, show: { ...camp, venue: null }, venueHe: "קאמפ נאו" })).text, "קאמפ נאו", "descriptionValues: the name needs no English venue beside it");
+  same(fillDescription("{אולם}", descriptionValues({ ...base, show: { ...camp, venue: null }, venueHe: null })).text, "Barcelona", "descriptionValues: no venue and no name - the city, as before");
+
+  // -- cleanVenueHe / parseVenueHeInput ----------------------------------------------------------------
+  same(VENUE_HE_MAX, 80, "VENUE_HE_MAX is 80");
+  same(cleanVenueHe(" קאמפ נאו "), "קאמפ נאו", "cleanVenueHe: trimmed");
+  same(cleanVenueHe("Camp Nou"), null, "cleanVenueHe: no Hebrew letter - no name");
+  same([cleanVenueHe(""), cleanVenueHe("   "), cleanVenueHe(5), cleanVenueHe(null), cleanVenueHe(undefined), cleanVenueHe({})], Array(6).fill(null), "cleanVenueHe: empty or not text - null");
+  same(cleanVenueHe("א".repeat(VENUE_HE_MAX)), "א".repeat(VENUE_HE_MAX), "cleanVenueHe: exactly the cap stands");
+  same(cleanVenueHe("א".repeat(VENUE_HE_MAX + 1)), null, "cleanVenueHe: over the cap - null (the model's schema says 80)");
+  same(cleanVenueHe("קאמפ נאו (Camp Nou)"), "קאמפ נאו (Camp Nou)", "cleanVenueHe: a Hebrew name with a latin part stands");
+  same(parseVenueHeInput(undefined), { ok: true, value: undefined }, "parseVenueHeInput: not sent - the stored name is left alone");
+  same([parseVenueHeInput(null), parseVenueHeInput(""), parseVenueHeInput("  ")], Array(3).fill({ ok: true, value: null }), "parseVenueHeInput: null / empty - the name is cleared");
+  same(parseVenueHeInput(" קאמפ נאו "), { ok: true, value: "קאמפ נאו" }, "parseVenueHeInput: a Hebrew name is trimmed");
+  same([parseVenueHeInput("Camp Nou"), parseVenueHeInput(5), parseVenueHeInput("א".repeat(VENUE_HE_MAX + 1)), parseVenueHeInput({})], Array(4).fill({ ok: false }), "parseVenueHeInput: latin only, not text, over the cap - refused (bad_input)");
+
+  // -- the proposal parse: no description, a venue_he -----------------------------------------------------
+  const answer = (extra: Record<string, unknown>, entry: Record<string, unknown> = {}) =>
+    parseClassification(
+      { categories: [{ category: "Cat 1", label_he: "קטגוריה 1", description_he: "משפט שהמודל המציא", drop: false, drop_reason: null, unsure: false, ...entry }], ...extra },
+      ["cat 1"],
+    );
+  same(answer({}).rows.get("cat 1")?.description_he, "", "parseClassification: a description the model sends anyway is ignored");
+  same(answer({ venue_he: " קאמפ נאו " }).venueHe, "קאמפ נאו", "parseClassification: venue_he is read, trimmed");
+  same(
+    ["Camp Nou", "", 5, null, undefined, "א".repeat(VENUE_HE_MAX + 1)].map((venue_he) => answer({ venue_he }).venueHe),
+    Array(6).fill(null),
+    "parseClassification: venue_he without a Hebrew letter, empty, not text, absent or over 80 is null",
+  );
+  same(answer({ venue_he: "קאמפ נאו" }, { drop: true, drop_reason: "away" }).venueHe, "קאמפ נאו", "parseClassification: the hall's name does not depend on the rows");
+  same(parseClassification({ venue_he: "קאמפ נאו", categories: [] }, []).venueHe, "קאמפ נאו", "parseClassification: a name-only answer (no category asked) still reads it");
+  same(parseClassification(null, ["cat 1"]).venueHe, null, "parseClassification: an unusable answer has no name");
+
+  // -- the confirm keeps a zone's stored description ---------------------------------------------------
+  const row = (extra: Partial<ConfirmedRow> = {}): ConfirmedRow => ({ category: "Cat 1", label_he: "קטגוריה 1", description_he: "", drop: false, unsure: false, ...extra });
+  const stored: TemplateLike = {
+    zones: [{ id: "cat-1", label: "קטגוריה 1", sections: ["cat-1_a"], description: "מאחורי השער" }],
+    supplier_categories: { tixstock: { "cat 1": "cat-1" } },
+  };
+  const drawn = [{ category: "cat 1", key: "cat 1", sections: ["cat-1_a"] }];
+  const NO_DROPPED = { dropped: [], kept: [] };
+  same(templateFromRows([row()], drawn, stored, NO_DROPPED).zones[0].description, "מאחורי השער", "templateFromRows: an empty description keeps the one stored on the zone (D4)");
+  same(templateFromRows([row({ label_he: "שער צפוני" })], drawn, stored, NO_DROPPED).zones[0], { id: "cat-1", label: "שער צפוני", sections: ["cat-1_a"], description: "מאחורי השער" }, "templateFromRows: a renamed zone keeps its stored description");
+  same(templateFromRows([row({ description_he: "תיאור חדש" })], drawn, stored, NO_DROPPED).zones[0].description, "תיאור חדש", "templateFromRows: a description that IS sent still wins (a learn from the editor, an older client)");
+  same(templateFromRows([row()], drawn, null, NO_DROPPED).zones[0].description, undefined, "templateFromRows: a new zone with no description has none");
+  const twoKeysOneZone = templateFromRows(
+    [row(), row({ category: "Cat 1b" })],
+    drawn,
+    { zones: stored.zones, supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 1b": "cat-1" } } },
+    NO_DROPPED,
+  );
+  same(twoKeysOneZone.zones[0].description, "מאחורי השער", "templateFromRows: two keys of one zone, both empty - the description stays");
+
+  // -- the tool and the prompt --------------------------------------------------------------------------
+  type ToolSchema = { required: string[]; properties: Record<string, { type?: unknown; maxLength?: number; items?: { properties: Record<string, unknown> } }> };
+  const schema = CLASSIFY_TOOL.input_schema as unknown as ToolSchema;
+  check(!("description_he" in (schema.properties.categories.items?.properties ?? {})), "CLASSIFY_TOOL: a row has no description_he any more (D4)");
+  same([schema.properties.venue_he?.type, schema.properties.venue_he?.maxLength], ["string", VENUE_HE_MAX], "CLASSIFY_TOOL: a top-level venue_he, at most 80 characters");
+  const def = TOUR_UPLOADER_AGENT;
+  const input: ClassifyInput = {
+    venue: "Camp Nou",
+    city: "Barcelona",
+    subject: "FC Barcelona",
+    kind: "team",
+    categories: [{ category: "Longside Lower Tier", key: "longside lower tier", sections: ["longside-lower-tier_L1"], shows: 3, existingLabel: null }],
+    styleExamples: [],
+  };
+  const asking = classifyPrompt(def, [], [], { ...input, askVenueName: true });
+  const notAsking = classifyPrompt(def, [], [], input);
+  check(asking.system.includes("venue_he") && notAsking.system.includes("venue_he"), "classifyPrompt: the rules name venue_he");
+  check(!asking.system.includes("description_he"), "classifyPrompt: the rules no longer ask for a description");
+  check(/hebrew name/i.test(asking.user) && /wanted/i.test(asking.user), "classifyPrompt: a hall with no stored Hebrew name asks for one in the user turn");
+  check(!/hebrew name/i.test(notAsking.user), "classifyPrompt: a hall that has one does not");
+  check(!asking.user.includes("description"), "classifyPrompt: nothing about a description reaches the model");
+  const nameOnly = classifyPrompt(def, [], [], { ...input, categories: [], askVenueName: true });
+  check(nameOnly.user.includes("Camp Nou") && /wanted/i.test(nameOnly.user) && !nameOnly.user.includes("CATEGORIES"), "classifyPrompt: a call that only wants the hall's name lists the venue and no categories");
+  same(classifyNothingToAsk(input), null, "classifyNothingToAsk: categories to classify - ask");
+  same(classifyNothingToAsk({ ...input, categories: [] }), "categories: empty", "classifyNothingToAsk: no category and no name wanted - nothing to ask");
+  same(classifyNothingToAsk({ ...input, categories: [], askVenueName: true }), null, "classifyNothingToAsk: a hall that only lacks its Hebrew name is still asked");
+
+  // -- the answer -> the outcome carries the name -----------------------------------------------------
+  const toolUse = (input: unknown) => ({ stop_reason: "tool_use", content: [{ type: "tool_use", name: "classify_venue", input }] });
+  const outcome = classifyOutcomeFromAnswer(toolUse({ venue_he: "קאמפ נאו", categories: [{ category: "Longside Lower Tier", label_he: "יציע ארוך", drop: false, drop_reason: null, unsure: false }] }), ["longside lower tier"], 0.02);
+  check(outcome.ok && outcome.venueHe === "קאמפ נאו" && outcome.rows.get("longside lower tier")?.label_he === "יציע ארוך", "classifyOutcomeFromAnswer: the outcome carries venueHe");
+  const noName = classifyOutcomeFromAnswer(toolUse({ categories: [] }), [], 0.02);
+  check(noName.ok && noName.venueHe === null, "classifyOutcomeFromAnswer: an answer without venue_he - null, still ok");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

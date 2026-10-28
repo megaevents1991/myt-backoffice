@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { normalizeName } from "@/lib/on-tour";
 import { urlSpellings } from "@/lib/services/venue-memory";
-import { parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
+import { cleanVenueHe, parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
 import { priorItemsOf, priorRunScope, type PriorItem, type PriorItemRow, type PriorRunRow } from "@/lib/uploader/shows";
 import { cleanZoneDescription, type SupplierCategoryMap, type VenueMap, type VenueZone } from "@/lib/venue-maps/svg-zones";
 import type { Json } from "@/types/database.types";
@@ -155,20 +155,20 @@ export function supplierCategoriesOf(v: Json): SupplierCategoryMap {
  */
 export async function venueMapFor(
   sourceUrl: string | null,
-): Promise<(Pick<VenueMap, "svg_url" | "zones" | "supplier_categories"> & { dropped: DroppedCategories }) | null> {
+): Promise<(Pick<VenueMap, "svg_url" | "zones" | "supplier_categories"> & { dropped: DroppedCategories; name_he: string | null }) | null> {
   const url = (sourceUrl ?? "").trim();
   if (url === "") return null;
   // A spelling holding `"` would break out of PostgREST's quoted `in.(...)` list - a supplier URL never has one.
   const spellings = urlSpellings(url).filter((u) => !u.includes('"'));
   if (spellings.length === 0) return null;
-  // `dropped_categories` is newer than types/database.types.ts (`npm run db:types` after migration
-  // 20261022170000) - the file's boundary cast reads it.
-  const { data, error } = await db
-    .from("venue_maps")
-    .select("svg_url,zones,supplier_categories,dropped_categories")
-    .in("source_url", spellings)
-    .order("updated_at", { ascending: false })
-    .limit(1);
+  // `dropped_categories` and `name_he` are newer than types/database.types.ts (`npm run db:types` after
+  // migrations 20261022170000 / 20261028114031) - the file's boundary cast reads them. `name_he` (the hall's
+  // Hebrew name, what the description's `{אולם}` prints) reads as none while its migration is not applied.
+  const read = (columns: string) =>
+    db.from("venue_maps").select(columns).in("source_url", spellings).order("updated_at", { ascending: false }).limit(1);
+  const base = "svg_url,zones,supplier_categories,dropped_categories";
+  let { data, error } = await read(`${base},name_he`);
+  if (error && (error.code === "42703" || error.code === "PGRST204")) ({ data, error } = await read(base));
   if (error) fail("venue_maps read", error);
   const row = data?.[0];
   if (!row) return null;
@@ -177,5 +177,6 @@ export async function venueMapFor(
     zones: zonesOfTemplate(row.zones),
     supplier_categories: supplierCategoriesOf(row.supplier_categories),
     dropped: parseDroppedCategories(row.dropped_categories),
+    name_he: cleanVenueHe(row.name_he),
   };
 }

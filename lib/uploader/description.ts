@@ -10,8 +10,9 @@
  *
  * A token with no Hebrew value prints its English one (a team the names dialog has not named yet, a
  * competition no league tag knows) and is reported in `english`, so the board can say which places are
- * still in English; a token with no value at all prints nothing. The venue and the date are printed as
- * they are - they have no Hebrew form to miss.
+ * still in English; a token with no value at all prints nothing. `{אולם}` prints the hall's Hebrew name
+ * (`venue_maps.name_he`, confirmed in the classify dialog - round 2, D3) and the supplier's venue when the
+ * hall has none; the venue and the date are never reported as English.
  *
  * Selftest: scripts/tour-uploader-selftest.ts (section "Description template").
  */
@@ -39,14 +40,14 @@ export const DESCRIPTION_TOKENS: Record<TemplateFamily, readonly { token: string
     { token: "חוץ", hint: "הקבוצה האורחת, בעברית" },
     { token: "מפעל", hint: "הליגה / הגביע, בעברית" },
     { token: "אירוע", hint: "שם האירוע כפי שהוא באתר" },
-    { token: "אולם", hint: "שם האצטדיון" },
+    { token: "אולם", hint: "שם האצטדיון בעברית (נקבע בסיווג הכרטיסים), אחרת כפי שהספק כותב אותו" },
     { token: "עיר", hint: "העיר" },
     { token: "תאריך", hint: "תאריך המשחק" },
   ],
   artist: [
     { token: "אמן", hint: "שם האמן, בעברית" },
     { token: "אירוע", hint: "שם האירוע כפי שהוא באתר" },
-    { token: "אולם", hint: "שם האולם" },
+    { token: "אולם", hint: "שם האולם בעברית (נקבע בסיווג הכרטיסים), אחרת כפי שהספק כותב אותו" },
     { token: "עיר", hint: "העיר" },
     { token: "תאריך", hint: "תאריך ההופעה" },
   ],
@@ -131,7 +132,8 @@ const any = (s: string | null | undefined): string | null => {
 /**
  * Every token's value for one show. `teamsHe` is keyed like `eventNames` reads it (pass it through
  * `withSupplierSpellings` first); `eventName` is the event's name as it stands; `cityHe` the event's city as
- * the site prints it (`eventCityName`), when the event has a location.
+ * the site prints it (`eventCityName`), when the event has a location; `venueHe` the hall's Hebrew name
+ * (`venue_maps.name_he` of the show's drawing), null when it has none - `{אולם}` then prints the supplier's venue.
  */
 export function descriptionValues(input: {
   show: ShowIdentity;
@@ -140,6 +142,7 @@ export function descriptionValues(input: {
   leagueHe: Record<string, string>;
   cityHe: string | null;
   subject: { name_he: string | null; name_en: string };
+  venueHe: string | null;
 }): DescriptionValues {
   const { show, teamsHe } = input;
   const side = (team: string | null): TokenValue => ({ he: he(team === null ? null : teamsHe[normalizeName(team)]), en: any(team) });
@@ -149,8 +152,8 @@ export function descriptionValues(input: {
     מפעל: { he: leagueHebrew(show.competition, input.leagueHe), en: any(show.competition) },
     אירוע: { he: he(input.eventName), en: any(input.eventName) ?? any(show.name_english) },
     אמן: { he: he(input.subject.name_he), en: any(input.subject.name_en) },
-    // printed as they are: a venue has no Hebrew form to miss, and a date is a date
-    אולם: { he: any(show.venue) ?? any(show.city), en: null },
+    // the hall's Hebrew name, else the venue as the supplier writes it (never reported as English); a date is a date
+    אולם: { he: any(input.venueHe) ?? any(show.venue) ?? any(show.city), en: null },
     עיר: { he: he(input.cityHe), en: any(input.cityHe) ?? any(show.city) },
     תאריך: { he: dayOf(show.date), en: null },
   };

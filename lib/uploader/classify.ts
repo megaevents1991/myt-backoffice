@@ -7,7 +7,11 @@
  * venue template (`venue_maps.supplier_categories.tixstock`) and `venue_maps.dropped_categories` use:
  *  - `dropRule`, `drawingCategories`, `parseDroppedCategories`: the facts the dialog starts from.
  *  - `parseClassification`, `proposalRows`: the model's proposal checked, and the dialog's rows
- *    (stored label > proposal, the code rule for "away" stands first).
+ *    (stored label > proposal, the code rule for "away" stands first). The model proposes a label, a drop
+ *    and the HALL's Hebrew name - never a zone description (round 2, D4); a description already stored on
+ *    a zone is shown by `proposalRows` and kept by `templateFromRows`.
+ *  - `cleanVenueHe`, `parseVenueHeInput`: the hall's Hebrew name (`venue_maps.name_he`, what `{אולם}`
+ *    prints) - the proposal's and the confirm's.
  *  - `cleanConfirmedRows`, `readyToConfirm`, `templateFromRows`, `forgetUnconfirmed`, `classificationDiff`:
  *    what a person confirmed -> the final template (zones, mapping, drops; a left-out key is unsure), and
  *    what they changed against the proposal.
@@ -51,6 +55,8 @@ const CATEGORY_NAME_MAX = 200;
 export const CLASSIFY_TIMEOUT_MS = 40_000;
 /** `classifyVenue`'s refusal of a first confirm with no zone named (ruling R25). */
 export const FIRST_CONFIRM_NEEDS_NAME = "name at least one zone before the first confirm";
+/** The longest Hebrew name of a hall (round 2, D3) - the dialog's box, the tool's schema and the confirm's check. */
+export const VENUE_HE_MAX = 80;
 
 const HEBREW_LETTER = /[א-ת]/;
 /** The words that make a stand an away stand. Word-bounded, so "Getaway Lounge" is not one. */
@@ -67,7 +73,7 @@ export type TemplateLike = { zones: VenueZone[]; supplier_categories: SupplierCa
 /** `venue_maps.dropped_categories` as keys: what the venue never sells, and the rule-drops a person kept. */
 export type DroppedCategories = { dropped: string[]; kept: string[] };
 
-/** What the model (or the rule) says about one category. */
+/** What the model (or the rule) says about one category. `description_he` is never the model's (D4): "" in a proposal, the stored zone's in a row the template already holds. */
 export type ProposedRow = {
   label_he: string;
   description_he: string;
@@ -93,7 +99,7 @@ export type ClassificationRow = CategoryInput &
     status: "ai" | "rule_drop" | "unsure" | "existing" | "manual";
   };
 
-/** A row of the dialog as confirmed. A dropped or unsure row may carry no label. */
+/** A row of the dialog as confirmed. A dropped or unsure row may carry no label; the dialog sends no description (D4) - "" keeps the stored one. */
 export type ConfirmedRow = {
   category: string;
   label_he: string;
@@ -132,6 +138,30 @@ const hasHebrew = (text: string): boolean => HEBREW_LETTER.test(text);
 /** A string, trimmed and cut to `max`; anything else is "". */
 const cut = (value: unknown, max: number): string =>
   typeof value === "string" ? value.trim().slice(0, max).trimEnd() : "";
+
+/**
+ * A hall's Hebrew name (round 2, D3): trimmed, at most `VENUE_HE_MAX`, with a Hebrew letter - else null.
+ * Over the cap is no name rather than a cut one (the tool's schema says 80, the dialog's box too).
+ */
+export function cleanVenueHe(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const name = raw.trim();
+  return name !== "" && name.length <= VENUE_HE_MAX && hasHebrew(name) ? name : null;
+}
+
+/**
+ * The confirm's `venueHe`, checked: `undefined` (not sent) leaves the stored name alone, null / empty clears
+ * it, a Hebrew name is set trimmed. Anything else - text with no Hebrew letter, over the cap, not text - is
+ * refused (`bad_input`): a person typed it, so it is never silently dropped.
+ */
+export function parseVenueHeInput(raw: unknown): { ok: true; value: string | null | undefined } | { ok: false } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== "string") return { ok: false };
+  if (raw.trim() === "") return { ok: true, value: null };
+  const name = cleanVenueHe(raw);
+  return name === null ? { ok: false } : { ok: true, value: name };
+}
 
 /** The category as the supplier names it - what ops buy by, and what the template key is made of. */
 const ticketCategory = (ticket: EventTicket): string => ticket.supplierCategory || ticket.category;
@@ -229,28 +259,30 @@ export function parseDroppedCategories(value: unknown): DroppedCategories {
 /**
  * One answered category. A drop stands only with a reason (away / other) and only for a row the model is
  * sure about - "drop + unsure" is unsure, which keeps the ticket for a person to look at. A kept row whose
- * label has no Hebrew letter is unsure too: the customer reads that title.
+ * label has no Hebrew letter is unsure too: the customer reads that title. The model proposes no description
+ * (round 2, D4): one it sends anyway is never read.
  */
 function proposedFrom(entry: Record<string, unknown>): ProposedRow {
   const label = cut(entry.label_he, ZONE_LABEL_MAX);
-  const description = cleanZoneDescription(entry.description_he) ?? "";
   const reason = entry.drop_reason === "away" || entry.drop_reason === "other" ? entry.drop_reason : null;
   const unsure = entry.unsure === true;
   if (entry.drop === true && reason && !unsure) {
-    return { label_he: label, description_he: description, drop: true, drop_reason: reason, unsure: false };
+    return { label_he: label, description_he: "", drop: true, drop_reason: reason, unsure: false };
   }
-  return { label_he: label, description_he: description, drop: false, drop_reason: null, unsure: unsure || !hasHebrew(label) };
+  return { label_he: label, description_he: "", drop: false, drop_reason: null, unsure: unsure || !hasHebrew(label) };
 }
 
 /**
- * The model's tool output (`{ categories: [{ category, label_he, description_he, drop, drop_reason, unsure }] }`)
+ * The model's tool output (`{ venue_he, categories: [{ category, label_he, drop, drop_reason, unsure }] }`)
  * checked field by field against the keys it was asked about. One row per asked key, in asked order: an
- * unknown category is ignored (a problem line), a key it skipped is an unsure row. Never throws.
+ * unknown category is ignored (a problem line), a key it skipped is an unsure row. `venueHe` = the hall's
+ * Hebrew name when the answer holds a usable one (`cleanVenueHe`), else null - whatever became of the rows.
+ * Never throws.
  */
 export function parseClassification(
   answer: unknown,
   keys: string[],
-): { rows: Map<string, ProposedRow>; problems: string[] } {
+): { rows: Map<string, ProposedRow>; problems: string[]; venueHe: string | null } {
   const asked = new Set(keys);
   const answered = new Map<string, ProposedRow>();
   const problems: string[] = [];
@@ -279,7 +311,7 @@ export function parseClassification(
     if (!row && entries) problems.push(`no answer for "${key}" - left for review`);
     rows.set(key, row ?? skippedRow());
   }
-  return { rows, problems };
+  return { rows, problems, venueHe: isObject(answer) ? cleanVenueHe(answer.venue_he) : null };
 }
 
 // ---- The dialog's rows ------------------------------------------------------------------------------
@@ -415,7 +447,8 @@ export function readyToConfirm(rows: ConfirmedRow[], hasTemplate: boolean): bool
  * The final template after a confirm, merged over the existing one (a second confirm, or the template
  * `adoptVenueMap` just wrote, is the same call):
  *  - a confirmed row (not dropped, not unsure) gets a zone: the one its key already maps to, else a new id;
- *    its label and description are the row's; its sections are the drawing's for the key (several keys in
+ *    its label is the row's, its description the row's when it has one (the dialog sends none since round 2,
+ *    D4 - the stored description stays); its sections are the drawing's for the key (several keys in
  *    one zone add up; an off-map key keeps the sections already painted on its zone, else none);
  *  - zones of keys that are not in `rows` stay as they were;
  *  - a dropped or unsure row has no zone and no mapping (`forget`);
@@ -459,11 +492,10 @@ export function templateFromRows(
       zone = { id: newZoneId(key, zones), label: "", sections: [] };
       zones.push(zone);
     }
-    const touched = sectionsOf.has(zone.id);
     zone.label = cut(row.label_he, ZONE_LABEL_MAX) || zone.label || drawn.get(key)?.category || cut(row.category, ZONE_LABEL_MAX);
+    // The dialog has no description box (round 2, D4): an empty one clears nothing - what is stored stays.
     const description = cleanZoneDescription(row.description_he);
     if (description) zone.description = description;
-    else if (!touched) delete zone.description;
     categoryToZone[key] = zone.id;
 
     const sections = sectionsOf.get(zone.id) ?? new Set<string>();
