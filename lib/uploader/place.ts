@@ -21,6 +21,10 @@
  *      to the venue, then the lowest id) is the package when it is FARTHER than NEAR_LOCATION_KM from
  *      the venue's coordinates (`location_by_city`, `coordsFar` -> the `venue_coords_far` warning);
  *      nearer, step 4 finds it by itself. TixStock put "Velodrome Berlin" in the middle of Germany.
+ *      A row more than FAR_VENUE_KM from the venue counts only when BOTH country codes are known and
+ *      equal (final fix wave A5): an unknown code would let a same-named city anywhere win - the alias
+ *      "Arlington" on the Dallas row would catch Arlington, Virginia. Such a row is passed by (nearest,
+ *      memory, then the question).
  *   4. the nearest location with an IATA within NEAR_LOCATION_KM (+ the memory's lodging when it
  *      is a real second city).
  *   5. the venue memory's two-city setup (decision 9: memory before the brief's fallback).
@@ -211,14 +215,38 @@ function liveCityLocation(
   return rowsOfCity(liveCity.city, countryCode, rows, cityKey)[0] ?? null;
 }
 
-/** Step 3b: the show's city as a location, the one nearest the venue (then the lowest id), with its distance. */
+/** Both country codes are known and the same (A5: what a city row beyond FAR_VENUE_KM must show to count). */
+function countryKnownEqual(code: string | null, row: LocationRow): boolean {
+  const a = (code ?? "").trim().toUpperCase();
+  const b = (row.country_code ?? "").trim().toUpperCase();
+  return a !== "" && a === b;
+}
+
+/**
+ * Step 3b: the show's city as a location, the one nearest the venue (then the lowest id), with its distance. A row
+ * beyond FAR_VENUE_KM is a candidate only when both country codes are known and equal (A5).
+ */
 function cityLocation(show: WithCoords, rows: LocationRow[], cityKey: PlaceInput["cityKey"]): { row: LocationRow; km: number } | null {
   let best: { row: LocationRow; km: number } | null = null;
   for (const row of rowsOfCity(show.city, show.country_code, rows, cityKey)) {
     const km = distanceKm(show.lat, show.lon, row.latitude, row.longitude);
+    if (km > FAR_VENUE_KM && !countryKnownEqual(show.country_code, row)) continue;
     if (!best || km < best.km || (km === best.km && row.id < best.row.id)) best = { row, km };
   }
   return best;
+}
+
+/**
+ * Final fix wave A3: how far a location the create dialog would answer with lies from the venue - the rounded km
+ * when the show has coordinates and the point is more than FAR_VENUE_KM from them, else null (near enough, or no
+ * coordinates to measure from). A created location drives the hotel base price (`quoteHotel` at its coordinates) and
+ * every later run's "nearest", so a swapped latitude / longitude or another city of the same name is confirmed by a
+ * person (`confirm_far`), never written quietly. Pure.
+ */
+export function farFromVenueKm(show: Pick<ShowIdentity, "lat" | "lon">, point: { latitude: number; longitude: number }): number | null {
+  if (typeof show.lat !== "number" || typeof show.lon !== "number" || !Number.isFinite(show.lat) || !Number.isFinite(show.lon)) return null;
+  const km = distanceKm(show.lat, show.lon, point.latitude, point.longitude);
+  return km > FAR_VENUE_KM ? Math.round(km) : null;
 }
 
 /** "flight_city" / "choice_split" ... as the two-city decision line names the lodging. */

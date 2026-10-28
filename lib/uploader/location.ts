@@ -7,8 +7,11 @@
  *
  *  - `validateLocationInput`: the confirm. The Hebrew name ("<city>, <country>" like the existing rows), the
  *    IATA (3 letters), coordinates in range and not the (0, 0) placeholder, an optional ISO-2 country, the
- *    other spellings (deduped by `normalizeName`, at most `LOCATION_ALIASES_MAX`), and no existing row with
- *    the same IATA AND the same city.
+ *    other spellings (deduped by `normalizeName`, at most `LOCATION_ALIASES_MAX`), and no existing row of the
+ *    same city WITHOUT an IATA (`existingLocationFor` - final fix wave A1).
+ *  - `existingLocationFor`: the city is already a row - with an IATA it is USED (the question is answered with
+ *    it, nothing is created - A2); without one the create is refused (A1: Manchester / Liverpool have no IATA on
+ *    purpose - we fly via London - and a second row with MAN would beat the venue memory's two-city setup).
  *  - `parseLocationProposal`: the model's answer, salvaged field by field over a fallback (the show's own
  *    coordinates, country and city spelling) - it never refuses, a bad field simply stays what the show knew.
  *  - `aiProposedFlags`: which fields the person kept exactly as proposed (the audit row the agent learns from).
@@ -47,7 +50,11 @@ export const LOCATION_PROBLEM = {
   coordinates: "הקואורדינטות חסרות - הזינו את קו הרוחב והאורך של העיר",
   country: "קוד המדינה הוא שתי אותיות באנגלית (למשל ES), או ריק",
   aliases: `עד ${LOCATION_ALIASES_MAX} כינויים, כל אחד עד ${LOCATION_ALIAS_MAX} תווים`,
-  exists: (id: number): string => `המיקום כבר קיים (#${id})`,
+  /** A1: the city is a row with no IATA on purpose (Manchester / Liverpool fly via London). */
+  noIata: (city: string, id: number): string =>
+    `קיים מיקום ל${city} (#${id}) בלי קוד שדה תעופה - בחרו "חבילה דרך…" או הוסיפו קוד במסך מיקומים`,
+  /** A3: the location is farther than FAR_VENUE_KM from the venue (a typo in the coordinates, or another city of the name). */
+  far: (km: number): string => `המיקום רחוק ${km} ק"מ מהאולם - בדקו את הקואורדינטות, או לחצו שוב לאישור`,
 };
 
 const HEBREW_LETTER = /[א-ת]/;
@@ -110,16 +117,52 @@ function typedAliases(raw: unknown): string[] | null {
   return distinct.length > LOCATION_ALIASES_MAX ? null : distinct;
 }
 
+/** The `locations` columns the duplicate rule reads (`country_code` optional - an older caller may not have it). */
+export type ExistingLocation = Pick<LocationRow, "id" | "name" | "city_iata"> & { country_code?: string | null };
+
+/** The row's city as the duplicate rule compares it: its short name (`shortPlace`), normalized. */
+const cityOf = (name: string): string => normalizeName(shortPlace(name));
+
+/**
+ * Is the city of `input` already a `locations` row? Same city = the same short name (`shortPlace`, `normalizeName`)
+ * and no two KNOWN country codes that differ (Valencia in Spain is not Valencia in Venezuela; an unknown code agrees -
+ * `sameCityItems`' rule). In order:
+ *  - a row of the city with NO IATA -> `refuse` (A1), naming it: Manchester and Liverpool have no IATA on purpose (we
+ *    fly via London); a second row with MAN would win step 4 (nearest) over the venue memory's two-city setup for
+ *    every later show of the city. Checked first, so one such row refuses even when an IATA row of the city exists too.
+ *  - a row of the city WITH an IATA -> `use` (A2): the question is answered with it, nothing is created (a city made in
+ *    another run, or a create whose answer failed half-way, never leaves a question stuck). The lowest id wins.
+ *  - none -> null (create it).
+ * Pure.
+ */
+export function existingLocationFor<R extends ExistingLocation>(
+  input: Pick<LocationInput, "name_he" | "country_code">,
+  rows: readonly R[],
+): { kind: "use"; row: R } | { kind: "refuse"; problem: string } | null {
+  const city = cityOf(input.name_he);
+  if (city === "") return null;
+  const country = isoCountry(input.country_code);
+  const same = rows.filter((row) => {
+    if (cityOf(row.name) !== city) return false;
+    const theirs = isoCountry(row.country_code ?? null);
+    return country === null || theirs === null || country === theirs;
+  });
+  const noIata = same.find((row) => (row.city_iata ?? "").trim() === "");
+  if (noIata) return { kind: "refuse", problem: LOCATION_PROBLEM.noIata(shortPlace(noIata.name), noIata.id) };
+  const flyable = same.filter((row) => (row.city_iata ?? "").trim() !== "").sort((a, b) => a.id - b.id);
+  return flyable.length > 0 ? { kind: "use", row: flyable[0] } : null;
+}
+
 /**
  * The form a person confirmed -> the row to write, or the first problem in the form's order (name, IATA,
- * latitude, longitude, coordinates, country, aliases, then the duplicate). `existing` = the `locations` rows:
- * a row with the same IATA AND the same city (`shortPlace` of the name, `normalizeName`) is refused, naming it -
- * two cities may share an airport and a city may have two airports, only both together is "already there".
+ * latitude, longitude, coordinates, country, aliases, then the city's no-IATA row). `existing` = the `locations`
+ * rows: a row of the same city with NO IATA refuses the create, naming it (`existingLocationFor`, A1). A row of the
+ * same city WITH an IATA does not refuse here - the action then answers with that row instead of creating one (A2).
  * Pure; the action calls it once without rows (the shape, before any read) and once with them.
  */
 export function validateLocationInput(
   raw: unknown,
-  existing: Pick<LocationRow, "id" | "name" | "city_iata">[],
+  existing: readonly ExistingLocation[],
 ): { ok: true; value: LocationInput } | { ok: false; problem: string } {
   if (!isRecord(raw)) return { ok: false, problem: LOCATION_PROBLEM.shape };
   const refuse = (problem: string) => ({ ok: false as const, problem });
@@ -145,9 +188,8 @@ export function validateLocationInput(
   const aliases = typedAliases(raw.aliases);
   if (aliases === null) return refuse(LOCATION_PROBLEM.aliases);
 
-  const city = normalizeName(shortPlace(name_he));
-  const same = existing.find((row) => (row.city_iata ?? "").trim().toUpperCase() === iata && normalizeName(shortPlace(row.name)) === city);
-  if (same) return refuse(LOCATION_PROBLEM.exists(same.id));
+  const found = existingLocationFor({ name_he, country_code }, existing);
+  if (found?.kind === "refuse") return refuse(found.problem);
 
   return { ok: true, value: { name_he, iata, latitude, longitude, country_code, aliases } };
 }

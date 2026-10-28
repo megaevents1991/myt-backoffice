@@ -533,7 +533,7 @@ export const DESCRIPTION_APPLIED = (r: { events: number; editedByHand: number; e
 // The create-location dialog (round 2, spec 4.2): opened by a location question's "create" option.
 export const LOCATION_TITLE = (city: string): string => `יצירת מיקום ל-${city || "העיר"}`;
 export const LOCATION_INTRO =
-  "המיקום נכנס לטבלת המיקומים - ממנו טסים ובו מחפשים מלון. אחרי היצירה ההופעה הזו, וכל הופעה פתוחה באותה עיר, ייבנו כחבילה.";
+  "המיקום נכנס לטבלת המיקומים - ממנו טסים ובו מחפשים מלון. אחרי היצירה ההופעה הזו, וכל הופעה פתוחה באותה עיר בריצה הזו, ייבנו כחבילה.";
 export const LOCATION_OPEN_FAILED = "הטופס לא נפתח";
 export const LOCATION_WAIT = "ה-AI ממלא את הטופס…";
 export const LOCATION_NAME_LABEL = "שם בעברית (עיר, מדינה)";
@@ -547,6 +547,10 @@ export const LOCATION_COUNTRY_LABEL = "קוד מדינה (ISO-2)";
 export const LOCATION_ALIASES_LABEL = "כתיבים נוספים של העיר";
 export const LOCATION_ALIASES_HINT = "מופרדים בפסיק - כך הספקים מדפיסים את העיר (Valencia, València). ההופעות באותה עיר מזוהות לפיהם.";
 export const BTN_CREATE_LOCATION = "צור מיקום ובנה";
+/** A3: the server called the location far from the venue - the same button, now a confirm. */
+export const BTN_CONFIRM_FAR_LOCATION = "המיקום נכון - צור ובנה";
+/** A2: the city was already a location with an IATA - it was used, nothing was created. */
+export const LOCATION_EXISTING = (id: number): string => `המיקום כבר קיים (#${id}) - ההופעות ייבנו דרכו`;
 export const LOCATION_TASK_OPEN = "משימת השאלה לא נסגרה - סגרו אותה ידנית";
 /** The success toast: the new location and how many shows (this one included) now build as a package. */
 export const LOCATION_DONE = (name: string, shows: number): string =>

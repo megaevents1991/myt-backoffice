@@ -154,7 +154,7 @@ function PlanChips({ board, counts }: { board: RunBoard; counts: BoardCounts }) 
       <Chip>
         כרטיס בלבד <Money v={plan.markups.ticket_only} /> · אדישנל <Money v={plan.markups.additional} />
       </Chip>
-      <Chip>בלי לוקיישן: {plan.rules.without_location === "ticket_only" ? "כרטיס בלבד" : "דילוג"}</Chip>
+      <Chip>בלי לוקיישן: שואלים (המלצה: {plan.rules.without_location === "ticket_only" ? "כרטיס בלבד" : "דילוג"})</Chip>
       {(date_from || date_to) && (
         <Chip>
           {date_from && (

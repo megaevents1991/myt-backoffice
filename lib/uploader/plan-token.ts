@@ -12,6 +12,9 @@
  * The message is the plan as canonical JSON (keys sorted, so the order the object travelled in never
  * matters) + "\n" + the brief; the MAC is HMAC-SHA256 under the caller's key, hex. Web Crypto, so it
  * runs in any runtime. Pure apart from that - the key is handed in, never read from the env here.
+ * A plan answered to a STEER is signed under its own prefix (`steered`): the card showed it WITHOUT the
+ * last run's markups (final fix wave A4), so `createRun` must measure the edit lessons from the bare plan.
+ * The prefix cannot be forged by a brief - a plain message always starts with the plan's `{`.
  * Selftest: scripts/tour-uploader-selftest.ts.
  */
 import type { UploaderPlan } from "@/types/uploader.types";
@@ -31,9 +34,12 @@ async function hmacHex(key: string, message: string): Promise<string> {
   return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** The token of the model's plan for this brief. */
-export async function planTokenFor(planAi: UploaderPlan, brief: string, key: string): Promise<string> {
-  return hmacHex(key, `${canonicalJson(planAi)}\n${brief}`);
+/** Which parse made the plan: a first parse (the default) or an answer to a steer. */
+export type PlanTokenOpts = { steered?: boolean };
+
+/** The token of the model's plan for this brief (`steered`: a steer's answer - another message, another token). */
+export async function planTokenFor(planAi: UploaderPlan, brief: string, key: string, opts?: PlanTokenOpts): Promise<string> {
+  return hmacHex(key, `${opts?.steered === true ? "steered\n" : ""}${canonicalJson(planAi)}\n${brief}`);
 }
 
 /** Constant-time comparison of two hex strings. */
@@ -45,13 +51,14 @@ function sameHex(a: string, b: string): boolean {
 }
 
 /**
- * Does `token` (whatever the client sent) sign exactly this plan and brief under `key`? A missing
- * key, a missing or malformed token, or any other plan / brief = false. Never throws.
+ * Does `token` (whatever the client sent) sign exactly this plan and brief under `key` - as a first parse, or with
+ * `steered` as a steer's answer? A missing key, a missing or malformed token, the other kind, or any other plan /
+ * brief = false. Never throws.
  */
-export async function verifyPlanToken(token: unknown, planAi: UploaderPlan, brief: string, key: string | null): Promise<boolean> {
+export async function verifyPlanToken(token: unknown, planAi: UploaderPlan, brief: string, key: string | null, opts?: PlanTokenOpts): Promise<boolean> {
   if (!key || typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) return false;
   try {
-    return sameHex(await planTokenFor(planAi, brief, key), token);
+    return sameHex(await planTokenFor(planAi, brief, key, opts), token);
   } catch {
     return false;
   }

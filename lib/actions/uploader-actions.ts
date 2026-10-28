@@ -148,7 +148,9 @@ import { FAR_VENUE_KM, MAX_QUESTION_TASKS_PER_RUN, PARSE_RATE_MAX, PARSE_RATE_WI
 import { decision, editDiff } from "@/lib/uploader/decisions";
 import {
   aiProposedFlags,
+  existingLocationFor,
   isLocationQuestion,
+  LOCATION_PROBLEM,
   locationFallback,
   parseLocationProposal,
   sameCityItems,
@@ -156,6 +158,7 @@ import {
   withLocationOption,
   type LocationInput,
 } from "@/lib/uploader/location";
+import { farFromVenueKm } from "@/lib/uploader/place";
 import { cleanTemplate, DESCRIPTION_TOKENS, familyOf, TEMPLATE_FAMILIES, templateEdit, usesCompetition, type TemplateFamily } from "@/lib/uploader/description";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { applyPriorDefaults, emptyPlan, parsePlanInput, parseSteer, type Steer } from "@/lib/uploader/plan";
@@ -294,22 +297,29 @@ export async function parseBrief(brief: string, steer?: SteerInput): Promise<Par
   } catch (e) {
     // parseBriefWithAgent never throws; this is the belt to its braces.
     console.error("uploader-actions: brief parse failed", errorText(e));
+    // A steer replaces the card: never with an empty plan (final fix wave A4) - the card stays as it was.
+    if (steered !== null) return fail("steer_failed");
     base = emptyPlan();
     agent = "failed";
     problems = [errorText(e)];
   }
 
+  // The last run's markups fill what a FIRST parse left empty. Never after a steer (A4): the steer's plan is the card
+  // the person holds, and a markup they cleared on it is their decision - refilling it would put a price back.
   let prior: Awaited<ReturnType<typeof priorMarkups>> = null;
-  try {
-    prior = await priorMarkups(base.subject.kind);
-  } catch (e) {
-    // A convenience: without it the markups stay as the brief left them.
-    console.error("uploader-actions: prior markups read failed", errorText(e));
+  if (steered === null) {
+    try {
+      prior = await priorMarkups(base.subject.kind);
+    } catch (e) {
+      // A convenience: without it the markups stay as the brief left them.
+      console.error("uploader-actions: prior markups read failed", errorText(e));
+    }
   }
-  const { plan, fromPrior } = applyPriorDefaults(base, prior);
+  const { plan, fromPrior } = steered === null ? applyPriorDefaults(base, prior) : { plan: base, fromPrior: [] };
   // The model's plan is signed with its brief: createRun trusts `plan_ai` (the edit lessons) only with it.
   const key = planTokenKey();
-  const signed = planAi !== null && key !== null ? { planToken: await planTokenFor(planAi, brief, key) } : {};
+  // A steer's answer is signed as one (A4): createRun then measures the edits from the bare plan the card showed.
+  const signed = planAi !== null && key !== null ? { planToken: await planTokenFor(planAi, brief, key, { steered: steered !== null }) } : {};
 
   // What the person asked for and what the parser answered - the lesson of a steer (only an answer is one).
   if (steered !== null && planAi !== null) {
@@ -361,17 +371,28 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   // brief (`verifyPlanToken`) - anything else is no model plan (no lessons; the run is still made).
   const rawAi: unknown = input.plan_ai;
   const claimedAi = typeof rawAi === "object" && rawAi !== null && !Array.isArray(rawAi) ? parsePlanInput(rawAi).plan : null;
-  const planAi = claimedAi !== null && (await verifyPlanToken(input.planToken, claimedAi, brief, planTokenKey())) ? claimedAi : null;
+  const tokenKey = planTokenKey();
+  let planAi: UploaderPlan | null = null;
+  // A steer's answer (final fix wave A4) carries a token of its own kind: the card showed it without the last run's markups.
+  let steeredAi = false;
+  if (claimedAi !== null) {
+    if (await verifyPlanToken(input.planToken, claimedAi, brief, tokenKey)) planAi = claimedAi;
+    else if (await verifyPlanToken(input.planToken, claimedAi, brief, tokenKey, { steered: true })) {
+      planAi = claimedAi;
+      steeredAi = true;
+    }
+  }
   if (claimedAi !== null && planAi === null) console.warn("uploader-actions: plan_ai came without a valid signature - kept as no model plan");
 
   const busy = await runInProgressFor(plan);
   if (busy === null) return fail("db_error");
   if (busy) return fail("run_in_progress");
 
-  // The card showed the model's plan WITH the last run's markups (parseBrief's applyPriorDefaults):
-  // the edit lessons are measured from that, read again here - nothing about it comes from the client.
+  // A first parse's card showed the model's plan WITH the last run's markups (parseBrief's applyPriorDefaults):
+  // the edit lessons are measured from that, read again here - nothing about it comes from the client. A steer's
+  // card showed the bare plan (A4), so its lessons are measured from the plan itself (`lastMarkups` stays null).
   let lastMarkups: Awaited<ReturnType<typeof priorMarkups>> | "unknown" = null;
-  if (planAi !== null) {
+  if (planAi !== null && !steeredAi) {
     try {
       lastMarkups = await priorMarkups(planAi.subject.kind);
     } catch (e) {
@@ -959,21 +980,28 @@ async function cityKeyOf(cities: string[]): Promise<(city: string) => string> {
 /**
  * "צור מיקום ובנה": the form a person confirmed becomes a `locations` row, and the question it came from is
  * answered with it (`answerOne`, the path every answer takes - the task closes, the item is re-queued as `found`,
- * `uploader.answered` is audited). Every OTHER open `create_location` / `pick_location` question of the run whose
+ * `uploader.answered` is audited). Every OTHER open `create_location` / `pick_location` question of THIS run whose
  * show is in the same city (`sameCityItems`, the run's city rule) is answered with the same location, each audited
- * as a rule's child so the agent learns once. The shape is checked before any read; the duplicate check (the same
- * IATA AND the same city) after the `locations` read. `input.proposed` (optional) = the AI's proposal as the
- * dialog showed it - only for the audit row's `ai_proposed` flags and what the agent learns, never for a value.
+ * as a rule's child so the agent learns once. The shape is checked before any read; the city's existing rows after
+ * the `locations` read (`existingLocationFor`): a row of the city with NO IATA refuses (final fix wave A1 - Manchester
+ * flies via London on purpose); a row of the city WITH an IATA is USED as it is - nothing is created, the questions
+ * are answered with it and the result says `existing: true` (A2, so a city made in another run, or by a create whose
+ * answer failed half-way, never leaves the question stuck). The location the answer flies to (the new row's, or the
+ * existing one's coordinates) more than FAR_VENUE_KM from the venue is refused `far` until the dialog sends it again
+ * with `confirm_far: true` (A3 - a swapped latitude / longitude would price every hotel there; a venue at a country
+ * centroid stays creatable). `input.proposed` (optional) = the AI's proposal as the dialog showed it - only for the
+ * audit row's `ai_proposed` flags and what the agent learns, never for a value.
  *
  * A refusal is returned with a `problem` in the dialog's words. Once the row is written it stays whatever
  * happens next: if this question then cannot be answered (answered meanwhile, a database failure) the result
- * says the location exists, and a second attempt is refused as a duplicate.
+ * says the location exists, and a second attempt answers with it (A2).
  */
 export async function createLocationAndAnswer(itemId: string, input: unknown): Promise<LocationCreateResult> {
   const session = await requireAdmin();
   if (!isUuid(itemId) || !isRecord(input)) return fail("bad_input");
   const shape = validateLocationInput(input, []);
   if (!shape.ok) return { ...fail("invalid"), problem: shape.problem };
+  const confirmFar = input.confirm_far === true;
 
   const read = await readItemAndRun(itemId);
   if ("kind" in read) return fail(read.kind);
@@ -991,46 +1019,64 @@ export async function createLocationAndAnswer(itemId: string, input: unknown): P
   if (!checked.ok) return { ...fail("invalid"), problem: checked.problem };
   const value = checked.value;
 
-  const created = await insertLocation(value);
-  if (!created.ok) return fail("db_error");
-  const key = String(created.id);
-  const proposed = isRecord(input.proposed) ? parseLocationProposal(input.proposed, NO_PROPOSAL) : null;
-  await logAudit({
-    action: "uploader.location_created",
-    entityType: "location",
-    entityId: created.id,
-    metadata: {
-      agent: AGENT,
-      run_id: run.id,
-      item_id: item.id,
-      location_id: created.id,
-      name_he: value.name_he,
-      iata: value.iata,
-      city: item.show.city,
-      country_code: value.country_code,
-      aliases: value.aliases,
-      aliases_saved: created.aliasesSaved,
-      ai_proposed: aiProposedFlags(proposed, value),
-      ...(proposed && proposed.name_he !== "" ? { proposed_name_he: proposed.name_he } : {}),
-      ...(proposed && proposed.iata !== "" ? { proposed_iata: proposed.iata } : {}),
-    },
-  });
+  // A2: the city is already a row with an IATA - answer with it, create nothing (A1's no-IATA row was refused above).
+  const found = existingLocationFor(value, rows);
+  const reused = found?.kind === "use" ? found.row : null;
 
-  const own = await answerOne({ ...item, question: withLocationOption(item.question, key, value.name_he) }, run, { key, text: null }, session.sub);
+  // A3: the location the answer flies to, far from the venue - a person confirms it first.
+  const farKm = confirmFar ? null : farFromVenueKm(item.show, reused ?? value);
+  if (farKm !== null) return { ok: false, kind: "far", problem: LOCATION_PROBLEM.far(farKm) };
+
+  let locationId: number;
+  let optionLabel: string;
+  if (reused) {
+    locationId = reused.id;
+    optionLabel = reused.name;
+  } else {
+    const created = await insertLocation(value);
+    if (!created.ok) return fail("db_error");
+    locationId = created.id;
+    optionLabel = value.name_he;
+    const proposed = isRecord(input.proposed) ? parseLocationProposal(input.proposed, NO_PROPOSAL) : null;
+    await logAudit({
+      action: "uploader.location_created",
+      entityType: "location",
+      entityId: created.id,
+      metadata: {
+        agent: AGENT,
+        run_id: run.id,
+        item_id: item.id,
+        location_id: created.id,
+        name_he: value.name_he,
+        iata: value.iata,
+        city: item.show.city,
+        country_code: value.country_code,
+        aliases: value.aliases,
+        aliases_saved: created.aliasesSaved,
+        ai_proposed: aiProposedFlags(proposed, value),
+        ...(proposed && proposed.name_he !== "" ? { proposed_name_he: proposed.name_he } : {}),
+        ...(proposed && proposed.iata !== "" ? { proposed_iata: proposed.iata } : {}),
+      },
+    });
+  }
+  const key = String(locationId);
+
+  const own = await answerOne({ ...item, question: withLocationOption(item.question, key, optionLabel) }, run, { key, text: null }, session.sub);
   if (!own.ok) {
-    console.error(`uploader-actions: location ${created.id} created but item ${item.id} was not answered (${own.kind})`);
-    return { ...fail(own.kind), problem: `המיקום נוצר (#${created.id}) אבל התשובה להופעה לא נשמרה - רעננו את הלוח ובדקו את ההופעה` };
+    console.error(`uploader-actions: location ${locationId} ${reused ? "reused" : "created"} but item ${item.id} was not answered (${own.kind})`);
+    if (reused) return fail(own.kind);
+    return { ...fail(own.kind), problem: `המיקום נוצר (#${locationId}) אבל התשובה להופעה לא נשמרה - רעננו את הלוח ובדקו את ההופעה` };
   }
 
   let applied = 0;
   const open = await readRunItems(run.id, "question");
-  if (open === null) console.error(`uploader-actions: open questions of run ${run.id} not read - location ${created.id} answered no other question`);
+  if (open === null) console.error(`uploader-actions: open questions of run ${run.id} not read - location ${locationId} answered no other question`);
   const others = (open ?? []).filter((other) => other.id !== item.id);
   if (others.length > 0) {
     const cityKey = await cityKeyOf([item.show.city, ...others.map((other) => other.show.city)]);
     for (const other of sameCityItems(item, others, cityKey)) {
       if (other.question === null) continue;
-      const done = await answerOne({ ...other, question: withLocationOption(other.question, key, value.name_he) }, run, { key, text: null }, session.sub);
+      const done = await answerOne({ ...other, question: withLocationOption(other.question, key, optionLabel) }, run, { key, text: null }, session.sub);
       if (!done.ok) {
         // A database failure stops it (what was answered stays answered); a question answered meanwhile is passed by.
         if (done.kind === "db_error" || done.kind === "split_failed") break;
@@ -1042,7 +1088,7 @@ export async function createLocationAndAnswer(itemId: string, input: unknown): P
   }
   await logAnswered(own.audit, applied > 0 ? { rule_applied: true, applied } : {});
   await recomputeRun(run.id);
-  return { ok: true, location_id: created.id, applied, task_closed: own.taskClosed };
+  return { ok: true, location_id: locationId, applied, task_closed: own.taskClosed, existing: reused !== null };
 }
 
 /**
@@ -2024,6 +2070,9 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
       tixstockCount(own),
     ),
     decisions: [...ctx.item.decisions.filter((d) => d.code !== "taught_venue"), decision("taught_venue")],
+    // The source's excluded sections are now the hall's: stamped as its baseline, so a later "un-exclude" on the hall
+    // reads them as the hall's (and lifts them here too) - not as one a person excluded on this show alone (B2).
+    ...(ctx.item.payload ? { payload: { ...ctx.item.payload, tx_excluded_sections: ctx.row.tx_excluded_sections } } : {}),
   });
   if (marked === "db_error") rewrite.itemsFailed += 1;
 

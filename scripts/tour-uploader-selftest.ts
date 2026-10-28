@@ -38,6 +38,7 @@ import {
   emptyPlan,
   parsePlanInput,
   parseQuestions,
+  parseSteer,
   PLAN_TOOL_SCHEMA,
   planDiff,
   planNonInstant,
@@ -113,6 +114,7 @@ import {
   parseVenueHeInput,
   proposalRows,
   readyToConfirm,
+  sectionsFixedByHand,
   templateFromEvent,
   templateFromRows,
   ticketsFixedByHand,
@@ -133,9 +135,10 @@ import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX, ZONE_
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { distanceKm, findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
 import { nameFragments, searchWindow, subjectPatterns, tixSlices, TIX_SLICES_MAX } from "@/lib/services/uploader-search";
-import { createLocationQuestion, decidePlace, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
+import { createLocationQuestion, decidePlace, farFromVenueKm, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
 import {
   aiProposedFlags,
+  existingLocationFor,
   isLocationQuestion,
   LOCATION_ALIAS_MAX,
   LOCATION_ALIASES_MAX,
@@ -166,6 +169,7 @@ import {
   inFilter,
   LEARN_STEP_2,
   LOCATION_DONE,
+  LOCATION_EXISTING,
   LOCATION_TITLE,
   MAP_EXCLUDED_LINE,
   MAP_PRICES_LINE,
@@ -2619,8 +2623,8 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   // EDIT_EVENT_COLUMNS covers the edit diff.
   same(
     R.EDIT_EVENT_COLUMNS.split(",").sort(),
-    ["id", "tickets_and_rates", "map_image_url", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
-    "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id and the map the classification rewrites",
+    ["id", "tickets_and_rates", "map_image_url", "tx_excluded_sections", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
+    "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id, the map the classification rewrites and the excluded sections the board's fixed-by-hand reads (B4)",
   );
 
   // subjectArtOf (over the row the one candidate read picked)
@@ -5312,7 +5316,15 @@ async function supplierSvgFetchChecks(): Promise<void> {
   const brumGB = decidePlace(input4({ show: brum }));
   check(brumGB.kind === "ask" && brumGB.question.kind === "create_location", "by city: show Birmingham GB vs location Birmingham US -> not by city (asks create_location)");
   const brumNoCountry = decidePlace(input4({ show: brum, rows: [{ ...birminghamUS, country_code: null }, london4] }));
-  same(codesOf4(brumNoCountry), ["location_by_city"], "by city: a location with no country code agrees with any show");
+  check(
+    brumNoCountry.kind === "ask" && brumNoCountry.question.kind === "create_location",
+    "by city: a location with no country code, an ocean away (beyond FAR_VENUE_KM), is no match (final fix wave A5) - asks create_location",
+  );
+  same(
+    codesOf4(decidePlace(input4({ rows: rows4.map((r) => (r.id === 8 ? { ...r, country_code: null } : r)) }))),
+    ["location_by_city"],
+    "by city: a location with no country code still agrees within FAR_VENUE_KM (Berlin, 225 km from the venue)",
+  );
   const berlinoEq = buildEquivalence(rows4, [{ kind: "city", from_key: "berlino", to_key: "berlin", team_id: null }]);
   const berlino = decidePlace(input4({ show: show4({ city: "Berlino" }), cityKey: (name) => berlinoEq.cityKey(name) }));
   same(codesOf4(berlino), ["location_by_city"], "by city: a confirmed city alias (uploader_aliases) counts - through cityKey");
@@ -5566,16 +5578,26 @@ async function supplierSvgFetchChecks(): Promise<void> {
   const dupes = validateLocationInput({ ...valencia, aliases: [...eleven.slice(0, LOCATION_ALIASES_MAX), "SPELLING A", " ", ""] }, []);
   check(dupes.ok && dupes.value.aliases.length === LOCATION_ALIASES_MAX, "validateLocationInput: duplicates and blanks do not count against the cap");
 
-  // -- the duplicate check: the same IATA AND the same city --------------------------------------------------------
+  // -- the city's existing rows (final fix wave A1 / A2): no IATA refuses, an IATA is used (existingLocationFor) ----------
   const rowVlc = { id: 40, name: "ולנסיה, ספרד", city_iata: "VLC" };
-  same(refused(valencia, [rowVlc]), "המיקום כבר קיים (#40)", "validateLocationInput: an existing row with the IATA and the city is refused, naming it");
-  same(refused(valencia, [{ id: 7, name: "מדריד, ספרד", city_iata: "MAD" }, { ...rowVlc, city_iata: "vlc" }]), "המיקום כבר קיים (#40)", "validateLocationInput: ... whatever the case of the stored IATA");
-  same(refused(valencia, [{ id: 41, name: "ולנסיה", city_iata: "VLC" }]), "המיקום כבר קיים (#41)", "validateLocationInput: ... and whether or not its name carries the country (shortPlace)");
-  check(validateLocationInput(valencia, [{ ...rowVlc, city_iata: "XYZ" }]).ok, "validateLocationInput: the same city under another IATA is allowed");
+  const usedId = (rows: Parameters<typeof existingLocationFor>[1]): number | null => {
+    const r = existingLocationFor({ name_he: valencia.name_he, country_code: valencia.country_code }, rows);
+    return r?.kind === "use" ? r.row.id : null;
+  };
+  check(validateLocationInput(valencia, [rowVlc]).ok, "validateLocationInput: an existing row of the city WITH an IATA no longer refuses (A2 - the action uses it)");
+  same(usedId([rowVlc]), 40, "existingLocationFor: ... it is the row the answer uses");
+  same(usedId([{ id: 7, name: "מדריד, ספרד", city_iata: "MAD" }, { ...rowVlc, city_iata: "vlc" }]), 40, "existingLocationFor: ... whatever the case of the stored IATA");
+  same(usedId([{ id: 41, name: "ולנסיה", city_iata: "VLC" }]), 41, "existingLocationFor: ... and whether or not its name carries the country (shortPlace)");
+  same(usedId([{ ...rowVlc, city_iata: "XYZ" }]), 40, "existingLocationFor: the same city under another IATA is used too (the city is there - nothing is created)");
   check(validateLocationInput(valencia, [{ id: 8, name: "קרקוב, פולין", city_iata: "VLC" }]).ok, "validateLocationInput: the same IATA for another city is allowed (two cities, one airport)");
-  check(validateLocationInput(valencia, [{ ...rowVlc, city_iata: null }]).ok, "validateLocationInput: a row with no IATA never matches");
+  same(usedId([{ id: 8, name: "קרקוב, פולין", city_iata: "VLC" }]), null, "existingLocationFor: ... and is no row of this city");
+  same(
+    refused(valencia, [{ ...rowVlc, city_iata: null }]),
+    `קיים מיקום לולנסיה (#40) בלי קוד שדה תעופה - בחרו "חבילה דרך…" או הוסיפו קוד במסך מיקומים`,
+    "validateLocationInput: a row of the city with NO IATA refuses, naming it (A1)",
+  );
   check(validateLocationInput(valencia, []).ok, "validateLocationInput: no rows, no duplicate");
-  same(refused({ ...valencia, name_he: "Valencia" }, [rowVlc]), LOCATION_PROBLEM.name, "validateLocationInput: the form's own problems come before the duplicate check");
+  same(refused({ ...valencia, name_he: "Valencia" }, [{ ...rowVlc, city_iata: null }]), LOCATION_PROBLEM.name, "validateLocationInput: the form's own problems come before the city's rows");
 
   // -- parseLocationProposal ---------------------------------------------------------------------------------------
   const fallback: LocationInput = { name_he: "", iata: "", latitude: 39.45, longitude: -0.33, country_code: "ES", aliases: ["Valencia"] };
@@ -6742,6 +6764,168 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(templateEdit("{אמן}", "{אמן}", "artist"), { kind: "unchanged" }, "templateEdit: artist, unchanged");
 }
 
+// ---- Alon round 2, final fix wave (final-fix-wave.md A1-A5, B4) -------------------------------------------------
+{
+  // -- A1: a city with a location row WITHOUT an IATA is never created again (Manchester / Liverpool fly via London) ----
+  const manchesterInput = { name_he: "מנצ'סטר, אנגליה", iata: "MAN", latitude: 53.4808, longitude: -2.2426, country_code: "GB", aliases: ["Manchester"] };
+  const manchesterRow = { id: 12, name: "מנצ'סטר, אנגליה", city_iata: null, country_code: "GB" };
+  const liverpoolRow = { id: 13, name: "ליברפול, אנגליה", city_iata: null, country_code: "GB" };
+  const londonRow = { id: 4, name: "לונדון, בריטניה", city_iata: "LON", country_code: "GB" };
+  const A1_TEXT = `קיים מיקום למנצ'סטר (#12) בלי קוד שדה תעופה - בחרו "חבילה דרך…" או הוסיפו קוד במסך מיקומים`;
+  same(LOCATION_PROBLEM.noIata("מנצ'סטר", 12), A1_TEXT, "A1: the problem text, verbatim");
+  const refusedA1 = (raw: unknown, rows: Parameters<typeof validateLocationInput>[1]): string | null => {
+    const r = validateLocationInput(raw, rows);
+    return r.ok ? null : r.problem;
+  };
+  same(refusedA1(manchesterInput, [londonRow, manchesterRow, liverpoolRow]), A1_TEXT, "A1: a second Manchester with MAN is refused - the existing row has no IATA on purpose");
+  same(refusedA1({ ...manchesterInput, name_he: "מנצ'סטר" }, [manchesterRow]), A1_TEXT, "A1: ... whether or not the typed name carries the country (shortPlace)");
+  same(refusedA1(manchesterInput, [{ ...manchesterRow, city_iata: "   " }]), A1_TEXT, "A1: a blank IATA is no IATA");
+  same(refusedA1({ ...manchesterInput, iata: "XYZ", country_code: null }, [manchesterRow]), A1_TEXT, "A1: any IATA, no country typed - still refused");
+  same(
+    refusedA1(manchesterInput, [{ id: 3, name: "מנצ'סטר, אנגליה", city_iata: "MAN", country_code: "GB" }, manchesterRow]),
+    A1_TEXT,
+    "A1: a no-IATA row of the city refuses even when a row of it WITH an IATA exists too (checked first)",
+  );
+  same(refusedA1(manchesterInput, [liverpoolRow, londonRow]), null, "A1: another city's no-IATA row (Liverpool) is no reason");
+  same(refusedA1(manchesterInput, [{ ...manchesterRow, country_code: "US" }]), null, "A1: two KNOWN country codes that differ are two cities (Manchester, New Hampshire)");
+  same(refusedA1(manchesterInput, [{ id: 12, name: "מנצ'סטר, אנגליה", city_iata: null }]), A1_TEXT, "A1: a row read without its country column agrees with any country");
+
+  // -- A2: a city that already has a location WITH an IATA is used, never refused (existingLocationFor) -----------------
+  const valenciaRow = { id: 40, name: "ולנסיה, ספרד", city_iata: "VLC", country_code: "ES", latitude: 39.47, longitude: -0.38 };
+  const use = existingLocationFor({ name_he: "ולנסיה, ספרד", country_code: "ES" }, [londonRow, valenciaRow]);
+  check(use?.kind === "use" && use.row === valenciaRow, "A2: the same city with an IATA -> use, the row itself (its coordinates and all)");
+  check(validateLocationInput({ name_he: "ולנסיה, ספרד", iata: "VLC", latitude: 39.47, longitude: -0.38 }, [valenciaRow]).ok, "A2: ... and the form is not refused for it");
+  const two = existingLocationFor({ name_he: "ולנסיה", country_code: null }, [{ ...valenciaRow, id: 44 }, valenciaRow]);
+  check(two?.kind === "use" && two.row.id === 40, "A2: two rows of the city with an IATA -> the lowest id");
+  same(existingLocationFor({ name_he: "ולנסיה, ונצואלה", country_code: "VE" }, [valenciaRow]), null, "A2: Valencia VE is not Valencia ES (both countries known) -> create");
+  check(existingLocationFor({ name_he: "ולנסיה, ונצואלה", country_code: null }, [valenciaRow])?.kind === "use", "A2: no country typed -> the city's row is used (the far check, A3, catches another continent)");
+  same(existingLocationFor({ name_he: "סביליה, ספרד", country_code: "ES" }, [valenciaRow, londonRow]), null, "A2: a city with no row -> null (create it)");
+  same(existingLocationFor({ name_he: "   ", country_code: "ES" }, [valenciaRow]), null, "A2: no name -> null");
+  const refuse = existingLocationFor({ name_he: "מנצ'סטר", country_code: "GB" }, [manchesterRow]);
+  same(refuse, { kind: "refuse", problem: A1_TEXT }, "A2: the no-IATA row is a refusal, not a use");
+  same(LOCATION_EXISTING(40), "המיקום כבר קיים (#40) - ההופעות ייבנו דרכו", "A2: the dialog's toast, verbatim");
+
+  // -- A3: a location far from the venue is confirmed by a person (farFromVenueKm + LOCATION_PROBLEM.far) -----------------
+  const roig = { lat: 39.4699, lon: -0.3763 };
+  same(farFromVenueKm(roig, { latitude: 39.47, longitude: -0.38 }), null, "A3: Valencia's centre, a few km from Roig Arena -> not far");
+  const swapped = farFromVenueKm(roig, { latitude: -0.38, longitude: 39.47 });
+  same(swapped, Math.round(distanceKm(39.4699, -0.3763, -0.38, 39.47)), "A3: a swapped latitude / longitude -> far, the rounded km");
+  check(swapped !== null && swapped > FAR_VENUE_KM, "A3: ... more than FAR_VENUE_KM");
+  same(farFromVenueKm({ lat: null, lon: null }, { latitude: -0.38, longitude: 39.47 }), null, "A3: a show with no coordinates has nothing to measure from");
+  same(farFromVenueKm({ lat: 51.1657, lon: 10.4515 }, { latitude: 52.52, longitude: 13.405 }), null, "A3: a venue at Germany's centroid -> Berlin is ~250 km: still not far (FAR is 300)");
+  check((farFromVenueKm({ lat: 51.1657, lon: 10.4515 }, { latitude: 54.32, longitude: 10.13 }) ?? 0) > FAR_VENUE_KM, "A3: ... a city beyond FAR from a centroid venue is far - the dialog's second click still creates it");
+  same(LOCATION_PROBLEM.far(7234), `המיקום רחוק 7234 ק"מ מהאולם - בדקו את הקואורדינטות, או לחצו שוב לאישור`, "A3: the problem text, verbatim");
+
+  // -- A4: parseSteer - only a well-formed steer is one (parseBrief then skips the prior markups) ---------------------------
+  const plan = clapton();
+  for (const raw of [null, undefined, 5, "בלי ברלין", [], [{ instruction: "בלי ברלין", plan }], true]) {
+    same(parseSteer(raw), null, `A4 parseSteer: ${JSON.stringify(raw) ?? "undefined"} is no steer`);
+  }
+  for (const instruction of ["ab", "   ", 5, null, undefined, "x".repeat(STEER_MAX + 1)]) {
+    same(parseSteer({ instruction, plan }), null, `A4 parseSteer: instruction ${JSON.stringify(instruction)?.slice(0, 20) ?? "undefined"} -> no steer`);
+  }
+  for (const bad of [null, undefined, [], [plan], "plan", 7]) {
+    same(parseSteer({ instruction: "בלי ברלין", plan: bad }), null, `A4 parseSteer: plan ${JSON.stringify(bad)?.slice(0, 20) ?? "undefined"} -> no steer`);
+  }
+  const good = parseSteer({ instruction: "  בלי ברלין  ", plan, questions: ["  האם לכלול גם את ברלין? ", 5, "", "מה העונה?"] });
+  same(good, { instruction: "בלי ברלין", plan, questions: ["האם לכלול גם את ברלין?", "מה העונה?"] }, "A4 parseSteer: trimmed instruction, the plan, the questions through parseQuestions");
+  same(parseSteer({ instruction: "בלי ברלין", plan, questions: "מה העונה?" })?.questions, [], "A4 parseSteer: questions that are no list -> none");
+  same(parseSteer({ instruction: "בלי ברלין", plan })?.questions, [], "A4 parseSteer: no questions key -> none");
+  const badField = { ...plan, scope: { ...plan.scope, date_from: "tomorrow" }, markups: { ticket_only: -5, additional: null } };
+  const salvaged = parseSteer({ instruction: "בלי ברלין", plan: badField });
+  check(salvaged !== null, "A4 parseSteer: a plan with a bad field still steers (the card's plan, salvaged)");
+  same(salvaged?.plan, parsePlanInput(badField).plan, "A4 parseSteer: ... salvaged exactly as parsePlanInput salvages it");
+  same(salvaged?.plan.subject, plan.subject, "A4 parseSteer: ... the good fields stay");
+  same(salvaged?.plan.markups.ticket_only, null, "A4 parseSteer: ... a bad markup is no markup (never refilled by a prior after a steer)");
+
+  // -- A5: a same-named city beyond FAR_VENUE_KM counts only when both country codes are known and equal --------------------
+  const NOW5 = new Date("2026-10-28T12:00:00Z");
+  const loc5 = (id: number, name: string, iata: string | null, lat: number, lon: number, country: string | null, aliases: string[] = []): LocationRow => ({
+    id,
+    name,
+    city_iata: iata,
+    latitude: lat,
+    longitude: lon,
+    country_code: country,
+    aliases,
+  });
+  const dallas = loc5(60, "דאלאס, ארצות הברית", "DFW", 32.7767, -96.797, null, ["Dallas", "Arlington"]);
+  const berlin5 = loc5(8, "ברלין, גרמניה", "BER", 52.53, 13.39, "DE", ["Berlin"]);
+  const eq5 = (rows: LocationRow[]) => buildEquivalence(rows, []);
+  const show5 = (over: Partial<ShowIdentity>): ShowIdentity => ({
+    name_english: "Some Artist",
+    city: "Arlington",
+    country_code: "US",
+    venue: "Capital One Arena",
+    date: "2027-05-01",
+    lat: 38.8816,
+    lon: -77.091,
+    suppliers: { tixstock: { event_id: "tx-a5", name: "Some Artist", ticket_count: 10, venue_map_url: null }, livetickets: null },
+    competition: null,
+    home_team: null,
+    away_team: null,
+    fallback: [],
+    ...over,
+  });
+  const place5 = (show: ShowIdentity, rows: LocationRow[]) => {
+    const eq = eq5(rows);
+    return decidePlace({
+      show,
+      subject_en: "Some Artist",
+      rows,
+      withoutLocation: "ticket_only",
+      twoCity: null,
+      answer: null,
+      prior: null,
+      liveCity: null,
+      memory: null,
+      cityKey: (name) => eq.cityKey(name),
+      now: NOW5,
+    });
+  };
+  const arlingtonVA = place5(show5({}), [dallas]);
+  check(
+    arlingtonVA.kind === "ask" && arlingtonVA.question.kind === "create_location",
+    "A5: Arlington, Virginia does not fly to Dallas through the alias 'Arlington' (1,900 km, the row's country unknown) - asks create_location",
+  );
+  const arlingtonKnown = place5(show5({}), [{ ...dallas, country_code: "US" }]);
+  check(
+    arlingtonKnown.kind === "placed" && arlingtonKnown.decisions[0]?.code === "location_by_city",
+    "A5: beyond FAR with BOTH country codes known and equal, the city name still wins (the rule as specified)",
+  );
+  check(place5(show5({ country_code: null }), [{ ...dallas, country_code: "US" }]).kind === "ask", "A5: the show's country unknown, beyond FAR -> no match");
+  check(place5(show5({ country_code: "CA" }), [{ ...dallas, country_code: "US" }]).kind === "ask", "A5: two known countries that differ -> no match (as before)");
+  const velodrome5 = place5(show5({ name_english: "30STM", city: "Berlin", country_code: "DE", venue: "Velodrome Berlin", lat: 51.5, lon: 10.5 }), [berlin5]);
+  check(
+    velodrome5.kind === "placed" && velodrome5.location.city_iata === "BER" && velodrome5.coordsFar !== null && velodrome5.coordsFar.km < FAR_VENUE_KM,
+    "A5: Berlin DE/DE at ~225 km still passes (within FAR the country agreement is as before)",
+  );
+  const berlinUnknown = place5(show5({ city: "Berlin", country_code: null, venue: "Velodrome Berlin", lat: 51.5, lon: 10.5 }), [{ ...berlin5, country_code: null }]);
+  check(berlinUnknown.kind === "placed" && berlinUnknown.location.city_iata === "BER", "A5: within FAR an unknown country still agrees");
+  const farAndNear = place5(show5({}), [dallas, loc5(61, "ארלינגטון, ארצות הברית", "DCA", 38.88, -77.1, null, ["Arlington"])]);
+  check(farAndNear.kind === "placed" && farAndNear.location.city_iata === "DCA", "A5: a far row passed by never hides the near one of the same name");
+
+  // -- B4: an editor save that only excluded map sections is "fixed by hand" (learn step 2 unlocks) ------------------------
+  const tixB4 = (category: string): EventTicket => ({ id: `t-${category}`, category, price: 100, description: "", colorOnTheMap: "rgb(5, 32, 60)", supplier: "tixstock" });
+  const builtTickets = [tixB4("Cat 1"), tixB4("Cat 2")];
+  const payloadB4 = (sections?: unknown) => ({ tickets_and_rates: builtTickets, ...(sections === undefined ? {} : { tx_excluded_sections: sections }) });
+  const rowB4 = (sections: unknown) => ({ tickets_and_rates: builtTickets, tx_excluded_sections: sections });
+  same(sectionsFixedByHand(payloadB4(["a_1"]), rowB4(["a_1"])), false, "B4: the same sections -> not fixed");
+  same(sectionsFixedByHand(payloadB4(["a_1", "b_2"]), rowB4(["b_2", "a_1"])), false, "B4: ... order aside");
+  same(sectionsFixedByHand(payloadB4(["a_1"]), rowB4(["a_1", "b_2"])), true, "B4: a section excluded in the editor -> fixed");
+  same(sectionsFixedByHand(payloadB4(["a_1", "b_2"]), rowB4(["a_1"])), true, "B4: a section un-excluded in the editor -> fixed");
+  same(sectionsFixedByHand(payloadB4(["a_1"]), rowB4(["c_3"])), true, "B4: the same count, another section -> fixed");
+  same(sectionsFixedByHand(payloadB4(), rowB4([])), false, "B4: a payload without the list reads as none - an empty row list is no change");
+  same(sectionsFixedByHand(payloadB4(), rowB4(["a_1"])), true, "B4: ... and a section on the row is one");
+  same(sectionsFixedByHand(payloadB4([]), rowB4(null)), false, "B4: a null row list reads as none");
+  same(sectionsFixedByHand(null, rowB4(["a_1"])), false, "B4: no payload -> nothing to compare");
+  same(sectionsFixedByHand(payloadB4([]), null), false, "B4: no row -> nothing to compare");
+  same(isFixedByHand({ payload: payloadB4([]), decisions: [] }, rowB4(["a_1"])), true, "B4: isFixedByHand - sections alone, tickets untouched -> fixed (learn step 2 unlocks)");
+  same(isFixedByHand({ payload: payloadB4([]), decisions: [] }, rowB4([])), false, "B4: isFixedByHand - nothing changed -> not fixed");
+  same(isFixedByHand({ payload: payloadB4([]), decisions: [{ code: "taught_venue" }] }, rowB4(["a_1"])), false, "B4: isFixedByHand - once it taught the venue it stops counting (R20)");
+  same(isFixedByHand({ payload: payloadB4([]), decisions: [] }, { tickets_and_rates: builtTickets }), false, "B4: isFixedByHand - a row read without the column is no change");
+}
+
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
 // A named async function + a call at the bottom (not top-level `await`): this file runs under plain
 // `npx tsx`, whose cjs output rejects top-level await.
@@ -6761,6 +6945,14 @@ async function planTokenChecks(): Promise<void> {
     check(!(await verifyPlanToken(bad, ai, brief, KEY)), `A5: a missing / malformed token fails (${String(bad).slice(0, 12)})`);
   }
   check(!(await verifyPlanToken(token, ai, brief, null)), "A5: no signing key = nothing is trusted");
+  // Final fix wave A4: a steer's answer is signed as its own kind (the card showed it without the last run's markups).
+  const steeredToken = await planTokenFor(ai, brief, KEY, { steered: true });
+  check(steeredToken !== token, "A4: a steered plan's token is not the first parse's");
+  check(await verifyPlanToken(steeredToken, ai, brief, KEY, { steered: true }), "A4: ... it checks out as a steer's");
+  check(!(await verifyPlanToken(steeredToken, ai, brief, KEY)), "A4: ... and never as a first parse's (createRun would refill the prior markups)");
+  check(!(await verifyPlanToken(token, ai, brief, KEY, { steered: true })), "A4: a first parse's token is no steer's");
+  check(!(await verifyPlanToken(steeredToken, ai, `steered\n${brief}`, KEY)), "A4: the steer prefix cannot be typed into a brief");
+  check(await verifyPlanToken(token, ai, brief, KEY, { steered: false }), "A4: steered: false is the first parse");
   same(canonicalJson({ b: 1, a: { d: [2, { z: 1, y: 2 }], c: null } }), '{"a":{"c":null,"d":[2,{"y":2,"z":1}]},"b":1}', "A5: canonical JSON sorts keys at every level, arrays keep their order");
 }
 

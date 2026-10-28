@@ -209,8 +209,14 @@ async function reopenSyncLogReview(eventId: number, taskId: string): Promise<voi
 
 // ---- per-family writes ---------------------------------------------------------------------
 
-/** Byte-for-byte the old inline branch in setTaskStatus. */
+/**
+ * Byte-for-byte the old inline branch in setTaskStatus - except a task the uploader's panel opened ("פתח משימה",
+ * `kind: "uploader_page"`): it is a "build this page" task, not a gap of the radar, so closing it writes no
+ * `creative_gap_dismissals` row (one would show as a raw "uploader_page" chip in Tasks > Gaps) and reopening
+ * restores nothing.
+ */
 async function resolveCreative(ref: TaskSourceRef, action: "close" | "reopen"): Promise<void> {
+  if (ref.kind === "uploader_page") return;
   if (action === "close") {
     await dismissCreativeGap({
       kind: ref.kind,

@@ -15,7 +15,7 @@
  *  - `cleanConfirmedRows`, `readyToConfirm`, `templateFromRows`, `forgetUnconfirmed`, `classificationDiff`:
  *    what a person confirmed -> the final template (zones, mapping, drops; a left-out key is unsure), and
  *    what they changed against the proposal.
- *  - `templateFromEvent`, `ticketsFixedByHand`, `isFixedByHand`: the same template learned from one event a
+ *  - `templateFromEvent`, `ticketsFixedByHand`, `sectionsFixedByHand`, `isFixedByHand`: the same template learned from one event a
  *    person arranged in the editor.
  *  - `applyClassification`, `isAppliedState`: drop + zone (and re-sync) a list of tickets by the template
  *    (confirm, learn AND build), and whether an event already holds that result.
@@ -770,18 +770,40 @@ export function ticketsFixedByHand(
   return false;
 }
 
+/** A stored list of section ids (`tx_excluded_sections`): its string entries; anything else (null, missing) = none. */
+const sectionIdsOf = (raw: unknown): Set<string> =>
+  new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string" && id !== "") : []);
+
+/**
+ * Did a person change this event's excluded map sections after the build (final fix wave B4)? True when the row's
+ * `tx_excluded_sections` and the payload's differ as SETS (order aside); a payload without the list reads as none.
+ * No payload or no row = nothing to compare.
+ */
+export function sectionsFixedByHand(
+  payload: Record<string, unknown> | null,
+  row: { tx_excluded_sections?: unknown } | null,
+): boolean {
+  if (!payload || !row) return false;
+  const was = sectionIdsOf(payload.tx_excluded_sections);
+  const is = sectionIdsOf(row.tx_excluded_sections);
+  if (was.size !== is.size) return true;
+  for (const id of is) if (!was.has(id)) return true;
+  return false;
+}
+
 /**
  * The board's "fixed by hand" for one item (`getRun`'s `fixedByHand`, the panel's `fixed` venue row and the
- * card's learn button): `ticketsFixedByHand`, until the item has taught the venue (ruling R20). A learn never
- * rewrites its source event, so the payload keeps differing for ever; once the decisions carry `taught_venue`
- * the item stops counting and the venue row falls back to `new` / `unzoned` by its warnings.
+ * card's learn button): `ticketsFixedByHand` or `sectionsFixedByHand` (an editor save that only excluded map
+ * sections unlocks the learn too - B4), until the item has taught the venue (ruling R20). A learn never rewrites its
+ * source event, so the payload's tickets keep differing for ever; once the decisions carry `taught_venue` the item
+ * stops counting and the venue row falls back to `new` / `unzoned` by its warnings.
  */
 export function isFixedByHand(
   item: { payload: Record<string, unknown> | null; decisions: { code: string }[] },
-  row: { tickets_and_rates: unknown } | null,
+  row: { tickets_and_rates: unknown; tx_excluded_sections?: unknown } | null,
 ): boolean {
   if (item.decisions.some((d) => d.code === "taught_venue")) return false;
-  return ticketsFixedByHand(item.payload, row);
+  return ticketsFixedByHand(item.payload, row) || sectionsFixedByHand(item.payload, row);
 }
 
 // ---- Apply -------------------------------------------------------------------------------------------

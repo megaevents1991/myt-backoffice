@@ -16,12 +16,14 @@ import { AiWait } from "./ai-wait";
 import {
   aiLine,
   BTN_CANCEL,
+  BTN_CONFIRM_FAR_LOCATION,
   BTN_CREATE_LOCATION,
   LOCATION_ALIASES_HINT,
   LOCATION_ALIASES_LABEL,
   LOCATION_COORDS_HINT,
   LOCATION_COUNTRY_LABEL,
   LOCATION_DONE,
+  LOCATION_EXISTING,
   LOCATION_IATA_LABEL,
   LOCATION_INTRO,
   LOCATION_LAT_LABEL,
@@ -43,7 +45,9 @@ import { rtl } from "./use-run-board";
 // the IATA, the city centre and the other spellings; a person reads, corrects and confirms
 // (`createLocationAndAnswer`: the `locations` row, then the question - and the run's other questions of the same
 // city - answered with it). The form is checked here with the server's own rule (`validateLocationInput`) so a
-// slip shows at once; the server checks it again, with the table's rows (the duplicate).
+// slip shows at once; the server checks it again, with the table's rows: a row of the city with no IATA refuses
+// (A1), one WITH an IATA is used as it is (A2 - the toast says so), and a location far from the venue comes back
+// `far`: the problem shows and the button turns into a confirm that sends the same form with `confirm_far` (A3).
 
 type Phase = { kind: "loading" } | { kind: "ready" };
 type Form = { name: string; iata: string; lat: string; lon: string; country: string; aliases: string };
@@ -70,8 +74,11 @@ function coordOf(text: string): number | null {
   return t === "" ? null : Number(t);
 }
 
-/** The boxes as `createLocationAndAnswer` takes them. `proposed` = the AI's proposal as shown (audit and lessons only). */
-function inputOf(form: Form, proposed: LocationInput | null) {
+/**
+ * The boxes as `createLocationAndAnswer` takes them. `proposed` = the AI's proposal as shown (audit and lessons only);
+ * `confirmFar` = the person confirmed a location the server called far from the venue (A3).
+ */
+function inputOf(form: Form, proposed: LocationInput | null, confirmFar: boolean) {
   return {
     name_he: form.name,
     iata: form.iata,
@@ -80,6 +87,7 @@ function inputOf(form: Form, proposed: LocationInput | null) {
     country_code: form.country.trim() === "" ? null : form.country,
     aliases: form.aliases.split(/[,;\n]/),
     proposed,
+    ...(confirmFar ? { confirm_far: true } : {}),
   };
 }
 
@@ -102,6 +110,8 @@ export function CreateLocationDialog({
   /** What the AI proposed, as the boxes were first filled - sent back with the confirm for the audit row. */
   const [proposal, setProposal] = useState<LocationInput | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  /** The server answered `far` for the form as it stands: the next click confirms it (any edit asks again). */
+  const [farAsked, setFarAsked] = useState(false);
   const [saving, setSaving] = useState(false);
   /** The show the dialog is for, kept while it closes so the text never blanks mid-animation. */
   const [shown, setShown] = useState<UploaderItem | null>(null);
@@ -121,6 +131,7 @@ export function CreateLocationDialog({
       setForm(EMPTY_FORM);
       setProposal(null);
       setProblem(null);
+      setFarAsked(false);
     }
   }
 
@@ -151,6 +162,7 @@ export function CreateLocationDialog({
   const setField = (patch: Partial<Form>) => {
     setForm((f) => ({ ...f, ...patch }));
     setProblem(null);
+    setFarAsked(false);
   };
   const ready = phase.kind === "ready";
   const line = ready ? aiLine({ used: ai === "ok", reason: ai === "rate_limited" ? "rate_limited" : ai === "ok" ? null : "off" }) : null;
@@ -158,7 +170,7 @@ export function CreateLocationDialog({
 
   async function confirm() {
     if (!ready || saving || !shown) return;
-    const input = inputOf(form, proposal);
+    const input = inputOf(form, proposal, farAsked);
     const checked = validateLocationInput(input, []);
     if (!checked.ok) {
       setProblem(checked.problem);
@@ -169,12 +181,13 @@ export function CreateLocationDialog({
     try {
       const r = await createLocationAndAnswer(shown.id, input);
       if (!r.ok) {
-        // The form stays open with the reason under it (a duplicate names the existing row).
+        // The form stays open with the reason under it (the city's no-IATA row is named; `far` waits for a second click).
         setProblem(r.problem ?? actionErrorText(r.kind));
+        setFarAsked(r.kind === "far");
         return;
       }
       toast({
-        title: LOCATION_DONE(checked.value.name_he, r.applied + 1),
+        title: r.existing ? LOCATION_EXISTING(r.location_id) : LOCATION_DONE(checked.value.name_he, r.applied + 1),
         ...(r.task_closed ? {} : { description: rtl(LOCATION_TASK_OPEN) }),
       });
       await onDone();
@@ -316,9 +329,9 @@ export function CreateLocationDialog({
             {BTN_CANCEL}
           </Button>
           {ready && (
-            <Button type="submit" form="uploader-location" disabled={saving}>
+            <Button type="submit" form="uploader-location" disabled={saving} variant={farAsked ? "destructive" : "default"}>
               {saving && <Loader2 aria-hidden className="animate-spin" />}
-              {BTN_CREATE_LOCATION}
+              {farAsked ? BTN_CONFIRM_FAR_LOCATION : BTN_CREATE_LOCATION}
             </Button>
           )}
         </DialogFooter>

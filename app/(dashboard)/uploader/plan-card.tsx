@@ -455,7 +455,7 @@ export function PlanCard({
             <span className="text-muted-foreground">הופעה עם לוקיישן</span>
             <span className="font-medium">חבילה - טיסה, מלון וכרטיס</span>
           </div>
-          <Field label="הופעה בלי לוקיישן" htmlFor="plan-without">
+          <Field label="המלצה להופעה בלי לוקיישן" htmlFor="plan-without">
             <Select
               dir="rtl"
               value={plan.rules.without_location}

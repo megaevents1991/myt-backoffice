@@ -209,9 +209,12 @@ export type LocationProposeResult =
 /**
  * `createLocationAndAnswer`: the location was created (`location_id`) and the question answered with it;
  * `applied` = how many OTHER open questions of the same city it answered too, `task_closed` = false when this
- * question's own task did not close (the answer is saved). A refusal carries a `problem` in the dialog's words
- * (`kind: "invalid"` - the form; or a created location whose question could not be answered).
+ * question's own task did not close (the answer is saved), `existing` = the city was already a location with an
+ * IATA and was used as it is - nothing was created (final fix wave A2). A refusal carries a `problem` in the
+ * dialog's words (`kind: "invalid"` - the form, or the city's no-IATA row; `kind: "far"` - the location is more than
+ * FAR_VENUE_KM from the venue, sent again with `confirm_far: true` once a person confirms; or a created location
+ * whose question could not be answered).
  */
 export type LocationCreateResult =
-  | { ok: true; location_id: number; applied: number; task_closed: boolean }
+  | { ok: true; location_id: number; applied: number; task_closed: boolean; existing: boolean }
   | { ok: false; kind: string; problem?: string };
