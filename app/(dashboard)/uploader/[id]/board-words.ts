@@ -401,6 +401,17 @@ export const STATUS_TEAM_CREATE = "תיווצר קבוצה (בלי סמל ותמ
 export const STATUS_ARTIST_CREATE = "ייווצר אמן (בלי תמונה)";
 export const STATUS_TEAM_EXISTING = "קיימת כבר - ישתמש בה";
 export const STATUS_NAME_SKIPPED = "יידלג - האירועים יישארו עם השם באנגלית";
+// "זה עמוד קיים" (round 2, spec 5): link a supplier's name to a page that already exists instead of creating a team.
+export const BTN_LINK_EXISTING = "זה עמוד קיים";
+export const LINK_SEARCH_LABEL = "חיפוש עמוד קיים";
+export const LINK_SEARCH_PLACEHOLDER = "שם הקבוצה בעברית או באנגלית";
+export const LINK_SEARCH_HINT = "הקלידו לפחות שתי אותיות";
+export const LINK_NONE = "לא נמצא עמוד בשם הזה";
+export const LINK_SEARCH_FAILED = "החיפוש נכשל - נסו שוב";
+export const LINK_INACTIVE = "לא פעיל";
+export const LINK_UNDO = "בטל את הקישור";
+export const LINK_CLOSE = "סגור את החיפוש";
+export const STATUS_TEAM_LINKED = "מקושרת לעמוד קיים - ישתמש בה, לא ייווצר עמוד חדש";
 export const NAME_NEEDS_HEBREW = "צריך אותיות בעברית";
 export const NAME_NEEDS_ENGLISH = "חסר שם באנגלית";
 /** How many built shows the confirm gives a Hebrew name with no row to fill (`proposeTeamNames`' `renamable`, ruling R24). */
@@ -411,8 +422,9 @@ export const BTN_CONFIRM_TEAMS = "צור את הקבוצות ועדכן את ש�
 export const BTN_CONFIRM_ARTIST = "צור את האמן ועדכן את שמות האירועים";
 export const NAMES_FAILED = "השמות לא נשמרו";
 export const NAMES_OPEN_FAILED = "לא הצלחתי לפתוח את השמות";
-/** The toast after a confirm: "3 קבוצות נוצרו · 15 אירועים קיבלו שם בעברית". */
-export function TEAMS_DONE(r: { created: number; renamed: number }, artist: boolean): string {
+/** The toast after a confirm: "3 קבוצות נוצרו · 2 קישורים לעמוד קיים · 15 אירועים קיבלו שם בעברית". */
+export function TEAMS_DONE(r: { created: number; linked?: number; renamed: number }, artist: boolean): string {
+  const linked = r.linked ?? 0;
   const made = artist
     ? r.created === 1
       ? "אמן נוצר"
@@ -420,7 +432,11 @@ export function TEAMS_DONE(r: { created: number; renamed: number }, artist: bool
     : r.created === 1
       ? "קבוצה אחת נוצרה"
       : `${r.created} קבוצות נוצרו`;
-  return `${made} · ${r.renamed === 1 ? "אירוע אחד קיבל" : `${r.renamed} אירועים קיבלו`} שם בעברית`;
+  const used = linked === 1 ? "קישור אחד לעמוד קיים" : `${linked} קישורים לעמוד קיים`;
+  const parts = r.created > 0 || linked === 0 ? [made] : [];
+  if (linked > 0) parts.push(used);
+  parts.push(`${r.renamed === 1 ? "אירוע אחד קיבל" : `${r.renamed} אירועים קיבלו`} שם בעברית`);
+  return parts.join(" · ");
 }
 
 // Learn from an event a person arranged in the editor (5.5).

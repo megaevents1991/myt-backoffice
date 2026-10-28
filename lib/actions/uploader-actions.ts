@@ -91,6 +91,7 @@ import {
   readItem,
   readItemAndRun,
   readLocation,
+  readLinkTeams,
   readPersonNames,
   readRun,
   readRunItems,
@@ -204,13 +205,17 @@ import type {
   PreviewResult,
   ProposeResult,
   RunView,
+  TeamSearchResult,
   TeamsResult,
 } from "@/lib/uploader/action-types";
 import type { PriorItem } from "@/lib/uploader/shows";
 import {
   cleanTeamRows,
+  findLinkTeams,
+  linkQueryOf,
   missingHebrewNames,
   missingSides,
+  planTeamRows,
   slugFor,
   teamRowsFor,
   type ConfirmedTeamRow,
@@ -2095,7 +2100,14 @@ export async function proposeTeamNames(runId: string): Promise<NamesProposeResul
     return names.hebrew && !HEBREW_LETTER.test(stored);
   }).length;
 
-  return { ok: true, rows: teamRowsFor(sides, proposed, ctx.teams), renamable, namesTask: !!ctx.run.names_task_id, ai };
+  return {
+    ok: true,
+    rows: teamRowsFor(sides, proposed, ctx.teams),
+    subjectName: sides.find((s) => s.isSubject)?.supplier_name ?? null,
+    renamable,
+    namesTask: !!ctx.run.names_task_id,
+    ai,
+  };
 }
 
 /** A Postgres unique violation (a taken slug). */
@@ -2151,14 +2163,40 @@ async function createPersonInactive(kind: "team" | "artist", row: ConfirmedTeamR
 }
 
 /**
- * The names dialog's confirm (spec 6.4). `rows` are checked against the names the run lacks, re-derived
- * here (`cleanTeamRows` - the shape; then each `existing_id` must be the one `teamRowsFor` itself offers for
- * that name, else `bad_input`). In order:
- * 1. every row not matched to an existing team is created INACTIVE (audit `uploader.team_created` each) -
- *    a row `teamRowsFor` matches to an existing team after all uses it rather than creating a duplicate;
- * 2. the run's subject cache refreshed (`resolveSubject` - which finds an inactive subject row too, ruling
- *    R15), the confirmed teams under the supplier's own spellings too (an existing team by its stored
- *    Hebrew name);
+ * The pages the names dialog's "זה עמוד קיים" can link a name to (round 2, spec 5): `football_teams` rows that are
+ * not deleted - live or inactive - whose Hebrew or English name matches `query` (`findLinkTeams`: words in any order,
+ * accents ignored, live pages first, at most 20). The query is 2..60 characters after trimming (`bad_input`).
+ */
+export async function searchTeamsForLink(query: string): Promise<TeamSearchResult> {
+  await requireAdmin();
+  const q = linkQueryOf(query);
+  if (q === null) return fail("bad_input");
+  const teams = await readLinkTeams();
+  if (teams === null) return fail("db_error");
+  return { ok: true, teams: findLinkTeams(teams, q) };
+}
+
+/** One supplier spelling and the page it ends up under: a person's pick, the club rule's match, or a page this confirm made. */
+type TeamResolution = {
+  spelling: string;
+  team: { id: number; name: string; name_english: string | null };
+  how: "picked" | "matched" | "created";
+};
+
+/**
+ * The names dialog's confirm (spec 6.4, round 2 spec 5). `rows` are checked against the names the run lacks, re-derived
+ * here (`cleanTeamRows` - the shape; then each `existing_id` must be the one `teamRowsFor` itself offers for that name,
+ * else `bad_input`; a `link_team_id` - the page a person picked with "זה עמוד קיים" - must be a `football_teams` row that
+ * is not deleted and has a Hebrew name, else `team_not_found`, and is for a fixture side of a team run only). In order:
+ * 1. each row ends up under ONE page: a picked link, an `existing_id`, or - for the rows left to create
+ *    (`collapseCreateRows`: the same club typed twice, by the club rule on the English name or by the Hebrew name, is
+ *    ONE team carrying every supplier spelling it answers) - a team `football_teams` already holds by the club rule
+ *    (read just now, inactive ones included: a duplicate is never made), else a new one created INACTIVE (audit
+ *    `uploader.team_created` once per team). A page used rather than created gets the supplier's spelling recorded as
+ *    an alias of it (`recordAlias`, with the page's id) and an audit `uploader.team_linked` (`picked`: a person's pick or
+ *    the club rule's match); the extra spellings of a team just created get the alias too;
+ * 2. the run's subject cache refreshed (`resolveSubject` - which finds an inactive subject row too, ruling R15, and
+ *    knows every aliased spelling), each spelling of a row under the Hebrew name of ITS page;
  * 3. every ready / approved show renamed by `eventNames` where it now has a Hebrew name and the stored one is
  *    not a person's own Hebrew edit (`events.name`, `payload.name`, `no_hebrew_name` dropped, decision
  *    `named_he` / `name_from_livetickets`); once the subject has a row, `no_team_page` / `no_artist_page`
@@ -2169,7 +2207,7 @@ async function createPersonInactive(kind: "team" | "artist", row: ConfirmedTeamR
  * `no_hebrew_name` where it is resolved and close the task.
  */
 export async function createTeamsAndRename(runId: string, rows: unknown): Promise<TeamsResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
   if (!isUuid(runId) || !Array.isArray(rows) || rows.length > CONFIRM_ROWS_MAX) return fail("bad_input");
   const ctx = await readNamesContext(runId);
   if ("kind" in ctx) return ctx;
@@ -2177,46 +2215,89 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
   const confirmed = cleanTeamRows(rows, new Set(sides.map((s) => s.supplier_name)));
   if (confirmed === null) return fail("bad_input");
 
-  // Each confirmed row against the name it answers and the row `teamRowsFor` offers for it (normalizeName on both sides).
+  // Each confirmed row against the name it answers (normalizeName on both sides).
   const sideByKey = new Map(sides.map((s) => [normalizeName(s.supplier_name), s]));
   const pairs: { row: ConfirmedTeamRow; side: MissingSide }[] = [];
-  const asConfirmed = new Map<string, ProposedName>();
   for (const row of confirmed) {
     const side = sideByKey.get(normalizeName(row.supplier_name));
     if (!side) return fail("bad_input");
     pairs.push({ row, side });
-    asConfirmed.set(side.supplier_name, { name_en: row.name_en, name_he: row.name_he });
   }
-  const offered = new Map(teamRowsFor(pairs.map((p) => p.side), asConfirmed, ctx.teams).map((r) => [normalizeName(r.supplier_name), r]));
-  for (const { row } of pairs) {
+  // A link is a person's pick for a fixture side of a team run: an artist is never linked, and the subject's own row
+  // is not either (its page is found by name - a link would leave the run asking for it again).
+  const plainPairs = pairs.filter((p) => (p.row.link_team_id ?? null) === null);
+  if (pairs.some((p) => (p.row.link_team_id ?? null) !== null && (kind === "artist" || p.side.isSubject))) return fail("bad_input");
+  // Each `existing_id` must be the row `teamRowsFor` offers for that name (the typed names are what it matches by).
+  const offered = new Map(
+    teamRowsFor(
+      plainPairs.map((p) => p.side),
+      new Map(plainPairs.map(({ row, side }) => [side.supplier_name, { name_en: row.name_en, name_he: row.name_he }] as const)),
+      ctx.teams,
+    ).map((r) => [normalizeName(r.supplier_name), r]),
+  );
+  for (const { row } of plainPairs) {
     const offer = offered.get(normalizeName(row.supplier_name));
     if (row.existing_id !== null && (offer?.status !== "existing" || offer.existing_id !== row.existing_id)) return fail("bad_input");
   }
+  // What each row comes to, from the pages read just now (inactive ones too): a picked page must still be there and
+  // have a Hebrew name to give the events.
+  const plan = planTeamRows(confirmed, ctx.teams);
+  if (plan.missing !== null) return fail("team_not_found");
+  if (plan.resolved.some((r) => r.how === "picked" && r.team.name.trim() === "")) return fail("team_not_found");
 
-  // 1. The rows - created inactive, or the existing one used.
+  // 1. Every row under one page: the ones already settled, then one team per group left to create (inactive).
+  const resolutions: TeamResolution[] = [...plan.resolved];
   let created = 0;
-  for (const { row, side } of pairs) {
-    const offer = offered.get(normalizeName(row.supplier_name));
-    if (offer?.status === "existing" && offer.existing_id !== null) continue;
-    const made = await createPersonInactive(kind, row);
+  for (const group of plan.create) {
+    const made = await createPersonInactive(kind, { supplier_name: group.supplier_names[0], name_en: group.name_en, name_he: group.name_he, existing_id: null });
     if (!made.ok) {
       // What was created stays (a second confirm finds it as an existing team); nothing is renamed yet.
-      return { ok: false, kind: "db_error", message: `${created} created, then "${row.name_en}" failed: ${made.message}` };
+      return { ok: false, kind: "db_error", message: `${created} created, then "${group.name_en}" failed: ${made.message}` };
     }
     created += 1;
+    const team = { id: made.id, name: group.name_he, name_english: group.name_en };
+    for (const spelling of group.supplier_names) resolutions.push({ spelling, team, how: "created" });
     await logAudit({
       action: "uploader.team_created",
       entityType: "uploader_run",
       entityId: run.id,
-      metadata: { agent: AGENT, run_id: run.id, team_id: made.id, kind, name_he: row.name_he, name_en: row.name_en, from_supplier_name: side.supplier_name },
+      metadata: {
+        agent: AGENT,
+        run_id: run.id,
+        team_id: made.id,
+        kind,
+        name_he: group.name_he,
+        name_en: group.name_en,
+        from_supplier_name: group.supplier_names[0],
+        supplier_names: group.supplier_names,
+      },
     });
+  }
+  // The spelling a supplier used becomes an alias of its page, so a later run knows it (a team alias exists for teams
+  // only - `team_id` is a `football_teams` id). A failed alias write is logged, never a failed confirm.
+  let linked = 0;
+  if (kind !== "artist") {
+    for (const { spelling, team, how } of resolutions) {
+      if (how !== "created") linked += 1;
+      const toName = team.name_english?.trim() || team.name;
+      // A spelling that IS the page's English name is no alias (`recordAlias` refuses it) and nothing for the agent to learn.
+      if (normalizeName(spelling) === normalizeName(toName)) continue;
+      await recordAlias({ kind: "team", from_name: spelling, to_name: toName, team_id: team.id, created_by: session.sub });
+      if (how === "created") continue;
+      await logAudit({
+        action: "uploader.team_linked",
+        entityType: "uploader_run",
+        entityId: run.id,
+        metadata: { agent: AGENT, run_id: run.id, team_id: team.id, from_supplier_name: spelling, to_name: toName, picked: how === "picked" },
+      });
+    }
   }
 
   // 2. The subject cache refreshed: `resolveSubject` picks the subject among every row that is not deleted
   //    (an inactive one included - ruling R15), so the run's later builds see the new rows and raise no
-  //    `no_team_page` / `no_artist_page` again. Each confirmed team also under the supplier's own spelling -
-  //    the club rule may not bridge a name a person typed: an existing team by ITS stored Hebrew name, a new
-  //    one by the name just given it.
+  //    `no_team_page` / `no_artist_page` again. Each confirmed spelling also under ITS page's Hebrew name - the
+  //    club rule may not bridge a name a person typed or picked: a page that already existed by its stored Hebrew
+  //    name, a new one by the name just given it.
   let fresh: SubjectCache = cache;
   try {
     fresh = { at: nowIso(), ...(await resolveSubject(run.plan)) };
@@ -2225,10 +2306,7 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
   }
   const teamsHe = { ...fresh.teamsHe };
   if (kind !== "artist") {
-    for (const { row, side } of pairs) {
-      const offer = offered.get(normalizeName(row.supplier_name));
-      teamsHe[normalizeName(side.supplier_name)] = offer?.status === "existing" ? offer.name_he : row.name_he;
-    }
+    for (const { spelling, team } of resolutions) teamsHe[normalizeName(spelling)] = team.name.trim();
   }
   const subject = fresh.subject;
   await writeSubjectCache(run.id, { ...fresh, teamsHe });
@@ -2312,10 +2390,10 @@ export async function createTeamsAndRename(runId: string, rows: unknown): Promis
     action: "uploader.renamed",
     entityType: "uploader_run",
     entityId: run.id,
-    metadata: { agent: AGENT, run_id: run.id, event_ids: renamedIds, teams_created: created },
+    metadata: { agent: AGENT, run_id: run.id, event_ids: renamedIds, teams_created: created, teams_linked: linked },
   });
   if (live) await revalidateMain();
   if (renamedIds.length > 0) invalidatePriceLight("rows");
   if (failures > 0) return { ok: false, kind: "db_error", message: `${created} created, ${renamedIds.length} renamed, ${failures} show(s) not saved - confirm again` };
-  return { ok: true, created, renamed: renamedIds.length };
+  return { ok: true, created, linked, renamed: renamedIds.length };
 }

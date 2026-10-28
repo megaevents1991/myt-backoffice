@@ -206,6 +206,19 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
     },
   },
   {
+    // A supplier's spelling staff said IS a page that already exists ("זה עמוד קיים" - their own pick, round 2 spec 5).
+    // The club rule's own matches are audited too (`picked: false`) but teach nothing the model did not already have
+    // to know. Read by the team-names call only (`NAMES_LESSON_SOURCES`).
+    action: "uploader.team_linked",
+    toLesson: (row) => {
+      const m = metaOf(row);
+      const supplierName = text(m?.from_supplier_name);
+      const toName = text(m?.to_name);
+      if (!m || m.picked === false || !supplierName || !toName) return null;
+      return `staff said ${supplierName} is the existing page '${toName}' (not a new team)`;
+    },
+  },
+  {
     // A location staff created from a `create_location` / `pick_location` question, with what they kept or changed
     // of the proposal (round 2, spec 4.2). `proposed_*` are written only when the AI's proposal was shown and
     // non-empty. Read by the location call only (`LOCATION_LESSON_SOURCES`).
@@ -241,7 +254,7 @@ export const PARSE_LESSON_SOURCES: string[] = [
   "agent.feedback",
 ];
 export const CLASSIFY_LESSON_SOURCES: string[] = ["uploader.classify_changed"];
-export const NAMES_LESSON_SOURCES: string[] = ["uploader.team_created"];
+export const NAMES_LESSON_SOURCES: string[] = ["uploader.team_created", "uploader.team_linked"];
 export const LOCATION_LESSON_SOURCES: string[] = ["uploader.location_created"];
 
 export const TOUR_UPLOADER_AGENT: AgentDefinition = {

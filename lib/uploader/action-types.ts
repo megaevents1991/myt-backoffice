@@ -7,7 +7,7 @@ import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
 import type { LocationInput } from "@/lib/uploader/location";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
-import type { TeamRow } from "@/lib/uploader/team-names";
+import type { LinkTeam, TeamRow } from "@/lib/uploader/team-names";
 import type { ItemStatus, UploaderItem, UploaderPlan, UploaderRun } from "@/types/uploader.types";
 
 /** The ai-factory-actions shape: success, or a machine-readable `kind` the screen words. */
@@ -123,11 +123,22 @@ export type LearnPreview =
  * run's names task is still open. Either lets the dialog send a `[]` confirm.
  */
 export type NamesProposeResult =
-  | { ok: true; rows: TeamRow[]; renamable: number; namesTask: boolean; ai: { used: boolean; reason: string | null; problems: string[] } }
+  | {
+      ok: true;
+      rows: TeamRow[];
+      /** The supplier name of the row that is the run's SUBJECT (its page is the one missing), else null - that row cannot be linked ("זה עמוד קיים"). */
+      subjectName: string | null;
+      renamable: number;
+      namesTask: boolean;
+      ai: { used: boolean; reason: string | null; problems: string[] };
+    }
   | { ok: false; kind: string; message?: string };
 
-/** `createTeamsAndRename`: teams created and events renamed. */
-export type TeamsResult = { ok: true; created: number; renamed: number } | { ok: false; kind: string; message?: string };
+/** `createTeamsAndRename`: teams created, supplier names linked to a page that already existed (picked by a person or matched by the club rule), and events renamed. */
+export type TeamsResult = { ok: true; created: number; linked: number; renamed: number } | { ok: false; kind: string; message?: string };
+
+/** `searchTeamsForLink`: the pages a query finds (`findLinkTeams` - live first, at most 20). */
+export type TeamSearchResult = { ok: true; teams: LinkTeam[] } | { ok: false; kind: string };
 
 /** `getDescriptionTemplate`: the family's standing template (Alon 25.10), the tokens it may use, and one built show's values for the live preview. */
 export type DescriptionTemplateView =

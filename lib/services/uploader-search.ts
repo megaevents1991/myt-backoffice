@@ -20,8 +20,9 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { clubKey, clubNamesMatch, normalizeName } from "@/lib/on-tour";
 import { findCategoryTwin, namesMatch, TWIN_HUB_SLUG, type TwinPerson } from "@/lib/services/category-twins";
 import { hasLibraryCrest } from "@/lib/services/creative-gaps";
-import { loadEquivalence } from "@/lib/services/uploader-aliases";
+import { loadAliases, loadEquivalence } from "@/lib/services/uploader-aliases";
 import { planWindowCap, planWindowStart } from "@/lib/uploader/plan";
+import { teamsHeWithAliases } from "@/lib/uploader/team-names";
 import {
   calendarDay,
   fixtureSidesOf,
@@ -281,7 +282,8 @@ function pickRow<R extends TwinPerson>(roster: R[], plan: UploaderPlan, club: bo
  *   FC" is "Liverpool"); its crest = `logo_url` or a crest-library row (`hasLibraryCrest`).
  * - competition: the TixStock `category_name` that names it (`competitionName`; null = none).
  * `teamsHe` = every `football_teams` Hebrew name keyed by `normalizeName(name_english)` - the
- * opponents of a fixture too, which is why it is the whole table.
+ * opponents of a fixture too, which is why it is the whole table - plus, under each confirmed team alias'
+ * `from_key`, the Hebrew name of the page a person linked that spelling to (names dialog, round 2).
  */
 export async function resolveSubject(plan: UploaderPlan): Promise<{
   subject: Subject;
@@ -290,21 +292,27 @@ export async function resolveSubject(plan: UploaderPlan): Promise<{
   competitionName: string | null;
 }> {
   const kind = plan.subject.kind;
-  const teamsRead = await fetchPaged<TeamRow>(
-    () =>
-      supabaseTyped
-        .from("football_teams")
-        .select("id,name,name_english,logo_url,image_url,art_image_url,bio,is_active,is_deleted")
-        .order("name")
-        .order("id"),
-    SEARCH_ROWS_MAX,
-  );
+  const [teamsRead, aliases] = await Promise.all([
+    fetchPaged<TeamRow>(
+      () =>
+        supabaseTyped
+          .from("football_teams")
+          .select("id,name,name_english,logo_url,image_url,art_image_url,bio,is_active,is_deleted")
+          .order("name")
+          .order("id"),
+      SEARCH_ROWS_MAX,
+    ),
+    // THROWS on a failed read (a missing table is "no aliases"): a run that lost its aliases would ask for names it was told.
+    loadAliases(),
+  ]);
   if (teamsRead.error || teamsRead.truncated) fail("football_teams read", teamsRead.error ?? { message: "too many rows" });
-  const teamsHe: Record<string, string> = {};
+  const byName: Record<string, string> = {};
   for (const t of teamsRead.rows) {
     const key = normalizeName(t.name_english);
-    if (key !== "" && t.name.trim() !== "" && !t.is_deleted) teamsHe[key] = t.name.trim();
+    if (key !== "" && t.name.trim() !== "" && !t.is_deleted) byName[key] = t.name.trim();
   }
+  // A spelling a person linked to a page ("Man Utd" = this team) is known by that page's Hebrew name too.
+  const teamsHe = teamsHeWithAliases(byName, aliases, teamsRead.rows);
 
   const rows: SubjectRows = { artist: null, team: null };
   let found: { name: string; name_english: string | null } | null = null;

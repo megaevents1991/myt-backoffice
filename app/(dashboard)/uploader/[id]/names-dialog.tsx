@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ImageOff, Loader2, Wand2 } from "lucide-react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ImageOff, Link2, Loader2, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { createTeamsAndRename, proposeTeamNames } from "@/lib/actions/uploader-actions";
 import type { NamesProposeResult } from "@/lib/uploader/action-types";
-import { TEAM_NAME_EN_MAX, TEAM_NAME_HE_MAX, type ConfirmedTeamRow, type TeamRow } from "@/lib/uploader/team-names";
+import { TEAM_NAME_EN_MAX, TEAM_NAME_HE_MAX, type ConfirmedTeamRow, type LinkTeam, type TeamRow } from "@/lib/uploader/team-names";
 import { cn } from "@/lib/utils";
 import { actionErrorText } from "../copy";
 import { AiWait } from "./ai-wait";
@@ -20,11 +20,13 @@ import {
   BTN_CLOSE,
   BTN_CONFIRM_ARTIST,
   BTN_CONFIRM_TEAMS,
+  BTN_LINK_EXISTING,
   BTN_NAMES_LIVE,
   COL_NAME_EN,
   COL_NAME_HE,
   COL_SUPPLIER_NAME,
   COL_WHAT,
+  LINK_UNDO,
   NAME_NEEDS_ENGLISH,
   NAME_NEEDS_HEBREW,
   NAMES_FAILED,
@@ -39,8 +41,10 @@ import {
   STATUS_NAME_SKIPPED,
   STATUS_TEAM_CREATE,
   STATUS_TEAM_EXISTING,
+  STATUS_TEAM_LINKED,
   TEAMS_DONE,
 } from "./board-words";
+import { TeamLinkPicker } from "./team-link-picker";
 import { rtl } from "./use-run-board";
 
 // "שמות בעברית" (spec 5.3): every club (or the artist) of the run the site has no Hebrew name for, one
@@ -52,6 +56,9 @@ import { rtl } from "./use-run-board";
 // Hebrew name by other means (LiveTickets, a team added in Templates, a partial confirm) need no row
 // (`renamable`, ruling R24); with no row at all - something to rename, or the run's names task still open -
 // the dialog is one button, an empty confirm that renames, clears the warnings and closes the task.
+// Round 2: "זה עמוד קיים" on a fixture side's row (never the run's subject, never an artist) opens a search over every
+// team page (`TeamLinkPicker`); the page picked sits in the row with an X to undo, its own names read-only, and the
+// confirm sends its id (`link_team_id`) - nothing is created, the spelling becomes an alias of that page.
 
 type Loaded = Extract<NamesProposeResult, { ok: true }>;
 type Phase = { kind: "loading" } | { kind: "ready"; data: Loaded };
@@ -69,7 +76,9 @@ function rowProblem(e: NameEdit): string | null {
 }
 
 /** The row as `createTeamsAndRename` takes it, or null = left out (an emptied Hebrew box, or an existing row with no Hebrew name to alias). */
-function confirmedOf(row: TeamRow, e: NameEdit): ConfirmedTeamRow | null {
+function confirmedOf(row: TeamRow, e: NameEdit, link: LinkTeam | null): ConfirmedTeamRow | null {
+  // A page a person picked: only its id matters - the server reads the page's own names, so the boxes are not sent.
+  if (link) return { supplier_name: row.supplier_name, name_en: "", name_he: "", existing_id: null, link_team_id: link.id };
   if (row.status === "existing") {
     // Read-only: exactly what `proposeTeamNames` offered (the server refuses any other `existing_id`).
     return HEBREW_LETTER.test(row.name_he) && row.name_en.trim() !== ""
@@ -110,6 +119,9 @@ export function NamesDialog({
   const { toast } = useToast();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [edits, setEdits] = useState<Record<string, NameEdit>>({});
+  /** The page a person picked per row (by supplier name), and the row whose search is open. */
+  const [links, setLinks] = useState<Record<string, LinkTeam>>({});
+  const [picking, setPicking] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const seq = useRef(0);
   const closeRef = useRef(onClose);
@@ -125,6 +137,8 @@ export function NamesDialog({
     if (open) {
       setPhase({ kind: "loading" });
       setEdits({});
+      setLinks({});
+      setPicking(null);
     }
   }
 
@@ -157,9 +171,9 @@ export function NamesDialog({
   const setEdit = (row: TeamRow, patch: Partial<NameEdit>) =>
     setEdits((all) => ({ ...all, [row.supplier_name]: { ...(all[row.supplier_name] ?? { en: row.name_en, he: row.name_he }), ...patch } }));
 
-  const current = rows.map((row) => ({ row, e: editFor(row) }));
-  const blocked = current.some(({ row, e }) => row.status !== "existing" && rowProblem(e) !== null);
-  const send = current.map(({ row, e }) => confirmedOf(row, e)).filter((r): r is ConfirmedTeamRow => r !== null);
+  const current = rows.map((row) => ({ row, e: editFor(row), link: links[row.supplier_name] ?? null }));
+  const blocked = current.some(({ row, e, link }) => link === null && row.status !== "existing" && rowProblem(e) !== null);
+  const send = current.map(({ row, e, link }) => confirmedOf(row, e, link)).filter((r): r is ConfirmedTeamRow => r !== null);
   const renamable = data?.renamable ?? 0;
   /** [] is a valid confirm when shows would take a Hebrew name, or the run's names task is still open (ruling R24). */
   const emptyConfirm = data !== null && (renamable > 0 || data.namesTask);
@@ -249,50 +263,105 @@ export function NamesDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {current.map(({ row, e }) => {
+                  {current.map(({ row, e, link }) => {
                     const existing = row.status === "existing";
-                    const problem = existing ? null : rowProblem(e);
-                    const skipped = !existing && e.he.trim() === "";
+                    // A linked row shows the page's own names, read-only, like an existing one.
+                    const fixed = existing || link !== null;
+                    const problem = fixed ? null : rowProblem(e);
+                    const skipped = !fixed && e.he.trim() === "";
+                    // Linking is for a fixture side of a team run: not an artist, not the subject (its page is found by name), not a club already matched.
+                    const canLink = !artist && !existing && row.supplier_name !== data?.subjectName;
                     return (
-                      <TableRow key={row.supplier_name} className="align-top">
-                        <TableCell className="py-2">
-                          <bdi dir="ltr" className="block break-words font-medium">
-                            {row.supplier_name}
-                          </bdi>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <Input
-                            data-box
-                            dir="ltr"
-                            value={existing ? row.name_en : e.en}
-                            readOnly={existing}
-                            maxLength={TEAM_NAME_EN_MAX}
-                            disabled={saving}
-                            aria-label={`${COL_NAME_EN}: ${row.supplier_name}`}
-                            aria-invalid={problem === NAME_NEEDS_ENGLISH || undefined}
-                            onChange={(ev) => setEdit(row, { en: ev.target.value })}
-                            className={cn("h-8 text-[13px]", existing && "bg-muted/50", problem === NAME_NEEDS_ENGLISH && "border-destructive")}
-                          />
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <Input
-                            data-box
-                            dir="rtl"
-                            value={existing ? row.name_he : e.he}
-                            readOnly={existing}
-                            maxLength={TEAM_NAME_HE_MAX}
-                            disabled={saving}
-                            aria-label={`${COL_NAME_HE}: ${row.supplier_name}`}
-                            aria-invalid={problem === NAME_NEEDS_HEBREW || undefined}
-                            onChange={(ev) => setEdit(row, { he: ev.target.value })}
-                            className={cn("h-8 text-[13px]", existing && "bg-muted/50", problem === NAME_NEEDS_HEBREW && "border-destructive")}
-                          />
-                          {problem && <p className="mt-1 text-[11px] leading-snug text-destructive">{problem}</p>}
-                        </TableCell>
-                        <TableCell className={cn("py-2 text-xs leading-snug", skipped ? "text-warning" : "text-muted-foreground")}>
-                          {existing ? STATUS_TEAM_EXISTING : skipped ? STATUS_NAME_SKIPPED : artist ? STATUS_ARTIST_CREATE : STATUS_TEAM_CREATE}
-                        </TableCell>
-                      </TableRow>
+                      <Fragment key={row.supplier_name}>
+                        <TableRow className="align-top">
+                          <TableCell className="py-2">
+                            <bdi dir="ltr" className="block break-words font-medium">
+                              {row.supplier_name}
+                            </bdi>
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <Input
+                              data-box
+                              dir="ltr"
+                              value={link ? (link.name_english ?? "") : existing ? row.name_en : e.en}
+                              readOnly={fixed}
+                              maxLength={TEAM_NAME_EN_MAX}
+                              disabled={saving}
+                              aria-label={`${COL_NAME_EN}: ${row.supplier_name}`}
+                              aria-invalid={problem === NAME_NEEDS_ENGLISH || undefined}
+                              onChange={(ev) => setEdit(row, { en: ev.target.value })}
+                              className={cn("h-8 text-[13px]", fixed && "bg-muted/50", problem === NAME_NEEDS_ENGLISH && "border-destructive")}
+                            />
+                          </TableCell>
+                          <TableCell className="py-2">
+                            <Input
+                              data-box
+                              dir="rtl"
+                              value={link ? link.name : existing ? row.name_he : e.he}
+                              readOnly={fixed}
+                              maxLength={TEAM_NAME_HE_MAX}
+                              disabled={saving}
+                              aria-label={`${COL_NAME_HE}: ${row.supplier_name}`}
+                              aria-invalid={problem === NAME_NEEDS_HEBREW || undefined}
+                              onChange={(ev) => setEdit(row, { he: ev.target.value })}
+                              className={cn("h-8 text-[13px]", fixed && "bg-muted/50", problem === NAME_NEEDS_HEBREW && "border-destructive")}
+                            />
+                            {problem && <p className="mt-1 text-[11px] leading-snug text-destructive">{problem}</p>}
+                          </TableCell>
+                          <TableCell className={cn("py-2 text-xs leading-snug", skipped ? "text-warning" : "text-muted-foreground")}>
+                            <p>{link ? STATUS_TEAM_LINKED : existing ? STATUS_TEAM_EXISTING : skipped ? STATUS_NAME_SKIPPED : artist ? STATUS_ARTIST_CREATE : STATUS_TEAM_CREATE}</p>
+                            {link ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="mt-1 h-7 gap-1 px-2 text-xs"
+                                disabled={saving}
+                                aria-label={`${LINK_UNDO}: ${row.supplier_name}`}
+                                onClick={() =>
+                                  setLinks((all) => {
+                                    const rest = { ...all };
+                                    delete rest[row.supplier_name];
+                                    return rest;
+                                  })
+                                }
+                              >
+                                <X aria-hidden className="h-3.5 w-3.5" />
+                                {LINK_UNDO}
+                              </Button>
+                            ) : (
+                              canLink && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-1 h-7 gap-1 px-2 text-xs"
+                                  disabled={saving}
+                                  aria-expanded={picking === row.supplier_name}
+                                  onClick={() => setPicking((now) => (now === row.supplier_name ? null : row.supplier_name))}
+                                >
+                                  <Link2 aria-hidden className="h-3.5 w-3.5" />
+                                  {BTN_LINK_EXISTING}
+                                </Button>
+                              )
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        {picking === row.supplier_name && !link && (
+                          <TableRow className="hover:bg-transparent">
+                            <TableCell colSpan={4} className="bg-muted/30 py-2">
+                              <TeamLinkPicker
+                                disabled={saving}
+                                onClose={() => setPicking(null)}
+                                onPick={(team) => {
+                                  setLinks((all) => ({ ...all, [row.supplier_name]: team }));
+                                  setPicking(null);
+                                }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </TableBody>

@@ -325,7 +325,7 @@ assert.deepEqual(
   uploaderDef.learnsFrom.map((s) => s.action),
   [
     "uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback",
-    "uploader.classify_changed", "uploader.team_created", "uploader.location_created",
+    "uploader.classify_changed", "uploader.team_created", "uploader.team_linked", "uploader.location_created",
   ],
   "the correction of the parse itself is the sharpest source, so it is declared first; the newer calls' sources follow the older six",
 );
@@ -534,6 +534,22 @@ assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "נ
 assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "ניוקאסל יונייטד", name_en: "Newcastle United" }), null, "no supplier name = no lesson");
 assert.equal(uploaderLessonFor("uploader.team_created", { agent: U, name_he: "  ", name_en: "Newcastle United", from_supplier_name: "Newcastle United FC" }), null, "a blank Hebrew name = no lesson");
 
+// uploader.team_linked - a supplier's spelling staff said is a page that already exists (round 2): only their own pick teaches.
+assert.equal(
+  uploaderLessonFor("uploader.team_linked", { agent: U, run_id: "run-1", team_id: 33, from_supplier_name: "Man Utd", to_name: "Manchester United", picked: true }),
+  "staff said Man Utd is the existing page 'Manchester United' (not a new team)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.team_linked", { agent: U, team_id: 33, from_supplier_name: "Man Utd", to_name: "Manchester United" }),
+  "staff said Man Utd is the existing page 'Manchester United' (not a new team)",
+  "a row with no picked flag is a pick (the shape the brief names)",
+);
+assert.equal(uploaderLessonFor("uploader.team_linked", { agent: U, team_id: 5, from_supplier_name: "Aston Villa FC", to_name: "Aston Villa", picked: false }), null, "the club rule's own match teaches nothing");
+assert.equal(uploaderLessonFor("uploader.team_linked", { agent: U, to_name: "Manchester United", picked: true }), null, "no supplier name = no lesson");
+assert.equal(uploaderLessonFor("uploader.team_linked", { agent: U, from_supplier_name: "Man Utd", picked: true }), null, "no page name = no lesson");
+assert.equal(uploaderLessonFor("uploader.team_linked", { agent: U, from_supplier_name: "  ", to_name: "Manchester United", picked: true }), null, "a blank supplier name = no lesson");
+assert.equal(uploaderLessonFor("uploader.team_linked", null), null, "no metadata at all");
+
 // uploader.location_created - a location staff created for a show city, and what they changed of the proposal.
 assert.equal(
   uploaderLessonFor("uploader.location_created", { agent: U, location_id: 91, name_he: "ולנסיה, ספרד", iata: "VLC", city: "Valencia", ai_proposed: { name_he: true, iata: true } }),
@@ -587,7 +603,7 @@ assert.equal(
 
 // Which call reads which source: four lists, every declared source in exactly one of them.
 assert.deepEqual(CLASSIFY_LESSON_SOURCES, ["uploader.classify_changed"]);
-assert.deepEqual(NAMES_LESSON_SOURCES, ["uploader.team_created"]);
+assert.deepEqual(NAMES_LESSON_SOURCES, ["uploader.team_created", "uploader.team_linked"]);
 assert.deepEqual(LOCATION_LESSON_SOURCES, ["uploader.location_created"]);
 assert.deepEqual(
   PARSE_LESSON_SOURCES,

@@ -1057,3 +1057,16 @@ export async function readPersonNames(table: "football_teams" | "artists"): Prom
   }
   return read.rows;
 }
+
+/** The pages the names dialog's "זה עמוד קיים" search runs over: every `football_teams` row that is not deleted, active or not. null = the read failed (logged). */
+export async function readLinkTeams(): Promise<{ id: number; name: string; name_english: string | null; is_active: boolean }[] | null> {
+  const read = await fetchPaged<{ id: number; name: string; name_english: string | null; is_active: boolean }>(
+    () => db.from("football_teams").select("id,name,name_english,is_active").eq("is_deleted", false).order("id"),
+    ITEMS_MAX,
+  );
+  if (read.error || read.truncated) {
+    logDb("football_teams (link search) read", read.error ?? { message: "too many rows" });
+    return null;
+  }
+  return read.rows;
+}

@@ -57,6 +57,8 @@ const ACTION_ERROR_HE: Record<string, string> = {
   svg_failed: "לא הצלחתי לקרוא את המפה של הספק",
   adopt_failed: "לא הצלחתי לאמץ את המפה",
   no_template: "לאירוע הזה אין תבנית אולם ללמוד ממנה",
+  // Round 2: the names dialog's "זה עמוד קיים" - the page picked is gone (deleted since the search) or cannot name an event.
+  team_not_found: "העמוד שנבחר לא נמצא - בחרו עמוד אחר",
   // Round 2: the create-location form (its own `problem` says what is wrong when the server gives one).
   invalid: "פרטי המיקום לא תקינים - בדקו את הטופס",
 };

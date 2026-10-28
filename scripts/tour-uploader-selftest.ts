@@ -74,11 +74,17 @@ import { cleanTemplate, DESCRIPTION_MAX, DESCRIPTION_TEMPLATE_MAX, DESCRIPTION_T
 import {
   cleanClubName,
   cleanTeamRows,
+  collapseCreateRows,
+  findLinkTeams,
+  LINK_RESULTS_MAX,
+  linkQueryOf,
   missingHebrewNames,
   missingSides,
   parseTeamNames,
+  planTeamRows,
   slugFor,
   teamRowsFor,
+  teamsHeWithAliases,
   type ProposedName,
 } from "@/lib/uploader/team-names";
 import { buildEquivalence, cleanClubName as cleanClubNameEq, NO_EQUIVALENCE } from "@/lib/uploader/equivalence";
@@ -5890,6 +5896,241 @@ async function supplierSvgFetchChecks(): Promise<void> {
     decision("tickets_livetickets_non_instant", { count: 1 }).text,
     "קטגוריה אחת LiveTickets ללא אישור מיידי (יסומנו באתר)",
     "tickets_livetickets_non_instant: one category reads as one",
+  );
+}
+
+// ---- Alon round 2, Task 7: one team per club in the names dialog, and a link to an existing page (team-names.ts) ----
+{
+  const show = (home: string | null, away: string | null, liveHeb: string | null = null): { show: ShowIdentity; warnings: { code: string; text: string }[] } => ({
+    show: {
+      name_english: `${home ?? "-"} vs ${away ?? "-"}`,
+      city: "Cagliari",
+      country_code: "IT",
+      venue: "Unipol Domus",
+      date: "2027-03-06",
+      lat: 39.2,
+      lon: 9.14,
+      suppliers: { tixstock: null, livetickets: liveHeb === null ? null : { event_id: 9, name_heb: liveHeb, sellable: 10 } },
+      competition: "Serie A",
+      home_team: home,
+      away_team: away,
+      fallback: [],
+    },
+    warnings: [],
+  });
+  const competition = { kind: "competition" as const, name_en: "Serie A" };
+
+  // -- missingSides / missingHebrewNames: one row per club (the Lazio run listed Cagliari twice and made two teams) ----
+  const lazio = [show("Cagliari Calcio", "ACF Fiorentina"), show("Fiorentina", "Cagliari"), show("US Lecce", "Lecce")];
+  same(
+    missingSides(lazio, competition, {}),
+    [
+      { supplier_name: "Cagliari Calcio", isSubject: false },
+      { supplier_name: "ACF Fiorentina", isSubject: false },
+      { supplier_name: "US Lecce", isSubject: false },
+    ],
+    "missingSides: 'Cagliari Calcio' + 'Cagliari', 'ACF Fiorentina' + 'Fiorentina', 'US Lecce' + 'Lecce' are three clubs, the first spelling of each kept",
+  );
+  same(
+    missingSides([show("Cagliari", "Cagliari Calcio")], competition, {}).map((s) => s.supplier_name),
+    ["Cagliari"],
+    "missingSides: whichever spelling comes first is the one kept",
+  );
+  same(
+    missingSides([show("Roma", "Atalanta BC"), show("AS Roma", "Atalanta")], competition, {}).map((s) => s.supplier_name),
+    ["Roma", "Atalanta BC"],
+    "missingSides: the qualifiers AS / BC are the club rule's too",
+  );
+  same(
+    missingSides([show("Cagliari Calcio", "ACF Fiorentina")], competition, { cagliari: "קליארי" }).map((s) => s.supplier_name),
+    ["ACF Fiorentina"],
+    "missingSides: a club the site already knows (by the club rule) is still left out",
+  );
+  same(
+    missingSides([show("מכבי חיפה", "הפועל באר שבע"), show("מכבי חיפה", null)], competition, {}).map((s) => s.supplier_name),
+    ["מכבי חיפה", "הפועל באר שבע"],
+    "missingSides: a name with no latin letter is its own key (the normalized name)",
+  );
+  same(
+    missingSides([show("Manchester City", "Manchester United")], competition, {}).map((s) => s.supplier_name),
+    ["Manchester City", "Manchester United"],
+    "missingSides: two clubs that share a word stay two",
+  );
+  same(
+    missingHebrewNames(lazio, { kind: "competition", name_en: "Serie A", name_he: null }, {}),
+    ["Cagliari Calcio", "ACF Fiorentina", "US Lecce"],
+    "missingHebrewNames: the names task lists a club once too, however many spellings its shows carry",
+  );
+
+  // -- cleanTeamRows: a row that links to an existing page ---------------------------------------
+  const ALLOWED = new Set(["Cagliari Calcio", "Cagliari", "Man Utd"]);
+  const crow = (extra: Record<string, unknown> = {}) => ({ supplier_name: "Cagliari Calcio", name_en: "Cagliari", name_he: "קליארי", existing_id: null, ...extra });
+  same(
+    cleanTeamRows([crow({ supplier_name: "Man Utd", name_en: "", name_he: "", link_team_id: 33 })], ALLOWED),
+    [{ supplier_name: "Man Utd", name_en: "", name_he: "", existing_id: null, link_team_id: 33 }],
+    "cleanTeamRows: a link row with link_team_id 33 passes - its names may be blank (the server reads the page's own)",
+  );
+  same(
+    cleanTeamRows([crow({ link_team_id: 33 })], ALLOWED),
+    [{ supplier_name: "Cagliari Calcio", name_en: "Cagliari", name_he: "קליארי", existing_id: null, link_team_id: 33 }],
+    "cleanTeamRows: a link row keeps the names it was sent, trimmed",
+  );
+  same(cleanTeamRows([crow({ link_team_id: null })], ALLOWED), [crow()], "cleanTeamRows: link_team_id null is a plain row - the key is not carried");
+  same(cleanTeamRows([crow()], ALLOWED), [crow()], "cleanTeamRows: no link_team_id key at all is a plain row too");
+  check(!("link_team_id" in cleanTeamRows([crow()], ALLOWED)![0]), "cleanTeamRows: a plain row has no link_team_id key (the shape every earlier row has)");
+  for (const [what, raw] of [
+    ["a link id of 0", [crow({ link_team_id: 0 })]],
+    ["a negative link id", [crow({ link_team_id: -4 })]],
+    ["a fractional link id", [crow({ link_team_id: 2.5 })]],
+    ["a text link id", [crow({ link_team_id: "33" })]],
+    ["a link id that is NaN", [crow({ link_team_id: Number.NaN })]],
+    ["a link AND an existing id on one row", [crow({ link_team_id: 33, existing_id: 12 })]],
+    ["a link row with an English name over 80", [crow({ link_team_id: 33, name_en: "F".repeat(81) })]],
+    ["a link row with a Hebrew name over 60", [crow({ link_team_id: 33, name_he: "פ".repeat(61) })]],
+    ["a link row with a wrongly typed name", [crow({ link_team_id: 33, name_he: 5 })]],
+    ["the same supplier name twice, one of them a link", [crow({ link_team_id: 33 }), crow({ supplier_name: "cagliari calcio" })]],
+  ] as [string, unknown][]) {
+    same(cleanTeamRows(raw, ALLOWED), null, `cleanTeamRows: ${what} is refused whole`);
+  }
+  same(cleanTeamRows([crow({ name_he: "Cagliari", link_team_id: null })], ALLOWED), null, "cleanTeamRows: a plain row still needs a Hebrew name with a Hebrew letter");
+
+  // -- collapseCreateRows: the same club typed twice is ONE team -----------------------------------
+  const make = (supplier_name: string, name_en: string, name_he: string, extra: Record<string, unknown> = {}) => ({ supplier_name, name_en, name_he, existing_id: null, ...extra });
+  same(
+    collapseCreateRows(cleanTeamRows([make("Cagliari Calcio", "Cagliari", "קליארי"), make("Cagliari", "cagliari", "קליארי")], ALLOWED)!),
+    [{ name_en: "Cagliari", name_he: "קליארי", supplier_names: ["Cagliari Calcio", "Cagliari"] }],
+    "collapse: two create rows named Cagliari / cagliari with the same Hebrew -> ONE team carrying both supplier spellings (the first row's names win)",
+  );
+  same(
+    collapseCreateRows([make("Cagliari Calcio", "Cagliari", "קליארי"), make("Cagliari", "Cagliari Calcio", "קאליארי")]),
+    [{ name_en: "Cagliari", name_he: "קליארי", supplier_names: ["Cagliari Calcio", "Cagliari"] }],
+    "collapse: the same club by the club rule on the typed English name joins, whatever the Hebrew says",
+  );
+  same(
+    collapseCreateRows([make("Inter", "Inter", "אינטר"), make("Internazionale Milano", "Internazionale", "אינטר")]),
+    [{ name_en: "Inter", name_he: "אינטר", supplier_names: ["Inter", "Internazionale Milano"] }],
+    "collapse: the same Hebrew name joins two different English spellings",
+  );
+  same(
+    collapseCreateRows([make("Roma", "Roma", "רומא"), make("Lazio", "Lazio", "לאציו")]).map((g) => g.supplier_names),
+    [["Roma"], ["Lazio"]],
+    "collapse: two different clubs stay two groups, in row order",
+  );
+  same(
+    collapseCreateRows([make("A", "Alpha", "אלפא"), make("B", "Beta", "בטא"), make("C", "Alpha Beta Gamma", "בטא")]).map((g) => [g.name_en, g.supplier_names]),
+    [["Alpha", ["A"]], ["Beta", ["B", "C"]]],
+    "collapse: a row joins the group its Hebrew name belongs to (the English one 'Alpha Beta Gamma' is its own club)",
+  );
+  same(
+    collapseCreateRows([make("A", "Alpha", "אלפא"), make("B", "Beta", "בטא"), make("C", "Alpha", "בטא")]).map((g) => [g.name_en, g.supplier_names]),
+    [["Alpha", ["A", "B", "C"]]],
+    "collapse: a row that is one group's English name and another's Hebrew name joins them into one, supplier names in row order",
+  );
+  same(
+    collapseCreateRows([make("Aston Villa FC", "Aston Villa", "אסטון וילה", { existing_id: 5 }), make("Man Utd", "", "", { link_team_id: 33 }), make("Lecce", "Lecce", "לצ'ה")]),
+    [{ name_en: "Lecce", name_he: "לצ'ה", supplier_names: ["Lecce"] }],
+    "collapse: only the create rows are grouped - an existing row and a link row are not teams to make",
+  );
+  same(collapseCreateRows([]), [], "collapse: nothing in, nothing out");
+
+  // -- planTeamRows: what a confirm does with its rows, before anything is written ----------------
+  const pages = [
+    { id: 33, name: "קליארי", name_english: "Cagliari" },
+    { id: 12, name: "אינטר מילאנו", name_english: "Inter" },
+    { id: 7, name: "לצ'ה", name_english: "Lecce" },
+    { id: 8, name: "ללא אנגלית", name_english: null },
+  ];
+  const tag = (plan: ReturnType<typeof planTeamRows<(typeof pages)[number]>>) => ({
+    missing: plan.missing,
+    resolved: plan.resolved.map((r) => [r.spelling, r.team.id, r.how]),
+    create: plan.create.map((g) => [g.name_en, g.supplier_names]),
+  });
+  same(
+    tag(planTeamRows([make("Man Utd", "", "", { link_team_id: 33 }), make("Aston Villa FC", "Aston Villa", "אסטון וילה", { existing_id: 7 }), make("Roma", "Roma", "רומא")], pages)),
+    { missing: null, resolved: [["Man Utd", 33, "picked"], ["Aston Villa FC", 7, "matched"]], create: [["Roma", ["Roma"]]] },
+    "planTeamRows: a link is picked, an existing id is matched (the page read just now), the rest is left to create",
+  );
+  same(tag(planTeamRows([make("Man Utd", "", "", { link_team_id: 99 })], pages)).missing, 99, "planTeamRows: a picked page that is gone (deleted since the search) is missing - the confirm is refused");
+  same(tag(planTeamRows([make("Roma", "Roma", "רומא", { existing_id: 98 })], pages)).missing, 98, "planTeamRows: an existing id no page holds is missing too");
+  same(
+    tag(planTeamRows(cleanTeamRows([make("Cagliari Calcio", "Cagliari", "קליארי"), make("Cagliari", "cagliari", "קליארי")], ALLOWED)!, pages)),
+    { missing: null, resolved: [["Cagliari Calcio", 33, "matched"], ["Cagliari", 33, "matched"]], create: [] },
+    "planTeamRows: a club the table already holds (by the club rule, read just now) is used for every spelling - never created a second time",
+  );
+  same(
+    tag(planTeamRows([make("Internazionale Milano", "Internazionale", "אינטר"), make("Inter", "Inter", "אינטר")], pages)),
+    { missing: null, resolved: [["Internazionale Milano", 12, "matched"], ["Inter", 12, "matched"]], create: [] },
+    "planTeamRows: one spelling of a group (same Hebrew) matching a page settles the whole group on it",
+  );
+  same(
+    tag(planTeamRows([make("US Lecce", "Salento", "לצ'ה")], pages)),
+    { missing: null, resolved: [["US Lecce", 7, "matched"]], create: [] },
+    "planTeamRows: the clean supplier name matches a page when the typed English name does not (teamRowsFor's own rule)",
+  );
+  same(
+    tag(planTeamRows([make("Cagliari Calcio", "Cagliari", "קליארי"), make("Atalanta BC", "Atalanta", "אטלנטה"), make("Atalanta", "Atalanta", "אטלנטה")], [])),
+    { missing: null, resolved: [], create: [["Cagliari", ["Cagliari Calcio"]], ["Atalanta", ["Atalanta BC", "Atalanta"]]] },
+    "planTeamRows: no page yet -> one team per club, each carrying every supplier spelling",
+  );
+  same(
+    tag(planTeamRows([make("Foo", "Foo", "פו")], pages)).create,
+    [["Foo", ["Foo"]]],
+    "planTeamRows: a page with no English name never matches a club by name",
+  );
+  same(tag(planTeamRows([], pages)), { missing: null, resolved: [], create: [] }, "planTeamRows: no rows, nothing to do");
+
+  // -- searchTeamsForLink's rules: the query, and what it finds -----------------------------------
+  same(
+    [" ", "a", "ab", "  lazio ", "x".repeat(60), "x".repeat(61), null, 5, undefined].map(linkQueryOf),
+    [null, null, "ab", "lazio", "x".repeat(60), null, null, null, null],
+    "linkQueryOf: 2..60 characters after trimming, anything that is not text is no query",
+  );
+  const catalog = [
+    { id: 1, name: "לאציו", name_english: "SS Lazio", is_active: false },
+    { id: 2, name: "רומא", name_english: "AS Roma", is_active: true },
+    { id: 3, name: "אינטר מילאנו", name_english: "Inter Milan", is_active: true },
+    { id: 4, name: "ללא אנגלית", name_english: null, is_active: false },
+    { id: 5, name: "אינטר", name_english: "Inter", is_active: false },
+  ];
+  same(findLinkTeams(catalog, "lazio").map((t) => t.id), [1], "findLinkTeams: by the English name - an inactive page is found too");
+  same(findLinkTeams(catalog, "לאציו").map((t) => t.id), [1], "findLinkTeams: by the Hebrew name");
+  same(findLinkTeams(catalog, "milan inter").map((t) => t.id), [3], "findLinkTeams: words in any order");
+  same(findLinkTeams(catalog, "inter").map((t) => t.id), [3, 5], "findLinkTeams: active pages first, then the rest, each in the order read");
+  same(findLinkTeams(catalog, "ללא").map((t) => t.id), [4], "findLinkTeams: a page with no English name is found by its Hebrew one");
+  same(findLinkTeams(catalog, "juventus"), [], "findLinkTeams: no match, no rows");
+  const many = Array.from({ length: 30 }, (_, i) => ({ id: 100 + i, name: `קבוצה ${i}`, name_english: `Team ${i}`, is_active: i % 2 === 0 }));
+  same(findLinkTeams(many, "team").length, LINK_RESULTS_MAX, "findLinkTeams: at most 20 rows");
+  same(LINK_RESULTS_MAX, 20, "findLinkTeams: the cap is 20");
+  same(findLinkTeams(many, "team")[0].is_active, true, "findLinkTeams: the cap cuts after the active-first order");
+
+  // -- teamsHeWithAliases: a linked spelling is known to the next run ------------------------------
+  const alias = (from_key: string, team_id: number | null, kind: "city" | "team" = "team") => ({
+    kind,
+    from_name: from_key,
+    from_key,
+    to_name: "x",
+    to_key: "x",
+    team_id,
+  });
+  const teamsInDb = [
+    { id: 33, name: "קליארי", is_deleted: false },
+    { id: 34, name: "מחוקה", is_deleted: true },
+    { id: 35, name: "  ", is_deleted: false },
+  ];
+  same(
+    teamsHeWithAliases({ cagliari: "קליארי" }, [alias("cagliari calcio", 33), alias("gone fc", 34), alias("blank fc", 35), alias("missing fc", 99), alias("no id", null), alias("roma", 33, "city")], teamsInDb),
+    { cagliari: "קליארי", "cagliari calcio": "קליארי" },
+    "teamsHeWithAliases: a team alias adds its from_key -> that team's Hebrew name; a deleted, nameless or missing team, a team alias with no id and a city alias add nothing",
+  );
+  const base = { "inter milan": "אינטר מילאנו" };
+  same(teamsHeWithAliases(base, [alias("inter", 33)], teamsInDb), { "inter milan": "אינטר מילאנו", inter: "קליארי" }, "teamsHeWithAliases: the input is not changed (a copy comes back)");
+  same(base, { "inter milan": "אינטר מילאנו" }, "teamsHeWithAliases: the caller's map is untouched");
+  same(teamsHeWithAliases({ inter: "אינטר" }, [alias("inter", 33)], teamsInDb), { inter: "קליארי" }, "teamsHeWithAliases: a person's alias beats a team that is merely named alike");
+  // The names a link then gives events: Cagliari's two spellings both reach the linked page's Hebrew name.
+  same(
+    withSupplierSpellings(teamsHeWithAliases({}, [alias("man utd", 33)], teamsInDb), ["Man Utd", "Cagliari"]),
+    { "man utd": "קליארי" },
+    "a linked spelling reaches eventNames' lookup through withSupplierSpellings (an unrelated side still finds nothing)",
   );
 }
 
