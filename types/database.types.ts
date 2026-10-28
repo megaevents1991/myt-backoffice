@@ -5367,6 +5367,102 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_links: {
+        Row: {
+          amount: number
+          amount_ils: number | null
+          attempts: number
+          booking_id: string
+          cancelled_at: string | null
+          cg_auth_number: string | null
+          cg_card_last4: string | null
+          cg_result: Json | null
+          cg_tx_id: string | null
+          cg_uniqueids: string[]
+          company_id: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          expires_at: string
+          id: string
+          kind: string
+          last_error: string | null
+          note: string | null
+          paid_at: string | null
+          payment_id: string | null
+          payments: number
+          rate: number | null
+          rate_source: string | null
+          sent_at: string | null
+          started_at: string | null
+          status: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          amount_ils?: number | null
+          attempts?: number
+          booking_id: string
+          cancelled_at?: string | null
+          cg_auth_number?: string | null
+          cg_card_last4?: string | null
+          cg_result?: Json | null
+          cg_tx_id?: string | null
+          cg_uniqueids?: string[]
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          expires_at: string
+          id?: string
+          kind: string
+          last_error?: string | null
+          note?: string | null
+          paid_at?: string | null
+          payment_id?: string | null
+          payments?: number
+          rate?: number | null
+          rate_source?: string | null
+          sent_at?: string | null
+          started_at?: string | null
+          status?: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          amount_ils?: number | null
+          attempts?: number
+          booking_id?: string
+          cancelled_at?: string | null
+          cg_auth_number?: string | null
+          cg_card_last4?: string | null
+          cg_result?: Json | null
+          cg_tx_id?: string | null
+          cg_uniqueids?: string[]
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          expires_at?: string
+          id?: string
+          kind?: string
+          last_error?: string | null
+          note?: string | null
+          paid_at?: string | null
+          payment_id?: string | null
+          payments?: number
+          rate?: number | null
+          rate_source?: string | null
+          sent_at?: string | null
+          started_at?: string | null
+          status?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       bookings: {
         Row: {
           adults: number

@@ -32,6 +32,7 @@ import {
 } from "@/lib/tours/payments";
 import { CANCEL_COMPONENT_LABELS, cancellationFeeToday, ruleFeeText, type CancellationRule } from "@/lib/tours/cancellation";
 import type { BookingRow } from "@/components/tours/bookings/shared";
+import { PaymentLinks } from "@/components/tours/cases/payment-links";
 
 const BALANCE_CHIP = {
   owed: "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300",
@@ -253,6 +254,14 @@ export function OrderPayments({ booking, onChanged }: { booking: BookingRow; onC
           </table>
         </div>
       )}
+
+      {/* a card payment link for a deposit / the balance (28.10.2026) - the paid amount lands in the log above */}
+      <PaymentLinks
+        key={booking.paymentLinks.map((l) => `${l.id}:${l.state}`).join(",")}
+        booking={booking}
+        due={balance.due}
+        onChanged={onChanged}
+      />
 
       {editing && (
         <div className="space-y-3 rounded-md border bg-background p-3">

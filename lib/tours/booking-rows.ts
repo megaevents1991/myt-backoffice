@@ -56,6 +56,7 @@ export function bookingRowOf(b: TourBooking, dep: DepartureBits | undefined): Bo
     staffNote: b.staff_note,
     giftPassengers: (b.gift_passengers ?? []).filter((i) => Number.isInteger(i) && i >= 0),
     paymentLog: [],
+    paymentLinks: [],
   };
 }
 

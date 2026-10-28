@@ -5,6 +5,7 @@
  */
 export type { ActionResult } from "@/lib/tours/action-kit";
 import type { OrderPayment } from "@/lib/tours/payments";
+import type { PaymentLinkView } from "@/lib/tours/payment-links";
 
 export const BOOKING_STATUSES = ["new", "in_progress", "pending_payment", "paid", "review", "failed", "done", "cancelled"] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
@@ -102,6 +103,8 @@ export interface BookingRow {
   giftPassengers: number[];
   /** The order's payments (tours.booking_payments) - filled where the screen shows them, else empty. */
   paymentLog: OrderPayment[];
+  /** The order's card payment links (tours.payment_links), newest first - filled with the payments, else empty. */
+  paymentLinks: PaymentLinkView[];
 }
 
 export interface BookingChange {

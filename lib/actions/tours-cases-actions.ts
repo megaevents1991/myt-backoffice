@@ -30,6 +30,7 @@ import { asObject, companyAudit } from "@/lib/tours/company-kit";
 import { isoToJerusalemLocal } from "@/lib/tours/format";
 import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
 import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
+import { readPaymentLinks } from "@/lib/tours/payment-link-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
 import { countUnseen, relinkCardCustomer, relinkCaseMessages, relinkCustomerMessages } from "@/lib/services/whatsapp-db";
@@ -1140,7 +1141,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     const packageId = record.package_id ?? departure?.package_id ?? null;
     const repNames = new Map(reps.map((p) => [p.id, p.name]));
     // each order's payments and the tour's cancellation fees ride with the card (20261020150000 - empty before it)
-    const [pkgAnswer, giftsAnswer, seatDepartures, paymentLog, cancellationRules] = await Promise.all([
+    const [pkgAnswer, giftsAnswer, seatDepartures, paymentLog, cancellationRules, paymentLinks] = await Promise.all([
       packageId
         ? toursDb().from("packages").select("id, name, slug, data, cancellation_html").eq("company_id", company.id).eq("id", packageId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -1156,6 +1157,8 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       departuresOf(company.id, seats.map((s) => s.departure_id)),
       readPaymentLog(company.id, bookings.map((b) => b.id), repNames),
       packageId ? readCancellationRules(company.id, packageId) : Promise.resolve([]),
+      // the card payment links of each order (20261028140806 - empty before it)
+      readPaymentLinks(company.id, bookings.map((b) => b.id), company.siteUrl, repNames),
     ]);
     if (pkgAnswer.error) throw new Error(`packages: ${pkgAnswer.error.message}`);
     if (giftsAnswer.error) throw new Error(`promotions: ${giftsAnswer.error.message}`);
@@ -1191,7 +1194,7 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
     return actionOk({
       row,
       payload,
-      bookings: bookings.map((b) => ({ ...b, paymentLog: paymentLog.get(b.id) ?? [] })),
+      bookings: bookings.map((b) => ({ ...b, paymentLog: paymentLog.get(b.id) ?? [], paymentLinks: paymentLinks.get(b.id) ?? [] })),
       cancellationRules,
       whatsapp,
       sales,
