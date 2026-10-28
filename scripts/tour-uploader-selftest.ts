@@ -1880,6 +1880,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     latitude: lat,
     longitude: lon,
     country_code: null,
+    aliases: [],
   });
   // Royal Albert Hall; London (LON) ~4 km, Luton-ish (LTN) ~48 km, a named place with no iata ~1 km.
   const venue = { lat: 51.501269, lon: -0.177516 };
@@ -2064,6 +2065,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     latitude: lat,
     longitude: lon,
     country_code: null,
+    aliases: [],
   });
   const london = loc(4, "לונדון, בריטניה", "LON", 51.509865, -0.118092);
   const munich = loc(11, "מינכן, גרמניה", "MUC", 48.1549958, 11.6242359);

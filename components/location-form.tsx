@@ -36,6 +36,7 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
     longitude: location?.longitude?.toString() || "",
     city_iata: location?.city_iata || "",
     country_code: location?.country_code || "",
+    aliases: (location?.aliases ?? []).join(", "),
   };
   const [formData, setFormData] = useState(initialData);
 
@@ -87,12 +88,20 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
         return;
       }
 
+      // "Roma, Rome" -> ["Roma", "Rome"]: trimmed, empty parts dropped. An edit always sends the list (clearing it is a change);
+      // a new location sends it only when something was typed.
+      const aliases = formData.aliases
+        .split(",")
+        .map((part) => part.trim())
+        .filter((part) => part !== "");
+
       const locationData = {
         name: formData.name.trim(),
         latitude,
         longitude,
         city_iata: formData.city_iata.trim() || undefined,
         country_code: countryCode || undefined,
+        aliases: location || aliases.length > 0 ? aliases : undefined,
       };
 
       if (location) {
@@ -225,6 +234,21 @@ export function LocationForm({ location, onSuccess }: LocationFormProps) {
             />
             <p className="text-xs text-muted-foreground">
               Optional 2-letter ISO code (uppercase)
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="aliases">שמות נוספים (אנגלית / שפה מקומית)</Label>
+            <Input
+              id="aliases"
+              type="text"
+              dir="auto"
+              value={formData.aliases}
+              onChange={(e) => handleChange("aliases", e.target.value)}
+              placeholder="e.g., Roma, Rome"
+            />
+            <p className="text-xs text-muted-foreground">
+              מופרדים בפסיק. ה-AI Uploader מזהה לפיהם את העיר כשהספק כותב אותה אחרת (Roma, München...).
             </p>
           </div>
 

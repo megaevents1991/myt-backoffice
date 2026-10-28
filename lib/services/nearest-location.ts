@@ -68,6 +68,8 @@ export interface LocationRow {
   latitude: number;
   longitude: number;
   country_code: string | null;
+  /** Other spellings of the city (English, local, supplier forms) - `locations.aliases`; [] when none or the column is not migrated yet. */
+  aliases: string[];
 }
 
 /**
@@ -89,11 +91,32 @@ export function findNearestLocation(
   return best;
 }
 
+/** The column is not there yet (migration 20261028114031 not applied): Postgres 42703, or PostgREST's schema cache without it. */
+const isMissingColumn = (error: { code?: string } | null): boolean => error?.code === "42703" || error?.code === "PGRST204";
+
+/** A text[] cell read as a list of non-empty strings - anything else is "no aliases". */
+const aliasList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string" && v.trim() !== "") : [];
+
 /**
  * Every `locations` row. THROWS on a failed read: to the uploader an empty table would read as
  * "no location near the venue" and build a ticket-only event - a guess, not an answer.
+ * `aliases` is read with the rest; before its migration the rows come back with `aliases: []`.
  */
 export async function loadLocations(): Promise<LocationRow[]> {
+  // `aliases` is newer than types/database.types.ts - read through the boundary cast.
+  const withAliases = (await db
+    .from("locations")
+    .select("id,name,city_iata,latitude,longitude,country_code,aliases")
+    .order("id", { ascending: true })) as {
+    data: (Omit<LocationRow, "aliases"> & { aliases: unknown })[] | null;
+    error: { message: string; code?: string } | null;
+  };
+  if (!withAliases.error) return (withAliases.data ?? []).map((row) => ({ ...row, aliases: aliasList(row.aliases) }));
+  if (!isMissingColumn(withAliases.error)) {
+    console.error("nearest-location: locations read failed", JSON.stringify(withAliases.error));
+    throw new Error(`locations read failed: ${withAliases.error.message}`);
+  }
   const { data, error } = await supabaseTyped
     .from("locations")
     .select("id,name,city_iata,latitude,longitude,country_code")
@@ -102,7 +125,7 @@ export async function loadLocations(): Promise<LocationRow[]> {
     console.error("nearest-location: locations read failed", JSON.stringify(error));
     throw new Error(`locations read failed: ${error.message}`);
   }
-  return data ?? [];
+  return (data ?? []).map((row) => ({ ...row, aliases: [] }));
 }
 
 /** The nearest `locations` row with an IATA code within `maxKm` (default: the uploader's package radius). */
