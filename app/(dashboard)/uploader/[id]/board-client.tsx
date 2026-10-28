@@ -329,7 +329,15 @@ export function BoardClient({
   const fixedByHand = useMemo(() => board?.fixedByHand ?? {}, [board]);
   /** The panel's rows (pure, lib/uploader/run-panel.ts); empty = no panel, and the cards keep every warning. */
   const panelRows = useMemo(
-    () => (board ? runLevelRows(items, fixedByHand, board.run.plan.subject, board.missingNames ?? []) : []),
+    () =>
+      board
+        ? runLevelRows(
+            items,
+            fixedByHand,
+            { kind: board.run.plan.subject.kind, name_en: board.run.plan.subject.name_en, row_id: board.subjectRowId ?? null },
+            board.missingNames ?? [],
+          )
+        : [],
     [board, items, fixedByHand],
   );
   const panelShown = panelRows.length > 0;
@@ -463,6 +471,7 @@ export function BoardClient({
 
         {panelShown && (
           <RunPanel
+            runId={runId}
             rows={panelRows}
             items={items}
             onClassify={(venue) => setDialog({ kind: "classify", venue })}

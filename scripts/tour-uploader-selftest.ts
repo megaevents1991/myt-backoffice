@@ -114,7 +114,7 @@ import {
   type TemplateLike,
 } from "@/lib/uploader/classify";
 import { farVenueOffer, warning, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
-import { cardWarnings, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows } from "@/lib/uploader/run-panel";
+import { cardWarnings, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows, subjectRowId, type PanelRow } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { normalizeName } from "@/lib/on-tour";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX, ZONE_LABEL_MAX as SVG_ZONE_LABEL_MAX } from "@/lib/venue-maps/svg-zones";
@@ -4180,14 +4180,16 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(runLevelRows(heb, {}, team, [])[0].text, "שמות בעברית חסרים · 2 אירועים נבנו עם שם באנגלית", "runLevelRows: events carry the warning but no club is missing (an artist run) - the row without a list");
   same(runLevelRows([mk("h4", [W("no_hebrew_name")])], {}, team, [])[0].text, "שמות בעברית חסרים · אירוע אחד נבנה עם שם באנגלית", "runLevelRows: one event reads as one");
 
+  // The rows' own fields are judged here; `task` (the "פתח משימה" button's prefill) has its own section, "Round אלון 2, Task 8".
+  const bare = (rows: PanelRow[]): Omit<PanelRow, "task">[] => rows.map(({ task: _task, ...rest }) => rest);
   const noTeamPage = [mk("s1", [W("no_team_page")]), mk("s2", [W("no_team_page")])];
   same(
-    runLevelRows(noTeamPage, {}, team, []),
+    bare(runLevelRows(noTeamPage, {}, team, [])),
     [{ kind: "subject", key: "subject", text: `אין עמוד קבוצה באתר ל-${iso("Fulham FC")}`, count: 2, action: "names" }],
     "runLevelRows: the subject row - a team without a page",
   );
   same(
-    runLevelRows([mk("s3", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton" }, []),
+    bare(runLevelRows([mk("s3", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton" }, [])),
     [{ kind: "subject", key: "subject", text: `אין עמוד אמן באתר ל-${iso("Eric Clapton")}`, count: 1, action: "names" }],
     "runLevelRows: the subject row - an artist without a page",
   );
@@ -4198,7 +4200,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     mk("x3", [W("no_bio", "/templates/football/6/edit#fix-bio")]),
   ];
   same(
-    runLevelRows(fixes, {}, team, []),
+    bare(runLevelRows(fixes, {}, team, [])),
     [
       { kind: "fix", key: "fix:no_crest", text: "אין סמל לקבוצה", count: 1, action: "link", fix_url: "/assets?q=Fulham" },
       { kind: "fix", key: "fix:no_bio", text: "אין ביוגרפיה", count: 3, action: "link", fix_url: "/templates/football/5/edit#fix-bio" },
@@ -6132,6 +6134,171 @@ async function supplierSvgFetchChecks(): Promise<void> {
     { "man utd": "קליארי" },
     "a linked spelling reaches eventNames' lookup through withSupplierSpellings (an unrelated side still finds nothing)",
   );
+}
+
+// ---- Round אלון 2, Task 8: "פתח משימה" on the panel's page rows (run-panel.ts `PanelRow.task`) ----
+{
+  type Warns = UploaderItem["warnings"];
+  const W = (code: string, fix_url?: string): Warns[number] => (fix_url === undefined ? { code, text: `${code}!` } : { code, text: `${code}!`, fix_url });
+  const mk = (id: string, warnings: Warns): UploaderItem => ({
+    id,
+    run_id: "run-1",
+    position: 0,
+    show: {
+      name_english: "Lazio vs Roma",
+      city: "Rome",
+      country_code: "IT",
+      venue: "Stadio Olimpico",
+      date: "2027-03-06",
+      lat: 41.93,
+      lon: 12.45,
+      suppliers: { tixstock: { event_id: `tx-${id}`, name: "Lazio v Roma", ticket_count: 20, venue_map_url: "https://cdn.example.com/maps/olimpico.svg" }, livetickets: null },
+      competition: "Serie A",
+      home_team: "Lazio",
+      away_team: "Roma",
+      fallback: [],
+    },
+    status: "ready",
+    mode: "package",
+    location: null,
+    decisions: [],
+    warnings,
+    blockers: [],
+    question: null,
+    event_id: null,
+    payload: null,
+    skip_reason: null,
+    error: null,
+    approved_by: null,
+    approved_at: null,
+    rejected_reason: null,
+    rejected_final: false,
+    created_at: "2026-10-28T08:00:00.000Z",
+    updated_at: "2026-10-28T09:00:00.000Z",
+  });
+  const lazio = { kind: "team" as const, name_en: "Lazio" };
+  const rowOf = (rows: PanelRow[], kind: PanelRow["kind"], key?: string): PanelRow => {
+    const row = rows.find((r) => r.kind === kind && (key === undefined || r.key === key));
+    assert.ok(row, `the ${kind} row ${key ?? ""} is there`);
+    return row;
+  };
+
+  // -- the subject row: "לבנות עמוד קבוצה: <name>" ------------------------------------------------
+  const noPage = [mk("p1", [W("no_team_page")])];
+  same(
+    rowOf(runLevelRows(noPage, {}, { ...lazio, row_id: null }, []), "subject").task,
+    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: "Lazio", label: "Lazio", url: "/templates" },
+    "task: a team run with no page - the name is the row id, the link is the Templates hub",
+  );
+  same(
+    rowOf(runLevelRows(noPage, {}, lazio, []), "subject").task,
+    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: "Lazio", label: "Lazio", url: "/templates" },
+    "task: no row_id given at all reads as no row",
+  );
+  same(
+    rowOf(runLevelRows(noPage, {}, { ...lazio, row_id: 55 }, []), "subject").task,
+    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/templates/football/55/edit" },
+    "task: the page row exists (made by hand mid-run) - its id and the Templates edit page of team 55",
+  );
+  same(
+    rowOf(runLevelRows([mk("p2", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton", row_id: null }, []), "subject").task,
+    { title: "לבנות עמוד אמן: Eric Clapton", table: "artists", row_id: "Eric Clapton", label: "Eric Clapton", url: "/templates" },
+    "task: an artist run with no page",
+  );
+  same(
+    rowOf(runLevelRows([mk("p3", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton", row_id: 9 }, []), "subject").task?.url,
+    "/templates/artists/9/edit",
+    "task: an artist's edit page",
+  );
+  same(
+    rowOf(runLevelRows(noPage, {}, { kind: "team", name_en: "  Lazio  ", row_id: null }, []), "subject").task?.title,
+    "לבנות עמוד קבוצה: Lazio",
+    "task: the name is trimmed",
+  );
+  same(
+    rowOf(runLevelRows(noPage, {}, { ...lazio, name_en: "Lazio", row_id: 0 }, []), "subject").task?.row_id,
+    "Lazio",
+    "task: a row id that is not a positive integer is no id (0)",
+  );
+  for (const bad of [-3, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    same(rowOf(runLevelRows(noPage, {}, { ...lazio, row_id: bad }, []), "subject").task?.url, "/templates", `task: row id ${bad} is no id - the Templates hub`);
+  }
+  same(
+    rowOf(runLevelRows(noPage, {}, { kind: "team", name_en: "   ", row_id: null }, []), "subject").task,
+    undefined,
+    "task: a subject with no name and no row has nothing to name the task by - no button",
+  );
+  same(
+    rowOf(runLevelRows(noPage, {}, { kind: "team", name_en: "", row_id: 55 }, []), "subject").task,
+    { title: "לבנות עמוד קבוצה", table: "football_teams", row_id: 55, label: "", url: "/templates/football/55/edit" },
+    "task: no name but a row - the title has no colon",
+  );
+
+  // -- the fix rows: "<the row's text>: <name>", the warning's own fix_url ---------------------------
+  const crestRows = runLevelRows([mk("f1", [W("no_crest", "/assets?q=Lazio")])], {}, { ...lazio, row_id: 55 }, []);
+  same(
+    rowOf(crestRows, "fix", "fix:no_crest").task,
+    { title: "אין סמל לקבוצה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/assets?q=Lazio" },
+    "task: a crest fix row - its text, the team, the warning's fix_url",
+  );
+  same(
+    rowOf(runLevelRows([mk("f2", [W("no_crest", "/assets?q=Lazio")])], {}, lazio, []), "fix", "fix:no_crest").task?.row_id,
+    "Lazio",
+    "task: a fix row with no row id is named by the subject",
+  );
+  const bioTeam = rowOf(runLevelRows([mk("f3", [W("no_bio", "/templates/football/55/edit#fix-bio")])], {}, { ...lazio, row_id: 55 }, []), "fix", "fix:no_bio");
+  same(
+    bioTeam.task,
+    { title: "אין ביוגרפיה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/templates/football/55/edit#fix-bio" },
+    "task: a bio fix row on a team run is the team's",
+  );
+  const artist = { kind: "artist" as const, name_en: "Eric Clapton", row_id: 9 };
+  same(
+    rowOf(runLevelRows([mk("f4", [W("no_bio", "/templates/artists/9/edit#fix-bio")])], {}, artist, []), "fix", "fix:no_bio").task,
+    { title: "אין ביוגרפיה: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-bio" },
+    "task: a bio fix row on an artist run is the artist's",
+  );
+  same(
+    rowOf(runLevelRows([mk("f5", [W("no_cutout", "/templates/artists/9/edit#fix-image")])], {}, artist, []), "fix", "fix:no_cutout").task,
+    { title: "אין גזרה לאמן: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-image" },
+    "task: a cut-out fix row",
+  );
+  same(
+    rowOf(runLevelRows([mk("f6", [W("no_event_gallery", "/templates/artists/9/edit#fix-gallery")])], {}, artist, []), "fix", "fix:no_event_gallery").task,
+    { title: "אין גלריית אירועים: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-gallery" },
+    "task: a gallery fix row",
+  );
+  same(
+    rowOf(runLevelRows([mk("f7", [W("no_cutout")])], {}, artist, []), "fix", "fix:no_cutout").task?.url,
+    "/templates/artists/9/edit",
+    "task: a fix row whose warning carried no link falls back to the row's edit page",
+  );
+  same(
+    rowOf(runLevelRows([mk("f8", [W("no_cutout")])], {}, { ...artist, row_id: null }, []), "fix", "fix:no_cutout").task?.url,
+    "/templates",
+    "task: ... or the Templates hub when the row is not known",
+  );
+
+  // -- only the page rows carry a task -------------------------------------------------------------
+  const mixed = runLevelRows(
+    [mk("m1", [W("new_venue"), W("no_hebrew_name"), W("no_team_page"), W("no_crest", "/assets?q=Lazio"), W("no_category_twin")])],
+    {},
+    { ...lazio, row_id: null },
+    ["Roma"],
+  );
+  same(mixed.map((r) => [r.kind, r.task !== undefined]), [["venue", false], ["names", false], ["subject", true], ["fix", true], ["info", false]], "task: the venue, names and info rows have none");
+
+  // -- subjectRowId: the row id the run's resolved subject carries ---------------------------------
+  const rowsOf = (team: number | null, artist: number | null): SubjectRows => ({
+    team: team === null ? null : { id: team, name: "Lazio", logo_url: null, crestInLibrary: false, image_url: null, art_image_url: null, bio: null, hasTwin: false },
+    artist: artist === null ? null : { id: artist, name: "Clapton", image_url: null, art_image_url: null, event_gallery: [], bio: null, hasTwin: false },
+  });
+  same(subjectRowId("team", rowsOf(55, null)), 55, "subjectRowId: a team run reads the team row");
+  same(subjectRowId("artist", rowsOf(null, 9)), 9, "subjectRowId: an artist run reads the artist row");
+  same(subjectRowId("team", rowsOf(null, 9)), null, "subjectRowId: a team run with no team row has none (the artist row is not its page)");
+  same(subjectRowId("artist", rowsOf(55, null)), null, "subjectRowId: an artist run with no artist row has none");
+  same(subjectRowId("competition", rowsOf(55, 9)), null, "subjectRowId: a competition has no page of its own");
+  same(subjectRowId("team", rowsOf(null, null)), null, "subjectRowId: nothing resolved - none");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

@@ -325,6 +325,12 @@ export const BTN_CLASSIFY = "סווג כרטיסים";
 export const BTN_LEARN_APPLY = "החל על שאר ההופעות";
 export const BTN_NAMES = "תן שמות בעברית";
 export const BTN_OPEN_TEMPLATES = "פתח ב-Templates";
+/** The panel's page rows (the subject's page, a missing crest / bio / cut-out / gallery): opens the shared task dialog prefilled (round "אלון 2", spec 5). */
+export const BTN_OPEN_TASK = "פתח משימה";
+/** First line of the task's description - followed by the run's absolute board link. */
+export const TASK_FROM_RUN = "מתוך ריצת העלאה";
+/** The small note under the task form ("From ..."), the `origin` of the prefill. */
+export const TASK_ORIGIN = "מה-AI Uploader";
 /** Under a venue row with several events arranged by hand: the other ones, each offered as a source too. */
 export const PANEL_OTHER_FIXED = "נערכו בעורך גם:";
 export const PANEL_COUNT_TITLE = "הופעות שהנושא נוגע בהן";

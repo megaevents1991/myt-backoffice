@@ -186,6 +186,7 @@ import {
   type StoredAnswer,
   type SubjectCache,
 } from "@/lib/uploader/run-rules";
+import { subjectRowId as subjectRowIdOf } from "@/lib/uploader/run-panel";
 import type {
   ApproveAllResult,
   ApproveResult,
@@ -625,36 +626,41 @@ export async function getRun(runId: string, opts?: { people?: boolean }): Promis
     if (!row) return { ...item, blockers: [...(item.blockers ?? []), EVENT_GONE_BLOCKER] };
     return { ...item, blockers: liveBlockers(item.blockers, row) };
   });
-  const [people, subjectArt, missingNames] = await Promise.all([
+  const [people, subjectArt, { missingNames, subjectRowId }] = await Promise.all([
     withPeople ? loadPeople() : Promise.resolve([]),
     readSubjectArt(run.plan),
-    missingNamesOf(run, stored),
+    subjectFactsOf(run, stored),
   ]);
-  return { run, items, edited, editedUnknown: rows === null, people, ...(withPeople ? {} : { peopleOmitted: true as const }), subjectArt, fixedByHand, missingNames };
+  return { run, items, edited, editedUnknown: rows === null, people, ...(withPeople ? {} : { peopleOmitted: true as const }), subjectArt, fixedByHand, missingNames, subjectRowId };
 }
 
 /**
- * The Hebrew names the run still lacks - the panel's names row (spec 5.1, ruling R2) - judged on the run's
- * CACHED subject: the board polls, so never a fresh resolve, and a cache of any age will do for a list on
- * screen (it is judged as of when it was written). A skipped show is never built, so its sides are not
- * asked about. [] when there is no readable cache - the board never fails for it.
+ * What the panel reads off the run's CACHED subject: the Hebrew names the run still lacks (the names row,
+ * spec 5.1, ruling R2) and the id of the subject's page row (the "פתח משימה" button names its task by it,
+ * round "אלון 2" spec 5). Judged on the cache of any age: the board polls, so never a fresh resolve, and a
+ * list on screen is judged as of when it was written. A skipped show is never built, so its sides are not
+ * asked about. No readable cache = `{ missingNames: [], subjectRowId: null }` - the board never fails for it.
  */
-async function missingNamesOf(run: UploaderRun, items: UploaderItem[]): Promise<string[]> {
+async function subjectFactsOf(run: UploaderRun, items: UploaderItem[]): Promise<{ missingNames: string[]; subjectRowId: number | null }> {
+  const none = { missingNames: [], subjectRowId: null };
   try {
     const raw = await readSubjectCache(run.id);
     const writtenAt = isRecord(raw) && typeof raw.at === "string" ? Date.parse(raw.at) : NaN;
-    if (!Number.isFinite(writtenAt)) return [];
+    if (!Number.isFinite(writtenAt)) return none;
     const cache = freshSubjectCache(raw, writtenAt);
-    if (!cache) return [];
+    if (!cache) return none;
     const subject = { kind: run.plan.subject.kind, name_en: run.plan.subject.name_en, name_he: cache.subject.name_he };
-    return missingHebrewNames(
-      items.filter((i) => i.status !== "skipped"),
-      subject,
-      cache.teamsHe,
-    );
+    return {
+      missingNames: missingHebrewNames(
+        items.filter((i) => i.status !== "skipped"),
+        subject,
+        cache.teamsHe,
+      ),
+      subjectRowId: subjectRowIdOf(run.plan.subject.kind, cache.rows),
+    };
   } catch (e) {
-    console.error(`uploader-actions: missing names of run ${run.id} failed`, errorText(e));
-    return [];
+    console.error(`uploader-actions: subject facts of run ${run.id} failed`, errorText(e));
+    return none;
   }
 }
 

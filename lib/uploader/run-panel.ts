@@ -13,10 +13,15 @@
  * `unzoned_review` (what is left unplaced after a classification) is NOT run-level - the card keeps its
  * "לבדיקה: <categories>" line - but it feeds the venue row: the hall still has categories to review.
  *
- * Selftest: scripts/tour-uploader-selftest.ts (section "Round אלון 1, Task 4").
- * Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md (5.1).
+ * The subject's page row and the fix rows also carry `task` - what "פתח משימה" opens the shared task dialog with
+ * (round "אלון 2", spec 5).
+ *
+ * Selftest: scripts/tour-uploader-selftest.ts (sections "Round אלון 1, Task 4" and "Round אלון 2, Task 8").
+ * Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md (5.1);
+ * docs/superpowers/specs/2026-10-28-uploader-alon-round-2-design.md (5).
  */
 import type { ItemStatus, SubjectKind, UploaderItem, Warning } from "@/types/uploader.types";
+import type { SubjectRows } from "@/lib/uploader/warnings";
 
 /**
  * A name inside a Hebrew line, isolated (FSI ... PDI): without it an English name followed by a number
@@ -72,6 +77,19 @@ export function cardWarnings(item: UploaderItem): { card: Warning[]; folded: num
 
 // ---- the panel's rows -----------------------------------------------------------------------------------
 
+/**
+ * What the "פתח משימה" button opens the shared task dialog with (round "אלון 2", spec 5): the title, and the
+ * `source_ref` the task is linked back by (`kind: "uploader_page"` is added by the button). `row_id` = the
+ * page row's id when it exists, else the subject's English name; `url` = where the fix lives.
+ */
+export type PanelTask = {
+  title: string;
+  table: "football_teams" | "artists";
+  row_id: number | string;
+  label: string;
+  url: string;
+};
+
 export type PanelRow = {
   kind: "venue" | "names" | "subject" | "fix" | "info";
   /** Stable per row - the board's React key. */
@@ -99,7 +117,39 @@ export type PanelRow = {
   };
   /** A fix row: where the fix lives (the first link the warnings carried). */
   fix_url?: string;
+  /** The subject row and every fix row: the task the "פתח משימה" button prefills. Absent on the others (and when the subject has no name and no row to name a task by). */
+  task?: PanelTask;
 };
+
+/** The run's subject, as the panel names its page rows: `row_id` = the page row the run's resolved subject found (`subjectRowId`), null = none. */
+export type PanelSubject = { kind: SubjectKind; name_en: string; row_id?: number | null };
+
+/** The id of the page row the run's resolved subject carries: the team row of a team run, the artist row of an artist run; null = none (a competition has no page of its own). */
+export function subjectRowId(kind: SubjectKind, rows: Pick<SubjectRows, "team" | "artist">): number | null {
+  const row = kind === "team" ? rows.team : kind === "artist" ? rows.artist : null;
+  return row === null ? null : isRowId(row.id) ? row.id : null;
+}
+
+const isRowId = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v > 0;
+
+/** The Templates edit page of a team / artist row; `/templates` (the hub) when the row is not known. */
+function templateUrl(table: PanelTask["table"], rowId: number | null): string {
+  if (rowId === null) return "/templates";
+  return table === "artists" ? `/templates/artists/${rowId}/edit` : `/templates/football/${rowId}/edit`;
+}
+
+/**
+ * The task for a page row: "<what is missing>: <the subject>". Named by the page row's id when there is one,
+ * else by the subject's English name - the one thing that says which page it is. `url` = the fix's own link
+ * (a fix row's warning carried it), else the row's Templates page. Undefined when the subject has neither a
+ * name nor a row.
+ */
+function pageTask(base: string, table: PanelTask["table"], subject: PanelSubject, url?: string): PanelTask | undefined {
+  const name = subject.name_en.trim();
+  const rowId = isRowId(subject.row_id) ? subject.row_id : null;
+  if (name === "" && rowId === null) return undefined;
+  return { title: name === "" ? base : `${base}: ${name}`, table, row_id: rowId ?? name, label: name, url: url ?? templateUrl(table, rowId) };
+}
 
 /** A counted item with the run-level warnings it carries (possibly none - it may carry only an `unzoned_review`). */
 type Carrier = { item: UploaderItem; run: Warning[] };
@@ -197,12 +247,22 @@ function namesRow(carriers: Carrier[], missing: string[]): PanelRow[] {
   return [{ kind: "names", key: "names", text: `${head}${tail}`, count: events, action: "names" }];
 }
 
-function subjectRow(carriers: Carrier[], name_en: string): PanelRow[] {
+function subjectRow(carriers: Carrier[], subject: PanelSubject): PanelRow[] {
   const group = carriers.filter((c) => has(c, "no_team_page") || has(c, "no_artist_page"));
   if (group.length === 0) return [];
-  const word = group.some((c) => has(c, "no_team_page")) ? "קבוצה" : "אמן";
-  const subject = name_en.trim();
-  return [{ kind: "subject", key: "subject", text: `אין עמוד ${word} באתר${subject === "" ? "" : ` ל-${iso(subject)}`}`, count: group.length, action: "names" }];
+  const isTeam = group.some((c) => has(c, "no_team_page"));
+  const name = subject.name_en.trim();
+  const task = pageTask(`לבנות עמוד ${isTeam ? "קבוצה" : "אמן"}`, isTeam ? "football_teams" : "artists", subject);
+  return [
+    {
+      kind: "subject",
+      key: "subject",
+      text: `אין עמוד ${isTeam ? "קבוצה" : "אמן"} באתר${name === "" ? "" : ` ל-${iso(name)}`}`,
+      count: group.length,
+      action: "names",
+      ...(task ? { task } : {}),
+    },
+  ];
 }
 
 /** The fix rows, in this order; each links to the first fix_url any of its warnings carried. */
@@ -213,13 +273,29 @@ const FIX_ROWS: readonly (readonly [string, string])[] = [
   ["no_event_gallery", "אין גלריית אירועים"],
 ];
 
-function fixRows(carriers: Carrier[]): PanelRow[] {
+/** Whose page a fix is on: the crest is a team's, the cut-out and the gallery an artist's, a bio is the subject's own. */
+function fixTable(code: string, kind: SubjectKind): PanelTask["table"] {
+  if (code === "no_crest") return "football_teams";
+  if (code === "no_cutout" || code === "no_event_gallery") return "artists";
+  return kind === "artist" ? "artists" : "football_teams";
+}
+
+function fixRows(carriers: Carrier[], subject: PanelSubject): PanelRow[] {
   const rows: PanelRow[] = [];
   for (const [code, text] of FIX_ROWS) {
     const group = carriers.filter((c) => has(c, code));
     if (group.length === 0) continue;
     const fix_url = group.flatMap((c) => c.run.filter((w) => w.code === code)).find((w) => !!w.fix_url)?.fix_url;
-    rows.push({ kind: "fix", key: `fix:${code}`, text, count: group.length, action: fix_url ? "link" : null, ...(fix_url ? { fix_url } : {}) });
+    const task = pageTask(text, fixTable(code, subject.kind), subject, fix_url);
+    rows.push({
+      kind: "fix",
+      key: `fix:${code}`,
+      text,
+      count: group.length,
+      action: fix_url ? "link" : null,
+      ...(fix_url ? { fix_url } : {}),
+      ...(task ? { task } : {}),
+    });
   }
   return rows;
 }
@@ -233,13 +309,13 @@ function infoRow(carriers: Carrier[]): PanelRow[] {
 /**
  * The panel's rows for a run, in the spec's order: a row per hall (venue), the Hebrew names, the
  * subject's page, the fixes (crest, bio, cut-out, gallery), the information line. `fixedByHand` and
- * `missing` are `getRun`'s (`RunBoard.fixedByHand` / `missingNames`); `subject` names the page row.
- * Empty = no panel.
+ * `missing` are `getRun`'s (`RunBoard.fixedByHand` / `missingNames`); `subject` names the page rows
+ * (`row_id` = `RunBoard.subjectRowId`) and the task each of them offers. Empty = no panel.
  */
 export function runLevelRows(
   items: UploaderItem[],
   fixedByHand: Record<string, boolean>,
-  subject: { kind: SubjectKind; name_en: string },
+  subject: PanelSubject,
   missing: string[],
 ): PanelRow[] {
   const carriers = items
@@ -248,8 +324,8 @@ export function runLevelRows(
   return [
     ...venueRows(carriers, fixedByHand),
     ...namesRow(carriers, missing),
-    ...subjectRow(carriers, subject.name_en),
-    ...fixRows(carriers),
+    ...subjectRow(carriers, subject),
+    ...fixRows(carriers, subject),
     ...infoRow(carriers),
   ];
 }

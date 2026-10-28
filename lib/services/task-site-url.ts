@@ -38,6 +38,10 @@ export async function siteUrlsForRefs(
       continue;
     }
     if (ref.table in PERSON_PREFIX || ref.table === "categories") {
+      // Only a numeric id can be looked up: an uploader page task has no row yet and is named by the
+      // subject's English name ("Lazio") - one such id in `in("id", ...)` fails the WHOLE table's read
+      // (bigint), which would drop the site link of every team / artist task on the board.
+      if (!/^\d+$/.test(String(ref.row_id))) continue;
       const ids = idsByTable.get(ref.table) ?? new Set();
       ids.add(String(ref.row_id));
       idsByTable.set(ref.table, ids);

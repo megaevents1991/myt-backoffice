@@ -69,6 +69,8 @@ export type RunBoard = {
   fixedByHand: Record<string, boolean>;
   /** The club (or artist) names the run still has no Hebrew name for (`missingSides`) - the panel's names row lists them. */
   missingNames: string[];
+  /** The id of the subject's page row (`football_teams` / `artists`) the run's cached subject found; null = none yet, or no readable cache. The panel's "פתח משימה" names its task by it. */
+  subjectRowId: number | null;
 };
 
 /** `getRun`'s answer when the run exists: the board, or `{ run: null, kind: "db_error" }` when a read failed (`getRun` answers null only for "no such run"). */

@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ExternalLink, GraduationCap, ImageOff, Info, Languages, ListChecks, MapPinned, UserRound } from "lucide-react";
+import { ChevronDown, ExternalLink, GraduationCap, ImageOff, Info, Languages, ListChecks, ListTodo, MapPinned, UserRound } from "lucide-react";
+import { TaskEditor, type TaskEditorState } from "@/components/task-editor";
 import { Button } from "@/components/ui/button";
-import type { PanelRow } from "@/lib/uploader/run-panel";
+import type { PanelRow, PanelTask } from "@/lib/uploader/run-panel";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
 import {
   BTN_CLASSIFY,
   BTN_LEARN_APPLY,
   BTN_NAMES,
+  BTN_OPEN_TASK,
   BTN_OPEN_TEMPLATES,
   PANEL_COLLAPSE,
   PANEL_COUNT_TITLE,
@@ -18,6 +20,8 @@ import {
   PANEL_TITLE,
   PANEL_TOPICS,
   showLabel,
+  TASK_FROM_RUN,
+  TASK_ORIGIN,
 } from "./board-words";
 import { ACTION } from "./card-shell";
 import type { PanelVenue } from "./classify-dialog";
@@ -29,6 +33,8 @@ import type { PanelVenue } from "./classify-dialog";
 // pure - the board computes them; nothing is regrouped here). A row leaves when its warnings do (the
 // dialogs remove them and the board reads the run again); the panel leaves with its last row.
 // `id="run-panel"` is where a card's folded line ("N הערות ברמת הריצה - בפאנל למעלה") scrolls to.
+// The subject's page row and every fix row also carry `row.task` (round "אלון 2", spec 5): "פתח משימה" opens the
+// shared TaskEditor (a task for the missing page / picture) prefilled from it, on the marketing board.
 
 const ICON: Record<PanelRow["kind"], typeof MapPinned> = {
   venue: MapPinned,
@@ -39,12 +45,15 @@ const ICON: Record<PanelRow["kind"], typeof MapPinned> = {
 };
 
 export function RunPanel({
+  runId,
   rows,
   items,
   onClassify,
   onLearn,
   onNames,
 }: {
+  /** The run - a task's description links back to its board. */
+  runId: string;
   /** `runLevelRows(board.items, board.fixedByHand, subject, board.missingNames)`; the board renders the panel only when it is not empty. */
   rows: PanelRow[];
   /** The run's items - names the other events a person arranged at the same hall. */
@@ -54,7 +63,34 @@ export function RunPanel({
   onNames: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const byId = new Map(items.map((i) => [i.id, i]));
+
+  /** The shared task dialog, prefilled: a creative-gap task on the marketing board that links back to this run and to where the fix lives. */
+  function openTask(task: PanelTask) {
+    setEditor({
+      open: true,
+      task: null,
+      defaults: { board: "marketing" },
+      prefill: {
+        title: task.title,
+        description: `${TASK_FROM_RUN}: ${window.location.origin}/uploader/${runId}`,
+        priority: "medium",
+        source: "creative_gap",
+        source_ref: { kind: "uploader_page", table: task.table, row_id: task.row_id, label: task.label, url: task.url },
+        origin: TASK_ORIGIN,
+      },
+    });
+  }
+
+  function taskButton(task: PanelTask) {
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={() => openTask(task)} className={ACTION}>
+        <ListTodo aria-hidden />
+        {BTN_OPEN_TASK}
+      </Button>
+    );
+  }
 
   function classifyButton(venue: PanelVenue) {
     return (
@@ -136,6 +172,7 @@ export function RunPanel({
         <ul id="run-panel-rows" className="divide-y">
           {rows.map((row) => {
             const Icon = ICON[row.kind];
+            const act = action(row);
             const others = (row.venue?.otherFixedItemIds ?? []).map((id) => byId.get(id)).filter((i): i is UploaderItem => i !== undefined);
             return (
               <li key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
@@ -172,12 +209,26 @@ export function RunPanel({
                     </p>
                   )}
                 </div>
-                {action(row)}
+                {(act || row.task) && (
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {act}
+                    {row.task && taskButton(row.task)}
+                  </span>
+                )}
               </li>
             );
           })}
         </ul>
       )}
+
+      {/* Remounted per task (price-changes' pattern): the dialog reads its prefill once, when it mounts. */}
+      <TaskEditor
+        key={`${editor.prefill?.source_ref.table ?? "none"}-${editor.prefill?.source_ref.row_id ?? "new"}-${editor.prefill?.title ?? ""}-${editor.open}`}
+        state={editor}
+        isManager
+        onClose={() => setEditor({ open: false, task: null })}
+        onSaved={() => setEditor({ open: false, task: null })}
+      />
     </section>
   );
 }
