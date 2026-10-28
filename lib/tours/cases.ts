@@ -367,6 +367,8 @@ export interface RouteCard {
   createdAt: string;
   /** When the card was last touched - a WhatsApp message joins the newest by this (2026-10-21). */
   updatedAt?: string | null;
+  /** The form that opened it - a waiting-list card is told apart by it (28.10). */
+  kind?: string;
 }
 export function isOpenCard(card: RouteCard, statuses: readonly CaseStatus[], today: string): boolean {
   if (card.toFile || isClosedStatus(card.status, statuses)) return false;
@@ -375,13 +377,25 @@ export function isOpenCard(card: RouteCard, statuses: readonly CaseStatus[], tod
 
 /** Forms that never route: bookings route themselves, staff choose by hand, a newsletter is no inquiry. */
 const UNROUTED_KINDS = new Set(["booking", "advisor", "manual", "newsletter"]);
-export type InquiryRoute = { kind: "join"; cardId: string } | { kind: "file" } | { kind: "new" };
+/** "Put me on the waiting list" / "tell me when tours open" - a wish about a tour, not a deal yet. */
+const WAITING_LIST_KINDS = new Set(["waitlist", "notify"]);
+/**
+ * A waiting-list card: opened by a waiting-list form and still at New. Once a rep moves its status it is a deal like
+ * any other (Dor 28.10).
+ */
+export const isWaitingListCard = (card: { kind?: string; status: string }): boolean =>
+  !!card.kind && WAITING_LIST_KINDS.has(card.kind) && card.status === "new";
+/** `new` may name the open card of the same tour it did not join - the new card points at it (leads.related_lead_id). */
+export type InquiryRoute = { kind: "join"; cardId: string } | { kind: "file" } | { kind: "new"; relatedCardId?: string };
 
 /**
- * Where a SITE FORM of a known customer goes (SQL twin: public.leads_fill, 20261019180000 + 20261021172647). Its
- * tour has an open card -> it joins it (newest first); no tour while open cards exist -> the rep files it; else a
- * new card. A WHATSAPP message (2026-10-21) is the continuation of a conversation, not a form about a tour: it
- * joins the customer's newest open card (by updatedAt) whatever its tour, and is never filed.
+ * Where a SITE FORM of a known customer goes (SQL twin: public.leads_fill, 20261019180000 + 20261021172647 +
+ * 20261028...waitlist_routing). Its tour has an open card -> it joins it (newest first); no tour while open cards
+ * exist -> the rep files it; else a new card. A WHATSAPP message (2026-10-21) is the continuation of a conversation,
+ * not a form about a tour: it joins the customer's newest open card (by updatedAt) whatever its tour, and is never
+ * filed. A WAITING LIST (Alon 28.10: "לא לשייך לקארד שכבר יש לו סטטוס אחר") joins only a card of its tour still at
+ * New - else it opens its own card next to that deal; every other form of the tour passes over a waiting-list card
+ * while the tour has another open card (Dor 28.10: the deal card wins).
  */
 export function routeInquiry(
   form: { kind: string; packageId: string | null },
@@ -397,8 +411,14 @@ export function routeInquiry(
     return newest ? { kind: "join", cardId: newest.id } : { kind: "new" };
   }
   if (form.packageId) {
-    const same = open.find((c) => c.packageId === form.packageId);
-    return same ? { kind: "join", cardId: same.id } : { kind: "new" };
+    const same = open.filter((c) => c.packageId === form.packageId);
+    if (WAITING_LIST_KINDS.has(form.kind)) {
+      const fresh = same.find((c) => c.status === "new");
+      if (fresh) return { kind: "join", cardId: fresh.id };
+      return same[0] ? { kind: "new", relatedCardId: same[0].id } : { kind: "new" };
+    }
+    const target = same.find((c) => !isWaitingListCard(c)) ?? same[0];
+    return target ? { kind: "join", cardId: target.id } : { kind: "new" };
   }
   return open.length ? { kind: "file" } : { kind: "new" };
 }

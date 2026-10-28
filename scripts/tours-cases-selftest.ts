@@ -23,6 +23,7 @@ import {
   daysLate,
   inquiriesOf,
   isOpenCard,
+  isWaitingListCard,
   knownFrom,
   paymentAnswerOf,
   routeInquiry,
@@ -519,10 +520,47 @@ assert.equal(isOpenCard(card({ status: "paid", departureStart: null }), S, TODAY
 // the SQL twin (public.leads_fill): same tour -> join, no tour + open cards -> file, else new
 assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [card()], S, TODAY), { kind: "join", cardId: "k1" });
 assert.deepEqual(
-  routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card(), card({ id: "k2", createdAt: "2026-10-12T10:00:00Z" })], S, TODAY),
+  routeInquiry({ kind: "lead", packageId: "tour-a" }, [card(), card({ id: "k2", createdAt: "2026-10-12T10:00:00Z" })], S, TODAY),
   { kind: "join", cardId: "k2" },
   "the newest open card of the tour",
 );
+// a waiting list joins only a card still at New; another status = its own card, pointing at that deal (Alon 28.10)
+assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "new" })], S, TODAY), { kind: "join", cardId: "k1" });
+for (const status of ["no_answer", "offer_sent", "future", "pending_payment", "deposit_paid"]) {
+  assert.deepEqual(
+    routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status })], S, TODAY),
+    { kind: "new", relatedCardId: "k1" },
+    `a waiting list never folds into a ${status} card`,
+  );
+}
+assert.deepEqual(
+  routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "paid", departureStart: "2026-12-01" })], S, TODAY),
+  { kind: "new", relatedCardId: "k1" },
+  "nor into a paid trip ahead",
+);
+assert.deepEqual(
+  routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "new" }), card({ id: "k2", status: "offer_sent", createdAt: "2026-10-12T10:00:00Z" })], S, TODAY),
+  { kind: "join", cardId: "k1" },
+  "the New card of the tour, though another card is newer",
+);
+assert.deepEqual(routeInquiry({ kind: "notify", packageId: "tour-a" }, [card({ status: "offer_sent" })], S, TODAY), { kind: "new", relatedCardId: "k1" }, "notify = waitlist");
+assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "not_relevant" })], S, TODAY), { kind: "new" }, "no open card: a plain new one");
+assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-b" }, [card({ status: "offer_sent" })], S, TODAY), { kind: "new" }, "another tour's deal is not its neighbour");
+// ...and afterwards the deal card wins: a waiting-list card at New is passed over while the tour has another open card
+const waiting = card({ id: "k2", kind: "waitlist", status: "new", createdAt: "2026-10-12T10:00:00Z" });
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [card({ status: "offer_sent" }), waiting], S, TODAY), { kind: "join", cardId: "k1" });
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [waiting], S, TODAY), { kind: "join", cardId: "k2" }, "only waiting-list cards open: the newest of them");
+assert.deepEqual(
+  routeInquiry({ kind: "lead", packageId: "tour-a" }, [card({ status: "offer_sent" }), { ...waiting, status: "offer_sent" }], S, TODAY),
+  { kind: "join", cardId: "k2" },
+  "a waiting-list card a rep moved on is a deal like any other",
+);
+assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "offer_sent" }), waiting], S, TODAY), { kind: "join", cardId: "k2" }, "a second waiting-list form joins the first");
+assert.equal(isWaitingListCard({ kind: "waitlist", status: "new" }), true);
+assert.equal(isWaitingListCard({ kind: "notify", status: "new" }), true);
+assert.equal(isWaitingListCard({ kind: "waitlist", status: "no_answer" }), false);
+assert.equal(isWaitingListCard({ kind: "lead", status: "new" }), false);
+assert.equal(isWaitingListCard({ status: "new" }), false, "no kind known");
 assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-b" }, [card()], S, TODAY), { kind: "new" }, "another tour = another card");
 assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [card()], S, TODAY), { kind: "file" });
 assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [card({ status: "not_relevant" })], S, TODAY), { kind: "new" }, "only closed cards: a fresh start");
