@@ -6,8 +6,10 @@
  * The bodies are shared: the customer page puts them in popovers, the board in dialogs behind the menu. The
  * booking-link body is booking-link-card.tsx's own OfferSummary (send / send again / withdraw) - building or
  * editing an offer is the one thing that opens the card. A host says how a fresh row lands on screen.
+ * NotesCell / OfferCell are the same two bodies behind a board CELL (Alon 28.10: "לערוך את כל השדות כבר במסך
+ * רזרויישן") - the cell prints the field, a click edits it in a popover.
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { CalendarClock, Link2, MoreHorizontal, StickyNote, UserPlus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -15,13 +17,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/confirm-provider";
 import { isFollowUpDate } from "@/lib/reservations/follow-up";
 import { markOfferSent, updateCase, withdrawOffer } from "@/lib/actions/tours-cases-actions";
 import type { ActionResult } from "@/lib/tours/action-kit";
 import { addDaysIso, canTakeCard, caseName, type CaseRow, type OfferChannel } from "@/lib/tours/cases";
-import { fmtDate } from "@/lib/tours/format";
+import { EMPTY, fmtDate, isoToJerusalemLocal } from "@/lib/tours/format";
+import { noteLine, writtenToday } from "@/lib/tours/board";
 import { OfferSummary } from "@/components/tours/cases/booking-link-card";
 
 /** How a screen takes the row an action answered, and how it opens the card when a body needs the whole thing. */
@@ -293,5 +297,97 @@ export function CardActionsMenu({
         </Dialog>
       )}
     </>
+  );
+}
+
+/** A board cell that prints a field and edits it in a popover; "-" turns into the prompt on hover. */
+function CellPopover({
+  label,
+  prompt,
+  title,
+  className,
+  children,
+  body,
+}: {
+  label: string;
+  prompt: string;
+  title?: string;
+  className?: string;
+  /** What the cell prints; null = nothing yet. */
+  children: ReactNode | null;
+  body: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          title={title}
+          className={cn(
+            "group/cell -mx-1 max-w-[16rem] truncate rounded px-1 py-0.5 text-start text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            className,
+          )}
+        >
+          {children ?? (
+            <span className="text-muted-foreground">
+              <span className="group-hover/cell:hidden">{EMPTY}</span>
+              <span className="hidden group-hover/cell:inline">{prompt}</span>
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      {/* mounted only while open: the body starts from the row as it is now; its clicks never reach the row */}
+      <PopoverContent align="start" className="w-80" onClick={(e) => e.stopPropagation()}>
+        {open && body(() => setOpen(false))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** The notes column: the first line (bold + a dot when written today), a click writes them. */
+export function NotesCell({ card, host, today }: { card: Pick<CaseRow, "id" | "notes" | "notesAt">; host: CardActionHost; today: string }) {
+  const line = noteLine(card.notes);
+  // a note written today stands out: the rep wrote it this morning and the customer is still on the list
+  const fresh = writtenToday(card.notesAt, today);
+  return (
+    <CellPopover
+      label="Notes"
+      prompt="+ Note"
+      title={card.notes ?? "Write a note"}
+      className={fresh ? "font-semibold text-foreground" : "text-muted-foreground"}
+      body={(close) => <NotesEditor card={card} host={host} onDone={close} />}
+    >
+      {line ? (
+        <span dir="auto">
+          {fresh && <span className="me-1.5 inline-block h-1.5 w-1.5 rounded-full bg-primary align-middle" aria-label="Written today" />}
+          {line}
+        </span>
+      ) : null}
+    </CellPopover>
+  );
+}
+
+/** Where the card's booking link stands - booked, sent (the day), ready (not sent) - a click works it. */
+export function OfferCell({ card, host }: { card: Pick<CaseRow, "id" | "offer" | "phone" | "email" | "firstName">; host: CardActionHost }) {
+  const offer = card.offer ?? null;
+  const sentDay = offer?.sentAt ? isoToJerusalemLocal(offer.sentAt).slice(0, 10) : "";
+  const state = !offer ? null : offer.bookingRef ? (
+    <span className="font-medium text-emerald-700 dark:text-emerald-300">Booked</span>
+  ) : sentDay ? (
+    <span>Sent {fmtDate(sentDay)}</span>
+  ) : (
+    <span className="font-medium text-amber-700 dark:text-amber-300">Ready, not sent</span>
+  );
+  return (
+    <CellPopover
+      label="Booking link"
+      prompt="+ Link"
+      title={offer ? [offer.departureCode, fmtDate(offer.startDate)].filter(Boolean).join(" · ") : "Build a booking link"}
+      body={(close) => <OfferPanel card={card} host={host} onDone={close} />}
+    >
+      {state}
+    </CellPopover>
   );
 }

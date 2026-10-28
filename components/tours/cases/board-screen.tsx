@@ -18,7 +18,7 @@
  * The server already answers only the cards the viewer may see (a manager all, a rep their own + the unassigned).
  * Every row opens its customer, with that card highlighted. TODAY / RESERVATIONS / LEADS share one load (listBoard).
  */
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { CalendarClock, ListChecks, Loader2, PlusCircle, RefreshCw } from "lucide-react";
@@ -36,15 +36,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useSessionState } from "@/hooks/use-view-state";
 import { useAuth } from "@/contexts/auth-context";
 import { TOURS_AGENT_ROLE } from "@/types/auth.types";
-import { EMPTY, fmtDate, fmtInstant, fmtPrice, todayIso } from "@/lib/tours/format";
+import { EMPTY, fmtDate, fmtInstant, fmtPrice, isoToJerusalemLocal, todayIso } from "@/lib/tours/format";
 import { bulkUpdateCases, listBoard, saveBoardOrder, updateCase } from "@/lib/actions/tours-cases-actions";
 import type { ActionResult } from "@/lib/tours/action-kit";
 import { Chip, LoadError } from "@/components/tours/ui";
 import {
   BOOKING_PHASE_LABELS,
   PAYMENT_ANSWER_LABELS,
+  TODAY_REASON_LABELS,
   caseMatches,
   caseName,
+  customerLabel,
+  followUpDue,
   isClosedStatus,
   sourceLabel,
   statusOf,
@@ -58,25 +61,31 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
-import { afterSave, canSeeCard, moveInOrder, noteLine, orderBoard, placeInOrder, writtenToday, type BoardViewer } from "@/lib/tours/board";
+import { afterSave, canSeeCard, moveInOrder, noteLine, orderBoard, placeInOrder, type BoardViewer } from "@/lib/tours/board";
 import {
   BulkAssignSelect,
   CardWhat,
   CardWho,
+  FollowUpInput,
+  GHOST_FIELD,
   InRow,
   KnownLine,
   MailButton,
   PhoneCell,
+  RepSelect,
   StageBar,
+  StatusSelect,
   StatusTag,
   TODAY_ROW_CLASSES,
   TodayBadge,
   WhatsAppButton,
+  type FuturePick,
 } from "@/components/tours/cases/case-ui";
 import { CasesScreen } from "@/components/tours/cases/cases-screen";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
-import { CardActionsMenu, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
+import { CardActionsMenu, NotesCell, OfferCell, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
+import { Input } from "@/components/ui/input";
 
 const TABS = ["today", "reservations", "leads", "all"] as const;
 const PHASES: BookingPhase[] = ["active", "past", "cancelled"];
@@ -103,6 +112,61 @@ interface OrderRow {
 }
 
 const selectedOf = (selection: Record<string, boolean>): string[] => Object.keys(selection).filter((id) => selection[id]);
+
+// ---------------------------------------------------------------- what the header filters read (Alon 28.10)
+/** A Customer filter searches the name and the customer number. */
+const customerText = (c: CaseRow): string => [caseName(c), customerLabel(c.customerNo)].filter(Boolean).join(" ");
+/** A Tour filter lists the tour, or what a "tell me when tours open" lead waits for. */
+const tourText = (c: CaseRow): string => c.tourName ?? (c.waitingFor ? `Waiting for: ${c.waitingFor}` : "");
+const tourLabel = (value: string): string => value || "Tour not chosen";
+/** Where the card's booking link stands. */
+type LinkState = "booked" | "sent" | "ready" | "";
+const linkStateOf = (c: CaseRow): LinkState => (!c.offer ? "" : c.offer.bookingRef ? "booked" : c.offer.sentAt ? "sent" : "ready");
+const LINK_STATE_LABELS: Record<LinkState, string> = { booked: "Booked", sent: "Sent", ready: "Ready, not sent", "": "No link" };
+const SEATS_LABELS: Record<string, string> = { held: "Seats held", missing: "No seats", "": "Nothing to hold" };
+/** An order row's status: the card's, or - on a cancelled order - the order's own. */
+const ORDER_STATUS_LABELS: Record<string, string> = { "order:failed": "Payment failed", "order:cancelled": "Cancelled" };
+const orderStatusKey = (r: OrderRow): string =>
+  r.order.phase === "cancelled" ? (r.order.status === "failed" ? "order:failed" : "order:cancelled") : r.card.status;
+const israelDay = (iso: string): string => isoToJerusalemLocal(iso).slice(0, 10);
+
+/** "↔ #1042": the card names the customer's other card it belongs beside (a booking matched by contact, a waiting list next to a deal). */
+function RelatedChip({ caseNo }: { caseNo: number | null }) {
+  if (!caseNo) return null;
+  return (
+    <Chip tone="info" className="mt-0.5" title={`Linked to card #${caseNo} of the same customer - open the customer to see both`}>
+      ↔ #{caseNo}
+    </Chip>
+  );
+}
+
+/** The card's ACC NUM typed in the row: saved on Enter or on leaving the box, Esc puts it back. */
+function AccInput({ value, disabled, onSave }: { value: string | null; disabled?: boolean; onSave: (next: string | null) => void }) {
+  return (
+    <Input
+      // remount when the stored value changes elsewhere (the card, a failed save)
+      key={value ?? ""}
+      defaultValue={value ?? ""}
+      dir="ltr"
+      maxLength={40}
+      aria-label="ACC"
+      placeholder={EMPTY}
+      disabled={disabled}
+      className={cn("h-8 w-28 px-2 text-sm tabular", GHOST_FIELD)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          e.currentTarget.value = value ?? "";
+          e.currentTarget.blur();
+        }
+      }}
+      onBlur={(e) => {
+        const next = e.target.value.trim();
+        if (next !== (value ?? "")) onSave(next || null);
+      }}
+    />
+  );
+}
 
 export function BoardScreen() {
   const router = useRouter();
@@ -243,6 +307,65 @@ export function BoardScreen() {
     [reload, repName, run],
   );
 
+  // the row's own editors (Alon 28.10: "לערוך את כל השדות כבר במסך רזרויישן") - the card's fields only; the person's
+  // name / phone / e-mail stay on the customer page (one edit there is every card's)
+  const saveStatus = useCallback(
+    (card: CaseRow, status: string, closeReason?: string, pick?: FuturePick, followUpDate?: string) =>
+      save(
+        card,
+        { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}), ...(followUpDate ? { followUpDate } : {}) },
+        "Status saved",
+      ),
+    [save],
+  );
+  const statusCell = useCallback(
+    (card: CaseRow, below?: ReactNode) => (
+      <InRow className="space-y-1">
+        <StatusSelect
+          value={card.status}
+          statuses={statuses}
+          disabled={busy === card.id}
+          title={card.closeReason ? `Closed because: ${card.closeReason}` : undefined}
+          future={{ packageId: card.packageId, season: card.season }}
+          deposit={{ departureDate: card.departureDate, followUpDate: card.followUpDate }}
+          onChange={(status, closeReason, pick, followUpDate) => void saveStatus(card, status, closeReason, pick, followUpDate)}
+        />
+        {below}
+      </InRow>
+    ),
+    [busy, saveStatus, statuses],
+  );
+  const repCell = useCallback(
+    (card: CaseRow) => (
+      <InRow>
+        <RepSelect
+          ghost
+          value={card.assignedTo}
+          reps={reps}
+          currentUserId={currentUserId}
+          disabled={busy === card.id}
+          onChange={(assignedTo) => void save(card, { assignedTo }, assignedTo ? `Card given to ${repName(assignedTo)}` : "Card unassigned")}
+        />
+      </InRow>
+    ),
+    [busy, currentUserId, repName, reps, save],
+  );
+  const followUpCell = useCallback(
+    (card: CaseRow) => (
+      <InRow>
+        <FollowUpInput
+          ghost
+          value={card.followUpDate}
+          due={followUpDue(card, statuses, today)}
+          onSave={(followUpDate) => void save(card, { followUpDate }, followUpDate ? "Follow-up day saved" : "Follow-up day cleared")}
+        />
+      </InRow>
+    ),
+    [save, statuses, today],
+  );
+  const statusLabel = useCallback((key: string) => statusOf(key, statuses)?.label ?? key, [statuses]);
+  const repLabel = useCallback((id: string) => (id ? repName(id) : "Unassigned"), [repName]);
+
   const todayColumns = useMemo<ColumnDef<TodayRow>[]>(
     () => [
       {
@@ -255,6 +378,7 @@ export function BoardScreen() {
         id: "why",
         accessorFn: (r) => todayRank(r.reason),
         header: ({ column }) => <SortableHeader label="Why" column={column} />,
+        meta: { filter: { kind: "values", label: "Why", value: (r) => r.reason, valueLabel: (v) => TODAY_REASON_LABELS[v as TodayReason] ?? v } },
         cell: ({ row }) => (
           <div className="max-w-[9rem] space-y-1">
             <TodayBadge reason={row.original.reason} followUpDate={row.original.card.followUpDate} today={today} />
@@ -264,12 +388,25 @@ export function BoardScreen() {
           </div>
         ),
       },
-      { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <CardWho card={row.original.card} /> },
-      { id: "phone", accessorFn: (r) => r.card.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.card.phone} /> },
+      {
+        id: "who",
+        accessorFn: (r) => caseName(r.card),
+        header: "Customer",
+        meta: { filter: { kind: "text", label: "Customer", value: (r) => customerText(r.card) } },
+        cell: ({ row }) => <CardWho card={row.original.card} />,
+      },
+      {
+        id: "phone",
+        accessorFn: (r) => r.card.phone ?? "",
+        header: "Phone",
+        meta: { filter: { kind: "text", label: "Phone" } },
+        cell: ({ row }) => <PhoneCell phone={row.original.card.phone} />,
+      },
       {
         id: "what",
         accessorFn: (r) => r.card.tourName ?? "",
         header: "Card",
+        meta: { filter: { kind: "values", label: "Card", value: (r) => tourText(r.card), valueLabel: tourLabel } },
         cell: ({ row }) =>
           row.original.reason === "file" ? (
             <div className="text-sm">
@@ -279,38 +416,58 @@ export function BoardScreen() {
               </div>
             </div>
           ) : (
-            <CardWhat card={row.original.card}>{row.original.known && <KnownLine known={row.original.known} statuses={statuses} />}</CardWhat>
+            <CardWhat card={row.original.card}>
+              <RelatedChip caseNo={row.original.card.relatedCaseNo} />
+              {row.original.known && <KnownLine known={row.original.known} statuses={statuses} />}
+            </CardWhat>
           ),
       },
       {
         id: "status",
         accessorFn: (r) => r.card.status,
         header: "Status",
-        cell: ({ row }) => (
-          <div className="space-y-1">
-            <StatusTag status={row.original.card.status} statuses={statuses} />
-            <StageBar status={row.original.card.status} hasOrder={!!ordersByCard.get(row.original.card.id)?.length} statuses={statuses} className="flex" />
-          </div>
-        ),
+        meta: { filter: { kind: "values", label: "Status", valueLabel: statusLabel } },
+        cell: ({ row }) => {
+          const { card, reason } = row.original;
+          const stage = <StageBar status={card.status} hasOrder={!!ordersByCard.get(card.id)?.length} statuses={statuses} className="flex" />;
+          // an inquiry with no tour is filed first (its row has one action: File it)
+          return reason === "file" ? (
+            <div className="space-y-1">
+              <StatusTag status={card.status} statuses={statuses} />
+              {stage}
+            </div>
+          ) : (
+            statusCell(card, stage)
+          );
+        },
       },
       {
         id: "notes",
         accessorFn: (r) => noteLine(r.card.notes),
         header: "Notes",
+        meta: { filter: { kind: "text", label: "Notes", value: (r) => r.card.notes ?? "" } },
         cell: ({ row }) => {
-          const line = noteLine(row.original.card.notes);
-          if (!line) return <span className="text-muted-foreground">{EMPTY}</span>;
-          // a note written today stands out: the rep wrote it this morning and the customer is still on the list
-          const fresh = writtenToday(row.original.card.notesAt, today);
+          const { card, reason } = row.original;
+          if (reason === "file") return <span className="text-muted-foreground">{EMPTY}</span>;
           return (
-            <div
-              dir="auto"
-              title={row.original.card.notes ?? undefined}
-              className={cn("max-w-[16rem] truncate text-sm", fresh ? "font-semibold text-foreground" : "text-muted-foreground")}
-            >
-              {fresh && <span className="me-1.5 inline-block h-1.5 w-1.5 rounded-full bg-primary align-middle" aria-label="Written today" />}
-              {line}
-            </div>
+            <InRow>
+              <NotesCell card={card} host={hostFor(card)} today={today} />
+            </InRow>
+          );
+        },
+      },
+      {
+        id: "link",
+        accessorFn: (r) => linkStateOf(r.card),
+        header: "Link",
+        meta: { filter: { kind: "values", label: "Link", valueLabel: (v) => LINK_STATE_LABELS[v as LinkState] ?? v } },
+        cell: ({ row }) => {
+          const { card, reason } = row.original;
+          if (reason === "file") return <span className="text-muted-foreground">{EMPTY}</span>;
+          return (
+            <InRow>
+              <OfferCell card={card} host={hostFor(card)} />
+            </InRow>
           );
         },
       },
@@ -318,13 +475,25 @@ export function BoardScreen() {
         id: "followUp",
         accessorFn: (r) => r.card.followUpDate ?? "",
         header: ({ column }) => <SortableHeader label="Follow-up" column={column} />,
-        cell: ({ row }) => <span className="tabular text-sm">{row.original.card.followUpDate ? fmtDate(row.original.card.followUpDate) : EMPTY}</span>,
+        meta: { filter: { kind: "date", label: "Follow-up" } },
+        cell: ({ row }) =>
+          row.original.reason === "file" ? (
+            <span className="tabular text-sm">{row.original.card.followUpDate ? fmtDate(row.original.card.followUpDate) : EMPTY}</span>
+          ) : (
+            followUpCell(row.original.card)
+          ),
       },
       {
         id: "rep",
         accessorFn: (r) => repName(r.card.assignedTo),
         header: "Rep",
-        cell: ({ row }) => <span className="text-sm">{repName(row.original.card.assignedTo) || <span className="text-muted-foreground">Unassigned</span>}</span>,
+        meta: { filter: { kind: "values", label: "Rep", value: (r) => r.card.assignedTo ?? "", valueLabel: repLabel } },
+        cell: ({ row }) =>
+          row.original.reason === "file" ? (
+            <span className="text-sm">{repName(row.original.card.assignedTo) || <span className="text-muted-foreground">Unassigned</span>}</span>
+          ) : (
+            repCell(row.original.card)
+          ),
       },
       {
         id: "actions",
@@ -372,7 +541,7 @@ export function BoardScreen() {
         },
       },
     ],
-    [busy, currentUserId, hostFor, onPlace, open, ordersByCard, repName, save, statuses, today],
+    [busy, currentUserId, followUpCell, hostFor, onPlace, open, ordersByCard, repCell, repLabel, repName, save, statusCell, statusLabel, statuses, today],
   );
 
   const orderColumns = useMemo<ColumnDef<OrderRow>[]>(
@@ -381,6 +550,7 @@ export function BoardScreen() {
         id: "ref",
         accessorFn: (r) => r.order.ref,
         header: ({ column }) => <SortableHeader label="Order" column={column} />,
+        meta: { filter: { kind: "text", label: "Order" } },
         cell: ({ row }) => (
           <div>
             <span className="font-mono text-sm font-semibold">{row.original.order.ref}</span>
@@ -388,13 +558,32 @@ export function BoardScreen() {
           </div>
         ),
       },
-      { id: "who", accessorFn: (r) => caseName(r.card), header: "Customer", cell: ({ row }) => <CardWho card={row.original.card} /> },
-      { id: "phone", accessorFn: (r) => r.card.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.card.phone} /> },
-      { id: "tour", accessorFn: (r) => r.card.tourName ?? "", header: "Tour", cell: ({ row }) => <span dir="auto">{row.original.card.tourName ?? EMPTY}</span> },
+      {
+        id: "who",
+        accessorFn: (r) => caseName(r.card),
+        header: "Customer",
+        meta: { filter: { kind: "text", label: "Customer", value: (r) => customerText(r.card) } },
+        cell: ({ row }) => <CardWho card={row.original.card} />,
+      },
+      {
+        id: "phone",
+        accessorFn: (r) => r.card.phone ?? "",
+        header: "Phone",
+        meta: { filter: { kind: "text", label: "Phone" } },
+        cell: ({ row }) => <PhoneCell phone={row.original.card.phone} />,
+      },
+      {
+        id: "tour",
+        accessorFn: (r) => r.card.tourName ?? "",
+        header: "Tour",
+        meta: { filter: { kind: "values", label: "Tour", value: (r) => tourText(r.card), valueLabel: tourLabel } },
+        cell: ({ row }) => <span dir="auto">{row.original.card.tourName ?? EMPTY}</span>,
+      },
       {
         id: "departure",
         accessorFn: (r) => r.order.departureDate ?? "",
         header: ({ column }) => <SortableHeader label="Departure" column={column} />,
+        meta: { filter: { kind: "date", label: "Departure" } },
         cell: ({ row }) => (
           <div className="tabular whitespace-nowrap">
             {row.original.order.departureDate ? fmtDate(row.original.order.departureDate) : EMPTY}
@@ -403,35 +592,43 @@ export function BoardScreen() {
         ),
       },
       { id: "travelers", accessorFn: (r) => r.order.travelers, header: "Travelers", cell: ({ row }) => <span className="tabular">{row.original.order.travelers}</span> },
-      // the card's ACC NUM (the deal's, Alon 22.10) - edited on the folded card, read here
+      // the card's ACC NUM (the deal's, Alon 22.10) - typed right here (Alon 28.10), and on the card
       {
         id: "acc",
         accessorFn: (r) => r.card.accNum ?? "",
         header: "ACC",
+        meta: { filter: { kind: "text", label: "ACC" } },
         cell: ({ row }) => (
-          <span dir="ltr" className="tabular text-sm">
-            {row.original.card.accNum ?? EMPTY}
-          </span>
+          <InRow>
+            <AccInput
+              value={row.original.card.accNum}
+              disabled={busy === row.original.card.id}
+              onSave={(accNum) => void save(row.original.card, { accNum }, accNum ? "ACC saved" : "ACC cleared")}
+            />
+          </InRow>
         ),
       },
       {
         id: "status",
         accessorFn: (r) => r.card.status,
         header: "Status",
+        // a cancelled ORDER's row speaks of the order, not the card: no editor there
+        meta: { filter: { kind: "values", label: "Status", value: orderStatusKey, valueLabel: (v) => ORDER_STATUS_LABELS[v] ?? statusLabel(v) } },
         cell: ({ row }) =>
           row.original.order.phase === "cancelled" ? (
             <Chip tone="error">{row.original.order.status === "failed" ? "Payment failed" : "Cancelled"}</Chip>
           ) : (
-            <div className="space-y-1">
-              <StatusTag status={row.original.card.status} statuses={statuses} />
-              {row.original.card.paymentAnswer && <div className="text-xs text-muted-foreground">{PAYMENT_ANSWER_LABELS[row.original.card.paymentAnswer]}</div>}
-            </div>
+            statusCell(
+              row.original.card,
+              row.original.card.paymentAnswer && <div className="text-xs text-muted-foreground">{PAYMENT_ANSWER_LABELS[row.original.card.paymentAnswer]}</div>,
+            )
           ),
       },
       {
         id: "seats",
         accessorFn: (r) => r.order.seats ?? "",
         header: "Seats",
+        meta: { filter: { kind: "values", label: "Seats", valueLabel: (v) => SEATS_LABELS[v] ?? v } },
         cell: ({ row }) =>
           row.original.order.seats === "held" ? (
             <Chip tone="success">Seats held</Chip>
@@ -451,7 +648,13 @@ export function BoardScreen() {
           </span>
         ),
       },
-      { id: "rep", accessorFn: (r) => repName(r.card.assignedTo), header: "Rep", cell: ({ row }) => <span className="text-sm">{repName(row.original.card.assignedTo) || EMPTY}</span> },
+      {
+        id: "rep",
+        accessorFn: (r) => repName(r.card.assignedTo),
+        header: "Rep",
+        meta: { filter: { kind: "values", label: "Rep", value: (r) => r.card.assignedTo ?? "", valueLabel: repLabel } },
+        cell: ({ row }) => repCell(row.original.card),
+      },
       // the same shortcuts as TODAY / LEADS - notes, booking link, follow-up - acting on the order's card (Alon 25.10)
       {
         id: "actions",
@@ -470,28 +673,54 @@ export function BoardScreen() {
         },
       },
     ],
-    [busy, currentUserId, hostFor, repName, statuses, today],
+    [busy, currentUserId, hostFor, repCell, repLabel, repName, save, statusCell, statusLabel, statuses, today],
   );
 
   const leadColumns = useMemo<ColumnDef<CaseRow>[]>(
     () => [
-      { id: "who", accessorFn: (c) => caseName(c), header: "Customer", cell: ({ row }) => <CardWho card={row.original} /> },
-      { id: "phone", accessorFn: (c) => c.phone ?? "", header: "Phone", cell: ({ row }) => <PhoneCell phone={row.original.phone} /> },
-      { id: "what", accessorFn: (c) => c.tourName ?? "", header: "Tour", cell: ({ row }) => <CardWhat card={row.original} /> },
+      {
+        id: "who",
+        accessorFn: (c) => caseName(c),
+        header: "Customer",
+        meta: { filter: { kind: "text", label: "Customer", value: customerText } },
+        cell: ({ row }) => <CardWho card={row.original} />,
+      },
+      {
+        id: "phone",
+        accessorFn: (c) => c.phone ?? "",
+        header: "Phone",
+        meta: { filter: { kind: "text", label: "Phone" } },
+        cell: ({ row }) => <PhoneCell phone={row.original.phone} />,
+      },
+      {
+        id: "what",
+        accessorFn: (c) => c.tourName ?? "",
+        header: "Tour",
+        meta: { filter: { kind: "values", label: "Tour", value: tourText, valueLabel: tourLabel } },
+        cell: ({ row }) => (
+          <CardWhat card={row.original}>
+            <RelatedChip caseNo={row.original.relatedCaseNo} />
+          </CardWhat>
+        ),
+      },
       {
         id: "status",
         accessorFn: (c) => c.status,
         header: ({ column }) => <SortableHeader label="Status" column={column} />,
-        cell: ({ row }) => (
-          <div className="space-y-1">
+        meta: { filter: { kind: "values", label: "Status", valueLabel: statusLabel } },
+        cell: ({ row }) =>
+          row.original.toFile ? (
             <StatusTag status={row.original.status} statuses={statuses} />
-            {row.original.closeReason && (
-              <div dir="auto" className="max-w-[14rem] truncate text-xs text-muted-foreground" title={row.original.closeReason}>
-                {row.original.closeReason}
-              </div>
-            )}
-          </div>
-        ),
+          ) : (
+            statusCell(
+              row.original,
+              row.original.closeReason && (
+                <div dir="auto" className="max-w-[14rem] truncate text-xs text-muted-foreground" title={row.original.closeReason}>
+                  {row.original.closeReason}
+                </div>
+              ),
+            )
+          ),
       },
       {
         id: "today",
@@ -500,34 +729,65 @@ export function BoardScreen() {
           return reason ? todayRank(reason) : 99;
         },
         header: ({ column }) => <SortableHeader label="Today" column={column} />,
+        meta: {
+          filter: {
+            kind: "values",
+            label: "Today",
+            value: (c) => todayReason(c, statuses, today) ?? "",
+            valueLabel: (v) => (v ? (TODAY_REASON_LABELS[v as TodayReason] ?? v) : "Not on TODAY"),
+          },
+        },
         cell: ({ row }) => <TodayBadge reason={todayReason(row.original, statuses, today)} followUpDate={row.original.followUpDate} today={today} />,
       },
       {
         id: "followUp",
         accessorFn: (c) => c.followUpDate ?? "",
         header: ({ column }) => <SortableHeader label="Follow-up" column={column} />,
+        meta: { filter: { kind: "date", label: "Follow-up" } },
+        cell: ({ row }) => followUpCell(row.original),
+      },
+      {
+        id: "notes",
+        accessorFn: (c) => noteLine(c.notes),
+        header: "Notes",
+        meta: { filter: { kind: "text", label: "Notes", value: (c) => c.notes ?? "" } },
         cell: ({ row }) => (
-          <span
-            className={cn(
-              "tabular text-sm",
-              row.original.followUpDate && row.original.followUpDate < today && !isClosedStatus(row.original.status, statuses) && "font-semibold text-destructive",
-            )}
-          >
-            {row.original.followUpDate ? fmtDate(row.original.followUpDate) : EMPTY}
-          </span>
+          <InRow>
+            <NotesCell card={row.original} host={hostFor(row.original)} today={today} />
+          </InRow>
+        ),
+      },
+      {
+        id: "link",
+        accessorFn: (c) => linkStateOf(c),
+        header: "Link",
+        meta: { filter: { kind: "values", label: "Link", valueLabel: (v) => LINK_STATE_LABELS[v as LinkState] ?? v } },
+        cell: ({ row }) => (
+          <InRow>
+            <OfferCell card={row.original} host={hostFor(row.original)} />
+          </InRow>
         ),
       },
       {
         id: "source",
         accessorFn: (c) => sourceLabel(c.source, c.utm),
         header: "Source",
+        meta: { filter: { kind: "values", label: "Source" } },
         cell: ({ row }) => <span className="text-sm text-muted-foreground">{sourceLabel(row.original.source, row.original.utm)}</span>,
       },
-      { id: "rep", accessorFn: (c) => repName(c.assignedTo), header: "Rep", cell: ({ row }) => <span className="text-sm">{repName(row.original.assignedTo) || EMPTY}</span> },
+      {
+        id: "rep",
+        accessorFn: (c) => repName(c.assignedTo),
+        header: "Rep",
+        meta: { filter: { kind: "values", label: "Rep", value: (c) => c.assignedTo ?? "", valueLabel: repLabel } },
+        cell: ({ row }) => repCell(row.original),
+      },
       {
         id: "created",
         accessorFn: (c) => c.createdAt,
         header: ({ column }) => <SortableHeader label="Since" column={column} />,
+        // the day in Israel, like the time printed beside it
+        meta: { filter: { kind: "date", label: "Since", value: (c) => israelDay(c.createdAt) } },
         cell: ({ row }) => <span className="tabular whitespace-nowrap text-sm text-muted-foreground">{fmtInstant(row.original.createdAt)}</span>,
       },
       {
@@ -547,7 +807,7 @@ export function BoardScreen() {
         },
       },
     ],
-    [busy, currentUserId, hostFor, repName, statuses, today],
+    [busy, currentUserId, followUpCell, hostFor, repCell, repLabel, repName, statusCell, statusLabel, statuses, today],
   );
 
   const segment = <T extends string>(value: T, onChange: (next: T) => void, options: { id: T; label: string; count: number }[]) => (
