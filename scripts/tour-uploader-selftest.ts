@@ -80,6 +80,7 @@ import {
   teamRowsFor,
   type ProposedName,
 } from "@/lib/uploader/team-names";
+import { buildEquivalence, cleanClubName as cleanClubNameEq, NO_EQUIVALENCE } from "@/lib/uploader/equivalence";
 import {
   applyClassification,
   CLASSIFY_TIMEOUT_MS,
@@ -4846,6 +4847,282 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(fillDescription("{אמן} בהופעה ב{עיר}, {אולם}", artist).text, "אריק קלפטון בהופעה בלונדון, O2 Arena", "fillDescription: the artist tokens");
   same(fillDescription("{אמן}", descriptionValues({ show: fixture, eventName: "Eric Clapton", teamsHe: {}, leagueHe: {}, cityHe: null, subject: { name_he: null, name_en: "Eric Clapton" } })), { text: "Eric Clapton", english: ["אמן"] }, "fillDescription: an artist with no Hebrew name prints in English");
   same(fillDescription("{אולם}", descriptionValues({ show: { ...fixture, venue: null }, eventName: "x", teamsHe: {}, leagueHe: {}, cityHe: null, subject })).text, "London", "fillDescription: no venue prints the city");
+}
+
+// ---- Alon round 2, Task 2: one equivalence rule (lib/uploader/equivalence.ts) + the same_show question ----
+// Spec docs/superpowers/specs/2026-10-28-uploader-alon-round-2-design.md 3.2-3.3. On prod (28.10) a Lazio run split
+// every home game in two shows: TixStock prints the city "Roma", LiveTickets "Rome".
+{
+  // -- cityKey / teamKey / cleanClubName ------------------------------------------------------------
+  const eq = buildEquivalence([{ name: "רומא, איטליה", aliases: ["Rome", "Roma"] }], [{ kind: "city", from_key: "lisbon", to_key: "lisboa", team_id: null }]);
+  same(eq.cityKey("Roma"), eq.cityKey("Rome"), "location aliases share a key");
+  same(eq.cityKey("רומא"), eq.cityKey("Rome"), "the Hebrew short name joins its aliases");
+  same(eq.cityKey("Lisbon"), eq.cityKey("Lisboa"), "a confirmed city alias");
+  check(eq.cityKey("Paris") !== eq.cityKey("Rome"), "different cities stay apart");
+  same(eq.cityKey("K�ln", ["Köln", "Bonn"]), eq.cityKey("Köln"), "wildcard city");
+  same(NO_EQUIVALENCE.teamKey("SS Lazio"), NO_EQUIVALENCE.teamKey("Lazio"), "club rule");
+  same(NO_EQUIVALENCE.teamKey("ACF Fiorentina"), NO_EQUIVALENCE.teamKey("Fiorentina"), "ACF stripped");
+  same(buildEquivalence([], [{ kind: "team", from_key: "internazionale", to_key: "inter milan", team_id: 33 }]).teamKey("Internazionale"), "team:33", "team alias");
+  same(cleanClubName("US Sassuolo Calcio"), "Sassuolo", "cleanClubName");
+
+  same(eq.cityKey("Rome"), "roma", "cityKey: a group's key is its smallest member - the same whichever spelling asks");
+  same([eq.cityKey(" ROME "), eq.cityKey("Romé")], ["roma", "roma"], "cityKey: case, spaces and accents do not matter");
+  same([eq.cityKey(null), eq.cityKey("  ")], ["", ""], "cityKey: no city = an empty key");
+  same(eq.cityKey("Milano"), "milano", "cityKey: a name in no group is its own normalized key");
+  same(NO_EQUIVALENCE.cityKey("M?nchen", ["München", "Munich"]), "munchen", "cityKey: '?' is a wildcard too");
+  same(NO_EQUIVALENCE.cityKey("K?ln", ["Köln", "Kiln"]), "k?ln", "cityKey: a wildcard two pool names fit stays as it is");
+  same(NO_EQUIVALENCE.cityKey("K�ln"), "k�ln", "cityKey: a wildcard with no pool stays as it is");
+  same(NO_EQUIVALENCE.cityKey("K�ln", ["K�ln", "Köln"]), "koln", "cityKey: a pool name holding the wildcard itself is no candidate");
+  same(eq.cityKey("R�ma", ["Roma", "Bonn"]), eq.cityKey("Rome"), "cityKey: a resolved wildcard then joins its group");
+  const chained = buildEquivalence([{ name: "ליסבון, פורטוגל", aliases: ["Lisbon"] }], [{ kind: "city", from_key: "lisboa", to_key: "lisbon", team_id: null }]);
+  same(chained.cityKey("Lisboa"), chained.cityKey("ליסבון"), "cityKey: a confirmed alias joins a location's whole group (union-find)");
+  same(buildEquivalence([], [{ kind: "team", from_key: "rome", to_key: "roma", team_id: 5 }]).cityKey("Rome"), "rome", "cityKey: a team alias never joins two cities");
+
+  same(NO_EQUIVALENCE.teamKey("SS Lazio"), "lazio", "teamKey: the club rule over the clean name");
+  same(
+    ["Bologna FC 1909", "Genoa CFC", "SV Werder Bremen", "Cagliari Calcio"].map((n) => NO_EQUIVALENCE.teamKey(n)),
+    ["bologna", "genoa", "werder bremen", "cagliari"],
+    "teamKey: a trailing year, CFC, SV and Calcio do not split a club",
+  );
+  same([NO_EQUIVALENCE.teamKey("לאציו"), NO_EQUIVALENCE.teamKey(null)], ["לאציו", ""], "teamKey: a Hebrew name falls back to normalizeName; no name = an empty key");
+  const inter = buildEquivalence([], [{ kind: "team", from_key: "internazionale", to_key: "inter milan", team_id: 33 }]);
+  same(
+    ["Inter Milan", "FC Internazionale", "Inter Milan FC"].map((n) => inter.teamKey(n)),
+    ["team:33", "team:33", "team:33"],
+    "teamKey: every spelling linked to the team id shares its key - both names of the alias, qualifiers stripped",
+  );
+  same(inter.teamKey("AC Milan"), "milan", "teamKey: another club is untouched by a team alias");
+  same(
+    buildEquivalence([], [{ kind: "team", from_key: "internazionale", to_key: "inter milan", team_id: null }]).teamKey("Internazionale"),
+    "internazionale",
+    "teamKey: a team alias with no team id keys nothing",
+  );
+  same(
+    buildEquivalence([], [{ kind: "city", from_key: "internazionale", to_key: "inter milan", team_id: 33 }]).teamKey("Internazionale"),
+    "internazionale",
+    "teamKey: a city alias is never a team",
+  );
+
+  same(
+    ["SS Lazio", "ACF Fiorentina", "Cagliari Calcio", "Bologna FC 1909", "Genoa CFC", "SV Werder Bremen", "FK Partizan", "SK Rapid Wien", "CD Leganes", "UD Las Palmas", "RCD Espanyol", "SL Benfica", "CA Osasuna", "AS Roma", "RC Lens"].map(cleanClubName),
+    ["Lazio", "Fiorentina", "Cagliari", "Bologna", "Genoa", "Werder Bremen", "Partizan", "Rapid Wien", "Leganes", "Las Palmas", "Espanyol", "Benfica", "Osasuna", "Roma", "Lens"],
+    "cleanClubName: the round-2 qualifiers at either end, a trailing Calcio, a trailing year",
+  );
+  same(["Calcio", "1909", "SS", "FC 1909", "Calcio Padova"].map(cleanClubName), ["Calcio", "1909", "SS", "FC 1909", "Calcio Padova"], "cleanClubName: only qualifiers stay as they are; Calcio goes at the end only");
+  check(cleanClubNameEq === cleanClubName, "cleanClubName: team-names re-exports the equivalence one");
+
+  // -- groupRows with the equivalence ---------------------------------------------------------------
+  const NOW_R2 = new Date("2026-10-28T09:00:00Z"); // window floor 2026-10-31
+  const tix = (over: Partial<TixRow> & { event_id: string }): TixRow => ({
+    event_name: "SS Lazio vs Cagliari Calcio",
+    show_date: "2026-11-01T19:45:00+00:00",
+    venue_name: "Stadio Olimpico",
+    city_name: "Roma",
+    country_code: "IT",
+    performers: [{ name: "SS Lazio" }, { name: "Cagliari Calcio" }],
+    category_name: "Serie A",
+    sub_category_name: null,
+    ticket_count: 120,
+    venue_map_url: "https://tixstock.example/maps/olimpico.svg",
+    lat: 41.9341,
+    lon: 12.4547,
+    ...over,
+  });
+  const live = (over: Partial<LiveRow> & { event_id: number }): LiveRow => ({
+    event_name: "Lazio vs Cagliari",
+    event_name_heb: "לאציו נגד קליארי",
+    show_date: "2026-11-01T19:45:00+00:00",
+    city_name: "Rome",
+    country_name: "Italy",
+    performers: [{ name: "Lazio" }, { name: "Cagliari" }],
+    event_type: "sports_live_event_dynamic",
+    sellable: 3,
+    ...over,
+  });
+  const outlineR2 = (s: ShowIdentity) => [s.city, s.date, s.suppliers.tixstock?.event_id ?? null, s.suppliers.livetickets?.event_id ?? null];
+  const lazio: Subject = { kind: "team", name_en: "Lazio", name_he: "לאציו", aliases: ["SS Lazio", "לאציו"] };
+  const lazioPlan = (homeOnly = true): UploaderPlan => {
+    const p = emptyPlan();
+    p.subject = { kind: "team", name_he: "לאציו", name_en: "Lazio" };
+    p.scope.home_only = homeOnly;
+    return p;
+  };
+  const romeEq = buildEquivalence([{ name: "רומא, איטליה", aliases: ["Rome", "Roma"] }], []);
+  const tLazCag = tix({ event_id: "tx-laz-cag" });
+  const lLazCag = live({ event_id: 7001 });
+
+  // (a) Roma / Rome under one location -> one show, both suppliers, nothing asked
+  const merged = groupRows([tLazCag], [lLazCag], lazio, lazioPlan(), NOW_R2, romeEq);
+  same(
+    [merged.shows.map(outlineR2), merged.questions.length],
+    [[["Roma", "2026-11-01", "tx-laz-cag", 7001]], 0],
+    "groupRows: Roma (TixStock) and Rome (LiveTickets) of one location are ONE show carrying both suppliers, nothing asked",
+  );
+  same([merged.shows[0]?.home_team, merged.shows[0]?.venue], ["SS Lazio", "Stadio Olimpico"], "groupRows: the merged show keeps TixStock's identity");
+
+  // (b) no equivalence -> one item with a same_show question
+  const asked = groupRows([tLazCag], [lLazCag], lazio, lazioPlan(), NOW_R2);
+  same([asked.shows.length, asked.questions.length], [0, 1], "same_show: no equivalence -> one item with a question, no show");
+  const sq = asked.questions[0];
+  same(sq?.question.kind, "same_show", "same_show: kind");
+  same([sq?.question.pair?.tixstock_city, sq?.question.pair?.livetickets_city], ["Roma", "Rome"], "same_show: pair names TixStock's city and LiveTickets' city");
+  same(sq?.question.pair ? outlineR2(sq.question.pair.live_show) : null, ["Rome", "2026-11-01", null, 7001], "same_show: pair.live_show is LiveTickets' own show");
+  same(sq?.question.options.map((o) => o.key), ["same", "both", "skip"], "same_show: options same / both / skip");
+  same(sq?.question.text, "TixStock מוכר הופעה ב-Roma ו-LiveTickets ב-Rome באותו יום (01.11.2026) - זו אותה הופעה?", "same_show: text");
+  same(sq ? outlineR2(sq.show) : null, ["Roma", "2026-11-01", "tx-laz-cag", 7001], "same_show: the asked show is TixStock's, LiveTickets attached");
+  same(
+    [sq?.question.key, sq?.question.free_text, sq?.question.task_id],
+    ["lazio|roma|2026-11-01|lazio", false, null],
+    "same_show: closed, keyed like any question (questionKey of TixStock's show - unchanged)",
+  );
+
+  // (c) two Tix-only + one Live-only on one day (artist, three cities) -> no single question
+  const mars: Subject = { kind: "artist", name_en: "Thirty Seconds to Mars", name_he: null, aliases: [] };
+  const marsPlan = emptyPlan();
+  marsPlan.subject = { kind: "artist", name_he: null, name_en: "Thirty Seconds to Mars" };
+  const marsTix = (id: string, city: string): TixRow =>
+    tix({ event_id: id, event_name: "Thirty Seconds to Mars", city_name: city, venue_name: `${city} Arena`, country_code: "PT", performers: [{ name: "Thirty Seconds to Mars" }], category_name: "Rock & Pop" });
+  const marsLive = (id: number, city: string): LiveRow =>
+    live({ event_id: id, event_name: "Thirty Seconds to Mars", event_name_heb: null, city_name: city, performers: [{ name: "Thirty Seconds to Mars" }], event_type: "music_live_event_dynamic" });
+  const three = groupRows([marsTix("tx-lis", "Lisboa"), marsTix("tx-por", "Porto")], [marsLive(7101, "Lisbon")], mars, marsPlan, NOW_R2);
+  same(three.questions, [], "same_show: two TixStock-only shows beside one LiveTickets-only show on a day = no single question");
+  same(
+    three.shows.map(outlineR2),
+    [["Lisboa", "2026-11-01", "tx-lis", null], ["Lisbon", "2026-11-01", null, 7101], ["Porto", "2026-11-01", "tx-por", null]],
+    "same_show: ... three shows, nothing merged",
+  );
+  same(
+    groupRows([marsTix("tx-lis", "Lisboa")], [marsLive(7101, "Lisbon"), marsLive(7102, "Porto")], mars, marsPlan, NOW_R2).questions,
+    [],
+    "same_show: one TixStock-only show beside two LiveTickets-only shows = no single question either",
+  );
+  const lisbonEq = buildEquivalence([], [{ kind: "city", from_key: "lisbon", to_key: "lisboa", team_id: null }]);
+  same(
+    groupRows([marsTix("tx-lis", "Lisboa"), marsTix("tx-por", "Porto")], [marsLive(7101, "Lisbon")], mars, marsPlan, NOW_R2, lisbonEq).shows.map(outlineR2),
+    [["Lisboa", "2026-11-01", "tx-lis", 7101], ["Porto", "2026-11-01", "tx-por", null]],
+    "groupRows: a confirmed city alias pairs Lisboa with Lisbon silently",
+  );
+  const koln = groupRows([marsTix("tx-kol", "Köln")], [marsLive(7103, "K�ln")], mars, marsPlan, NOW_R2);
+  same([koln.shows.map(outlineR2), koln.questions.length], [[["Köln", "2026-11-01", "tx-kol", 7103]], 0], "groupRows: LiveTickets' broken 'K�ln' pairs with TixStock's Köln, no equivalence needed");
+  same(
+    groupRows([marsTix("tx-kol", "Köln")], [marsLive(7104, "")], mars, marsPlan, NOW_R2).questions,
+    [],
+    "same_show: a show with no city on one side is never asked about (the question names both cities)",
+  );
+
+  // football: another home side on the same day is another show
+  const torinoAway = tix({ event_id: "tx-tor-laz", event_name: "Torino FC vs SS Lazio", city_name: "Torino", venue_name: "Stadio Olimpico Grande Torino", performers: [{ name: "Torino FC" }, { name: "SS Lazio" }] });
+  const otherHome = groupRows([torinoAway], [lLazCag], lazio, lazioPlan(false), NOW_R2);
+  same([otherHome.shows.length, otherHome.questions.length], [2, 0], "same_show: football - a different home side on the same day is no question");
+
+  // the away-days set uses the equivalence too
+  const derbyAway = tix({ event_id: "tx-rom-laz", event_name: "AS Roma vs SS Lazio", performers: [{ name: "AS Roma" }, { name: "SS Lazio" }] });
+  const derbyLive = live({ event_id: 7002, event_name: "Derby della Capitale", event_name_heb: null, performers: [{ name: "Lazio" }, { name: "Roma" }] });
+  same(
+    groupRows([derbyAway], [derbyLive], lazio, lazioPlan(), NOW_R2, romeEq).excluded,
+    [{ row: "tixstock", id: "tx-rom-laz", reason: "away" }, { row: "livetickets", id: "7002", reason: "away" }],
+    "groupRows: a Live row on the day of a TixStock away game in an equivalent city (Rome / Roma) is away too",
+  );
+
+  // (d) pick_date is unchanged - and reads the equivalence for its city
+  const clap: Subject = { kind: "artist", name_en: "Eric Clapton", name_he: null, aliases: [] };
+  const clapPlan = emptyPlan();
+  clapPlan.subject = { kind: "artist", name_he: null, name_en: "Eric Clapton" };
+  const clapTix = tix({ event_id: "tx-lon-0520", event_name: "Eric Clapton London", show_date: "2027-05-20T19:30:00+00:00", city_name: "London", country_code: "GB", venue_name: "Royal Albert Hall", performers: [{ name: "Eric Clapton" }] });
+  const clapLive = live({ event_id: 9003, event_name: "Eric Clapton", event_name_heb: null, show_date: "2027-05-21T19:30:00+00:00", city_name: "London", performers: [{ name: "Eric Clapton" }], event_type: "music_live_event_dynamic" });
+  const dated = groupRows([clapTix], [clapLive], clap, clapPlan, new Date("2027-04-01T09:00:00Z"));
+  same(
+    [dated.shows.length, dated.questions.map((q) => [q.question.kind, q.question.text])],
+    [0, [["pick_date", "ב-London: TixStock אומר 20.05.2027, LiveTickets 21.05.2027 - איזה תאריך נכון?"]]],
+    "pick_date: still asked (no regression)",
+  );
+  const nextDay = live({ event_id: 7003, show_date: "2026-11-02T19:45:00+00:00" });
+  same(
+    groupRows([tLazCag], [nextDay], lazio, lazioPlan(), NOW_R2, romeEq).questions.map((q) => [q.question.kind, q.question.text]),
+    [["pick_date", "ב-Roma: TixStock אומר 01.11.2026, LiveTickets 02.11.2026 - איזה תאריך נכון?"]],
+    "pick_date: Roma and Rome a day apart are one city through the equivalence",
+  );
+  same(
+    [groupRows([tLazCag], [nextDay], lazio, lazioPlan(), NOW_R2).shows.length, groupRows([tLazCag], [nextDay], lazio, lazioPlan(), NOW_R2).questions],
+    [2, []],
+    "same_show: two city names a day apart are no question at all (same_show is the same day only)",
+  );
+
+  // -- answerEffect / runRuleOf / applyRuleTo / planRunItems on same_show ----------------------------
+  const R2 = runRules;
+  const sameQ = sq.question;
+  const sameShow = sq.show;
+  const ans = (key: string) => ({ key, text: null, by: "Alon", at: "2026-10-28T10:00:00.000Z" });
+  same(R2.answerEffect(sameQ, sameShow, ans("same")), { kind: "requeue", show: sameShow }, "same_show same -> requeue, the show (both suppliers) unchanged");
+  same(R2.answerEffect(sameQ, sameShow, ans("skip")), { kind: "skip" }, "same_show skip -> skip");
+  const split = R2.answerEffect(sameQ, sameShow, ans("both"));
+  check(split.kind === "split" && split.extra.length === 1, "same_show both -> split with one extra show");
+  if (split.kind === "split") {
+    same(split.show, { ...sameShow, suppliers: { tixstock: sameShow.suppliers.tixstock, livetickets: null } }, "same_show both: the item keeps TixStock only");
+    same(split.extra[0]?.show, sameQ.pair?.live_show, "same_show both: the extra show is pair.live_show (LiveTickets only, its own city)");
+    same(
+      [split.extra[0]?.question.key, split.extra[0]?.question.answer?.key, split.extra[0]?.question.task_id],
+      [`${sameQ.key}#both:2`, "both", null],
+      "same_show both: the extra's question is answered both, its key suffixed #both:2",
+    );
+    check(carriesSplitAnswer(split.extra[0]?.question) && carriesSplitAnswer({ ...sameQ, answer: ans("both") }), "same_show both: both items carry the split answer (the build's name + day check stands aside)");
+  }
+  const noPair = R2.answerEffect({ ...sameQ, pair: undefined }, sameShow, ans("both"));
+  same(
+    noPair.kind === "split" ? noPair.extra[0]?.show.suppliers : null,
+    { tixstock: null, livetickets: sameShow.suppliers.livetickets },
+    "same_show both without a pair: the extra still carries LiveTickets alone",
+  );
+  same(R2.checkAnswer(sameQ, { key: "same", text: null }), { ok: true, label: "כן, אותה הופעה" }, "checkAnswer: same is one of the same_show options");
+
+  const none2 = { venue: null, city: null };
+  same(R2.runRuleOf(sameQ, { show: sameShow }, { key: "same", text: null }), { kind: "same_show", key: "same", ...none2 }, "runRuleOf: same_show same");
+  same(R2.runRuleOf(sameQ, { show: sameShow }, { key: "both", text: null }), { kind: "same_show", key: "both", ...none2 }, "runRuleOf: same_show both");
+  same(R2.runRuleOf(sameQ, { show: sameShow }, { key: "skip", text: null }), { kind: "same_show", key: "skip", ...none2 }, "runRuleOf: same_show skip");
+  same(R2.runRuleOf(sameQ, { show: sameShow }, { key: null, text: "yes" }), null, "runRuleOf: same_show free text - no rule");
+
+  const itemR2 = (id: string, q: UploaderQuestion | null, status: UploaderItem["status"] = "question"): UploaderItem => ({
+    id,
+    run_id: "run-r2",
+    position: 0,
+    show: sameShow,
+    status,
+    mode: null,
+    location: null,
+    decisions: [],
+    warnings: [],
+    blockers: [],
+    question: q,
+    event_id: null,
+    payload: null,
+    skip_reason: null,
+    error: null,
+    approved_by: null,
+    approved_at: null,
+    rejected_reason: null,
+    rejected_final: false,
+    created_at: "2026-10-28T09:00:00.000Z",
+    updated_at: "2026-10-28T09:00:00.000Z",
+  });
+  const sameRule = { kind: "same_show" as const, key: "same", ...none2 };
+  same(R2.applyRuleTo(sameRule, itemR2("o-same", { ...sameQ, key: "lazio|roma|2026-11-08|lazio" })), "same", "applyRuleTo: another open same_show is answered same");
+  same(R2.applyRuleTo({ ...sameRule, key: "skip" }, itemR2("o-skip", { ...sameQ, key: "k2" })), "skip", "applyRuleTo: same_show skip as is");
+  same(R2.applyRuleTo(sameRule, itemR2("o-date", { ...sameQ, kind: "pick_date" })), null, "applyRuleTo: a same_show rule leaves another kind alone");
+  same(R2.applyRuleTo(sameRule, itemR2("o-ready", sameQ, "ready")), null, "applyRuleTo: an item that is not an open question gets nothing");
+
+  const priorOf = (key: string) => ({ subject_en: "Lazio", kind: "same_show" as const, key: sameQ.key, answer: { key, text: null }, run_no: 3, by: "Alon" });
+  const draftsBoth = R2.planRunItems({ shows: [], questions: [sq], existing: [], priors: [priorOf("both")], fallback: new Map(), subject_en: "Lazio", at: "2026-10-28T10:00:00.000Z" });
+  same(
+    draftsBoth.map((d) => [d.status, ...outlineR2(d.show)]),
+    [["found", "Roma", "2026-11-01", "tx-laz-cag", null], ["found", "Rome", "2026-11-01", null, 7001]],
+    "planRunItems: an earlier 'both' on the same same_show splits it with no question",
+  );
+  const draftsSame = R2.planRunItems({ shows: [], questions: [sq], existing: [], priors: [priorOf("same")], fallback: new Map(), subject_en: "Lazio", at: "2026-10-28T10:00:00.000Z" });
+  same(
+    draftsSame.map((d) => [d.status, d.ask, ...outlineR2(d.show)]),
+    [["found", false, "Roma", "2026-11-01", "tx-laz-cag", 7001]],
+    "planRunItems: an earlier 'same' builds one show carrying both suppliers, no question",
+  );
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

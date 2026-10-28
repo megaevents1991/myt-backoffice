@@ -59,7 +59,11 @@ export type ShowIdentity = {
   fallback: ("xs2event" | "p1")[];
 };
 
-export type QuestionKind = "pick_show" | "pick_date" | "pick_location" | "confirm_subject";
+/**
+ * `same_show` (round 2): TixStock and LiveTickets sell a show on the same day under two city names ("Roma" / "Rome").
+ * `create_location` (round 2): a show with no location near it - create one, go two-city, ticket only, or skip.
+ */
+export type QuestionKind = "pick_show" | "pick_date" | "pick_location" | "confirm_subject" | "same_show" | "create_location";
 
 /** What the builder could not decide alone; a person answers it (as a task with source "uploader"). */
 export type UploaderQuestion = {
@@ -71,6 +75,11 @@ export type UploaderQuestion = {
   asked_at: string;
   task_id: string | null;
   answer?: { key: string | null; text: string | null; by: string; at: string };
+  /**
+   * `same_show` only: the two cities as each supplier prints them, and LiveTickets' own show - the item a "both"
+   * answer splits off (`answerEffect`). Absent on every other question and on rows stored before round 2.
+   */
+  pair?: { tixstock_city: string; livetickets_city: string; live_show: ShowIdentity };
 };
 
 /** Something the builder chose by itself - shown on the review board so staff can overrule it. */

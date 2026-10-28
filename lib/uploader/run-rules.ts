@@ -91,8 +91,9 @@ export function cleanAnswerInput(raw: unknown): AnswerInput | null {
  * Does the answer fit the stored question: a key must be one of the question's own options (they
  * were written by the system, so membership is the whole rule - `<tix id>` / `live:<id>` / `both` /
  * `skip` for pick_show, `tix:<day>` / `live:<day>` / `both` / `skip` for pick_date, a locations id
- * or `skip` for pick_location, `yes` / `skip` for confirm_subject); no key = free text, only where
- * the question allows it. `label` = the chosen option's label (for the task note).
+ * or `skip` for pick_location, `yes` / `skip` for confirm_subject, `same` / `both` / `skip` for
+ * same_show); no key = free text, only where the question allows it. `label` = the chosen option's
+ * label (for the task note).
  */
 export function checkAnswer(q: UploaderQuestion, a: AnswerInput): { ok: true; label: string | null } | { ok: false } {
   if (a.key !== null) {
@@ -118,6 +119,10 @@ export type SplitShow = { show: ShowIdentity; question: UploaderQuestion };
  *   only ever sees the "both" of the first item.
  * - `both` on `pick_date`: two shows - TixStock's on its day (the item), LiveTickets' on its day (a
  *   new item, answered `live:<day>`).
+ * - `both` on `same_show`: two shows - the item keeps TixStock's show alone, LiveTickets' own show
+ *   (`question.pair.live_show`, its city as LiveTickets prints it) is a new item, answered `both`. A
+ *   question stored without a pair falls back to the item's show with LiveTickets alone.
+ * - `same` on `same_show`: one show carrying both suppliers - the show as it was asked (requeue).
  * - `tix:<day>` / `live:<day>` on `pick_date`: the item's show moves to that day.
  * - anything else (a listing id, a location, `yes`, free text): the show is unchanged here and the
  *   build applies the answer from `question.answer` (it re-reads the chosen listing / location).
@@ -177,6 +182,20 @@ export function answerEffect(q: UploaderQuestion, show: ShowIdentity, answer: St
     };
   }
 
+  if (key === "both" && q.kind === "same_show") {
+    const liveSide = q.pair?.live_show ?? show;
+    return {
+      kind: "split",
+      show: { ...show, suppliers: { tixstock: show.suppliers.tixstock, livetickets: null } },
+      extra: [
+        {
+          show: { ...liveSide, fallback: [...liveSide.fallback], suppliers: { tixstock: null, livetickets: liveSide.suppliers.livetickets } },
+          question: copyQuestion(2, "both"),
+        },
+      ],
+    };
+  }
+
   if (q.kind === "pick_date" && key !== null) {
     const day = DAY_KEY.exec(key)?.[2];
     if (day) return { kind: "requeue", show: { ...show, date: day } };
@@ -189,10 +208,11 @@ export function answerEffect(q: UploaderQuestion, show: ShowIdentity, answer: St
 /**
  * An answer a person wants applied to the run's similar open questions ("החל גם על N השאלות הדומות
  * בריצה"). `key`: pick_show `both` | `skip`; pick_date `tix` | `live` | `both` | `skip` (which supplier's
- * day to take - each show has its own day); pick_location the `locations` id or `skip`, with the show's
- * `venue` / `city` (`normalizeName`) it holds for - a competition run across cities gets nothing, three
- * nights at one hall get the rule. `venue` / `city` are null for the other kinds, and for a show that
- * has none to match on.
+ * day to take - each show has its own day); same_show `same` | `both` | `skip` (each question keeps its
+ * own two cities); pick_location the `locations` id or `skip`, with the show's `venue` / `city`
+ * (`normalizeName`) it holds for - a competition run across cities gets nothing, three nights at one
+ * hall get the rule. `venue` / `city` are null for the other kinds, and for a show that has none to
+ * match on.
  */
 export type RunRule = { kind: QuestionKind; key: string; venue: string | null; city: string | null };
 
@@ -211,6 +231,7 @@ export function runRuleOf(q: UploaderQuestion, item: Pick<UploaderItem, "show">,
   if (key === null) return null;
   const rule = (k: string, venue: string | null = null, city: string | null = null): RunRule => ({ kind: q.kind, key: k, venue, city });
   if (q.kind === "pick_show") return key === "both" || key === "skip" ? rule(key) : null;
+  if (q.kind === "same_show") return key === "same" || key === "both" || key === "skip" ? rule(key) : null;
   if (q.kind === "pick_date") {
     const which = key === "both" || key === "skip" ? key : DAY_KEY.exec(key)?.[1];
     return which ? rule(which) : null;

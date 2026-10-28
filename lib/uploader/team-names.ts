@@ -6,14 +6,16 @@
  *  - `missingSides`, `missingHebrewNames`: what the run is missing. `missingSides` = the teams (or the
  *    artist) the dialog lists; `missingHebrewNames` = the ones whose shows end up with an English name
  *    after the `eventNames` rule (ours, then LiveTickets', else English) - what the run's task asks for.
- *  - `cleanClubName`, `parseTeamNames`, `teamRowsFor`: the English name of a club, the model's proposal
- *    checked, and the dialog's rows (create / existing / manual).
+ *  - `cleanClubName` (lives in lib/uploader/equivalence.ts since round 2, re-exported here), `parseTeamNames`,
+ *    `teamRowsFor`: the English name of a club, the model's proposal checked, and the dialog's rows
+ *    (create / existing / manual).
  *  - `cleanTeamRows`: the dialog's answer, checked on the server. `slugFor`: the new row's slug.
  *
  * Selftest: scripts/tour-uploader-selftest.ts (section "Round אלון 1, Task 3").
  * Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md (5.3, 6.4, 7.1).
  */
 import { clubNamesMatch, normalizeName } from "@/lib/on-tour";
+import { cleanClubName } from "@/lib/uploader/equivalence";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import type { SubjectKind, UploaderItem } from "@/types/uploader.types";
 
@@ -24,11 +26,6 @@ export const TEAM_NAME_HE_MAX = 60;
 const HEBREW_LETTER = /[א-ת]/;
 /** The warnings that say the subject has no page of its own yet. */
 const NO_PAGE_CODES = new Set(["no_team_page", "no_artist_page"]);
-/** Club qualifiers a supplier adds around the name ("Newcastle United FC", "AFC Bournemouth"). */
-const QUALIFIER = "FC|CF|AFC|SC|AC|SSC|BC";
-const LEADING_QUALIFIERS = new RegExp(`^(?:(?:${QUALIFIER})\\s+)+`, "i");
-const TRAILING_QUALIFIERS = new RegExp(`(?:\\s+(?:${QUALIFIER}))+$`, "i");
-const ONLY_A_QUALIFIER = new RegExp(`^(?:${QUALIFIER})$`, "i");
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -45,16 +42,8 @@ function tidy(value: unknown, max: number): string {
 
 // ---- Club names -------------------------------------------------------------------------------------
 
-/**
- * The club's English name without the qualifiers a supplier adds: `FC`, `CF`, `AFC`, `SC`, `AC`, `SSC`,
- * `BC` as whole words at either end ("Newcastle United FC" -> "Newcastle United", "AFC Bournemouth" ->
- * "Bournemouth"), spaces collapsed. A name that is only qualifiers is left as it is.
- */
-export function cleanClubName(name: string): string {
-  const spaced = name.replace(/\s+/g, " ").trim();
-  const stripped = spaced.replace(LEADING_QUALIFIERS, "").replace(TRAILING_QUALIFIERS, "").trim();
-  return stripped === "" || ONLY_A_QUALIFIER.test(stripped) ? spaced : stripped;
-}
+/** The club's English name without a supplier's qualifiers - one rule with the uploader's team key (lib/uploader/equivalence.ts). */
+export { cleanClubName };
 
 /** The `new football_teams` row's slug - the Templates form's `autoSlug`: a latin slug of the English name, else of the Hebrew one, else a random id. */
 export function slugFor(name_en: string, name_he: string): string {

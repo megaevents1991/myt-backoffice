@@ -5,9 +5,12 @@
  * Five jobs, in the order a run needs them:
  *   1. FIND   - is a TixStock / LiveTickets row about the subject at all (`tixMatchesSubject`,
  *               `liveMatchesSubject`), and if it only looks like it, why not (tribute act, away game).
- *   2. GROUP  - which rows are one show: the same city on the same printed day (`showKey`).
+ *   2. GROUP  - which rows are one show: the same city on the same printed day - "the same city" and
+ *               "the same home side" by ONE rule (lib/uploader/equivalence.ts: "Roma" = "Rome",
+ *               "SS Lazio" = "Lazio"); answers are remembered under `showKey`, which does not change.
  *   3. ASK    - when the rows cannot say it alone (two listings of one show, two dates for one
- *               show), a question with closed options instead of a guess (`groupRows`).
+ *               show, two city names for one day), a question with closed options instead of a guess
+ *               (`groupRows`).
  *   4. DEDUPE - is the show already on `events` (`existingEventFor`).
  *   5. REMEMBER - did a person already answer this exact question, or reject this exact show,
  *               on an earlier run (`priorAnswerFor`, `priorRejectionFor`).
@@ -22,6 +25,7 @@
 import { clubKey, clubNamesMatch, fixtureSides, normalizeName } from "@/lib/on-tour";
 import { isHomeGame } from "@/lib/tixstock-home";
 import { SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
+import { NO_EQUIVALENCE, type Equivalence } from "@/lib/uploader/equivalence";
 import type { QuestionKind, ShowIdentity, SubjectKind, UploaderPlan, UploaderQuestion } from "@/types/uploader.types";
 
 /** A `tixstock_events` row, reduced to what finding and grouping read. `lat` / `lon` = the venue. */
@@ -325,6 +329,10 @@ const inScope = (showDate: string, city: string | null, scope: UploaderPlan["sco
  * catalogs. It is only a tie-breaker where both sides carry a code - two TixStock rows on one key
  * in two countries (Birmingham GB / Birmingham US) are two shows, not a question (`groupRows`) -
  * and the ShowIdentity keeps the code from whichever side has one.
+ *
+ * Since round 2 this is the key a show is REMEMBERED under (answers, rejections, sightings) - `groupRows`
+ * buckets rows by the equivalence's keys instead (lib/uploader/equivalence.ts), so "Roma" and "Rome" pair while
+ * every stored key stays exactly what it was.
  */
 export function showKey(countryCode: string | null, city: string | null, dateISO: string, homeTeam?: string | null): string {
   void countryCode; // part of the identity callers hold, not of the key - see above
@@ -510,7 +518,25 @@ function pickDate(tix: TixRow, live: LiveRow, s: Subject, now: Date): { show: Sh
   return { show, question: question("pick_date", show, s, text, options, now) };
 }
 
-const sameCity = (a: string | null, b: string | null): boolean => normalizeName(a) !== "" && normalizeName(a) === normalizeName(b);
+/**
+ * TixStock and LiveTickets each sell a show of the subject on the same day (the same home side for football) under
+ * two city names the equivalence does not join ("Roma" / "Rome"): ONE item - TixStock's show with LiveTickets
+ * attached - asking whether it is one show. `pair` keeps both cities as printed and LiveTickets' own show, the item
+ * a "both" answer splits off (`answerEffect`). Keyed like every question (`questionKey` of TixStock's show).
+ */
+function sameShow(tix: TixRow, live: LiveRow, s: Subject, now: Date): { show: ShowIdentity; question: UploaderQuestion } {
+  const show = tixShow(tix, live, s);
+  const liveSide = liveShow(live, s);
+  const text = `TixStock מוכר הופעה ב-${show.city} ו-LiveTickets ב-${liveSide.city} באותו יום (${dayLabel(show.date)}) - זו אותה הופעה?`;
+  const options = [
+    { key: "same", label: "כן, אותה הופעה" },
+    { key: "both", label: "לא, שתי הופעות" },
+    { key: "skip", label: "דלג" },
+  ];
+  const pair = { tixstock_city: show.city, livetickets_city: liveSide.city, live_show: liveSide };
+  return { show, question: { ...question("same_show", show, s, text, options, now), pair } };
+}
+
 const oneDayApart = (a: string, b: string): boolean => Math.abs(dayNumber(calendarDay(a)) - dayNumber(calendarDay(b))) === 1;
 
 /**
@@ -522,39 +548,61 @@ const oneDayApart = (a: string, b: string): boolean => Math.abs(dayNumber(calend
  *    (`date_from` ?? today + SHOW_WINDOW_DAYS, never earlier than that floor, up to `date_to`) or
  *    the plan's cities is listed `out_of_scope`. Who first, then when and where - a tribute act
  *    in an excluded city is still named a tribute. A Live row on the city and day of a TixStock
- *    row excluded as `away` is excluded `away` too: on a team run that day's fixture is the away
- *    game, whatever order LiveTickets lists the performers in.
- * 2. Rows are keyed by `showKey` - with the home side for a football subject, so two fixtures in
- *    one city on one day are two shows. Per key, TixStock rows split by country (the tie-breaker)
- *    and each site settles to one row or a `pick_show` question (`settle`: an empty twin is
+ *    row excluded as `away` is excluded `away` too (the city by `eq.cityKey`): on a team run that
+ *    day's fixture is the away game, whatever order LiveTickets lists the performers in.
+ * 2. Rows are keyed by the equivalence (`eq`, lib/uploader/equivalence.ts): `eq.cityKey` of the city
+ *    (spellings a location or a confirmed alias joins - "Roma" / "Rome" - share it, and a LiveTickets
+ *    "K�ln" is resolved against every city of the rows) + the printed day + `eq.teamKey` of the home
+ *    side for a football subject, so two fixtures in one city on one day are two shows. Not `showKey`:
+ *    that stays the key answers are remembered under. Per key, TixStock rows split by country (the
+ *    tie-breaker) and each site settles to one row or a `pick_show` question (`settle`: an empty twin is
  *    dropped as `zero_tickets_twin`); LiveTickets rows settle the same way (`sellable === 0` =
  *    empty).
  * 3. A settled Tix row and a settled Live row on the same key (one country only) are ONE show.
  *    When a key holds TixStock rows in two countries, its Live row cannot tell which it is and
  *    stays a show of its own.
- * 4. A Live-only row one day off a Tix-only row of the same city -> `pick_date`, but only when the
- *    pairing is unique BOTH ways (that Tix row is the only one-day neighbour of that Live row and
- *    vice versa). A Tix row that already has its exact-day Live pair is no neighbour - which is
- *    why Clapton London 21.05 (Live) beside London 20.05 (both) is a show of its own, not a
+ * 4. A Live-only row one day off a Tix-only row of the same city (`eq.cityKey`) -> `pick_date`, but
+ *    only when the pairing is unique BOTH ways (that Tix row is the only one-day neighbour of that
+ *    Live row and vice versa). A Tix row that already has its exact-day Live pair is no neighbour -
+ *    which is why Clapton London 21.05 (Live) beside London 20.05 (both) is a show of its own, not a
  *    question. Several neighbours = no single question fits: each row stays its own show and the
  *    board shows them side by side.
+ *    Then what is still unpaired: on one day (+ the home side, `eq.teamKey`, for football) exactly
+ *    ONE Tix-only row and ONE Live-only row whose cities differ -> `same_show` ("TixStock sells it in
+ *    Roma, LiveTickets in Rome - one show?"), TixStock's show with LiveTickets attached. Two rows on
+ *    either side, or a row with no city, = no single question: each stays its own show.
  * 5. Where TixStock AND LiveTickets both need a pick on one key, only TixStock is asked and the
  *    asked show carries NO Live row - attaching a guessed Live listing could put the wrong
  *    supplier on the event; without one, LiveTickets is attached by hand (or on a later run).
  *
  * Shows and questions come back by day, then city. `now` fixes "today" (tests); default = the clock.
+ * `eq` = the run's equivalence (locations + confirmed aliases); default = none (the club rule and the
+ * normalized city alone).
  */
-export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: UploaderPlan, now: Date = new Date()): Grouped {
+export function groupRows(
+  tix: TixRow[],
+  live: LiveRow[],
+  s: Subject,
+  plan: UploaderPlan,
+  now: Date = new Date(),
+  eq: Equivalence = NO_EQUIVALENCE,
+): Grouped {
   const excluded: Grouped["excluded"] = [];
   const shows: ShowIdentity[] = [];
   const questions: Grouped["questions"] = [];
+
+  // Every city the rows name: what a LiveTickets "K�ln" is resolved against.
+  const pool = [...tix, ...live].map((r) => r.city_name).filter((c): c is string => typeof c === "string" && c.trim() !== "");
+  const cityOf = (city: string | null): string => eq.cityKey(city, pool);
+  const dayKey = (city: string | null, date: string): string => `${cityOf(city)}|${calendarDay(date)}`;
+  const sameCity = (a: string | null, b: string | null): boolean => cityOf(a) !== "" && cityOf(a) === cityOf(b);
 
   const keptTix: TixRow[] = [];
   const awayDays = new Set<string>(); // city|day of every TixStock fixture excluded as away
   for (const row of tix) {
     const verdict = tixMatchesSubject(row, s, plan.scope);
     if (verdict === "no") continue;
-    if (verdict === "away") awayDays.add(showKey(row.country_code, row.city_name, row.show_date));
+    if (verdict === "away") awayDays.add(dayKey(row.city_name, row.show_date));
     if (verdict !== "match") excluded.push({ row: "tixstock", id: row.event_id, reason: verdict });
     else if (!inScope(row.show_date, row.city_name, plan.scope, now)) excluded.push({ row: "tixstock", id: row.event_id, reason: "out_of_scope" });
     else keptTix.push(row);
@@ -562,7 +610,7 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
   const keptLive: LiveRow[] = [];
   for (const row of live) {
     const judged = liveVerdict(row, s, plan.scope);
-    const verdict = judged === "match" && awayDays.has(showKey(null, row.city_name, row.show_date)) ? "away" : judged;
+    const verdict = judged === "match" && awayDays.has(dayKey(row.city_name, row.show_date)) ? "away" : judged;
     if (verdict === "no") continue;
     const id = String(row.event_id);
     if (isTestRow(row.event_name)) excluded.push({ row: "livetickets", id, reason: "test_row" });
@@ -574,8 +622,14 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
   const football = s.kind !== "artist";
   const homeOf = (row: { event_name: string; performers: { name: string }[] }): string | null =>
     football ? fixtureTeams(row.event_name, row.performers).home : null;
-  const tixByKey = bucket(keptTix, (r) => showKey(r.country_code, r.city_name, r.show_date, homeOf(r)));
-  const liveByKey = bucket(keptLive, (r) => showKey(null, r.city_name, r.show_date, homeOf(r)));
+  const homeKey = (row: { event_name: string; performers: { name: string }[] }): string => (football ? eq.teamKey(homeOf(row)) : "");
+  const groupKey = (row: TixRow | LiveRow): string => {
+    const home = homeKey(row);
+    const base = dayKey(row.city_name, row.show_date);
+    return home === "" ? base : `${base}|${home}`;
+  };
+  const tixByKey = bucket(keptTix, groupKey);
+  const liveByKey = bucket(keptLive, groupKey);
   const dropTix = (r: TixRow) => excluded.push({ row: "tixstock", id: r.event_id, reason: "zero_tickets_twin" });
   const dropLive = (r: LiveRow) => excluded.push({ row: "livetickets", id: String(r.event_id), reason: "zero_tickets_twin" });
 
@@ -613,6 +667,7 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
 
   const neighbours = (l: LiveRow) => tixOnly.filter((t) => sameCity(t.city_name, l.city_name) && oneDayApart(t.show_date, l.show_date));
   const asked = new Set<TixRow>();
+  const liveLeft: LiveRow[] = [];
   for (const l of liveOnly) {
     const near = neighbours(l);
     const t = near.length === 1 ? near[0] : null;
@@ -621,10 +676,28 @@ export function groupRows(tix: TixRow[], live: LiveRow[], s: Subject, plan: Uplo
       questions.push(pickDate(t, l, s, now));
       asked.add(t);
     } else {
-      shows.push(liveShow(l, s));
+      liveLeft.push(l);
     }
   }
-  for (const t of tixOnly) if (!asked.has(t)) shows.push(tixShow(t, null, s));
+  const tixLeft = tixOnly.filter((t) => !asked.has(t));
+
+  // Same day (+ home side), two city names: one Tix-only and one Live-only row, nothing else that day -> same_show.
+  const dayOf = (row: TixRow | LiveRow): string => `${calendarDay(row.show_date)}|${homeKey(row)}`;
+  const tixByDay = bucket(tixLeft, dayOf);
+  const paired = new Set<TixRow | LiveRow>();
+  for (const [day, lives] of bucket(liveLeft, dayOf)) {
+    const tixes = tixByDay.get(day) ?? [];
+    if (lives.length !== 1 || tixes.length !== 1) continue;
+    const [t] = tixes;
+    const [l] = lives;
+    // A blank city cannot be named in the question; the same city here = its key held two countries (step 3).
+    if (cityOf(t.city_name) === "" || cityOf(l.city_name) === "" || sameCity(t.city_name, l.city_name)) continue;
+    questions.push(sameShow(t, l, s, now));
+    paired.add(t);
+    paired.add(l);
+  }
+  for (const l of liveLeft) if (!paired.has(l)) shows.push(liveShow(l, s));
+  for (const t of tixLeft) if (!paired.has(t)) shows.push(tixShow(t, null, s));
 
   const order = (a: ShowIdentity, b: ShowIdentity): number =>
     a.date.localeCompare(b.date) || a.city.localeCompare(b.city) || a.name_english.localeCompare(b.name_english);
