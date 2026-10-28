@@ -1735,9 +1735,10 @@ Bologna, Venezia, Juventus, Torino, Sassuolo, Udinese, Fiorentina - the LiveTick
 70, 74, 77, 81, 84, 87): soft-deleted on prod 28.10 (`is_deleted = true`, audited). **Same show, same city, same club
 (notes 1, 4, 6, 7):** `lib/uploader/equivalence.ts` is the ONE rule (pure; `buildEquivalence` over the `locations` rows
 - each `shortPlace(name)` + its aliases is a group - and the confirmed `uploader_aliases`, union-find; `cityKey` lets a
-broken `�` / `?` match one letter (LiveTickets' broken "Köln"); `teamKey` = `clubKey(cleanClubName(name))` -
-`cleanClubName` now also strips `ACF SS US AS CFC SV FK SK CD UD RC RCD SL CA` and a trailing `Calcio` or year - then
-the confirmed team aliases as `team:<id>`; loaded by `loadEquivalence` / `recordAlias` in
+broken `�` / `?` match one letter (LiveTickets' broken "Köln"); `teamKey` = the confirmed team aliases FIRST
+(`team:<id>`, a linked spelling by exact name or by the club rule), then the club rule `clubKey(cleanClubName(name))` -
+`cleanClubName` now also strips `ACF SS US AS CFC SV FK SK CD UD RC RCD SL CA` and a trailing `Calcio` or year - else
+`normalizeName` (a Hebrew name); loaded by `loadEquivalence` / `recordAlias` in
 `lib/services/uploader-aliases.ts`) and it feeds `groupRows`' GROUPING keys only: `showKey` / `questionKey` (where
 answers and rejections are stored) did not change. The new question **`same_show`** (`shows.ts` `sameShow`): a
 TixStock-only and a LiveTickets-only show of the subject on the SAME day (same home side) whose cities did not match,
@@ -1752,11 +1753,13 @@ form edits `aliases` ("שמות נוספים"). **A missing location -> create o
 `pick_location` (no coordinates) gets `create` too. `create` opens `create-location-dialog.tsx`:
 `proposeLocation(itemId)` is the FOURTH AI call (`propose_location`, `lib/services/tour-uploader-location.ts`: the
 agent's discipline - forced non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row, the parse's rate cap; off / no
-answer / cap = the same form, empty but for the venue's coordinates), `createLocationAndAnswer(itemId, input)` validates
-(`validateLocationInput`: a Hebrew letter in the name, IATA `^[A-Z]{3}$`, lat / lon ranges, no existing location with
-the same IATA AND the same city), inserts the row (aliases included), audits `uploader.location_created` (the lesson
-source of `LOCATION_LESSON_SOURCES`), answers with the new id, re-queues the item and answers every other open
-`create_location` of the same city; run rule: `ticket_only` / `skip` reach every open `create_location`, `two_city` and
+answer / cap = the same form with what the show knows - the venue's coordinates, its ISO-2 country and the supplier's
+city spelling as the first alias, `locationFallback`), `createLocationAndAnswer(itemId, input)` validates
+(`validateLocationInput`: a Hebrew letter in the name, IATA `^[A-Z]{3}$`, lat / lon ranges, and the city's existing rows
+through `existingLocationFor` - see the fix wave below), inserts the row (aliases included), audits
+`uploader.location_created` (the lesson source of `LOCATION_LESSON_SOURCES`), answers with the new id, re-queues the item
+and answers every other open `create_location` / `pick_location` question of THIS run in the same city
+(`sameCityItems`, the run's city rule) - a city that already has a location with an IATA is USED as it is; run rule: `ticket_only` / `skip` reach every open `create_location`, `two_city` and
 a created location only the same city. **Names + pages (notes 3, 4):** `distinctSides` / `missingSides` dedupe by
 `teamKey` (two spellings of one club = one row); the names dialog's third mode **"זה עמוד קיים"**
 (`team-link-picker.tsx`, `searchTeamsForLink` over every `football_teams` row, inactive included, deleted excluded)
@@ -1767,8 +1770,9 @@ events; `createTeamsAndRename` collapses rows with the same `teamKey` into ONE t
 <name>" / "<fix>: <name>" - with the run's link, source `creative_gap`, `source_ref` `{ kind: "uploader_page", table,
 row_id, label, url }`, board `marketing`). **Classify dialog (note 5):** "שם האולם בעברית" on top (saved to
 `venue_maps.name_he`; the confirm rewrites the descriptions of the hall's events that are still the uploader's own), no
-description column, and the hall's MAP beside the table (`components/venue-section-map.tsx` over the supplier SVG of
-`source_url`, through the shared allowlist sanitizer `sanitizeAndPrepareSvg` in `lib/tixstock-map.ts` - no
+description column, and the hall's MAP beside the table (`components/venue-section-map.tsx` over OUR copy of the
+drawing when the hall has a template - `getVenueMapDrawing` - else the supplier SVG of `source_url`, through the shared
+allowlist sanitizer `sanitizeAndPrepareSvg` in `lib/tixstock-map.ts` - no
 foreignObject, frames, external urls or unsafe styles): hovering a row lights its category, a click toggles a section
 EXCLUDED (the editor's `svg-excluded` look); pure rules in `classify.ts` (`toggleExcludedSection`,
 `parseExcludedSectionsInput`, `hallExcludedSections`: what came from the hall follows the hall, one a person excluded on
@@ -1787,7 +1791,32 @@ errors, all; `inFilter("active")` = not rejected / skipped; `?f=` default `activ
 at once. **Learn in two steps** (`LearnSteps`, `show-card.tsx`): a card whose hall has other shows (`hallmates > 0`)
 always shows "1. סדרו את האירוע בעורך" (the event's editor, new tab) and a disabled "2. למדו והחילו על N ההופעות" with
 "אחרי השמירה בעורך הכפתור נפתח"; once `fixedByHand` is true step 1 reads "✓" and step 2 is the live button;
-`LEARN_RECIPE` is the same recipe in one line under the panel's hall rows and in the classify dialog's footer. **Not
+`LEARN_RECIPE` is the same recipe in one line under the panel's hall rows and in the classify dialog's footer.
+**Final fix wave (28.10, the closing review):** **A1** `existingLocationFor` refuses a create when the city
+(`normalizeName(shortPlace(name))`, two known country codes that differ = two cities) already has a row with NO IATA -
+Manchester / Liverpool fly via London on purpose, and a second row with MAN would beat the venue memory's two-city setup
+in step 4 for every later show ("קיים מיקום ל<עיר> (#id) בלי קוד שדה תעופה - ..."). **A2** a row of the city WITH an IATA
+is not refused but USED: the question (and its same-city siblings) is answered with its id through `answerOne`
+(`withLocationOption` first), the result says `existing: true` and the dialog toasts "המיקום כבר קיים (#id) - ההופעות
+ייבנו דרכו" - a city made in another run or a half-failed create never leaves a question stuck. **A3** the location the
+answer flies to (new or used) more than `FAR_VENUE_KM` from the venue's coordinates answers `kind: "far"`
+(`farFromVenueKm` in `place.ts`, "המיקום רחוק N ק"מ מהאולם - ...") until the dialog re-sends `confirm_far: true` (its
+button turns into the confirm) - a swapped lat / lon would drive `quoteHotel` and every later "nearest"; a venue at a
+country centroid stays creatable. **A4** after a steer `parseBrief` skips `applyPriorDefaults` (a markup the person
+cleared stays cleared), a thrown parse on a steer is `steer_failed` (never an empty plan over the card), and the steer's
+plan is signed as a steer's (`planTokenFor(..., { steered: true })`) so `createRun` measures the edit lessons from the
+bare plan the card showed. **A5** step 3b: a same-named city row more than `FAR_VENUE_KM` from the venue counts only when
+BOTH country codes are known and equal (the alias "Arlington" on the Dallas row no longer catches Arlington, Virginia;
+Berlin DE / DE at ~225 km still passes). **B** an `uploader_page` task writes no `creative_gap_dismissals` row
+(`resolveCreative`); `learnFromEvent` stamps the source item's `payload.tx_excluded_sections`; the plan card / board
+header say the no-location rule is only the recommendation; `EDIT_EVENT_COLUMNS` reads `tx_excluded_sections` and
+`isFixedByHand` counts a set difference against `payload.tx_excluded_sections` (`sectionsFixedByHand`), so a
+sections-only editor save unlocks learn step 2. **C** `lib/tixstock-map.ts`: a supplier CSS rule whose selector holds
+`(`, `)`, a quote or an unbalanced bracket is dropped (every part keeps the scope prefix); a declaration value over
+`CSS_VALUE_MAX` 200 is no value and the number token has one way to match (`\d+(?:\.\d*)?|\.\d+` - no ReDoS); our own
+injected `text` / `tspan` / `.section-label` style carries the same `svg[data-venue-map="…"]` scope; and `prePaintSvg`'s
+re-serialized output must pass `survivesHtmlReparse` too (else the unpainted drawing, else nothing). Selftests:
+`tour-uploader` (section "Alon round 2, final fix wave"), `tixstock-map` ("final fix wave C1-C4"). **Not
 built:** a standing rule across runs other than aliases; LiveTickets categories in the classify dialog; hotel warm-up
 for a created location (the base-price quote searches hotels live); the menu badge; "בנה בכל זאת"; inline editing of
 board fields. **Deploy:** the migration rode the push to master (applied 28.10); nothing on myt-main; Alon re-runs
