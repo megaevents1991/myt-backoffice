@@ -239,10 +239,11 @@ const REASON_CLASSES: Record<TodayReason, string> = {
 /**
  * A TODAY row wears its reason (Alon 21.10: "שהשורה תהיה צבועה בצבע מרקר אחר") - the badge's hue as a wash, and a
  * marker bar on the first cell. The wash is named in `--row-wash` so the pinned actions cell wears it too (DataTable
- * PINNED_CELL; Alon 28.10: "שיצבע את כל השורה") - Tailwind's 500 of each hue, 10% / 15% on hover. The hover is `!`:
- * the table row's own grey hover is generated after it and would win. Spelled out in full: Tailwind reads literals only.
+ * PINNED_CELL; Alon 28.10: "שיצבע את כל השורה") - Tailwind's 500 of each hue, 10% / 15% on hover and when ticked.
+ * Both are `!`: the table row's own grey hover / selected fills would win. Spelled out in full: Tailwind reads literals only.
  */
-const ROW_WASH = "bg-[var(--row-wash)] hover:!bg-[var(--row-wash-hover)] [--row-pin-hover:hsl(var(--card))] [&>td:first-child]:border-s-4";
+const ROW_WASH =
+  "bg-[var(--row-wash)] hover:!bg-[var(--row-wash-hover)] data-[state=selected]:!bg-[var(--row-wash-hover)] [--row-pin-hover:hsl(var(--card))] [--row-pin-selected:hsl(var(--card))] [&>td:first-child]:border-s-4";
 export const TODAY_ROW_CLASSES: Record<TodayReason, string> = {
   returned: `${ROW_WASH} [--row-wash:rgb(139_92_246/0.10)] [--row-wash-hover:rgb(139_92_246/0.15)] [&>td:first-child]:border-s-violet-500`,
   whatsapp: `${ROW_WASH} [--row-wash:rgb(16_185_129/0.10)] [--row-wash-hover:rgb(16_185_129/0.15)] [&>td:first-child]:border-s-emerald-500`,

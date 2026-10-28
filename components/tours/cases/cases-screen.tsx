@@ -205,9 +205,10 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
         header: ({ column }) => <SortableHeader label="Customer" column={column} />,
         cell: ({ row }) => (
           <CardWho card={row.original}>
-            {/* a booking that came without the link from a known customer: same rep, offered for a merge */}
+            {/* the customer's other card it belongs beside: a booking that came without the link (offered for a merge on the
+                card), or - since 28.10 - a waiting list opened beside a deal, which is NOT to be folded into it */}
             {row.original.relatedCaseNo && (
-              <Chip tone="info" className="ms-1.5" title={`Same phone or e-mail as case #${row.original.relatedCaseNo} - open the case to merge them`}>
+              <Chip tone="info" className="ms-1.5" title={`Linked to card #${row.original.relatedCaseNo} of the same customer - open the customer to see both`}>
                 ↔ #{row.original.relatedCaseNo}
               </Chip>
             )}
