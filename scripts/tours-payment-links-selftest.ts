@@ -11,6 +11,7 @@ import {
   linkBlockedBy,
   linkState,
   moneyText,
+  openLinksTotal,
   payLinkMessage,
   payLinkUrl,
   type LinkOrder,
@@ -56,6 +57,20 @@ assert.equal(linkState("cancelled", "2026-11-04T10:00:00Z", now), "cancelled");
 assert.equal(isLiveLink("open"), true);
 assert.equal(isLiveLink("started"), true);
 assert.equal(isLiveLink("expired"), false);
+// open links count as asked for already: two links never ask together for more than is owed
+assert.equal(
+  openLinksTotal(
+    [
+      { state: "open", amount: 400, currency: "USD" },
+      { state: "started", amount: 100.5, currency: "USD" },
+      { state: "expired", amount: 999, currency: "USD" },
+      { state: "paid", amount: 999, currency: "USD" },
+      { state: "open", amount: 50, currency: "EUR" },
+    ],
+    "USD",
+  ),
+  500.5,
+);
 
 // ---------------------------------------------------------------- the address and the message
 const token = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";

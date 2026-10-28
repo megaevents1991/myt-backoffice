@@ -147,6 +147,14 @@ assert.equal(Number(s.total_ils), 700);
 f = await call("finish_link_payment", { key: KEY, uniqueid: "uid-0005-aaaa", ok: true, amount_agorot: "70000", currency: "ILS", tx_id: "tx-2" });
 assert.equal(f.status, "review");
 assert.match((await linkOf(t3)).last_error, /already paid something else/);
+// a link that would pay the order past its total (1000.50 paid of 3000) is kept for a human, never recorded
+const t8 = await link({ kind: "other", amount: 2500 });
+s = await call("start_link_payment", { key: KEY, token: t8, uniqueid: "uid-0011-aaaa", rate: "3.9" });
+assert.equal(Number(s.total_ils), 8750);
+f = await call("finish_link_payment", { key: KEY, uniqueid: "uid-0011-aaaa", ok: true, amount_agorot: "875000", currency: "ILS", tx_id: "tx-8" });
+assert.equal(f.status, "review");
+assert.match((await linkOf(t8)).last_error, /more than its total/);
+assert.equal((await paymentsOf()).length, 1, "still the one payment row");
 
 // ---------------------------------------------------------------- expired, cancelled, a bad rate, no tx id
 const t4 = await link({ expires: new Date(Date.now() - 60_000).toISOString() });

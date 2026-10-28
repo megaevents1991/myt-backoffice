@@ -19,7 +19,7 @@ import { companyAudit } from "@/lib/tours/company-kit";
 import { orderBalance } from "@/lib/tours/payments";
 import { readPaymentLog, staffNames } from "@/lib/tours/payment-log";
 import { LINK_COLUMNS, linkViewOf, linksTableMissing, readPaymentLinks, type LinkRecord } from "@/lib/tours/payment-link-log";
-import { LINK_DAYS_DEFAULT, checkLinkInput, type LinkInput, type PaymentLinkView } from "@/lib/tours/payment-links";
+import { LINK_DAYS_DEFAULT, checkLinkInput, openLinksTotal, type LinkInput, type PaymentLinkView } from "@/lib/tours/payment-links";
 
 const SCOPE = "tours-payment-link-actions";
 const NOT_READY = "Payment links are available after the system update - try again in a few minutes.";
@@ -78,7 +78,9 @@ export async function createPaymentLink(bookingId: string, input: LinkInput): Pr
     const names = await staffNames(company);
     const log = (await readPaymentLog(company.id, [booking.id], names)).get(booking.id) ?? [];
     const balance = orderBalance(booking.total, booking.currency, log);
-    const order = { status: booking.status, currency: booking.currency, travelers: booking.adults + booking.children, due: balance.due };
+    // the links still open on the order count as asked for already
+    const open = openLinksTotal(await linksOf(company, booking.id), booking.currency);
+    const order = { status: booking.status, currency: booking.currency, travelers: booking.adults + booking.children, due: Math.round((balance.due - open) * 100) / 100 };
     const problem = checkLinkInput(input, order);
     if (problem) throw new UserError(problem);
 

@@ -34,6 +34,7 @@ import {
   firstNameOf,
   isLiveLink,
   linkBlockedBy,
+  openLinksTotal,
   payLinkMessage,
   type LinkKind,
   type LinkState,
@@ -59,7 +60,9 @@ export function PaymentLinks({ booking, due, onChanged }: { booking: BookingRow;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [made, setMade] = useState<PaymentLinkView | null>(null);
   const [busy, setBusy] = useState(false);
-  const order = { status: booking.status, currency: booking.currency, travelers: booking.adults + booking.children, due };
+  // what is still owed minus what the open links already ask for - the server counts the same way
+  const owed = Math.round((due - openLinksTotal(links, booking.currency)) * 100) / 100;
+  const order = { status: booking.status, currency: booking.currency, travelers: booking.adults + booking.children, due: owed };
   const blocked = linkBlockedBy(order);
 
   const draftFor = (kind: LinkKind): Draft => {
@@ -171,7 +174,8 @@ export function PaymentLinks({ booking, due, onChanged }: { booking: BookingRow;
               <DialogHeader>
                 <DialogTitle>Card payment link · {booking.ref}</DialogTitle>
                 <DialogDescription>
-                  The customer pays on the company site, on the card company&apos;s secure page. Still owed: {fmtPrice(due, booking.currency)}.
+                  The customer pays on the company site, on the card company&apos;s secure page. Still owed: {fmtPrice(due, booking.currency)}
+                  {owed !== due && `, of which ${fmtPrice(due - owed, booking.currency)} is on links still open`}.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-3 sm:grid-cols-2">

@@ -119,6 +119,14 @@ export function linkState(status: string, expiresAt: string, now: number): LinkS
 /** A link the rep may still send or cancel. */
 export const isLiveLink = (state: LinkState): boolean => state === "open" || state === "started";
 
+/**
+ * What the order's links still open could charge, in its currency. A new link gets the balance minus this - so two
+ * open links can never together ask for more than the order owes (the database checks again when one is paid).
+ */
+export function openLinksTotal(links: readonly Pick<PaymentLinkView, "state" | "amount" | "currency">[], currency: string): number {
+  return round2(links.filter((l) => isLiveLink(l.state) && l.currency === currency).reduce((sum, l) => sum + l.amount, 0));
+}
+
 /** The page on the company site: {siteUrl}/pay/<token>/ (the site has trailingSlash on). */
 export function payLinkUrl(siteUrl: string | null | undefined, token: string): string | null {
   if (!siteUrl?.trim() || !/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;

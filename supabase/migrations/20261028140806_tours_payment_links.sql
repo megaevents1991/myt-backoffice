@@ -268,6 +268,11 @@ begin
       or exists (select 1 from tours.booking_payments o where o.cg_tx_id = v_tx and o.is_deleted is null)
       or exists (select 1 from tours.payment_links o where o.id <> l.id and o.cg_tx_id = v_tx) then
       'CreditGuard reported a successful charge whose transaction already paid something else. Check it in CreditGuard.'
+    when (select coalesce(sum(case when p.kind = 'refund' then -p.amount else p.amount end), 0)
+            from tours.booking_payments p
+           where p.booking_id = l.booking_id and p.status = 'paid' and p.currency = l.currency and p.is_deleted is null)
+         + l.amount > b.total + 0.005 then
+      'CreditGuard charged this link, but with it the order would be paid more than its total. Check the payments and refund the extra in CreditGuard.'
     end;
   if v_note is not null then
     update tours.payment_links
