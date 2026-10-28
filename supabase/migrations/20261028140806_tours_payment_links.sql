@@ -262,6 +262,9 @@ begin
     when l.status = 'review' then 'Another successful charge arrived on a link already waiting for a check.'
     when l.status = 'cancelled' then 'CreditGuard reported a successful charge on a link that was cancelled. Check it in CreditGuard and record it by hand, or refund it.'
     when v_tx is null then 'CreditGuard reported a successful charge without a transaction id. Check it in CreditGuard before recording it.'
+    -- the terminal is shared with Mega Events: a charge CreditGuard did not tie to this link's page is never recorded by itself
+    when (p_args->'unverified') = 'true'::jsonb then
+      'CreditGuard did not say which payment page this charge came from. Check it in CreditGuard before recording it.'
     when v_amount is distinct from (l.amount_ils * 100)::bigint or v_cur not in ('', 'ILS', '1', '376') then
       'CreditGuard reported a successful charge, but its amount or currency is not what this link asked. Check it in CreditGuard and record it by hand.'
     when exists (select 1 from tours.bookings o where o.cg_tx_id = v_tx)

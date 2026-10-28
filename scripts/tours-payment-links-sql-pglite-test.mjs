@@ -176,6 +176,11 @@ const t6 = await link({ amount: 10 });
 await call("start_link_payment", { key: KEY, token: t6, uniqueid: "uid-0009-aaaa", rate: "3.7" });
 f = await call("finish_link_payment", { key: KEY, uniqueid: "uid-0009-aaaa", ok: true, amount_agorot: "3700", currency: "ILS" });
 assert.equal(f.status, "review", "a success without a transaction id is not recorded");
+const t9 = await link({ amount: 10 });
+await call("start_link_payment", { key: KEY, token: t9, uniqueid: "uid-0012-aaaa", rate: "3.7" });
+f = await call("finish_link_payment", { key: KEY, uniqueid: "uid-0012-aaaa", ok: true, unverified: true, amount_agorot: "3700", currency: "ILS", tx_id: "tx-9" });
+assert.equal(f.status, "review", "a charge CreditGuard did not tie to this page is not recorded (shared terminal)");
+assert.match((await linkOf(t9)).last_error, /which payment page/);
 
 // a cancelled order takes no payment
 await q(`update tours.bookings set status = 'cancelled'`);
