@@ -111,9 +111,9 @@ import { cardWarnings, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows } from "@/
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX, ZONE_LABEL_MAX as SVG_ZONE_LABEL_MAX } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
-import { findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
+import { distanceKm, findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
 import { nameFragments, searchWindow, subjectPatterns, tixSlices, TIX_SLICES_MAX } from "@/lib/services/uploader-search";
-import { decidePlace, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
+import { createLocationQuestion, decidePlace, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
 import type { LiveTicketsCategory, LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import type { SupplierCurrency } from "@/lib/suppliers";
 import { PRICED_PARTY } from "@/lib/tixstock-listings";
@@ -1489,6 +1489,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     unreachable: [],
     hebrewName: true,
     farVenue: null,
+    coordsFar: null,
     ...over,
   });
   const codes = (ws: { code: string }[]): string[] => ws.map((w) => w.code);
@@ -1626,6 +1627,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "description_from_template",
       "duplicate_dropped",
       "live_from_snapshot",
+      "location_by_city",
       "location_found",
       "location_missing_ticket_only",
       "lodging_from_memory",
@@ -1642,7 +1644,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
       "two_city_from_memory",
       "zones_from_template",
     ],
-    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue) + Alon 25.10 (description_from_template)",
+    "the decision codes: spec 9.9 + two_city_from_memory / two_city_chosen / rejected_before / question_untasked (security A10) + round אלון 1 (classified, categories_dropped_by_template, named_he, name_from_livetickets, taught_venue) + Alon 25.10 (description_from_template) + Alon round 2 (location_by_city)",
   );
   same(decision("dates_smart", { depart: "18.05", ret: "21.05" }), { code: "dates_smart", text: "טיסות 18.05 → 21.05" }, "dates_smart: the spec's text");
   same(decision("base_prices", { flight: 310, hotel: 290 }).text, "בסיס מהכלל: טיסה $310 · מלון $290", "base_prices: the spec's text");
@@ -1686,6 +1688,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const samples: Record<keyof typeof DECISION_TEXT, Record<string, string | number>> = {
     location_found: { city: "London", iata: "LON", km: 12 },
     location_missing_ticket_only: {},
+    location_by_city: { city: "ברלין", iata: "BER" },
     tickets_tixstock: { count: 4 },
     tickets_livetickets: { count: 2 },
     live_from_snapshot: { count: 2 },
@@ -2112,6 +2115,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     prior: null,
     liveCity: null,
     memory: null,
+    cityKey: (name) => NO_EQUIVALENCE.cityKey(name),
     now: NOW,
     ...over,
   });
@@ -2153,15 +2157,15 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   // The no-coordinates order, pinned: LiveTickets' city -> memory two-city -> earlier answer -> ask.
   const heathrow = loc(90, "Heathrow", "LHR", 51.47, -0.45);
   const liveFirst = decidePlace(
-    input({ show: tixNoCoords, rows: [...rows, heathrow], liveCity: { iata: "LHR", city: "London" }, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" }, prior: { key: "11", text: null, by: "Alon", run_no: 2 } }),
+    input({ show: tixNoCoords, rows: [...rows, heathrow], liveCity: { iata: "LHR", city: "London" }, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" }, prior: { key: "11", text: null, by: "Alon", run_no: 2, kind: "pick_location" } }),
   );
   check(liveFirst.kind === "placed" && liveFirst.location.city_iata === "LHR" && liveFirst.lodging.lodging_mode === "choice_split", "order 1: LiveTickets' city is the package, the memory adds its lodging only");
   same(codesOf(liveFirst), ["location_found", "lodging_from_memory"], "order 1: location_found + lodging_from_memory (as on the with-coordinates path)");
   const memorySecond = decidePlace(
-    input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" }, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" }, prior: { key: "11", text: null, by: "Alon", run_no: 2 } }),
+    input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" }, memory: { fromEventName: "Oasis Manchester", lodging: manchesterLodging, flightIata: "LON" }, prior: { key: "11", text: null, by: "Alon", run_no: 2, kind: "pick_location" } }),
   );
   same(codesOf(memorySecond), ["two_city_from_memory"], "order 2: no LiveTickets city match -> the memory two-city beats an earlier answer");
-  const priorThird = decidePlace(input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" }, prior: { key: "11", text: null, by: "Alon", run_no: 2 } }));
+  const priorThird = decidePlace(input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" }, prior: { key: "11", text: null, by: "Alon", run_no: 2, kind: "pick_location" } }));
   check(priorThird.kind === "placed" && priorThird.location.city_iata === "MUC", "order 3: no city, no memory -> the earlier answer");
   same(decidePlace(input({ show: tixNoCoords, liveCity: { iata: "GB", city: "London" } })).kind, "ask", "order 4: nothing -> ask");
 
@@ -2178,13 +2182,13 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   const byCity = decidePlace(input({ show: liveOnly, liveCity: { iata: "FR", city: "Paris" } }));
   check(byCity.kind === "placed" && byCity.location.city_iata === "CDG", "no coords: a 2-letter country code is not an airport - the city name matches");
   const noCity = { iata: "GB", city: "London" }; // Hebrew location names: no match
-  const priorSkip = decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "skip", text: null, by: "Alon", run_no: 2 } }));
+  const priorSkip = decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "skip", text: null, by: "Alon", run_no: 2, kind: "pick_location" } }));
   check(priorSkip.kind === "skip" && priorSkip.reason === "skipped_by_answer", "no coords: an earlier run's skip skips (skipped_by_answer)");
   same(codesOf(priorSkip), ["prior_answer"], "no coords: the earlier answer is named");
-  const priorHit = decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "4", text: null, by: "Alon", run_no: 2 } }));
+  const priorHit = decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "4", text: null, by: "Alon", run_no: 2, kind: "pick_location" } }));
   check(priorHit.kind === "placed" && priorHit.location.city_iata === "LON", "no coords: an earlier run's answer is applied");
   same(codesOf(priorHit), ["prior_answer", "location_found"], "no coords: prior_answer + location_found");
-  same(decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "777", text: null, by: "Alon", run_no: 2 } })).kind, "ask", "no coords: an earlier answer naming no location -> ask");
+  same(decidePlace(input({ show: liveOnly, liveCity: noCity, prior: { key: "777", text: null, by: "Alon", run_no: 2, kind: "pick_location" } })).kind, "ask", "no coords: an earlier answer naming no location -> ask");
   const asked = decidePlace(input({ show: liveOnly, liveCity: noCity }));
   check(asked.kind === "ask" && asked.question.kind === "pick_location" && asked.question.free_text, "no coords: otherwise ask pick_location, free text allowed");
   check(asked.kind === "ask" && asked.question.text.includes("LiveTickets"), "a LiveTickets-only question names LiveTickets");
@@ -2214,22 +2218,37 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(codesOf(memo), ["two_city_from_memory"], "memory: decision two_city_from_memory");
   same(
     decidePlace(input({ show: anfield, memory: { fromEventName: "X", lodging: manchesterLodging, flightIata: "XXX" } })).kind,
-    "placed",
-    "memory whose flight city is no location falls through to the plan's rule",
+    "ask",
+    "memory whose flight city is no location falls through to step 6 (asks create_location)",
   );
 
-  // 6. the plan's rule, with the nearest location within FAR as the offer
-  const ticketOnly = decidePlace(input({ show: anfield }));
-  check(ticketOnly.kind === "placed" && ticketOnly.mode === "ticket_only" && ticketOnly.location.city_iata === "", "rule ticket_only: built ticket-only at the venue");
+  // 6. no location near, no memory: ASK create_location (Alon round 2, D2 - never a silent ticket-only or skip);
+  //    the nearest location within FAR is the two-city option, the brief's rule marks its option.
+  const ticketOnlyAsk = decidePlace(input({ show: anfield }));
+  check(ticketOnlyAsk.kind === "ask" && ticketOnlyAsk.question.kind === "create_location", "rule ticket_only: asks create_location, never builds ticket-only by itself");
+  same(
+    ticketOnlyAsk.kind === "ask" ? ticketOnlyAsk.question.options.map((o) => o.key) : null,
+    ["create", "two_city:4", "ticket_only", "skip"],
+    "rule ticket_only: the two-city option is the nearest location within FAR, ticket_only before skip",
+  );
+  const ticketOnly = decidePlace(input({ show: anfield, answer: { key: "ticket_only", text: null } }));
+  check(ticketOnly.kind === "placed" && ticketOnly.mode === "ticket_only" && ticketOnly.location.city_iata === "", "answered ticket_only: built ticket-only at the venue");
   check(
     ticketOnly.kind === "placed" && ticketOnly.itemLocation?.id === 4 && ticketOnly.itemLocation.far === true && ticketOnly.farVenue?.id === 4,
     "ticket-only: item.location and farVenue hold the nearest location within FAR (the two-city default)",
   );
   same(codesOf(ticketOnly), ["location_missing_ticket_only"], "ticket-only: location_missing_ticket_only");
   const skipRule = decidePlace(input({ show: anfield, withoutLocation: "skip" }));
-  check(skipRule.kind === "skip" && skipRule.reason === "no_location" && skipRule.itemLocation?.id === 4 && skipRule.farVenue?.city === "לונדון", "rule skip: no_location, with the far offer");
-  const reykjavik = decidePlace(input({ show: show({ city: "Reykjavik", lat: 64.1466, lon: -21.9426 }) }));
-  check(reykjavik.kind === "placed" && reykjavik.itemLocation === null && reykjavik.farVenue === null, "nothing within FAR: no offer, no item location");
+  same(
+    skipRule.kind === "ask" ? skipRule.question.options.map((o) => o.key) : null,
+    ["create", "two_city:4", "skip", "ticket_only"],
+    "rule skip: asks too - skip (the brief's) before ticket_only",
+  );
+  const reykjavikShow = show({ city: "Reykjavik", lat: 64.1466, lon: -21.9426 });
+  const reykjavik = decidePlace(input({ show: reykjavikShow }));
+  check(reykjavik.kind === "ask" && !reykjavik.question.options.some((o) => o.key.startsWith("two_city:")), "nothing within FAR: no two-city option");
+  const reykjavikTicket = decidePlace(input({ show: reykjavikShow, answer: { key: "ticket_only", text: null } }));
+  check(reykjavikTicket.kind === "placed" && reykjavikTicket.itemLocation === null && reykjavikTicket.farVenue === null, "nothing within FAR: no offer, no item location");
 
   // helpers
   same(locationFromAnswer({ key: "11", text: null }, rows)?.id, 11, "locationFromAnswer: by id");
@@ -5131,6 +5150,289 @@ async function supplierSvgFetchChecks(): Promise<void> {
     [["found", false, "Roma", "2026-11-01", "tx-laz-cag", 7001]],
     "planRunItems: an earlier 'same' builds one show carrying both suppliers, no question",
   );
+}
+
+// ---- Alon round 2, Task 4: the city beats bad coordinates; create_location is asked (lib/uploader/place.ts) ----
+// Spec docs/superpowers/specs/2026-10-28-uploader-alon-round-2-design.md 3.4, 4.1, 4.3. On prod (30STM, 26.10) TixStock
+// put "Velodrome Berlin" at 51.5, 10.5 (the middle of Germany): the nearest location was Hannover 110 km away and the
+// show was built ticket-only, though "ברלין, גרמניה" exists; Valencia / Frankfurt / Antwerp / Dublin were built
+// ticket-only with no question at all (D2: always ask).
+{
+  const NOW4 = new Date("2026-10-28T10:00:00Z");
+  const row4 = (id: number, name: string, iata: string | null, lat: number, lon: number, country: string | null = null, aliases: string[] = []): LocationRow => ({
+    id,
+    name,
+    city_iata: iata,
+    latitude: lat,
+    longitude: lon,
+    country_code: country,
+    aliases,
+  });
+  const berlin = row4(8, "ברלין, גרמניה", "BER", 52.53, 13.39, "DE", ["Berlin"]);
+  const hannover = row4(9, "הנובר, גרמניה", "HAJ", 52.37, 9.73, "DE", ["Hannover", "Hanover"]);
+  const madrid = row4(12, "מדריד, ספרד", "MAD", 40.4168, -3.7038, "ES", ["Madrid"]);
+  const munichA = row4(11, "מינכן, גרמניה", "MUC", 48.1549958, 11.6242359, "DE", ["Munich", "München"]);
+  const munichB = row4(30, "מינכן, גרמניה", "MUC", 48.1371775, 11.5629453, "DE", ["Munich"]);
+  const birminghamUS = row4(40, "ברמינגהם, ארצות הברית", "BHM", 33.5186, -86.8104, "US", ["Birmingham"]);
+  const london4 = row4(4, "לונדון, בריטניה", "LON", 51.509865, -0.118092, "GB", ["London"]);
+  const cuenca = row4(50, "קואנקה, ספרד", "XCQ", 40.0704, -2.1374, "ES");
+  const rows4 = [berlin, hannover, madrid, munichA, munichB, birminghamUS, london4, cuenca];
+  const eq4 = buildEquivalence(rows4, []);
+  const show4 = (over: Partial<ShowIdentity> = {}): ShowIdentity => ({
+    name_english: "Thirty Seconds to Mars",
+    city: "Berlin",
+    country_code: "DE",
+    venue: "Velodrome Berlin",
+    date: "2027-04-06",
+    lat: 51.5,
+    lon: 10.5,
+    suppliers: { tixstock: { event_id: "tx-30stm", name: "Thirty Seconds to Mars", ticket_count: 40, venue_map_url: null }, livetickets: null },
+    competition: null,
+    home_team: null,
+    away_team: null,
+    fallback: [],
+    ...over,
+  });
+  const input4 = (over: Partial<PlaceInput> = {}): PlaceInput => ({
+    show: show4(),
+    subject_en: "Thirty Seconds to Mars",
+    rows: rows4,
+    withoutLocation: "ticket_only",
+    twoCity: null,
+    answer: null,
+    prior: null,
+    liveCity: null,
+    memory: null,
+    cityKey: (name) => eq4.cityKey(name),
+    now: NOW4,
+    ...over,
+  });
+  const codesOf4 = (r: ReturnType<typeof decidePlace>): string[] => (r.kind === "error" ? [] : r.decisions.map((d) => d.code));
+  const keysOf = (r: ReturnType<typeof decidePlace>): string[] | null => (r.kind === "ask" ? r.question.options.map((o) => o.key) : null);
+  const labelsOf = (r: ReturnType<typeof decidePlace>): string[] | null => (r.kind === "ask" ? r.question.options.map((o) => o.label) : null);
+
+  // -- the city beats bad coordinates (3.4) -----------------------------------------------------------
+  const velodrome = decidePlace(input4());
+  check(
+    velodrome.kind === "placed" && velodrome.mode === "package" && velodrome.location.city_iata === "BER",
+    "by city: 'Velodrome Berlin' at 51.5/10.5 flies to Berlin (not Hannover 110 km away, not ticket-only)",
+  );
+  same(codesOf4(velodrome), ["location_by_city"], "by city: decision location_by_city");
+  same(velodrome.kind === "placed" ? velodrome.decisions[0]?.text : null, "מיקום לפי שם העיר: ברלין (BER)", "by city: the decision text");
+  check(velodrome.kind === "placed" && velodrome.coordsFar !== null && velodrome.coordsFar.km > 50, "by city: coordsFar - the venue's coordinates are more than 50 km from the city");
+  same(
+    velodrome.kind === "placed" ? velodrome.coordsFar : null,
+    { city: "ברלין", km: Math.round(distanceKm(51.5, 10.5, 52.53, 13.39)) },
+    "by city: coordsFar names the city (short name) and the rounded distance",
+  );
+  check(velodrome.kind === "placed" && velodrome.itemLocation?.id === 8 && velodrome.itemLocation.far === false, "by city: item.location = Berlin, not far (a package flies there)");
+  same(decision("location_by_city", { city: "ברלין", iata: "BER" }).text, "מיקום לפי שם העיר: ברלין (BER)", "location_by_city: DECISION_TEXT");
+
+  const bernabeu = decidePlace(input4({ show: show4({ city: "Madrid", country_code: "ES", venue: "Santiago Bernabéu", lat: 40.4531, lon: -3.6883 }) }));
+  same(codesOf4(bernabeu), ["location_found"], "by city: a venue 4 km from Madrid named Madrid -> today's location_found (the nearest step finds it)");
+  check(bernabeu.kind === "placed" && bernabeu.location.city_iata === "MAD" && bernabeu.coordsFar === null, "by city: ... no coordsFar");
+
+  const westOfMunich = show4({ city: "München", venue: "Somewhere west of Munich", lat: 48.137, lon: 10.8 });
+  const munichPick = decidePlace(input4({ show: westOfMunich }));
+  check(
+    munichPick.kind === "placed" && munichPick.itemLocation?.id === 30 && codesOf4(munichPick)[0] === "location_by_city",
+    "by city: two Munich rows -> the one nearer the venue (30), not the lowest id (11)",
+  );
+  const munichTie = decidePlace(input4({ show: westOfMunich, rows: [...rows4, { ...munichB, id: 25 }] }));
+  check(munichTie.kind === "placed" && munichTie.itemLocation?.id === 25, "by city: two rows at the same distance -> the lowest id");
+
+  const brum = show4({ city: "Birmingham", country_code: "GB", venue: "Utilita Arena Birmingham", lat: 52.4797, lon: -1.9145 });
+  const brumGB = decidePlace(input4({ show: brum }));
+  check(brumGB.kind === "ask" && brumGB.question.kind === "create_location", "by city: show Birmingham GB vs location Birmingham US -> not by city (asks create_location)");
+  const brumNoCountry = decidePlace(input4({ show: brum, rows: [{ ...birminghamUS, country_code: null }, london4] }));
+  same(codesOf4(brumNoCountry), ["location_by_city"], "by city: a location with no country code agrees with any show");
+  const berlinoEq = buildEquivalence(rows4, [{ kind: "city", from_key: "berlino", to_key: "berlin", team_id: null }]);
+  const berlino = decidePlace(input4({ show: show4({ city: "Berlino" }), cityKey: (name) => berlinoEq.cityKey(name) }));
+  same(codesOf4(berlino), ["location_by_city"], "by city: a confirmed city alias (uploader_aliases) counts - through cityKey");
+  check(
+    decidePlace(input4({ show: show4({ city: "Berlino" }) })).kind === "ask",
+    "by city: ... and without that alias 'Berlino' is no city we know (asks create_location)",
+  );
+  check(
+    decidePlace(input4({ cityKey: (name) => NO_EQUIVALENCE.cityKey(name) })).kind === "placed",
+    "by city: the row's own aliases match even under an empty equivalence",
+  );
+
+  // LiveTickets' own city (no-coordinates path) matches aliases too
+  const liveOnly4 = show4({
+    city: "Berlin",
+    country_code: null,
+    venue: null,
+    lat: null,
+    lon: null,
+    suppliers: { tixstock: null, livetickets: { event_id: 7301, name_heb: null, sellable: 4 } },
+  });
+  const liveBerlin = decidePlace(input4({ show: liveOnly4, liveCity: { iata: "DE", city: "Berlin" } }));
+  check(liveBerlin.kind === "placed" && liveBerlin.location.city_iata === "BER", "no coords: LiveTickets' 'Berlin' finds 'ברלין, גרמניה' through its alias");
+  same(codesOf4(liveBerlin), ["location_found"], "no coords: ... location_found, as before");
+  const liveBerlino = decidePlace(input4({ show: liveOnly4, liveCity: { iata: "DE", city: "Berlino" }, cityKey: (name) => berlinoEq.cityKey(name) }));
+  check(liveBerlino.kind === "placed" && liveBerlino.location.city_iata === "BER", "no coords: LiveTickets' city through a confirmed city alias");
+
+  // -- create_location is asked (4.1) -----------------------------------------------------------------
+  const roigShow = show4({ name_english: "Thirty Seconds to Mars Valencia", city: "Valencia", country_code: "ES", venue: "Roig Arena", lat: 39.4699, lon: -0.3763 });
+  const cuencaKm = Math.round(distanceKm(39.4699, -0.3763, 40.0704, -2.1374));
+  const roig = decidePlace(input4({ show: roigShow }));
+  check(roig.kind === "ask" && roig.question.kind === "create_location", "no location within 50 km: asks create_location (D2), never a silent ticket-only");
+  same(keysOf(roig), ["create", "two_city:50", "ticket_only", "skip"], "create_location: options create, two-city (a location within FAR), ticket_only (the brief's) before skip");
+  same(
+    labelsOf(roig),
+    ["צור מיקום ל-Valencia", `חבילה דרך קואנקה (${cuencaKm} ק"מ) עם פיצול מלון`, "כרטיס בלבד (לפי הבריף)", "דלג"],
+    "create_location: labels - the brief's option says so",
+  );
+  same(roig.kind === "ask" ? roig.question.text : null, "אין לנו מיקום ל-Valencia (Roig Arena). מה לעשות?", "create_location: text names the city and the venue");
+  same(
+    roig.kind === "ask" ? [roig.question.key, roig.question.task_id, roig.question.asked_at] : null,
+    [questionKey(roigShow, "Thirty Seconds to Mars"), null, NOW4.toISOString()],
+    "create_location: keyed like any question (questionKey), no task yet",
+  );
+  same(roig.kind === "ask" ? roig.decisions : null, [], "create_location: nothing decided yet");
+  const roigSkip = decidePlace(input4({ show: roigShow, withoutLocation: "skip" }));
+  same(keysOf(roigSkip), ["create", "two_city:50", "skip", "ticket_only"], "create_location under 'skip': skip (the brief's) before ticket_only");
+  same(labelsOf(roigSkip)?.slice(2), ["דלג (לפי הבריף)", "כרטיס בלבד"], "create_location under 'skip': 'דלג (לפי הבריף)'");
+  same(keysOf(decidePlace(input4({ show: roigShow, rows: rows4.filter((r) => r.id !== 50) }))), ["create", "ticket_only", "skip"], "create_location: no location within FAR -> no two-city option");
+  same(
+    createLocationQuestion({ ...roigShow, venue: null }, "Thirty Seconds to Mars", rows4, "ticket_only", null, NOW4).text,
+    "אין לנו מיקום ל-Valencia. מה לעשות?",
+    "createLocationQuestion: no venue -> no parentheses",
+  );
+  check(brumGB.kind === "ask" && brumGB.question.options.some((o) => o.key === "two_city:4"), "create_location: Birmingham GB offers two-city through London");
+
+  // pick_location (no coordinates) gets the create option too, before skip
+  const pickAsked = decidePlace(input4({ show: { ...liveOnly4, city: "Valencia" } }));
+  check(pickAsked.kind === "ask" && pickAsked.question.kind === "pick_location", "no coords, no city match: pick_location as before");
+  same(
+    pickAsked.kind === "ask" ? pickAsked.question.options.slice(-2) : null,
+    [{ key: "create", label: "צור מיקום חדש" }, { key: "skip", label: "דלג על ההופעה" }],
+    "pick_location: 'צור מיקום חדש' before skip",
+  );
+
+  // -- answers on create_location (4.3) ---------------------------------------------------------------
+  const answer4 = (key: string): PlaceInput => input4({ show: roigShow, answer: { key, text: null } });
+  const aTicket = decidePlace(answer4("ticket_only"));
+  check(
+    aTicket.kind === "placed" &&
+      aTicket.mode === "ticket_only" &&
+      aTicket.location.city_iata === "" &&
+      aTicket.location.name === "Valencia" &&
+      aTicket.location.latitude === 39.4699 &&
+      aTicket.location.country_code === "ES",
+    "answer ticket_only: built ticket-only at the venue (today's step-6 body)",
+  );
+  check(aTicket.kind === "placed" && aTicket.itemLocation?.id === 50 && aTicket.itemLocation.far && aTicket.farVenue?.id === 50 && aTicket.coordsFar === null, "answer ticket_only: the far offer kept (Cuenca)");
+  same(codesOf4(aTicket), ["location_missing_ticket_only"], "answer ticket_only: location_missing_ticket_only");
+  const aSkip = decidePlace(answer4("skip"));
+  check(aSkip.kind === "skip" && aSkip.reason === "skipped_by_answer", "answer skip: skipped_by_answer");
+  const aTwo = decidePlace(answer4("two_city:50"));
+  check(
+    aTwo.kind === "placed" && aTwo.mode === "package" && aTwo.location.city_iata === "XCQ" && aTwo.lodging.lodging_mode === "choice_split" && aTwo.lodging.event_location?.name === "Valencia",
+    "answer two_city:<id>: the two-city package through that city, lodging split with the venue's city",
+  );
+  same(codesOf4(aTwo), ["two_city_chosen"], "answer two_city: two_city_chosen");
+  same(decidePlace(answer4("two_city:999")).kind, "error", "answer two_city: an id that is no flyable location is an error, never a guess");
+  same(decidePlace(answer4("two_city:abc")).kind, "error", "answer two_city: a malformed id is an error");
+  const aRow = decidePlace(answer4("12"));
+  check(aRow.kind === "placed" && aRow.mode === "package" && aRow.location.city_iata === "MAD", "answer '<id>': a package at that row");
+  same(codesOf4(aRow), ["location_found"], "answer '<id>': location_found");
+  const valencia = row4(60, "ולנסיה, ספרד", "VLC", 39.4699, -0.3763, "ES", ["Valencia"]);
+  const aCreated = decidePlace(input4({ show: roigShow, rows: [...rows4, valencia], answer: { key: "60", text: null } }));
+  check(aCreated.kind === "placed" && aCreated.location.city_iata === "VLC" && aCreated.itemLocation?.far === false, "answer '<id>' of a created location: a package there, not far");
+  const aCreate = decidePlace(answer4("create"));
+  check(aCreate.kind === "ask" && aCreate.question.kind === "create_location", "answer 'create' (the form never answered): asks create_location again");
+  const pickTicket = decidePlace(input4({ show: { ...liveOnly4, city: "Valencia" }, answer: { key: "ticket_only", text: null } }));
+  check(pickTicket.kind === "ask" && pickTicket.question.kind === "pick_location", "answer ticket_only on a show with no coordinates: asks pick_location again (no venue to build at)");
+
+  // -- an earlier run's answer (priorAnswerFor): only of the same kind -----------------------------------
+  const prior4 = (key: string, kind: "create_location" | "pick_location"): PlaceInput["prior"] => ({ key, text: null, by: "Alon", run_no: 3, kind });
+  const pTicket = decidePlace(input4({ show: roigShow, prior: prior4("ticket_only", "create_location") }));
+  check(pTicket.kind === "placed" && pTicket.mode === "ticket_only", "prior create_location ticket_only: ticket-only");
+  same(codesOf4(pTicket), ["prior_answer", "location_missing_ticket_only"], "prior create_location: the prior_answer decision first");
+  const pSkip = decidePlace(input4({ show: roigShow, prior: prior4("skip", "create_location") }));
+  check(pSkip.kind === "skip" && pSkip.reason === "skipped_by_answer", "prior create_location skip: skipped_by_answer");
+  same(codesOf4(pSkip), ["prior_answer"], "prior create_location skip: prior_answer");
+  const pTwo = decidePlace(input4({ show: roigShow, prior: prior4("two_city:50", "create_location") }));
+  same(codesOf4(pTwo), ["prior_answer", "two_city_chosen"], "prior create_location two_city: prior_answer + two_city_chosen");
+  same(decidePlace(input4({ show: roigShow, prior: prior4("two_city:999", "create_location") })).kind, "ask", "prior two_city to a location that is gone: ask (never an error from an old run)");
+  const pRow = decidePlace(input4({ show: roigShow, prior: prior4("12", "create_location") }));
+  same(codesOf4(pRow), ["prior_answer", "location_found"], "prior create_location '<id>': prior_answer + location_found");
+  const pWrong = decidePlace(input4({ show: roigShow, prior: prior4("ticket_only", "pick_location") }));
+  check(pWrong.kind === "ask" && pWrong.question.kind === "create_location", "a pick_location prior never answers a create_location question");
+  const pWrongBack = decidePlace(input4({ show: { ...liveOnly4, city: "Valencia" }, prior: prior4("12", "create_location") }));
+  check(pWrongBack.kind === "ask" && pWrongBack.question.kind === "pick_location", "... and a create_location prior never answers a pick_location question");
+  const pRight = decidePlace(input4({ show: { ...liveOnly4, city: "Valencia" }, prior: prior4("12", "pick_location") }));
+  check(pRight.kind === "placed" && pRight.location.city_iata === "MAD", "... while a pick_location prior still answers it");
+
+  // -- the warning (venue_coords_far) ---------------------------------------------------------------------
+  const facts4: BuildFacts = {
+    newVenue: false,
+    unzoned: 0,
+    totalTickets: 3,
+    suppliersUsed: ["tixstock", "livetickets"],
+    unreachable: [],
+    hebrewName: true,
+    farVenue: null,
+    coordsFar: { city: "ברלין", km: 229 },
+  };
+  const coordsWarn = warningsFor("artist", { artist: null, team: null }, facts4).filter((w) => w.code === "venue_coords_far");
+  same(coordsWarn.map((w) => w.text), ['הקואורדינטות של האולם רחוקות 229 ק"מ מברלין - נבנה לפי שם העיר'], "venue_coords_far: the text");
+  same(warningsFor("artist", { artist: null, team: null }, { ...facts4, coordsFar: null }).filter((w) => w.code === "venue_coords_far"), [], "venue_coords_far: none without coordsFar");
+
+  // -- the run rule on create_location ----------------------------------------------------------------------
+  const R4 = runRules;
+  const cq = (city: string, keys: string[], kind: UploaderQuestion["kind"] = "create_location"): UploaderQuestion => ({
+    kind,
+    key: `30stm|${city.toLowerCase()}|2027-04-06|`,
+    text: "",
+    options: keys.map((k) => ({ key: k, label: k })),
+    free_text: false,
+    asked_at: NOW4.toISOString(),
+    task_id: null,
+  });
+  const cItem = (id: string, city: string, q: UploaderQuestion | null, status: UploaderItem["status"] = "question"): UploaderItem => ({
+    id,
+    run_id: "run-r4",
+    position: 0,
+    show: show4({ city }),
+    status,
+    mode: null,
+    location: null,
+    decisions: [],
+    warnings: [],
+    blockers: [],
+    question: q,
+    event_id: null,
+    payload: null,
+    skip_reason: null,
+    error: null,
+    approved_by: null,
+    approved_at: null,
+    rejected_reason: null,
+    rejected_final: false,
+    created_at: "2026-10-28T09:00:00.000Z",
+    updated_at: "2026-10-28T09:00:00.000Z",
+  });
+  const allKeys = ["create", "two_city:50", "ticket_only", "skip"];
+  const valQ = cq("Valencia", allKeys);
+  const valItem = cItem("v1", "Valencia", valQ);
+  same(R4.runRuleOf(valQ, valItem, { key: "ticket_only", text: null }), { kind: "create_location", key: "ticket_only", venue: null, city: null }, "runRuleOf: create_location ticket_only");
+  same(R4.runRuleOf(valQ, valItem, { key: "skip", text: null }), { kind: "create_location", key: "skip", venue: null, city: null }, "runRuleOf: create_location skip");
+  same(R4.runRuleOf(valQ, valItem, { key: "two_city:50", text: null }), { kind: "create_location", key: "two_city:50", venue: null, city: "valencia" }, "runRuleOf: create_location two_city - with the show's city");
+  same(R4.runRuleOf(valQ, valItem, { key: "create", text: null }), null, "runRuleOf: create opens a form - no rule");
+  same(R4.runRuleOf(valQ, valItem, { key: "60", text: null }), null, "runRuleOf: a created location's id is answered by its own action - no rule here");
+  same(R4.runRuleOf(valQ, valItem, { key: null, text: "Valencia" }), null, "runRuleOf: free text - no rule");
+  const ticketRule = { kind: "create_location" as const, key: "ticket_only", venue: null, city: null };
+  const twoRule = { kind: "create_location" as const, key: "two_city:50", venue: null, city: "valencia" };
+  same(R4.applyRuleTo(ticketRule, cItem("o1", "Frankfurt", cq("Frankfurt", ["create", "ticket_only", "skip"]))), "ticket_only", "applyRuleTo: ticket_only answers every open create_location");
+  same(R4.applyRuleTo({ ...ticketRule, key: "skip" }, cItem("o2", "Dublin", cq("Dublin", ["create", "two_city:7", "ticket_only", "skip"]))), "skip", "applyRuleTo: skip answers every open create_location");
+  same(R4.applyRuleTo(twoRule, cItem("o3", "VALENCIA", cq("VALENCIA", allKeys))), "two_city:50", "applyRuleTo: two_city answers the same city (normalized)");
+  same(R4.applyRuleTo(twoRule, cItem("o4", "Frankfurt", cq("Frankfurt", allKeys))), null, "applyRuleTo: two_city leaves another city alone, even with that option");
+  same(R4.applyRuleTo(twoRule, cItem("o5", "Valencia", cq("Valencia", ["create", "two_city:51", "ticket_only", "skip"]))), null, "applyRuleTo: two_city - the same city without that option -> no key");
+  same(R4.applyRuleTo(ticketRule, cItem("o6", "Frankfurt", cq("Frankfurt", ["4", "create", "skip"], "pick_location"))), null, "applyRuleTo: a create_location rule leaves pick_location alone");
+  same(R4.applyRuleTo(ticketRule, cItem("o7", "Frankfurt", cq("Frankfurt", allKeys), "ready")), null, "applyRuleTo: an item that is not an open question gets nothing");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

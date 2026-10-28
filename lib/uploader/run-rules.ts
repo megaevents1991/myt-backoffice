@@ -91,8 +91,9 @@ export function cleanAnswerInput(raw: unknown): AnswerInput | null {
  * Does the answer fit the stored question: a key must be one of the question's own options (they
  * were written by the system, so membership is the whole rule - `<tix id>` / `live:<id>` / `both` /
  * `skip` for pick_show, `tix:<day>` / `live:<day>` / `both` / `skip` for pick_date, a locations id
- * or `skip` for pick_location, `yes` / `skip` for confirm_subject, `same` / `both` / `skip` for
- * same_show); no key = free text, only where the question allows it. `label` = the chosen option's
+ * or `create` / `skip` for pick_location, `yes` / `skip` for confirm_subject, `same` / `both` / `skip` for
+ * same_show, `create` / `two_city:<id>` / `ticket_only` / `skip` for create_location); no key = free text,
+ * only where the question allows it. `label` = the chosen option's
  * label (for the task note).
  */
 export function checkAnswer(q: UploaderQuestion, a: AnswerInput): { ok: true; label: string | null } | { ok: false } {
@@ -133,6 +134,8 @@ export type AnswerEffect =
   | { kind: "split"; show: ShowIdentity; extra: SplitShow[] };
 
 const DAY_KEY = /^(tix|live):(\d{4}-\d{2}-\d{2})$/;
+/** A `create_location` answer "package through that location, hotel split" (lib/uploader/place.ts). */
+const TWO_CITY_KEY = /^two_city:[1-9]\d*$/;
 
 /** The listing key a show already holds for one site: the TixStock id, or `live:<id>`. */
 function heldListing(show: ShowIdentity, live: boolean): string | null {
@@ -222,8 +225,10 @@ export function cityAliasOfAnswer(q: UploaderQuestion, key: string | null): { fr
  * day to take - each show has its own day); same_show `same` | `both` | `skip` (each question keeps its
  * own two cities); pick_location the `locations` id or `skip`, with the show's `venue` / `city`
  * (`normalizeName`) it holds for - a competition run across cities gets nothing, three nights at one
- * hall get the rule. `venue` / `city` are null for the other kinds, and for a show that has none to
- * match on.
+ * hall get the rule; create_location (Alon round 2, spec 4.3) `ticket_only` | `skip` for every show
+ * with no location, `two_city:<id>` with the show's `city` only (the same city flies through the same
+ * neighbour; `venue` null). `venue` / `city` are null for the other kinds, and for a show that has none
+ * to match on.
  */
 export type RunRule = { kind: QuestionKind; key: string; venue: string | null; city: string | null };
 
@@ -235,7 +240,9 @@ function nameOrNull(v: string | null | undefined): string | null {
 
 /**
  * The rule a picked answer makes, or null when it makes none: a listing id names ONE show, free text
- * says nothing a second question could use, and `confirm_subject` is the run's own.
+ * says nothing a second question could use, and `confirm_subject` is the run's own. On
+ * `create_location`, `create` opens a form and a created location's id is spread to the same city by
+ * the action that creates it (spec 4.2) - neither is a rule here.
  */
 export function runRuleOf(q: UploaderQuestion, item: Pick<UploaderItem, "show">, answer: { key: string | null; text: string | null }): RunRule | null {
   const key = answer.key;
@@ -250,6 +257,10 @@ export function runRuleOf(q: UploaderQuestion, item: Pick<UploaderItem, "show">,
   if (q.kind === "pick_location") {
     return key === "skip" || /^[1-9]\d*$/.test(key) ? rule(key, nameOrNull(item.show.venue), nameOrNull(item.show.city)) : null;
   }
+  if (q.kind === "create_location") {
+    if (key === "ticket_only" || key === "skip") return rule(key);
+    return TWO_CITY_KEY.test(key) ? rule(key, null, nameOrNull(item.show.city)) : null;
+  }
   return null;
 }
 
@@ -257,7 +268,8 @@ export function runRuleOf(q: UploaderQuestion, item: Pick<UploaderItem, "show">,
  * The key to answer `other`'s question with under `rule`, or null (leave it for a person): `other` must
  * still be an open question of the same kind, and the key must be one of ITS options. `pick_date` tix /
  * live take the other's own `tix:<day>` / `live:<day>` option (null when it has none); `pick_location`
- * only where the other's show is at the same venue in the same city.
+ * only where the other's show is at the same venue in the same city; `create_location` `two_city:<id>`
+ * only where the other's show is in the same city (`ticket_only` / `skip` everywhere).
  */
 export function applyRuleTo(rule: RunRule, other: UploaderItem): string | null {
   const q = other.question;
@@ -268,6 +280,8 @@ export function applyRuleTo(rule: RunRule, other: UploaderItem): string | null {
   if (rule.kind === "pick_location") {
     if (rule.venue === null || rule.city === null) return null;
     if (normalizeName(other.show.venue) !== rule.venue || normalizeName(other.show.city) !== rule.city) return null;
+  } else if (rule.kind === "create_location" && TWO_CITY_KEY.test(rule.key)) {
+    if (rule.city === null || normalizeName(other.show.city) !== rule.city) return null;
   } else if (rule.kind === "confirm_subject") {
     return null;
   }

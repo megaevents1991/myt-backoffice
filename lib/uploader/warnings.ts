@@ -5,7 +5,8 @@
  *
  * Two sources, in this order: the SUBJECT's own pages (artist / team rows - missing page, cut-out,
  * event gallery, crest, bio, `/c/` twin) and what the BUILD found (new venue, unzoned tickets, a
- * supplier that did not answer, a single supplier, no Hebrew name, a far venue). The fix URLs are
+ * supplier that did not answer, a single supplier, no Hebrew name, a far venue, a venue whose
+ * coordinates are far from the city it was placed in by name). The fix URLs are
  * the ones the gaps radar already uses (lib/services/creative-gaps.ts), so a "Do" button on a
  * card lands on the same field as the radar's.
  *
@@ -61,6 +62,12 @@ export interface BuildFacts {
    * location is near enough, or when none is within `FAR_VENUE_KM`.
    */
   farVenue: { id: number; city: string; km: number } | null;
+  /**
+   * The package was placed by the show's city NAME although the venue's coordinates are this far
+   * from that city (`decidePlace` step 3b - a supplier's coordinates can be wrong: TixStock put
+   * "Velodrome Berlin" in the middle of Germany). Null otherwise.
+   */
+  coordsFar: { city: string; km: number } | null;
 }
 
 /**
@@ -81,6 +88,8 @@ export const WARNING_TEXT: Record<string, string> = {
   single_supplier: "רק {supplier} מוכר את ההופעה (לידיעה)",
   no_hebrew_name: "לא נמצא שם בעברית - האירוע נבנה עם השם באנגלית",
   far_venue: "האולם רחוק מכל מיקום עם טיסות - {offer}",
+  // Alon round 2 (spec 3.4): placed by the city's name, the venue's coordinates are far from it.
+  venue_coords_far: 'הקואורדינטות של האולם רחוקות {km} ק"מ מ{city} - נבנה לפי שם העיר',
   // Round "אלון 1": a classification that dropped every ticket of an event (the event keeps its tickets), and
   // the card line for tickets whose category stayed unplaced (`{categories}` = the category names; the warning also
   // carries them as `Warning.categories`, which the panel's venue row counts). It stays on the card (not run-level).
@@ -166,6 +175,7 @@ export function warningsFor(kind: SubjectKind, rows: SubjectRows, facts: BuildFa
 
   if (!facts.hebrewName) out.push(warning("no_hebrew_name"));
   if (facts.farVenue !== null) out.push(warning("far_venue", { offer: farVenueOffer(facts.farVenue.city, facts.farVenue.km) }));
+  if (facts.coordsFar !== null) out.push(warning("venue_coords_far", { km: Math.round(facts.coordsFar.km), city: facts.coordsFar.city }));
 
   return out;
 }

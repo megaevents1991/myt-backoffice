@@ -7,10 +7,12 @@
  *                  (retry once; LiveTickets then falls back to our `live_events` snapshot). Zero
  *                  tickets = `skipped no_tickets`; zero because a supplier never answered = `error`
  *                  (never read a silence as "sells nothing").
- *   2. location  - the reads (locations, the venue memory STRICT, LiveTickets' city, an earlier
- *                  answer) and the pure decision tree `decidePlace` (lib/uploader/place.ts): two-city
- *                  chosen -> the item's answer -> no-coordinates path -> nearest location -> memory
- *                  two-city -> the plan's `without_location` rule. Never a guessed flight city.
+ *   2. location  - the reads (locations, the run's city rule, the venue memory STRICT, LiveTickets'
+ *                  city; an earlier answer only when the show would otherwise be asked) and the pure
+ *                  decision tree `decidePlace` (lib/uploader/place.ts): two-city chosen -> the item's
+ *                  answer -> no-coordinates path -> the city by name (bad coordinates) -> nearest
+ *                  location -> memory two-city -> an earlier answer, else ask `create_location`.
+ *                  Never a guessed flight city, never a silent ticket-only.
  *   3. duplicate - names first, then `existingEventFor` again with the located IATA, under both the
  *                  convention name (music: "Eric Clapton") and the supplier's title.
  *   4. map       - the venue template (`venue_maps`) drops the categories it never sells and zones (and
@@ -37,8 +39,10 @@
 // Never in a client bundle (Next resolves "server-only" itself; no tsx script imports this module).
 import "server-only";
 import { logAudit } from "@/lib/audit";
+import { shortPlace } from "@/lib/lodging";
 import { loadLocations } from "@/lib/services/nearest-location";
 import { quoteFlight, quoteHotel, type QuoteResult } from "@/lib/services/price-quote";
+import { loadEquivalence } from "@/lib/services/uploader-aliases";
 import { loadPriorItems, venueMapFor } from "@/lib/services/uploader-prior";
 import { descriptionFor } from "@/lib/services/uploader-description";
 import { softDeleteBuiltEvent } from "@/lib/services/uploader-store";
@@ -57,7 +61,7 @@ import { WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/
 import type { LiveTicketsStock, RawLiveTicketsCategory } from "@/lib/services/livetickets-offers";
 import type { Event, EventTicket } from "@/types/app.types";
 import type { Json } from "@/types/database.types";
-import type { Decision, ShowIdentity, UploaderItem, UploaderQuestion, UploaderRun, Warning } from "@/types/uploader.types";
+import type { Decision, QuestionKind, ShowIdentity, UploaderItem, UploaderQuestion, UploaderRun, Warning } from "@/types/uploader.types";
 
 // `uploader_items` is newer than types/database.types.ts - one boundary cast for the event_id write.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -324,9 +328,15 @@ async function readMemory(show: ShowIdentity): Promise<PlaceInput["memory"]> {
   return { fromEventName: memory.fromEventName, lodging: memory.lodging, flightIata };
 }
 
+/** The questions a location answer comes from: `pick_location` (no coordinates) and `create_location` (no location near). */
+const LOCATION_QUESTIONS: QuestionKind[] = ["pick_location", "create_location"];
+
 /**
- * Everything `decidePlace` needs, read once: the `locations` table, the venue's memory, and - only
- * for a show without venue coordinates - LiveTickets' city fields and an earlier run's answer.
+ * Everything `decidePlace` needs on its first pass, read once: the `locations` table, the run's city
+ * rule (`loadEquivalence` - the same names + aliases the search paired the shows by; both THROW on a
+ * failed read), the venue's memory, and - only for a show without venue coordinates - LiveTickets'
+ * city fields. The item's own answer when its question is a location question. An earlier run's
+ * answer is NOT read here: `readPrior`, only when this pass asks.
  */
 async function readPlaceInput(
   run: UploaderRun,
@@ -336,17 +346,17 @@ async function readPlaceInput(
   liveRow: (() => Promise<LiveRowRead>) | null,
 ): Promise<PlaceInput> {
   const noCoords = typeof show.lat !== "number" || typeof show.lon !== "number";
-  const answer = item.question?.kind === "pick_location" ? (item.question.answer ?? null) : null;
+  const question = item.question;
+  const answer = question && LOCATION_QUESTIONS.includes(question.kind) ? (question.answer ?? null) : null;
   // A two-city rebuild names its flight city itself: the memory is not read (a transient failure must not fail it).
-  const [rows, memory] = await Promise.all([loadLocations(), ctx.twoCity ? null : readMemory(show)]);
-  let liveCity: PlaceInput["liveCity"] = null;
-  let prior: PlaceInput["prior"] = null;
-  if (noCoords && !answer && !ctx.twoCity) {
-    const [city, priors] = await Promise.all([liveRow ? readLiveCity(liveRow) : null, loadPriorItems(ctx.subject.name_en, { includeTest: run.is_test })]);
-    liveCity = city;
-    const hit = priorAnswerFor({ subject_en: ctx.subject.name_en, kind: "pick_location", key: questionKey(show, ctx.subject.name_en) }, priors);
-    prior = hit?.answer ? { key: hit.answer.key, text: hit.answer.text, by: hit.by, run_no: hit.run_no } : null;
-  }
+  const [rows, eq, memory, liveCity] = await Promise.all([
+    loadLocations(),
+    loadEquivalence(),
+    ctx.twoCity ? null : readMemory(show),
+    noCoords && !answer && !ctx.twoCity && liveRow ? readLiveCity(liveRow) : null,
+  ]);
+  // The city names in play, for a supplier's broken character ("K\uFFFDln") - the equivalence resolves it against them.
+  const pool = rows.flatMap((r) => [shortPlace(r.name), ...r.aliases]);
   return {
     show,
     subject_en: ctx.subject.name_en,
@@ -354,11 +364,29 @@ async function readPlaceInput(
     withoutLocation: run.plan.rules.without_location,
     twoCity: ctx.twoCity ?? null,
     answer: answer ? { key: answer.key, text: answer.text } : null,
-    prior,
+    prior: null,
     liveCity,
     memory,
+    cityKey: (name) => eq.cityKey(name, pool),
     now: new Date(),
   };
+}
+
+/**
+ * An earlier run's answer to the question this show is about to be asked (same subject, same
+ * `questionKey`): of the asked kind first, else of the other location kind - `decidePlace` applies a
+ * prior only to its own kind. Read only when the first pass asks, and never for an item with its own
+ * answer or a two-city rebuild: the other paths never reach a prior, and the read spans every
+ * earlier run of the subject.
+ */
+async function readPrior(run: UploaderRun, show: ShowIdentity, ctx: BuildContext, asked: QuestionKind): Promise<PlaceInput["prior"]> {
+  const priors = await loadPriorItems(ctx.subject.name_en, { includeTest: run.is_test });
+  const key = questionKey(show, ctx.subject.name_en);
+  for (const kind of [asked, ...LOCATION_QUESTIONS.filter((k) => k !== asked)]) {
+    const hit = priorAnswerFor({ subject_en: ctx.subject.name_en, kind, key }, priors);
+    if (hit?.answer) return { key: hit.answer.key, text: hit.answer.text, by: hit.by, run_no: hit.run_no, kind };
+  }
+  return null;
 }
 
 // ---- a retried item's own earlier event ----------------------------------------------------------
@@ -470,8 +498,13 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
     return skipped(show, "no_tickets", decisions);
   }
 
-  // 2. Location: the reads, then the pure decision tree.
-  const placed = decidePlace(await readPlaceInput(run, item, show, ctx, liveRow));
+  // 2. Location: the reads, then the pure decision tree - once more with an earlier run's answer when it would ask.
+  const placeInput = await readPlaceInput(run, item, show, ctx, liveRow);
+  let placed = decidePlace(placeInput);
+  if (placed.kind === "ask" && placeInput.answer === null && placeInput.twoCity === null) {
+    const prior = await readPrior(run, show, ctx, placed.question.kind);
+    if (prior) placed = decidePlace({ ...placeInput, prior });
+  }
   if (placed.kind === "error") throw new Error(placed.message);
   pushUnique(decisions, placed.decisions);
   if (placed.kind === "ask") return { status: "question", item: { status: "question", show, question: placed.question, decisions } };
@@ -485,6 +518,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
       unreachable: [],
       hebrewName: true,
       farVenue: placed.farVenue,
+      coordsFar: null,
     }).filter((w) => w.code === "far_venue");
     return skipped(show, placed.reason, decisions, offer, placed.itemLocation);
   }
@@ -610,6 +644,7 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
     unreachable,
     hebrewName: names.hebrew,
     farVenue: placed.mode === "package" ? null : placed.farVenue,
+    coordsFar: placed.coordsFar,
   };
   const warnings = warningsFor(ctx.subject.kind, ctx.rows, facts);
   const fixPrice = `/events/${created.id}#fix-price`;

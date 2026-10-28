@@ -47,13 +47,15 @@ function withPrefix(prefix: string, name: string): string {
  *  two_city_from_memory {event, show_city, flight_city, lodging?} · two_city_chosen {show_city, flight_city, km} ·
  *  rejected_before {run, by, reason} · question_untasked {max} ·
  *  classified {zones, dropped, unsure} · categories_dropped_by_template {count, names} ·
- *  named_he {name} · name_from_livetickets {name} · taught_venue {}
+ *  named_he {name} · name_from_livetickets {name} · taught_venue {} · location_by_city {city, iata}
  */
 export const DECISION_TEXT = {
   // No `km` = the venue has no coordinates (a LiveTickets-only show, an answered location): no distance is printed.
   location_found: (p) =>
     p.km === undefined ? `מיקום: ${str(p, "city")} (${str(p, "iata")})` : `מיקום: ${str(p, "city")} (${str(p, "iata")}), ${km(p)} ק"מ מהאולם`,
   location_missing_ticket_only: () => `אין מיקום עם טיסות בטווח ${NEAR_LOCATION_KM} ק"מ מהאולם - נבנה ככרטיס בלבד`,
+  // Alon round 2 (spec 3.4): the show's city name found the location although the venue's coordinates are far from it.
+  location_by_city: (p) => `מיקום לפי שם העיר: ${str(p, "city")} (${str(p, "iata")})`,
   tickets_tixstock: (p) => `${categories(p)} מ-TixStock`,
   tickets_livetickets: (p) => `${categories(p)} מ-LiveTickets (ניתנות למכירה בלבד)`,
   live_from_snapshot: (p) => `LiveTickets לא ענה - ${categories(p)} תומחרו מתמונת המצב השמורה; בדקו את המחיר לפני האישור`,
