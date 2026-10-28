@@ -5110,6 +5110,14 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(R2.applyRuleTo(sameRule, itemR2("o-date", { ...sameQ, kind: "pick_date" })), null, "applyRuleTo: a same_show rule leaves another kind alone");
   same(R2.applyRuleTo(sameRule, itemR2("o-ready", sameQ, "ready")), null, "applyRuleTo: an item that is not an open question gets nothing");
 
+  // -- the city alias a same_show answer teaches (Task 3) ---------------------------------------------
+  same(R2.cityAliasOfAnswer(sameQ, "same"), { from_name: "Rome", to_name: "Roma" }, "cityAliasOfAnswer: same = LiveTickets' city (from) is TixStock's city (to)");
+  same(R2.cityAliasOfAnswer(sameQ, "both"), null, "cityAliasOfAnswer: both teaches no alias (two shows)");
+  same(R2.cityAliasOfAnswer(sameQ, "skip"), null, "cityAliasOfAnswer: skip teaches no alias");
+  same(R2.cityAliasOfAnswer(sameQ, null), null, "cityAliasOfAnswer: a free-text answer (no key) teaches no alias");
+  same(R2.cityAliasOfAnswer({ ...sameQ, pair: undefined }, "same"), null, "cityAliasOfAnswer: a same_show stored without its pair (before round 2) teaches nothing");
+  same(R2.cityAliasOfAnswer({ ...sameQ, kind: "pick_date" }, "same"), null, "cityAliasOfAnswer: another kind of question teaches nothing, whatever its key");
+
   const priorOf = (key: string) => ({ subject_en: "Lazio", kind: "same_show" as const, key: sameQ.key, answer: { key, text: null }, run_no: 3, by: "Alon" });
   const draftsBoth = R2.planRunItems({ shows: [], questions: [sq], existing: [], priors: [priorOf("both")], fallback: new Map(), subject_en: "Lazio", at: "2026-10-28T10:00:00.000Z" });
   same(

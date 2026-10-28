@@ -44,6 +44,7 @@ import { distanceKm } from "@/lib/services/nearest-location";
 import { invalidatePriceLight } from "@/lib/services/price-light-cache";
 import { classifyVenueWithAgent, nameTeamsWithAgent } from "@/lib/services/tour-uploader-classify";
 import { parseBriefWithAgent } from "@/lib/services/tour-uploader-parse";
+import { recordAlias } from "@/lib/services/uploader-aliases";
 import { buildItem } from "@/lib/services/uploader-build";
 import {
   readDescriptionTemplate,
@@ -147,6 +148,7 @@ import {
   canResume,
   checkAnswer,
   cleanAnswerInput,
+  cityAliasOfAnswer,
   freshSubjectCache,
   hasBuiltEvent,
   isPositiveInt,
@@ -730,6 +732,9 @@ async function answerOne(item: UploaderItem, run: UploaderRun, clean: AnswerInpu
   }
 
   const taskClosed = q.task_id ? await closeTask(q.task_id, clean.text ?? fit.label ?? clean.key ?? "") : true;
+  // The learned city alias (spec 3.3) - every answered item records its OWN pair, whether a person answered it or
+  // a rule for the run did; a failed write is only a lesson not learned, never a failed answer.
+  const alias = await recordSameCity(q, clean.key, actorId);
   return {
     ok: true,
     taskClosed,
@@ -748,9 +753,27 @@ async function answerOne(item: UploaderItem, run: UploaderRun, clean: AnswerInpu
         subject: run.plan.subject.name_en,
         city: item.show.city,
         date: item.show.date,
+        ...(alias === null ? {} : { alias_recorded: alias }),
       },
     },
   };
+}
+
+/**
+ * Records what a `same_show` answer teaches (`cityAliasOfAnswer`: LiveTickets' city is TixStock's, so the next run
+ * pairs the two silently). Null = the answer teaches nothing here; true / false = whether the alias was written.
+ * Never throws and never fails the answer: a lesson that could not be saved costs one more question on a later
+ * run, nothing else.
+ */
+async function recordSameCity(q: UploaderQuestion, key: string | null, actorId: string): Promise<boolean | null> {
+  const alias = cityAliasOfAnswer(q, key);
+  if (alias === null) return null;
+  try {
+    return await recordAlias({ kind: "city", ...alias, created_by: isUuid(actorId) ? actorId : null });
+  } catch (e) {
+    console.error("uploader-actions: city alias not recorded", errorText(e));
+    return false;
+  }
 }
 
 async function logAnswered(audit: Answered["audit"], rule: { rule_applied?: true; applied?: number; rule_child?: true }): Promise<void> {

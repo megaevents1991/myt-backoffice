@@ -9,9 +9,12 @@
  * Migration 20261028114031_uploader_alon_round_2.sql. Before it is applied a read answers "no aliases" and a write
  * answers false (logged) - the build simply asks its question again.
  */
-import "server-only";
+// No "server-only" here, on purpose: the search (lib/services/uploader-search.ts) imports this file and
+// scripts/uploader-dryrun.ts loads the search under tsx, where that package throws. Like the search, it is
+// imported by server code only and reads through the service-role client.
 import { normalizeName } from "@/lib/on-tour";
-import { logDb } from "@/lib/services/uploader-store";
+import { loadLocations } from "@/lib/services/nearest-location";
+import { buildEquivalence, type Equivalence } from "@/lib/uploader/equivalence";
 import { supabase } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 
@@ -29,6 +32,10 @@ export type UploaderAlias = {
 };
 
 type DbError = { message: string; code?: string } | null;
+
+// Same line as uploader-store's `logDb`; not imported from there - the store reaches the search, the search reaches
+// this file (`loadEquivalence`), and an import back would close a cycle.
+const logDb = (what: string, error: unknown): void => console.error(`uploader: ${what} failed`, JSON.stringify(error));
 
 /** The table is not there yet (the migration has not run): a missing relation, or PostgREST's schema cache without it. */
 const isMissingTable = (error: DbError): boolean => error?.code === "42P01" || error?.code === "PGRST205";
@@ -105,4 +112,15 @@ export async function recordAlias(input: {
     return false;
   }
   return true;
+}
+
+/**
+ * The run's equivalence rule (`buildEquivalence`, spec 3.2): the `locations` names + their aliases and every confirmed
+ * alias, read side by side. Both reads THROW on a failure (`loadLocations`, `loadAliases`): a search that paired its
+ * shows by an empty rule would split every "Roma" / "Rome" and ask the same questions again - it fails instead
+ * (`search_failed`), never half-answers. A missing `uploader_aliases` table is "nothing learned yet".
+ */
+export async function loadEquivalence(): Promise<Equivalence> {
+  const [locations, aliases] = await Promise.all([loadLocations(), loadAliases()]);
+  return buildEquivalence(locations, aliases);
 }

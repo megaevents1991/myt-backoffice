@@ -51,8 +51,11 @@ function sourceRef(run: UploaderRun, item: UploaderItem, q: UploaderQuestion): U
   };
 }
 
-function title(run: UploaderRun, item: UploaderItem): string {
-  return `שאלה מהמעלה · ${run.plan.subject.name_en} · ${item.show.city} ${dayLabel(item.show.date)}`;
+function title(run: UploaderRun, item: UploaderItem, q: UploaderQuestion): string {
+  const subject = run.plan.subject.name_en;
+  // `same_show`: the question is "is this ONE show" - its two cities are in the text, the title names the show's day.
+  if (q.kind === "same_show") return `אותה הופעה? ${subject} ${dayLabel(item.show.date)}`;
+  return `שאלה מהמעלה · ${subject} · ${item.show.city} ${dayLabel(item.show.date)}`;
 }
 
 function description(run: UploaderRun, item: UploaderItem, q: UploaderQuestion): string {
@@ -91,7 +94,7 @@ export async function openQuestionTask(run: UploaderRun, item: UploaderItem, q: 
   if (open && open.length > 0) return open[0].id;
 
   const ref = sourceRef(run, item, q);
-  const taskTitle = title(run, item);
+  const taskTitle = title(run, item, q);
   const taskDescription = description(run, item, q);
   const { data, error } = (await tasks
     .insert({

@@ -203,6 +203,17 @@ export function answerEffect(q: UploaderQuestion, show: ShowIdentity, answer: St
   return { kind: "requeue", show };
 }
 
+/**
+ * The city alias a `same_show` answer teaches (spec 3.3): "yes, the same show" says LiveTickets' city (`from`, as it
+ * prints it) is TixStock's city (`to`) - the next run pairs the two silently. Null = the answer teaches no city:
+ * another kind of question, another key (`both` / `skip` say the cities differ or nothing), a free-text answer, or a
+ * question stored without its pair (rows from before round 2). Pure: the server action writes what this names.
+ */
+export function cityAliasOfAnswer(q: UploaderQuestion, key: string | null): { from_name: string; to_name: string } | null {
+  if (q.kind !== "same_show" || key !== "same" || !q.pair) return null;
+  return { from_name: q.pair.livetickets_city, to_name: q.pair.tixstock_city };
+}
+
 // ---- a rule for the run (spec 5.4, 7) ----------------------------------------------------------------
 
 /**

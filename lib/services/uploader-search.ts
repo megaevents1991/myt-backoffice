@@ -20,6 +20,7 @@ import { fetchPaged } from "@/lib/supabase-paged";
 import { clubKey, clubNamesMatch, normalizeName } from "@/lib/on-tour";
 import { findCategoryTwin, namesMatch, TWIN_HUB_SLUG, type TwinPerson } from "@/lib/services/category-twins";
 import { hasLibraryCrest } from "@/lib/services/creative-gaps";
+import { loadEquivalence } from "@/lib/services/uploader-aliases";
 import { planWindowCap, planWindowStart } from "@/lib/uploader/plan";
 import {
   calendarDay,
@@ -735,12 +736,14 @@ export type Candidates = Grouped & {
  * The supplier side of `findShows`: the subject's rows inside the plan's window grouped by
  * `groupRows`, XS2Event / P1 information per show key (`fallback`), and the name of every row
  * `groupRows` left out (`excludedInfo`), so the board can print "Journeyman - A Tribute to Eric
- * Clapton (tribute)" rather than an id. Reads no `events`.
+ * Clapton (tribute)" rather than an id. Reads no `events`. `groupRows` pairs the two catalogs by the equivalence
+ * rule (`loadEquivalence`: the `locations` names + aliases and every confirmed city / team alias), read beside the
+ * supplier rows - a failed read of either fails the search, never pairs by an empty rule.
  */
 export async function findCandidates(plan: UploaderPlan, subject: Subject, now: Date = new Date()): Promise<Candidates> {
   const window = searchWindow(plan.scope, now);
-  const [tix, live] = await Promise.all([searchTixRows(subject, window), searchLiveRows(subject, window)]);
-  const grouped = groupRows(tix, live, subject, plan, now);
+  const [tix, live, eq] = await Promise.all([searchTixRows(subject, window), searchLiveRows(subject, window), loadEquivalence()]);
+  const grouped = groupRows(tix, live, subject, plan, now, eq);
 
   const allShows = [...grouped.shows, ...grouped.questions.map((q) => q.show)];
   // A competition's fixtures are named by their clubs: those names find its existing events.
