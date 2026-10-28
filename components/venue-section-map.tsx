@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 
 // A hall's drawing (a TixStock SVG, or our copy of one) with its sections clickable - the tour uploader's classify
 // dialog (round 2, Task 10). Drawn the way the event editor's exclude-sections map draws it: the SVG sanitized and
-// prepared by `sanitizeAndPrepareSvg` (scripts and inline handlers stripped, unlabeled wedges numbered - the ids
+// prepared by `sanitizeAndPrepareSvg` (an allowlist of plain drawing elements, no handler or external url, unlabeled wedges numbered - the ids
 // `tx_excluded_sections` holds), identical duplicate sections removed (`cleanupDuplicateSections`), and the editor's
 // two looks: `svg-excluded` (red) on every section `isSectionExcluded` reads as excluded, `svg-highlighted` on the
 // sections of `highlightCategory` - a category KEY (`normalizeSupplierCategory` of the section id's category slug,
