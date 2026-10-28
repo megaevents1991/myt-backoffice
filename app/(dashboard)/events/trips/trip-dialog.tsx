@@ -235,7 +235,8 @@ function TripForm({
   const [title, setTitle] = useState(route?.title ?? start?.title ?? "");
   const [picked, setPicked] = useState<Picked[]>(() => initialPicked(route ?? start));
   const [sortText, setSortText] = useState(String(route?.sortOrder ?? defaultSortOrder));
-  const [isActive, setIsActive] = useState(route?.isActive ?? true);
+  // A new trip starts OFF (Dor 28.10): nothing reaches the site until staff switch it on here.
+  const [isActive, setIsActive] = useState(route?.isActive ?? false);
   const [errors, setErrors] = useState<ItineraryRouteErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   // Where focus goes when the element that had it is removed (a chip's ×).

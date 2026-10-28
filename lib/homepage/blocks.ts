@@ -10,6 +10,7 @@
 
 import {
   BLOCK_META,
+  EURO_TRIP_SECTION_KEY,
   HOMEPAGE_BLOCK_TYPES,
   HOMEPAGE_SECTION_KEYS,
   SECTION_ITEM_KINDS,
@@ -51,6 +52,26 @@ export const isBuiltinKey = (k: string): k is HomepageSectionKey =>
   (HOMEPAGE_SECTION_KEYS as readonly string[]).includes(k);
 
 export const isBlockKey = (k: string): boolean => BLOCK_KEY_RE.test(k);
+
+/**
+ * Is a builtin the table has no row for shown? Every one is, except the Euro Trip switch: a missing
+ * row must read as "off" or the feature would open on the site before anyone switched it on. myt-main
+ * applies the same rule (lib/homepageLayout.ts + lib/itinerary/settings.ts there).
+ */
+export const builtinVisibleByDefault = (key: HomepageSectionKey): boolean => key !== EURO_TRIP_SECTION_KEY;
+
+/**
+ * Did this save flip the Euro Trip switch? `before` = the stored row's visibility (null = no row, which
+ * reads as hidden). Pure - the save uses it to refuse a non-admin and to tell the site to refresh.
+ */
+export const euroTripSwitchChange = (
+  before: boolean | null,
+  sections: readonly Pick<HomepageSectionRow, "key" | "is_visible">[],
+): { from: boolean; to: boolean } | null => {
+  const from = before === true;
+  const to = sections.find((s) => s.key === EURO_TRIP_SECTION_KEY)?.is_visible === true;
+  return from === to ? null : { from, to };
+};
 
 export const isBlockType = (t: unknown): t is HomepageBlockType =>
   typeof t === "string" && (HOMEPAGE_BLOCK_TYPES as readonly string[]).includes(t);
@@ -301,7 +322,8 @@ export type NormalizedSections =
  *
  *  - a `builtin` row must carry a builtin key, a block row a block key + a known type
  *  - duplicate keys: the first wins
- *  - builtins the payload lacks are appended visible (they can never be deleted)
+ *  - builtins the payload lacks are appended (they can never be deleted) - visible, except the
+ *    Euro Trip switch, which is appended hidden (`builtinVisibleByDefault`)
  *  - `hero` first, the rest in the order sent, positions 0..n
  *  - a block whose config does not validate fails the WHOLE save, named by its title
  *  - a builtin's config is its row settings (hidden cards, row length)
@@ -354,7 +376,7 @@ export function normalizeSections(
 
   for (const key of HOMEPAGE_SECTION_KEYS) {
     if (!seen.has(key)) {
-      out.push({ key, type: "builtin", title: null, config: {}, position: 0, is_visible: true });
+      out.push({ key, type: "builtin", title: null, config: {}, position: 0, is_visible: builtinVisibleByDefault(key) });
     }
   }
 

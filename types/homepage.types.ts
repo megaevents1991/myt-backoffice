@@ -18,8 +18,18 @@ export const HOMEPAGE_SECTION_KEYS = [
   "artists",
   "reviews",
   "more_events",
+  "euro_trip",
 ] as const;
 export type HomepageSectionKey = (typeof HOMEPAGE_SECTION_KEYS)[number];
+
+/**
+ * "Build Your Euro Trip" (2026-10-28, Dor: "רק אם אנחנו מפעילים את זה בבק אופיס - דרך ניהול ה-homepage"):
+ * this builtin row IS the feature's switch on the site. Visible = the homepage shows a way into the Euro
+ * Trip AND myt-main opens the /euro-trip pages (lib/itinerary/settings.server.ts there); hidden, or no row
+ * at all = the pages answer 404 in production. It carries no cards. Hidden until staff show it - the only
+ * builtin that starts hidden - and only an admin may flip it (saveHomepageLayout).
+ */
+export const EURO_TRIP_SECTION_KEY = "euro_trip" satisfies HomepageSectionKey;
 
 /** Blocks staff add from the board. Phase 1: slider + banner; phase 2 (2026-09-19): text, destinations, gallery. */
 export const HOMEPAGE_BLOCK_TYPES = ["event_slider", "banner", "text", "destinations", "gallery"] as const;
@@ -38,6 +48,7 @@ export const SECTION_ITEM_KINDS: Record<HomepageSectionKey, HomepageItemKind[]> 
   artists: ["artist"],
   reviews: ["review"],
   more_events: ["event"],
+  euro_trip: [],
 };
 
 export const SECTION_META: Record<
@@ -92,6 +103,12 @@ export const SECTION_META: Record<
     titleEn: "More events",
     siteTitle: "אירועים נוספים",
     rule: "כל אירועי המוזיקה שלא הופיעו בשתי השורות של האירועים, בגריד (בטלפון 5 ראשונים, במחשב 20, ואז 'הצג עוד').",
+  },
+  euro_trip: {
+    title: "יורו טריפ",
+    titleEn: "Euro Trip",
+    siteTitle: "בנו את היורו טריפ שלכם",
+    rule: "המתג של היורו טריפ באתר. מוצג = דף הבית מקבל כניסה ליורו טריפ ועמודי היורו טריפ נפתחים. מוסתר = העמודים לא קיימים באתר. באתר עולים רק טריפים שסומנו 'פעיל' באירועים > טריפים. רק מנהל יכול להציג או להסתיר.",
   },
 };
 
@@ -200,6 +217,8 @@ export interface HomepageLayout {
   blocksReady: boolean;
   /** The site's rows as it builds them now; failure = the board shows the pinned cards only. */
   pools: HomepagePoolsResult;
+  /** The viewer may show / hide the Euro Trip row (admins only - it opens a product for sale). */
+  canSwitchEuroTrip: boolean;
 }
 
 export interface SaveHomepageLayoutInput {

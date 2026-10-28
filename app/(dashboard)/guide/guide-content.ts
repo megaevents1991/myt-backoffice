@@ -550,7 +550,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("Open [Events](/events) and switch to the \"טריפים (Euro Trip)\" tab, or go straight to [Trips](/events/trips).", "פותחים את [האירועים](/events) ועוברים ללשונית \"טריפים (Euro Trip)\", או ישר ל[טריפים](/events/trips)."),
           t("Click \"טריפ חדש\" and write a \"כותרת\" (2-80 characters) - the heading of the trip's card on the site.", "לוחצים \"טריפ חדש\" וכותבים \"כותרת\" (2-80 תווים) - הכותרת של כרטיס הטריפ באתר."),
           t("Under \"אירועים\" search by name (Hebrew or English) or by event number and pick 2 or 3 upcoming events. The × on a chip removes one.", "תחת \"אירועים\" מחפשים לפי שם (עברית או אנגלית) או לפי מספר אירוע ובוחרים 2 או 3 אירועים עתידיים. ה-× על השבב מסיר אחד."),
-          t("\"סדר\": the lower number shows first. Turn \"פעיל\" off to keep the trip here without showing it on the site.", "\"סדר\": המספר הנמוך מוצג קודם. מכבים \"פעיל\" כדי לשמור את הטריפ כאן בלי להציג אותו באתר."),
+          t("\"סדר\": the lower number shows first. A new trip starts with \"פעיל\" off - turn it on to show the trip on the site.", "\"סדר\": המספר הנמוך מוצג קודם. טריפ חדש נפתח עם \"פעיל\" כבוי - מדליקים אותו כדי שהטריפ יוצג באתר."),
           t("\"שמירה\". The site refreshes at once - if it could not, a red \"האתר לא התרענן\" toast says so and the site catches up by itself within the hour.", "\"שמירה\". האתר מתרענן מיד - אם לא הצליח, מופיעה הודעה אדומה \"האתר לא התרענן\" והאתר מתעדכן לבד בתוך שעה."),
         ],
       },
@@ -566,8 +566,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
     title: t("Euro Trips (staff trips)", "טריפים (Euro Trip)"),
     intro: t(
-      "A trip is a ready route of 2-3 events with a title you choose. The site's Build Your Euro Trip page shows the staff trips first, in \"סדר\" order, then the routes it builds by itself.",
-      "טריפ הוא מסלול מוכן של 2-3 אירועים עם כותרת שאתם בוחרים. עמוד Build Your Euro Trip באתר מציג קודם את הטריפים שלכם לפי \"סדר\", ואחריהם את המסלולים שהוא בונה לבד.",
+      "A trip is a ready route of 2-3 events with a title you choose. The site's Build Your Euro Trip page shows the staff trips marked \"פעיל\", in \"סדר\" order; routes the site builds by itself appear only when the Euro Trip settings ask for some (0 by default). The page itself is open only while the \"יורו טריפ\" row on [Homepage](/homepage) is shown.",
+      "טריפ הוא מסלול מוכן של 2-3 אירועים עם כותרת שאתם בוחרים. עמוד Build Your Euro Trip באתר מציג את הטריפים שלכם שמסומנים \"פעיל\", לפי \"סדר\"; מסלולים שהאתר בונה לבד מופיעים רק אם ההגדרות של Euro Trip מבקשות (ברירת המחדל 0). העמוד עצמו פתוח באתר רק כשהשורה \"יורו טריפ\" ב[עמוד הבית](/homepage) מוצגת.",
     ),
     points: [
       t(
@@ -1719,6 +1719,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("\"באנרים\": upload each \"Banner image\" (it must be uploaded here, not a pasted outside URL), optional \"קישור (לא חובה)\" (/c/... or https://...) and \"כותרת על התמונה (לא חובה)\"; \"באנר נוסף\" up to 3.", "\"באנרים\": מעלים כל \"Banner image\" (חייב לעלות כאן, לא URL חיצוני), \"קישור (לא חובה)\" (/c/... או https://...) ו\"כותרת על התמונה (לא חובה)\"; \"באנר נוסף\" עד 3."),
           t("\"טקסט\": plain paragraphs with a blank line between - no HTML or links. \"סליידר יעדים\": \"+ קטגוריה\" and/or \"כל הילדים של: …\". \"גלריית תמונות\": up to 12 uploaded images (\"תמונה נוספת\"), each with an optional caption.", "\"טקסט\": פסקאות פשוטות עם שורה ריקה ביניהן - בלי HTML וקישורים. \"סליידר יעדים\": \"+ קטגוריה\" ו/או \"כל הילדים של: …\". \"גלריית תמונות\": עד 12 תמונות שמועלות כאן (\"תמונה נוספת\"), לכל אחת תיאור לא חובה."),
           t("Click \"Save homepage\". To delete a block later: its trash icon, then save again.", "לוחצים \"Save homepage\". למחיקת בלוק בהמשך: הפח שלו ושמירה נוספת."),
+        ],
+      },
+      {
+        title: t("Open or close the Euro Trip on the site", "הפעלה וכיבוי של היורו טריפ באתר"),
+        steps: [
+          t("Find the \"יורו טריפ\" row on [Homepage](/homepage) - it starts hidden.", "מוצאים את השורה \"יורו טריפ\" ב[עמוד הבית](/homepage) - היא מתחילה מוסתרת."),
+          t("Turn its eye toggle on: the homepage gets a way into the Euro Trip and the site's Euro Trip pages open. Hidden = those pages do not exist on the site. Only an admin can flip it.", "מדליקים את מתג העין שלה: דף הבית מקבל כניסה ליורו טריפ ועמודי היורו טריפ באתר נפתחים. מוסתרת = העמודים האלה לא קיימים באתר. רק מנהל יכול להדליק או לכבות."),
+          t("Click \"Save homepage\". Only the trips marked \"פעיל\" in [Trips](/events/trips) show there.", "לוחצים \"Save homepage\". באתר מוצגים רק הטריפים שמסומנים \"פעיל\" ב[טריפים](/events/trips)."),
         ],
       },
       {

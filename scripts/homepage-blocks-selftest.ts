@@ -8,6 +8,8 @@ import {
   MAX_HIDDEN,
   TEXT_MAX,
   TITLE_MAX,
+  builtinVisibleByDefault,
+  euroTripSwitchChange,
   isBlockKey,
   itemKindsFor,
   newBlockKey,
@@ -94,8 +96,29 @@ check("a banner takes nothing", itemKindsFor({ key: "blk_00000001", type: "banne
 check(
   "hero is forced first and missing builtins are appended",
   keysOf(normalizeSections([builtin("newest"), builtin("hero")], opts)),
-  ["hero", "newest", "most_wanted", "football", "artists", "reviews", "more_events"],
+  ["hero", "newest", "most_wanted", "football", "artists", "reviews", "more_events", "euro_trip"],
 );
+
+// --- the Euro Trip switch row (28.10) ---
+
+check("every builtin but the Euro Trip is shown by default", builtinVisibleByDefault("newest"), true);
+check("the Euro Trip starts hidden", builtinVisibleByDefault("euro_trip"), false);
+{
+  const r = normalizeSections([builtin("hero"), builtin("newest")], opts);
+  const euro = r.ok ? r.sections.find((s) => s.key === "euro_trip") : null;
+  check("a save that lacks the Euro Trip row writes it hidden", euro?.is_visible, false);
+  check("a save that lacks another builtin writes it shown", r.ok ? r.sections.find((s) => s.key === "reviews")?.is_visible : null, true);
+}
+{
+  const r = normalizeSections([builtin("hero"), builtin("euro_trip", { is_visible: true })], opts);
+  check("a shown Euro Trip row stays shown", r.ok ? r.sections.find((s) => s.key === "euro_trip")?.is_visible : null, true);
+}
+check("the Euro Trip takes no cards", itemKindsFor({ key: "euro_trip", type: "builtin" }), []);
+check("no stored row + hidden = no change", euroTripSwitchChange(null, [{ key: "euro_trip", is_visible: false }]), null);
+check("no stored row + shown = switched on", euroTripSwitchChange(null, [{ key: "euro_trip", is_visible: true }]), { from: false, to: true });
+check("stored shown + hidden = switched off", euroTripSwitchChange(true, [{ key: "euro_trip", is_visible: false }]), { from: true, to: false });
+check("stored shown + shown = no change", euroTripSwitchChange(true, [{ key: "euro_trip", is_visible: true }]), null);
+check("a save without the row reads as hidden", euroTripSwitchChange(true, []), { from: true, to: false });
 
 check(
   "a block keeps the place the board gave it",
@@ -118,7 +141,7 @@ check(
 
 {
   const r = normalizeSections([builtin("hero"), builtin("newest"), slider("blk_0000000a")], opts);
-  check("positions are renumbered 0..n", r.ok ? r.sections.map((s) => s.position) : null, [0, 1, 2, 3, 4, 5, 6, 7]);
+  check("positions are renumbered 0..n", r.ok ? r.sections.map((s) => s.position) : null, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 }
 
 // --- rejected rows ---

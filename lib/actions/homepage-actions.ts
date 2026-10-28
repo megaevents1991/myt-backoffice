@@ -17,8 +17,12 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { revalidateMain } from "@/lib/revalidate-main";
+import { revalidateItinerary } from "@/lib/revalidate-itinerary";
 import { revalidatePath } from "next/cache";
+import { ADMIN_ROLES } from "@/types/auth.types";
 import {
+  builtinVisibleByDefault,
+  euroTripSwitchChange,
   isBlockType,
   isBuiltinKey,
   itemKindsFor,
@@ -29,6 +33,7 @@ import {
 import { buildArtIndex, personArtFor } from "@/lib/homepage/event-art";
 import { flattenWithPath } from "@/lib/taxonomy-tree";
 import {
+  EURO_TRIP_SECTION_KEY,
   HOMEPAGE_PAGE,
   HOMEPAGE_SECTION_KEYS,
   type HomepageCandidate,
@@ -156,7 +161,7 @@ export async function getSliderPools(
 }
 
 export async function getHomepageLayout(): Promise<HomepageLayout> {
-  await requireStaff();
+  const session = await requireStaff();
 
   // The sliders' categories are needed before the site can be asked for their
   // pools, so the layout rows are read first - one small read - and the site is
@@ -248,7 +253,7 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
   // by known type. A row of a type this build does not know is not shown (and
   // saveHomepageLayout never deletes it). Builtins the table lacks are appended
   // in the default order - the same rule main applies, so the board shows what
-  // main shows.
+  // main shows (visible, except the Euro Trip switch: no row = off).
   const stored = ((sectionsRes.data ?? []) as StoredSection[])
     .filter((s) => (s.page ?? HOMEPAGE_PAGE) === HOMEPAGE_PAGE)
     .sort((a, b) => a.position - b.position);
@@ -284,7 +289,14 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
   }
   for (const key of HOMEPAGE_SECTION_KEYS) {
     if (!seen.has(key)) {
-      sections.push({ key, type: "builtin", title: null, config: {}, position: 0, is_visible: true });
+      sections.push({
+        key,
+        type: "builtin",
+        title: null,
+        config: {},
+        position: 0,
+        is_visible: builtinVisibleByDefault(key),
+      });
       seen.add(key);
     }
   }
@@ -346,7 +358,15 @@ export async function getHomepageLayout(): Promise<HomepageLayout> {
       .sort((a, b) => a.path.localeCompare(b.path, "he"));
   }
 
-  return { sections, items, candidates, categories, blocksReady, pools };
+  return {
+    sections,
+    items,
+    candidates,
+    categories,
+    blocksReady,
+    pools,
+    canSwitchEuroTrip: ADMIN_ROLES.includes(session.role),
+  };
 }
 
 /**
@@ -396,13 +416,34 @@ export async function setEventPrioritized(
  */
 export async function saveHomepageLayout(
   input: SaveHomepageLayoutInput,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireStaff();
+): Promise<{ ok: true; warning?: string } | { ok: false; error: string }> {
+  const session = await requireStaff();
 
   const normalized = normalizeSections(input.sections ?? [], { storagePrefix: storagePrefix() });
   if (!normalized.ok) return { ok: false, error: normalized.error };
   const sections = normalized.sections;
   const sectionByKey = new Map(sections.map((s) => [s.key, s]));
+
+  // The Euro Trip row is the feature's switch on the site (types/homepage.types.ts): showing it opens
+  // a product for sale, so only an admin may flip it - the same people the old settings switch allowed.
+  // Read before any write; no row = hidden.
+  const switchRow = await db
+    .from("homepage_sections")
+    .select("is_visible")
+    .eq("page", HOMEPAGE_PAGE)
+    .eq("key", EURO_TRIP_SECTION_KEY)
+    .maybeSingle();
+  if (switchRow.error) {
+    console.error("saveHomepageLayout euro trip read:", JSON.stringify(switchRow.error));
+    return { ok: false, error: switchRow.error.message };
+  }
+  const switchChange = euroTripSwitchChange(
+    switchRow.data ? switchRow.data.is_visible !== false : null,
+    sections,
+  );
+  if (switchChange && !ADMIN_ROLES.includes(session.role)) {
+    return { ok: false, error: "רק מנהל יכול להציג או להסתיר את היורו טריפ באתר. החזירו את המתג של השורה ושמרו שוב." };
+  }
 
   // A pinned card's `position` is the place it holds in its row (2026-10-14):
   // kept as sent, made whole and unique per row by normalizeItemSlots.
@@ -535,5 +576,23 @@ export async function saveHomepageLayout(
     },
   });
   await revalidateMain();
+  if (switchChange) {
+    await logAudit({
+      action: "itinerary.site_switch",
+      entityType: "homepage_layout",
+      entityId: EURO_TRIP_SECTION_KEY,
+      changes: { is_visible: switchChange },
+      actor: { id: session.sub, email: session.email, role: session.role },
+    });
+    // The /euro-trip pages and the site's cached switch live under their own tags - the homepage ping
+    // above does not reach them.
+    const refreshed = await revalidateItinerary();
+    if (!refreshed.ok) {
+      return {
+        ok: true,
+        warning: `נשמר, אבל עמודי היורו טריפ באתר לא רועננו (${refreshed.reason}). השינוי יגיע אליהם תוך שעה.`,
+      };
+    }
+  }
   return { ok: true };
 }

@@ -24,7 +24,6 @@ import { Switch } from "@/components/ui/switch";
 type FormState = Record<ItineraryBoolField, boolean> & Record<ItineraryNumField, string>;
 
 const toForm = (s: ItinerarySettings): FormState => ({
-  enabled: s.enabled,
   paymentsEnabled: s.paymentsEnabled,
   tier2Pct: String(s.tier2Pct),
   tier3Pct: String(s.tier3Pct),
@@ -41,7 +40,6 @@ const toForm = (s: ItinerarySettings): FormState => ({
 const toSettings = (f: FormState): Record<keyof ItinerarySettings, boolean | number> => {
   const n = (raw: string) => (raw.trim() === "" ? Number.NaN : Number(raw));
   return {
-    enabled: f.enabled,
     paymentsEnabled: f.paymentsEnabled,
     tier2Pct: n(f.tier2Pct),
     tier3Pct: n(f.tier3Pct),
@@ -56,7 +54,6 @@ const toSettings = (f: FormState): Record<keyof ItinerarySettings, boolean | num
 };
 
 const SWITCHES: { field: ItineraryBoolField; help: string }[] = [
-  { field: "enabled", help: "כבוי = העמודים לא קיימים בייצור; בפריוויו תמיד פעיל" },
   { field: "paymentsEnabled", help: "כבוי = לקוחות שומרים טריפ ל-24 שעות בלבד" },
 ];
 
@@ -78,7 +75,10 @@ const RULES: { field: ItineraryNumField; help: string }[] = [
   { field: "okGapDays", help: "עד כמה ימים בין שני אירועים זה פער נוח. מעבר לזה זה עדיין אפשרי, עם התווית 'פער ארוך'" },
   { field: "maxGapDays", help: "יותר ימים מזה בין שני אירועים סמוכים - נחסם. לא יכול לעלות על אורך הטריפ" },
   { field: "maxSpanDays", help: "מהאירוע הראשון עד האחרון בטריפ" },
-  { field: "maxAutoRoutes", help: "כמה טריפים מוכנים העמוד בונה בעצמו. 0 = העמוד לא בונה מסלולים בעצמו" },
+  {
+    field: "maxAutoRoutes",
+    help: "כמה טריפים העמוד בונה בעצמו, בנוסף לטריפים שהפעלתם באירועים > טריפים. 0 = רק הטריפים שלכם",
+  },
 ];
 
 const rangeHint = (field: ItineraryNumField): string => {
@@ -211,7 +211,7 @@ export function EuroTripSettingsForm({
       {!saved && !savedOnce && (
         <Alert>
           <AlertTitle>עוד לא נשמרו הגדרות</AlertTitle>
-          <AlertDescription>מוצגות ברירות המחדל - Euro Trip כבוי באתר עד שמפעילים אותו כאן ושומרים.</AlertDescription>
+          <AlertDescription>מוצגות ברירות המחדל.</AlertDescription>
         </Alert>
       )}
 
@@ -221,6 +221,17 @@ export function EuroTripSettingsForm({
           <CardDescription>מה פתוח ללקוחות.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            היורו טריפ נפתח באתר מהשורה &quot;יורו טריפ&quot; ב
+            <a href="/homepage" className="underline">
+              ניהול עמוד הבית
+            </a>
+            , ובאתר עולים רק טריפים שסומנו &quot;פעיל&quot; ב
+            <a href="/events/trips" className="underline">
+              אירועים &gt; טריפים
+            </a>
+            .
+          </p>
           {SWITCHES.map(({ field, help }) => {
             const spec = ITINERARY_SPEC_BY_FIELD[field];
             const id = `euro-${field}`;

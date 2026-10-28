@@ -30,12 +30,13 @@ const bad = (patch: Record<string, unknown>, field: ItineraryField, re: RegExp, 
 };
 
 // The defaults are the reader's (myt-main lib/itinerary/settings.ts).
+// No `enabled` since 28.10 - the site switch is the /homepage "euro_trip" row; auto routes start at 0.
 assert.deepEqual(D, {
-  enabled: false, paymentsEnabled: false, tier2Pct: 30, tier3Pct: 50, maxEvents: 3,
-  maxKm: 1000, bestKm: 600, okGapDays: 5, maxGapDays: 10, maxSpanDays: 21, maxAutoRoutes: 12,
+  paymentsEnabled: false, tier2Pct: 30, tier3Pct: 50, maxEvents: 3,
+  maxKm: 1000, bestKm: 600, okGapDays: 5, maxGapDays: 10, maxSpanDays: 21, maxAutoRoutes: 0,
 });
 assert.deepEqual(ITINERARY_SPECS.map((s) => s.key), [
-  "enabled", "payments_enabled", "tier_2_pct", "tier_3_pct", "max_events", "max_km", "best_km",
+  "payments_enabled", "tier_2_pct", "tier_3_pct", "max_events", "max_km", "best_km",
   "ok_gap_days", "max_gap_days", "max_span_days", "max_auto_routes",
 ]);
 assert.deepEqual(ok(), D, "the defaults are a valid form");
@@ -78,9 +79,11 @@ for (const [field, min, max, int] of RANGES) {
 }
 
 // Booleans must be booleans (a string "true" would be ignored by the reader).
-bad({ enabled: "true" }, "enabled", /ערך לא תקין/, "a string is not a switch");
+bad({ paymentsEnabled: "true" }, "paymentsEnabled", /ערך לא תקין/, "a string is not a switch");
 bad({ paymentsEnabled: 1 }, "paymentsEnabled", /ערך לא תקין/, "1 is not a switch");
-assert.equal(ok({ enabled: true, paymentsEnabled: true }).enabled, true);
+assert.equal(ok({ paymentsEnabled: true }).paymentsEnabled, true);
+// A form that still carries the retired switch saves without it.
+assert.equal("enabled" in ok({ enabled: true } as Record<string, unknown>), false);
 
 // A missing field is an error, not a silent default.
 {
@@ -118,15 +121,16 @@ assert.equal(ok({ tier2Pct: 0, tier3Pct: 0 }).tier2Pct, 0, "no discount at all i
 
 // The rows written to the table: every key, jsonb numbers / booleans - never strings.
 {
-  const rows = itineraryRows(ok({ enabled: true, tier2Pct: 25.5, maxEvents: 2 }));
-  assert.equal(rows.length, 11);
+  const rows = itineraryRows(ok({ paymentsEnabled: true, tier2Pct: 25.5, maxEvents: 2 }));
+  assert.equal(rows.length, 10);
   assert.deepEqual(rows.map((r) => r.key), ITINERARY_SPECS.map((s) => s.key));
   for (const r of rows) assert.ok(typeof r.value === "number" || typeof r.value === "boolean", `${r.key} is jsonb number/boolean`);
-  assert.deepEqual(rows.find((r) => r.key === "enabled"), { key: "enabled", value: true });
+  assert.equal(rows.find((r) => r.key === "enabled"), undefined, "the retired switch is never written");
+  assert.deepEqual(rows.find((r) => r.key === "payments_enabled"), { key: "payments_enabled", value: true });
   assert.deepEqual(rows.find((r) => r.key === "tier_2_pct"), { key: "tier_2_pct", value: 25.5 });
   assert.deepEqual(rows.find((r) => r.key === "max_events"), { key: "max_events", value: 2 });
   // What is written is what the reader hands back.
-  assert.deepEqual(parseItinerarySettingRows(rows), ok({ enabled: true, tier2Pct: 25.5, maxEvents: 2 }));
+  assert.deepEqual(parseItinerarySettingRows(rows), ok({ paymentsEnabled: true, tier2Pct: 25.5, maxEvents: 2 }));
 }
 
 // The one-line error names the field by its label.
@@ -147,7 +151,7 @@ assert.deepEqual(parseItinerarySettingRows(undefined), D);
 assert.deepEqual(parseItinerarySettingRows([]), D);
 {
   const s: ItinerarySettings = parseItinerarySettingRows([
-    { key: "enabled", value: true },
+    { key: "enabled", value: true }, // the retired switch - ignored
     { key: "payments_enabled", value: "true" }, // a string - ignored
     { key: "tier_2_pct", value: 91 }, // above 90 - ignored
     { key: "tier_3_pct", value: 65 },
@@ -157,7 +161,7 @@ assert.deepEqual(parseItinerarySettingRows([]), D);
     { key: "ok_gap_days", value: 4 },
     { key: "mystery", value: 1 }, // unknown key
   ]);
-  assert.deepEqual(s, { ...D, enabled: true, tier3Pct: 65, okGapDays: 4 });
+  assert.deepEqual(s, { ...D, tier3Pct: 65, okGapDays: 4 });
 }
 
 // refreshItineraryErrors: the messages on screen are re-checked after an edit - fixed ones go (a cross-rule

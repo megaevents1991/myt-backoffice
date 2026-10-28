@@ -11,11 +11,13 @@
  * What this file adds on top of the reader: validation of a whole form (per-field Hebrew errors) and the
  * cross-field rules the reader cannot know - the "best" distance can't pass the maximum, the "ok" gap can't
  * pass the maximum gap, the biggest gap can't pass the whole trip, the 3rd event can't be cheaper than the 2nd.
+ *
+ * NOT here (2026-10-28): whether the feature is open on the site. That is the "euro_trip" row of the /homepage
+ * board (types/homepage.types.ts `EURO_TRIP_SECTION_KEY`) - the old `enabled` key is no longer written, and
+ * myt-main no longer reads it.
  */
 
 export type ItinerarySettings = {
-  /** Master switch: the pages are public in production only while this is true. */
-  enabled: boolean;
   /** A multi-event itinerary may be paid for (off = the customer only saves the trip for 24 hours). */
   paymentsEnabled: boolean;
   /** Discount % on the service fee of the 2nd event of a trip. */
@@ -34,7 +36,7 @@ export type ItinerarySettings = {
   maxGapDays: number;
   /** Longest whole trip, first event to last, in days. */
   maxSpanDays: number;
-  /** How many routes the page builds on its own. */
+  /** How many routes the page builds on its own (0 = only the trips staff made and switched on). */
   maxAutoRoutes: number;
 };
 
@@ -46,7 +48,6 @@ export type ItinerarySettings = {
 export const MAX_TRIP_EVENTS = 3;
 
 export const DEFAULT_ITINERARY_SETTINGS: ItinerarySettings = {
-  enabled: false,
   paymentsEnabled: false,
   tier2Pct: 30,
   tier3Pct: 50,
@@ -56,10 +57,11 @@ export const DEFAULT_ITINERARY_SETTINGS: ItinerarySettings = {
   okGapDays: 5,
   maxGapDays: 10,
   maxSpanDays: 21,
-  maxAutoRoutes: 12,
+  // 0 by default (Dor 28.10): the site shows only the trips staff switched on, never routes it made up itself.
+  maxAutoRoutes: 0,
 };
 
-export type ItineraryBoolField = "enabled" | "paymentsEnabled";
+export type ItineraryBoolField = "paymentsEnabled";
 export type ItineraryNumField = Exclude<keyof ItinerarySettings, ItineraryBoolField>;
 export type ItineraryField = keyof ItinerarySettings;
 
@@ -90,7 +92,6 @@ const num = (
  * audited. The ranges are the reader's (myt-main `SPECS`), inclusive.
  */
 export const ITINERARY_SPECS: readonly ItinerarySpec[] = [
-  { key: "enabled", field: "enabled", kind: "bool", label: "Euro Trip פעיל באתר" },
   { key: "payments_enabled", field: "paymentsEnabled", kind: "bool", label: "תשלום פעיל" },
   num("tier_2_pct", "tier2Pct", "אירוע שני: % הנחה על דמי השירות", 0, 90, false),
   num("tier_3_pct", "tier3Pct", "אירוע שלישי: % הנחה על דמי השירות", 0, 90, false),
@@ -150,7 +151,7 @@ export function validateItinerarySettings(
 ): { ok: true; settings: ItinerarySettings } | { ok: false; errors: ItineraryFieldErrors } {
   const errors: ItineraryFieldErrors = {};
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, errors: { enabled: "הטופס לא תקין - רעננו את הדף ונסו שוב" } };
+    return { ok: false, errors: { paymentsEnabled: "הטופס לא תקין - רעננו את הדף ונסו שוב" } };
   }
   const p = input as Record<string, unknown>;
   const out = { ...DEFAULT_ITINERARY_SETTINGS };
@@ -234,7 +235,7 @@ export const ITINERARY_ADMIN_ONLY_TEXT = "רק מנהלים יכולים לשנ�
 /** What `readItinerarySettings` hands the screen. Defaults are always merged in; `status` says why they may be all there is. */
 export type ItinerarySettingsRead =
   /**
-   * `saved` = the table holds at least one row; false = nothing saved yet, so these are the defaults (feature off).
+   * `saved` = the table holds at least one row; false = nothing saved yet, so these are the defaults.
    * `canEdit` = the viewer may save (admin / superadmin); an editor reads the same screen, read-only.
    */
   | { status: "ok"; settings: ItinerarySettings; saved: boolean; canEdit: boolean }

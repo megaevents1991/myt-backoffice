@@ -48,6 +48,7 @@ import {
   type RowRef,
 } from "@/lib/homepage/merge";
 import { PUBLIC_SITE_URL } from "@/lib/site";
+import { EURO_TRIP_SECTION_KEY } from "@/types/homepage.types";
 import {
   BLOCK_META,
   SECTION_META,
@@ -391,7 +392,8 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
         setDirty(false);
         toast({
           title: "עמוד הבית נשמר",
-          description: "האתר מתעדכן עכשיו - רענון של עמוד הבית באתר יראה את הסדר החדש.",
+          description:
+            res.warning ?? "האתר מתעדכן עכשיו - רענון של עמוד הבית באתר יראה את הסדר החדש.",
         });
       } else {
         toast({ variant: "destructive", title: "Save failed", description: res.error });
@@ -429,6 +431,9 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
               // What the site prints above the section: the staff title, else the coded one.
               const shownTitle = s.title ?? meta.siteTitle;
               const canRename = initial.blocksReady && !pinned;
+              // The Euro Trip row is the feature's switch on the site: only an admin flips it.
+              const isEuroTrip = s.key === EURO_TRIP_SECTION_KEY;
+              const switchLocked = isEuroTrip && !initial.canSwitchEuroTrip;
               const renaming = editingTitle === s.key;
               return (
                 <Fragment key={s.key}>
@@ -571,6 +576,8 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                       )}
                       <Switch
                         checked={s.is_visible}
+                        disabled={switchLocked}
+                        title={switchLocked ? "רק מנהל יכול להציג או להסתיר את היורו טריפ באתר" : undefined}
                         onCheckedChange={(v) => setVisible(s.key, v)}
                         aria-label={`Show "${meta.labelEn}" on the homepage`}
                       />
@@ -666,6 +673,25 @@ export function HomepageBoard({ initial }: { initial: HomepageLayout }) {
                             : undefined
                       }
                     />
+                  ) : isEuroTrip ? (
+                    <div className="space-y-1.5 px-3 py-3 text-xs" dir="rtl">
+                      <div className={cn("font-semibold", s.is_visible ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+                        {s.is_visible
+                          ? "מוצג = עמודי היורו טריפ פתוחים באתר, ודף הבית מציג כניסה אליהם."
+                          : "מוסתר = היורו טריפ סגור באתר: העמודים לא קיימים ודף הבית לא מציג אותו."}
+                      </div>
+                      <div className="text-muted-foreground">
+                        באתר עולים רק טריפים שסומנו "פעיל" ב
+                        <a href="/events/trips" target="_blank" rel="noopener noreferrer" className="underline">
+                          אירועים &gt; טריפים
+                        </a>
+                        . התשלום, ההנחות והחוקים - ב
+                        <a href="/templates/euro-trip/settings" target="_blank" rel="noopener noreferrer" className="underline">
+                          הגדרות היורו טריפ
+                        </a>
+                        .{switchLocked && " רק מנהל יכול להציג או להסתיר את השורה הזו."}
+                      </div>
+                    </div>
                   ) : (
                     <div className="px-3 py-3 text-xs text-muted-foreground" dir="rtl">
                       {meta.rule}
