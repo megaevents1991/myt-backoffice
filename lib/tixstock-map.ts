@@ -343,11 +343,35 @@ const SVG_CSS_PROPERTIES = new Set([
 /**
  * One value token: a #hex colour, rgb()/rgba()/hsl()/hsla() with numeric arguments, `url(#id)`, a number with an
  * optional unit or %, a keyword, or a quoted font name. No other function - no `image-set(`, `src(`, `url(http…)`.
+ * The number is written so one string of digits has ONE way to match (`\d+(?:\.\d*)?`, not `\d+\.?\d*` - the two
+ * `\d` runs could split it any way, which backtracks polynomially on a long run of digits).
  */
-const CSS_VALUE_TOKEN = String.raw`(?:#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?)\(\s*[-+\d.%\s,/]*\)|url\(\s*#[\w.:-]+\s*\)|url\(\s*'#[\w.:-]+'\s*\)|url\(\s*"#[\w.:-]+"\s*\)|[-+]?(?:\d+\.?\d*|\.\d+)(?:[a-zA-Z]{1,4}|%)?|[a-zA-Z][a-zA-Z-]*|'[^'"\\<>;{}()]*'|"[^'"\\<>;{}()]*")`;
+const CSS_VALUE_TOKEN = String.raw`(?:#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?)\(\s*[-+\d.%\s,/]*\)|url\(\s*#[\w.:-]+\s*\)|url\(\s*'#[\w.:-]+'\s*\)|url\(\s*"#[\w.:-]+"\s*\)|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[a-zA-Z]{1,4}|%)?|[a-zA-Z][a-zA-Z-]*|'[^'"\\<>;{}()]*'|"[^'"\\<>;{}()]*")`;
 const CSS_SAFE_VALUE = new RegExp(String.raw`^${CSS_VALUE_TOKEN}(?:\s*,\s*${CSS_VALUE_TOKEN}|\s+${CSS_VALUE_TOKEN})*(?:\s*!important)?$`);
-/** A selector made of plain selector characters only - no `@`, braces, `;`, `\`, `<`, `/` or quotes-with-parens games. */
-const CSS_SAFE_SELECTOR = /^[\w\s.#*>+~:,\-[\]="'()|^$]+$/;
+/** A declaration value longer than this is no value (checked BEFORE the pattern - a venue map's longest is a font list). */
+const CSS_VALUE_MAX = 200;
+/**
+ * A selector made of plain selector characters only: classes, ids, elements, combinators, pseudo-classes and
+ * unquoted attribute tests. No `@`, braces, `;`, `\`, `<`, `/`, NO parentheses (`:is(` / `:where(` / `:has(` could
+ * name an element outside the scope) and NO quotes (a string could swallow the scope prefix of the next selector).
+ * The brackets must also balance (`selectorBracketsBalance`).
+ */
+const CSS_SAFE_SELECTOR = /^[\w\s.#*>+~:,\-[\]=|^$]+$/;
+
+/** Every `[` closes before the next opens, and nothing is left open - an attribute test, never a stray bracket. */
+function selectorBracketsBalance(selector: string): boolean {
+  let open = false;
+  for (const ch of selector) {
+    if (ch === "[") {
+      if (open) return false;
+      open = true;
+    } else if (ch === "]") {
+      if (!open) return false;
+      open = false;
+    }
+  }
+  return !open;
+}
 
 /** Split on `sep` outside parentheses, brackets and quotes. */
 function splitTopLevel(text: string, sep: string): string[] {
@@ -381,7 +405,7 @@ function safeDeclaration(declaration: string): string | null {
   if (colon === -1) return null;
   const prop = declaration.slice(0, colon).trim().toLowerCase();
   const value = declaration.slice(colon + 1).trim();
-  if (!SVG_CSS_PROPERTIES.has(prop) || value === "" || !CSS_SAFE_VALUE.test(value)) return null;
+  if (!SVG_CSS_PROPERTIES.has(prop) || value === "" || value.length > CSS_VALUE_MAX || !CSS_SAFE_VALUE.test(value)) return null;
   if (prop === "cursor" && !/^[a-zA-Z-]+(?:\s*!important)?$/.test(value)) return null;
   return `${prop}: ${value}`;
 }
@@ -426,7 +450,7 @@ export const cleanSvgCss = (css: string, scope: string): string => {
     const selector = text.slice(i, open).trim();
     const body = close === -1 ? text.slice(open + 1) : text.slice(open + 1, close);
     i = close === -1 ? text.length : close + 1;
-    if (body.includes("{") || selector === "" || !CSS_SAFE_SELECTOR.test(selector)) continue;
+    if (body.includes("{") || selector === "" || !CSS_SAFE_SELECTOR.test(selector) || !selectorBracketsBalance(selector)) continue;
     const declarations = splitTopLevel(body, ";")
       .map((d) => d.trim())
       .filter((d) => d !== "")
@@ -612,10 +636,13 @@ export const sanitizeAndPrepareSvg = (rawSvg: string): string | null => {
   // Force stable text metrics with an injected override stylesheet.
   // Preserving the SVG-authored transforms avoids the slight label drift
   // introduced by runtime re-centering against fallback fonts.
+  // Scoped like the supplier's own CSS (final fix wave C3): an inline <svg>'s <style> is a DOCUMENT stylesheet, so
+  // an unscoped `text` / `.section-label` rule would restyle every other drawing on the page too.
+  const scope = `svg[data-venue-map="${scopeId}"]`;
   const styleEl = doc.createElementNS(SVG_NS, "style");
   styleEl.textContent = `
-    text,
-    tspan {
+    ${scope} text,
+    ${scope} tspan {
       pointer-events: none !important;
       user-select: none !important;
       font-family: Arial, Helvetica, sans-serif !important;
@@ -623,7 +650,7 @@ export const sanitizeAndPrepareSvg = (rawSvg: string): string | null => {
       unicode-bidi: isolate;
     }
 
-    .section-label {
+    ${scope} .section-label {
       font-size: 10px !important;
     }
   `;
@@ -656,12 +683,15 @@ export const prePaintSvg = (
   disabledTicketIds?: Set<string>,
 ): string => {
   if (!svgHtml || typeof DOMParser === "undefined") return svgHtml;
+  // What is drawn when the painted copy cannot be: the drawing as it came in, only while it still passes the same
+  // re-parse check (it is `sanitizeAndPrepareSvg`'s output) - else nothing.
+  const unpainted = (): string => (survivesHtmlReparse(svgHtml) ? svgHtml : "");
 
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgHtml, "image/svg+xml");
     const svg = doc.querySelector("svg");
-    if (!svg) return svgHtml;
+    if (!svg) return unpainted();
 
     const sectionEls = Array.from(svg.querySelectorAll("[data-section]"));
 
@@ -697,10 +727,15 @@ export const prePaintSvg = (
       }
     }
 
-    return svg.outerHTML;
+    // The painted copy is serialized again for `dangerouslySetInnerHTML`: it passes the same check as the sanitizer's
+    // own output (final fix wave C4), or the unpainted drawing is drawn instead.
+    const painted = svg.outerHTML;
+    if (survivesHtmlReparse(painted)) return painted;
+    console.error("[prePaintSvg] the painted SVG failed the HTML re-parse check - drawing it unpainted");
+    return unpainted();
   } catch (e) {
     console.error("[prePaintSvg] Failed to pre-paint SVG:", e);
-    return svgHtml;
+    return unpainted();
   }
 };
 

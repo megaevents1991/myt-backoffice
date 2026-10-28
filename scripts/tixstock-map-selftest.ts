@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DOMParser } from "linkedom";
-import { cleanSvgCss, sanitizeAndPrepareSvg } from "@/lib/tixstock-map";
+import { cleanSvgCss, prePaintSvg, sanitizeAndPrepareSvg } from "@/lib/tixstock-map";
 
 Object.assign(globalThis, { DOMParser });
 
@@ -116,7 +116,7 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
     "cleanSvgCss: only the paint / stroke / text properties stay - position, content, background, width go",
   );
   same(cleanSvgCss(".a{fill:rgb(calc(1),2,3)} .b{fill:attr(x)} .c{fill:var(--x)} .d{fill:element(#x)} .e{fill:cross-fade(a,b)}", SC), "", "cleanSvgCss: no function but rgb/hsl with numbers and url(#id)");
-  same(cleanSvgCss(".a, svg > g.b:hover, [data-section=\"x_1\"]{fill:red}", SC), `${SC} .a, ${SC} svg > g.b:hover, ${SC} [data-section="x_1"] { fill: red; }`, "cleanSvgCss: every selector of a list is scoped");
+  same(cleanSvgCss(".a, svg > g.b:hover, [data-section=x_1]{fill:red}", SC), `${SC} .a, ${SC} svg > g.b:hover, ${SC} [data-section=x_1] { fill: red; }`, "cleanSvgCss: every selector of a list is scoped");
   same(cleanSvgCss("~ div{fill:red} + p{fill:red} .a, ~ b{fill:red}", SC), "", "cleanSvgCss: a selector that starts with a sibling combinator (reaches past the drawing) drops its rule");
   same(cleanSvgCss("a{b{fill:red}} .c @x{fill:red} .d\\:e{fill:red} .f{fill:red", SC), `${SC} .f { fill: red; }`, "cleanSvgCss: a nested block, an @ or a backslash in a selector drops the rule; an unclosed last rule is still read safely");
 
@@ -209,6 +209,104 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
   same(run(`<html xmlns="http://www.w3.org/1999/xhtml"><svg xmlns="${SVGNS}"><rect width="1" height="1"/></svg></html>`), null, "a document whose root is not <svg> is no drawing");
 }
 
+// ---- final fix wave C1-C4 (the automated security reviews of 61eba5c and its re-review) --------------------------
+{
+  const SC = 'svg[data-venue-map="t"]';
+  // C1: a selector with parentheses, a quote or an unbalanced bracket drops its rule (the maps use class / id / element).
+  for (const [label, css] of [
+    [":is(body)", ".a:is(body){fill:red}"],
+    [":where(html *)", ":where(html *){fill:red}"],
+    [":has(.x)", "g:has(.x){fill:red}"],
+    [":not(.y)", "g:not(.y){fill:red}"],
+    ["a double quote", '[data-section="x_1"]{fill:red}'],
+    ["a single quote", "[data-section='x_1']{fill:red}"],
+    ["a quote that would swallow the next scope", '.a[x="{fill:red}'],
+    ["an unclosed [", ".a[data-x{fill:red}"],
+    ["a stray ]", ".a]{fill:red}"],
+    ["a nested [[", ".a[[x]]{fill:red}"],
+    ["a ] before its [", "g]x[{fill:red}"],
+  ] as const) {
+    same(cleanSvgCss(`${css} .ok{fill:blue}`, SC), `${SC} .ok { fill: blue; }`, `C1: a selector with ${label} drops its rule; the plain rule beside it stays`);
+  }
+  same(cleanSvgCss("[data-section=x_1], g[data-tier]{fill:red}", SC), `${SC} [data-section=x_1], ${SC} g[data-tier] { fill: red; }`, "C1: an unquoted, balanced attribute test stays, each part scoped");
+  same(cleanSvgCss("g.block:hover > path, #seat-1 ~ rect{fill:red}", SC), `${SC} g.block:hover > path, ${SC} #seat-1 ~ rect { fill: red; }`, "C1: classes, ids, pseudo-classes and combinators inside a part stay");
+
+  // C2: a long value is no value - checked before the pattern, so it costs nothing; the number token has one way to match.
+  const timed = (css: string): { out: string; ms: number } => {
+    const t0 = performance.now();
+    const out = cleanSvgCss(css, SC);
+    return { out, ms: performance.now() - t0 };
+  };
+  for (const [label, value] of [
+    ["10,000 digits", "1".repeat(10_000)],
+    ["10,000 digits and a stray letter", `${"1".repeat(10_000)}!`],
+    ["10,000 digits with a dot in the middle", `${"1".repeat(5_000)}.${"1".repeat(4_999)}x`],
+    ["5,000 numbers", Array.from({ length: 5_000 }, () => "1").join(" ")],
+  ] as const) {
+    const { out, ms } = timed(`.a{stroke-dasharray:${value}} .ok{fill:blue}`);
+    same(out, `${SC} .ok { fill: blue; }`, `C2: ${label} - the declaration is dropped (over the 200-character cap)`);
+    check(ms < 50, `C2: ${label} - answered in ${ms.toFixed(1)} ms (< 50 ms)`);
+  }
+  // Under the cap the pattern itself answers fast too, even on the old worst case (digits then a character that fails).
+  const nearCap = timed(`.a{stroke-width:${"1".repeat(199)}!}`);
+  same(nearCap.out, "", "C2: 199 digits and a stray character are no value");
+  check(nearCap.ms < 50, `C2: ... answered in ${nearCap.ms.toFixed(1)} ms (< 50 ms)`);
+  const dash200 = Array.from({ length: 100 }, () => "1").join(" ").padEnd(199, " ").trimEnd();
+  check(cleanSvgCss(`.a{stroke-dasharray:${dash200}}`, SC).includes("stroke-dasharray"), "C2: a value under the cap is still read");
+  same(cleanSvgCss(`.a{stroke-dasharray:${"1 ".repeat(101)}}`, SC), "", "C2: ... and one over the cap (201+ characters) is not");
+  same(cleanSvgCss(".a{opacity:1.} .b{opacity:.5} .c{stroke-width:0.75px} .d{font-size:10.5%}", SC), `${SC} .a { opacity: 1.; }\n${SC} .b { opacity: .5; }\n${SC} .c { stroke-width: 0.75px; }\n${SC} .d { font-size: 10.5%; }`, "C2: '1.', '.5', '0.75px' and '10.5%' still read as numbers");
+
+  // C3: our own injected text style is scoped like the supplier's (an inline <svg>'s <style> is a document stylesheet).
+  const injected = clean(wrap(""));
+  const scope = `svg[data-venue-map="${injected.doc.querySelector("svg")?.getAttribute("data-venue-map") ?? ""}"]`;
+  const css = Array.from(injected.doc.querySelectorAll("style")).map((el) => el.textContent ?? "").join("\n");
+  check(css.includes(`${scope} text,`) && css.includes(`${scope} tspan {`) && css.includes(`${scope} .section-label {`), "C3: the injected text / tspan / .section-label rules carry the drawing's scope");
+  check(!/(^|[\n,{}])\s*(text|tspan|\.section-label)\s*[,{]/.test(css), "C3: no injected selector is left unscoped");
+
+  // C4: prePaintSvg's output (serialized again for TixstockDynamicMap) passes the same re-parse check, else the
+  // unpainted drawing is drawn, else nothing. linkedom has no HTML parser for the check, so a stand-in `document`
+  // answers it here: it accepts exactly the markup `passes` names.
+  const prepared = sanitizeAndPrepareSvg(wrap("")) ?? "";
+  const painted = prePaintSvg(prepared, []);
+  check(painted !== "" && painted !== prepared && painted.includes('data-section="lower-tier_101"'), "C4: with no document to check against, the drawing is painted (sections kept)");
+  const okRoot = { nodeType: 1, namespaceURI: "http://www.w3.org/2000/svg", localName: "svg", attributes: [], querySelectorAll: () => [] };
+  const standIn = (passes: (markup: string) => boolean) => ({
+    createElement: () => {
+      let markup = "";
+      return {
+        set innerHTML(value: string) {
+          markup = value;
+        },
+        get content() {
+          return { childNodes: passes(markup) ? [okRoot] : [] };
+        },
+      };
+    },
+  });
+  const withDocument = <T,>(doc: unknown, fn: () => T): T => {
+    const g = globalThis as { document?: unknown };
+    g.document = doc;
+    try {
+      return fn();
+    } finally {
+      delete g.document;
+    }
+  };
+  const quiet = <T,>(fn: () => T): T => {
+    const error = console.error;
+    console.error = () => {};
+    try {
+      return fn();
+    } finally {
+      console.error = error;
+    }
+  };
+  same(withDocument(standIn(() => true), () => prePaintSvg(prepared, [])), painted, "C4: a painted copy that passes the check is drawn");
+  same(quiet(() => withDocument(standIn((m) => m === prepared), () => prePaintSvg(prepared, []))), prepared, "C4: a painted copy that fails the check -> the unpainted drawing");
+  same(quiet(() => withDocument(standIn(() => false), () => prePaintSvg(prepared, []))), "", "C4: ... and when that fails too, nothing is drawn");
+  same(quiet(() => withDocument(standIn(() => false), () => prePaintSvg("<html><body>x</body></html>", []))), "", "C4: markup with no <svg> is never handed back unchecked");
+}
+
 // ---- a real map keeps what the maps need -----------------------------------------------------------------------
 {
   const raw = readFileSync(join(process.cwd(), "public", "Arsenal-Emirates Stadium.svg"), "utf8");
@@ -231,6 +329,7 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
   const css = Array.from(after.doc.querySelectorAll("style")).map((el) => el.textContent ?? "").join("\n");
   check(css.includes("pointer-events: none !important"), "Arsenal: the injected text style stays");
   const arsenalScope = `svg[data-venue-map="${after.doc.querySelector("svg")?.getAttribute("data-venue-map") ?? ""}"]`;
+  check(css.includes(`${arsenalScope} text,`) && css.includes(`${arsenalScope} .section-label {`), "Arsenal: ... scoped to the drawing (C3)");
   for (const rule of [
     ".st0 { fill: #599D52; }",
     ".st1 { fill: none; stroke: #FFFFFF; stroke-miterlimit: 10; }",
