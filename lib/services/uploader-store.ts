@@ -944,11 +944,26 @@ export async function writeVenueNameHe(id: string, nameHe: string | null): Promi
   return "db_error";
 }
 
-/** `venue_maps.dropped_categories` replaced: the keys the venue never sells and the rule-drops a person kept. false = the write failed (logged). */
-export async function writeDroppedCategories(id: string, dropped: string[], kept: string[]): Promise<boolean> {
+/**
+ * `venue_maps.dropped_categories` written: `tixstock` (the keys the venue never sells) and `tixstock_kept` (the
+ * rule-drops a person kept) replaced, and `tixstock_sections` (the hall's excluded map sections, round 2 Task 10)
+ * replaced when `sections` is given - left as stored when it is not. The stored jsonb is read first and merged, so a
+ * key this write does not mean to change (one a later feature adds) is never dropped. false = the read or the write
+ * failed (logged).
+ */
+export async function writeDroppedCategories(id: string, dropped: string[], kept: string[], sections?: string[]): Promise<boolean> {
+  const read = (await db.from("venue_maps").select("dropped_categories").eq("id", id).maybeSingle()) as DbResult<{ dropped_categories: Json } | null>;
+  if (read.error) {
+    logDb(`venue map ${id} dropped categories read`, read.error);
+    return false;
+  }
+  const stored = read.data?.dropped_categories;
+  const current: Record<string, unknown> = typeof stored === "object" && stored !== null && !Array.isArray(stored) ? { ...stored } : {};
+  const next: Record<string, unknown> = { ...current, tixstock: dropped, tixstock_kept: kept };
+  if (sections !== undefined) next.tixstock_sections = sections;
   const { error } = (await db
     .from("venue_maps")
-    .update({ dropped_categories: { tixstock: dropped, tixstock_kept: kept }, updated_at: nowIso() })
+    .update({ dropped_categories: next, updated_at: nowIso() })
     .eq("id", id)) as DbResult<null>;
   if (error) {
     logDb(`venue map ${id} dropped categories write`, error);
@@ -957,16 +972,22 @@ export async function writeDroppedCategories(id: string, dropped: string[], kept
   return true;
 }
 
-/** An event row as a classification / rename reads it. */
-export type EventTicketsRow = { tickets_and_rates: EventTicket[]; map_image_url: string | null; is_hidden: boolean; name: string };
+/** An event row as a classification / rename reads it (`tx_excluded_sections` = the map sections it never sells; null reads as none). */
+export type EventTicketsRow = {
+  tickets_and_rates: EventTicket[];
+  map_image_url: string | null;
+  is_hidden: boolean;
+  name: string;
+  tx_excluded_sections: string[];
+};
 
 const isTicket = (v: unknown): v is EventTicket =>
   typeof v === "object" && v !== null && !Array.isArray(v) && typeof (v as { category?: unknown }).category === "string";
 
 /**
- * The tickets, map, hidden flag and name of these events - soft-deleted ones are no row (a deleted show
- * is never rewritten). In chunks of IN_CHUNK; null = a read failed (logged). `events.is_hidden` is newer
- * than the generated types - read through `db`.
+ * The tickets, map, excluded sections, hidden flag and name of these events - soft-deleted ones are no row (a
+ * deleted show is never rewritten). In chunks of IN_CHUNK; null = a read failed (logged). `events.is_hidden` is
+ * newer than the generated types - read through `db`.
  */
 export async function readEventTickets(ids: number[]): Promise<Map<number, EventTicketsRow> | null> {
   const rows = new Map<number, EventTicketsRow>();
@@ -974,9 +995,11 @@ export async function readEventTickets(ids: number[]): Promise<Map<number, Event
   for (let i = 0; i < wanted.length; i += IN_CHUNK) {
     const { data, error } = (await db
       .from("events")
-      .select("id,name,tickets_and_rates,map_image_url,is_hidden")
+      .select("id,name,tickets_and_rates,map_image_url,is_hidden,tx_excluded_sections")
       .in("id", wanted.slice(i, i + IN_CHUNK))
-      .is("is_deleted", null)) as DbResult<{ id: number; name: string | null; tickets_and_rates: unknown; map_image_url: string | null; is_hidden: boolean | null }[]>;
+      .is("is_deleted", null)) as DbResult<
+      { id: number; name: string | null; tickets_and_rates: unknown; map_image_url: string | null; is_hidden: boolean | null; tx_excluded_sections: unknown }[]
+    >;
     if (error) {
       logDb("events (tickets) read", error);
       return null;
@@ -987,6 +1010,9 @@ export async function readEventTickets(ids: number[]): Promise<Map<number, Event
         map_image_url: row.map_image_url ?? null,
         is_hidden: row.is_hidden === true,
         name: row.name ?? "",
+        tx_excluded_sections: Array.isArray(row.tx_excluded_sections)
+          ? row.tx_excluded_sections.filter((id): id is string => typeof id === "string")
+          : [],
       });
     }
   }
@@ -994,14 +1020,15 @@ export async function readEventTickets(ids: number[]): Promise<Map<number, Event
 }
 
 /**
- * A classified event: `tickets_and_rates` and `map_image_url` - those two columns only, never through
- * `updateEvent` (approve's direct-column discipline), only while the event is not deleted. Audited as an
+ * A classified event: `tickets_and_rates`, `map_image_url` and `tx_excluded_sections` (the hall's excluded map
+ * sections, round 2 Task 10 - the TixStock price sync and main price with them) - those three columns only, never
+ * through `updateEvent` (approve's direct-column discipline), only while the event is not deleted. Audited as an
  * `update` of the event. false = the write failed or the event is gone (logged).
  */
-export async function writeEventClassification(eventId: number, tickets: EventTicket[], mapUrl: string): Promise<boolean> {
+export async function writeEventClassification(eventId: number, tickets: EventTicket[], mapUrl: string, excludedSections: string[]): Promise<boolean> {
   const { data, error } = (await db
     .from("events")
-    .update({ tickets_and_rates: tickets, map_image_url: mapUrl })
+    .update({ tickets_and_rates: tickets, map_image_url: mapUrl, tx_excluded_sections: excludedSections })
     .eq("id", eventId)
     .is("is_deleted", null)
     .select("id")) as DbResult<{ id: number }[]>;
@@ -1017,7 +1044,7 @@ export async function writeEventClassification(eventId: number, tickets: EventTi
     action: "update",
     entityType: "event",
     entityId: eventId,
-    changes: { map_image_url: mapUrl, tickets_count: tickets.length },
+    changes: { map_image_url: mapUrl, tickets_count: tickets.length, tx_excluded_sections: excludedSections },
     metadata: { agent: AGENT, via: "uploader.classify" },
   });
   return true;

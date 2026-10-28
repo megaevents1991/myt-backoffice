@@ -19,6 +19,10 @@
  *    person arranged in the editor.
  *  - `applyClassification`, `isAppliedState`: drop + zone (and re-sync) a list of tickets by the template
  *    (confirm, learn AND build), and whether an event already holds that result.
+ *  - `parseExcludedSectionsInput`, `toggleExcludedSection`, `hallExcludedSections` (round 2, Task 10): the
+ *    hall's EXCLUDED map sections (`venue_maps.dropped_categories.tixstock_sections`) - the dialog's map
+ *    clicks, the confirm's list, and what an event's `tx_excluded_sections` becomes. A section id is the
+ *    drawing's `data-section` ("<category slug>_<section>", the format `isExcludedSection` reads).
  * A zone label with no Hebrew letter is no label (ruling R26): never "existing", never spread by a learn.
  *
  * Zones and mappings are MERGED over the existing template: ids are reused per key, zones of keys that
@@ -28,6 +32,7 @@
  * Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md (6.2).
  */
 import { normalizeSupplierCategory, ticketSupplier } from "@/lib/suppliers";
+import { isUnlabeledSectionId, unlabeledSectionGroupId } from "@/lib/tixstock-map";
 import {
   cleanZoneDescription,
   isUnsellableCategory,
@@ -57,6 +62,10 @@ export const CLASSIFY_TIMEOUT_MS = 40_000;
 export const FIRST_CONFIRM_NEEDS_NAME = "name at least one zone before the first confirm";
 /** The longest Hebrew name of a hall (round 2, D3) - the dialog's box, the tool's schema and the confirm's check. */
 export const VENUE_HE_MAX = 80;
+/** The longest map section id the hall's excluded list keeps (a TixStock `data-section` is ~10-40 characters). */
+export const EXCLUDED_SECTION_MAX = 64;
+/** Most sections a hall may exclude (a big stadium draws a few hundred). */
+export const EXCLUDED_SECTIONS_MAX = 500;
 
 const HEBREW_LETTER = /[א-ת]/;
 /** The words that make a stand an away stand. Word-bounded, so "Getaway Lounge" is not one. */
@@ -70,8 +79,11 @@ export type DrawingCategory = { category: string; key: string; sections: string[
 /** A venue template, as far as these rules read it. */
 export type TemplateLike = { zones: VenueZone[]; supplier_categories: SupplierCategoryMap };
 
-/** `venue_maps.dropped_categories` as keys: what the venue never sells, and the rule-drops a person kept. */
-export type DroppedCategories = { dropped: string[]; kept: string[] };
+/**
+ * `venue_maps.dropped_categories` as keys: what the venue never sells, and the rule-drops a person kept; `sections` =
+ * the map sections excluded for every show of the hall (`tixstock_sections`, round 2 Task 10 - section ids, not keys).
+ */
+export type DroppedCategories = { dropped: string[]; kept: string[]; sections: string[] };
 
 /** What the model (or the rule) says about one category. `description_he` is never the model's (D4): "" in a proposal, the stored zone's in a row the template already holds. */
 export type ProposedRow = {
@@ -120,6 +132,8 @@ export type TemplateUpdate = {
   dropped: string[];
   /** The FINAL `dropped_categories.tixstock_kept` list (replace). */
   kept: string[];
+  /** The FINAL `dropped_categories.tixstock_sections` list (replace): the hall's excluded map sections. */
+  sections: string[];
 };
 
 export type ClassificationChange = {
@@ -248,10 +262,68 @@ const keyList = (value: unknown): string[] =>
       )
     : [];
 
-/** `venue_maps.dropped_categories` (`{ tixstock, tixstock_kept }`) as keys; anything unreadable is empty. */
+/** A section id as the hall's list keeps it: trimmed, non-empty, at most `EXCLUDED_SECTION_MAX` - else null. */
+function sectionIdOf(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  return id !== "" && id.length <= EXCLUDED_SECTION_MAX ? id : null;
+}
+
+/** A stored list of section ids, leniently: the usable ids, deduped, at most `EXCLUDED_SECTIONS_MAX`. */
+const sectionList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? unique(value.map(sectionIdOf).filter((id): id is string => id !== null)).slice(0, EXCLUDED_SECTIONS_MAX)
+    : [];
+
+/** `venue_maps.dropped_categories` (`{ tixstock, tixstock_kept, tixstock_sections }`) - keys, and the section ids as they are; anything unreadable is empty. */
 export function parseDroppedCategories(value: unknown): DroppedCategories {
-  if (!isObject(value)) return { dropped: [], kept: [] };
-  return { dropped: keyList(value.tixstock), kept: keyList(value.tixstock_kept) };
+  if (!isObject(value)) return { dropped: [], kept: [], sections: [] };
+  return { dropped: keyList(value.tixstock), kept: keyList(value.tixstock_kept), sections: sectionList(value.tixstock_sections) };
+}
+
+/**
+ * The confirm's `excludedSections` (round 2, Task 10), checked: `undefined` (not sent) leaves the stored list alone; a
+ * list of at most `EXCLUDED_SECTIONS_MAX` strings, each non-empty once trimmed and at most `EXCLUDED_SECTION_MAX`, is
+ * the hall's new list (trimmed, deduped). Anything else - not a list, a non-string, an empty or over-long id, too many -
+ * is refused (`bad_input`): a person clicked it, so it is never silently cut.
+ */
+export function parseExcludedSectionsInput(raw: unknown): { ok: true; value: string[] | undefined } | { ok: false } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(raw) || raw.length > EXCLUDED_SECTIONS_MAX) return { ok: false };
+  const ids: string[] = [];
+  for (const item of raw) {
+    const id = sectionIdOf(item);
+    if (id === null) return { ok: false };
+    ids.push(id);
+  }
+  return { ok: true, value: unique(ids) };
+}
+
+/**
+ * A click on a section of the hall's map (the dialog): excluded -> back, else excluded. The event editor's rule for a
+ * legacy shared id (`upper-tier_`, saved before unlabeled wedges were numbered - `isSectionExcluded` still reads it as
+ * every wedge of the group): the shared id is first expanded into one id per wedge (`groupWedges` = the numbered ids of
+ * the clicked wedge's group on the drawing), so the click toggles this wedge alone.
+ */
+export function toggleExcludedSection(current: readonly string[], clicked: string, groupWedges: readonly string[] = []): string[] {
+  let list = [...current];
+  if (isUnlabeledSectionId(clicked)) {
+    const group = unlabeledSectionGroupId(clicked);
+    if (list.includes(group)) list = unique([...list.filter((id) => id !== group), ...groupWedges]);
+  }
+  return list.includes(clicked) ? list.filter((id) => id !== clicked) : [...list, clicked];
+}
+
+/**
+ * What an event's `tx_excluded_sections` becomes when its hall's list is applied: `before` = the sections that came from
+ * the hall (what the uploader itself last wrote to the event - the actions read it off the item's payload) follow the
+ * hall (dropped from the event when the hall no longer excludes them), one a person excluded on this show alone stays,
+ * and the hall's whole list is added - the zone description's rule (R21: what came from the template follows it, what a
+ * person typed stays). A new build passes no list of its own: it gets the hall's.
+ */
+export function hallExcludedSections(own: readonly string[], before: readonly string[], hall: readonly string[]): string[] {
+  const fromHall = new Set(before);
+  return unique([...own.filter((id) => !fromHall.has(id)), ...hall]);
 }
 
 // ---- The model's proposal ---------------------------------------------------------------------------
@@ -453,13 +525,16 @@ export function readyToConfirm(rows: ConfirmedRow[], hasTemplate: boolean): bool
  *  - zones of keys that are not in `rows` stay as they were;
  *  - a dropped or unsure row has no zone and no mapping (`forget`);
  *  - `dropped` / `kept` are the venue's lists after this confirm: this call's decisions replace the old
- *    ones for the keys in `rows`, the old ones for other keys stay. `kept` = rule-drops a person did not drop.
+ *    ones for the keys in `rows`, the old ones for other keys stay. `kept` = rule-drops a person did not drop;
+ *  - `sections` = the hall's excluded map sections: the dialog's list when it sent one, else the stored list.
  */
 export function templateFromRows(
   rows: ConfirmedRow[],
   drawing: DrawingCategory[],
   existing: TemplateLike | null,
   existingDropped: DroppedCategories,
+  /** The dialog's excluded map sections (`parseExcludedSectionsInput`); absent = the stored list stays. */
+  excludedSections?: readonly string[],
 ): TemplateUpdate {
   const drawn = new Map(drawing.map((category) => [category.key, category]));
   const current = tixstockMap(existing);
@@ -515,6 +590,7 @@ export function templateFromRows(
     forget: unique(forget),
     dropped: unique([...existingDropped.dropped.filter((key) => !rowKeys.has(key)), ...dropped]),
     kept: unique([...existingDropped.kept.filter((key) => !rowKeys.has(key)), ...kept]),
+    sections: excludedSections ? unique([...excludedSections]) : [...existingDropped.sections],
   };
 }
 
@@ -555,8 +631,11 @@ export function forgetUnconfirmed(
  *  - a key whose zone ends with no Hebrew label is NOT spread (ruling R26): it is not mapped, and its stored
  *    mapping is forgotten when that also points at a zone with no Hebrew label - the siblings stay unzoned
  *    for it (the panel keeps asking for a Hebrew name); the zone itself stays (the source event uses it).
+ *  - the event's `tx_excluded_sections` (`eventSections`, round 2 Task 10) becomes the hall's excluded list as it is -
+ *    copied, an empty one included (a person who cleared the editor's list cleared it for the hall); not handed in =
+ *    the stored list stays.
  * Everything is merged over `existing`, as `templateFromRows` does. `learned` is what the confirm quotes
- * (`zones` = the Hebrew-labelled zones it maps).
+ * (`zones` = the Hebrew-labelled zones it maps, `sections` = how many sections the hall excludes after it).
  */
 export function templateFromEvent(
   eventTickets: EventTicket[],
@@ -564,7 +643,8 @@ export function templateFromEvent(
   existing: TemplateLike | null,
   drawing: DrawingCategory[],
   existingDropped: DroppedCategories,
-): TemplateUpdate & { learned: { zones: number; newZones: number; dropped: string[]; descriptions: number } } {
+  eventSections?: readonly string[],
+): TemplateUpdate & { learned: { zones: number; newZones: number; dropped: string[]; descriptions: number; sections: number } } {
   const drawn = new Map(drawing.map((category) => [category.key, category]));
   let zones = (existing?.zones ?? []).map(cloneZone);
   // Tickets are compared with the zone as the template had it: a stale ticket of the same zone must not undo an edit.
@@ -635,6 +715,7 @@ export function templateFromEvent(
   const eventDropped = [...payloadNames.keys()].filter((key) => !eventKeys.has(key));
   // Only the dropped keys' zones may go: an unlabelled key's zone stays (the source event points at it).
   zones = withoutOrphanedZones(zones, existing, eventDropped, categoryToZone);
+  const sections = eventSections ? sectionList(eventSections) : [...existingDropped.sections];
 
   return {
     zones,
@@ -642,11 +723,13 @@ export function templateFromEvent(
     forget: unique([...eventDropped, ...unlabelled]),
     dropped: unique([...existingDropped.dropped.filter((key) => !zonedKeys.has(key)), ...eventDropped]),
     kept: existingDropped.kept.filter((key) => !eventDropped.includes(key)),
+    sections,
     learned: {
       zones: new Set(Object.values(categoryToZone)).size,
       newZones: created.size,
       dropped: eventDropped.map((key) => payloadNames.get(key) ?? key),
       descriptions: described.size,
+      sections: sections.length,
     },
   };
 }
@@ -738,14 +821,17 @@ function inStepWithTemplate(ticket: EventTicket, zones: Map<string, VenueZone>, 
  * `unzoned` = the category of every TIXSTOCK ticket left without a zone. A LiveTickets ticket is never
  * touched nor listed: a classification writes the TixStock template only, and zoning LiveTickets is the
  * editor's board (ruling R17) - listing it would keep the show's `unzoned_review` (and the panel's venue row)
- * for ever.
+ * for ever. `tx_excluded_sections` = what the event's excluded map sections become (`hallExcludedSections` over
+ * `sections` = the event's list now and the part of it that came from the hall - the confirm and the learn pass them;
+ * the build passes none, so a new event gets exactly the hall's `dropped.sections`).
  */
 export function applyClassification(
   tickets: EventTicket[],
   template: TemplateLike,
   dropped: DroppedCategories,
   previous: TemplateLike | null = null,
-): { tickets: EventTicket[]; dropped: string[]; unzoned: string[] } {
+  sections: { current: readonly string[]; before: readonly string[] } | null = null,
+): { tickets: EventTicket[]; dropped: string[]; unzoned: string[]; tx_excluded_sections: string[] } {
   const listed = new Set(dropped.dropped);
   const kept = new Set(dropped.kept);
   const zonesById = new Map(template.zones.map((zone) => [zone.id, zone]));
@@ -767,6 +853,7 @@ export function applyClassification(
     tickets: zoned,
     dropped: [...removed.values()],
     unzoned: zoned.filter((ticket) => isTixStock(ticket) && !ticket.zoneId).map((ticket) => ticket.category),
+    tx_excluded_sections: hallExcludedSections(sections?.current ?? [], sections?.before ?? [], dropped.sections),
   };
 }
 
@@ -781,17 +868,27 @@ function sortedKeys(value: unknown): unknown {
   );
 }
 
+/** Two lists of section ids hold the same ids (order and repeats aside). */
+const sameSections = (a: readonly string[], b: readonly string[]): boolean => {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((id) => right.has(id));
+};
+
 /**
  * Is this event already in the state a classification would write (ruling R27): the same map and the same
- * tickets, deep (key order aside)? The rewrite skips such an event, so a second confirm after a cut-off one
- * goes on where the first stopped instead of rewriting what is done.
+ * tickets, deep (key order aside) - and, when `excludedSections` is given, the same excluded map sections (a null
+ * column = none)? The rewrite skips such an event, so a second confirm after a cut-off one goes on where the first
+ * stopped instead of rewriting what is done.
  */
 export function isAppliedState(
-  row: { tickets_and_rates: EventTicket[]; map_image_url: string | null },
+  row: { tickets_and_rates: EventTicket[]; map_image_url: string | null; tx_excluded_sections?: readonly string[] | null },
   tickets: EventTicket[],
   mapUrl: string,
+  excludedSections?: readonly string[],
 ): boolean {
-  return row.map_image_url === mapUrl && JSON.stringify(sortedKeys(row.tickets_and_rates)) === JSON.stringify(sortedKeys(tickets));
+  if (row.map_image_url !== mapUrl || JSON.stringify(sortedKeys(row.tickets_and_rates)) !== JSON.stringify(sortedKeys(tickets))) return false;
+  return excludedSections === undefined || sameSections(row.tx_excluded_sections ?? [], excludedSections);
 }
 
 // ---- The confirm's answer -----------------------------------------------------------------------------

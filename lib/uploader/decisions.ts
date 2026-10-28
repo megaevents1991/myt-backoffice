@@ -47,7 +47,7 @@ function withPrefix(prefix: string, name: string): string {
  *  tribute_excluded {name} · duplicate_dropped {name, event_id} ·
  *  two_city_from_memory {event, show_city, flight_city, lodging?} · two_city_chosen {show_city, flight_city, km} ·
  *  rejected_before {run, by, reason} · question_untasked {max} ·
- *  classified {zones, dropped, unsure} · categories_dropped_by_template {count, names} ·
+ *  classified {zones, dropped, unsure} · categories_dropped_by_template {count, names} · sections_excluded_by_template {count} ·
  *  named_he {name} · name_from_livetickets {name} · taught_venue {} · location_by_city {city, iata}
  */
 export const DECISION_TEXT = {
@@ -84,6 +84,11 @@ export const DECISION_TEXT = {
     Number(p.count) === 1
       ? `קטגוריה אחת נפסלה לפי תבנית האולם: ${str(p, "names")}`
       : `${str(p, "count")} קטגוריות נפסלו לפי תבנית האולם: ${str(p, "names")}`,
+  // Round 2, Task 10: the hall's excluded map sections - the build priced TixStock without the listings in them.
+  sections_excluded_by_template: (p) =>
+    Number(p.count) === 1
+      ? "גוש אחד מוחרג לפי תבנית האולם - כרטיסים בו לא תומחרו"
+      : `${str(p, "count")} גושים מוחרגים לפי תבנית האולם - כרטיסים בהם לא תומחרו`,
   named_he: (p) => `שם בעברית: ${str(p, "name")}`,
   name_from_livetickets: (p) => `שם בעברית מלייב טיקטס: ${str(p, "name")}`,
   taught_venue: () => "האירוע הזה לימד את תבנית האולם",

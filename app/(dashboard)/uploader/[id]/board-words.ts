@@ -360,6 +360,17 @@ export const COL_VENUE_HE = "שם האולם בעברית";
 export const VENUE_HE_HINT = "מודפס בתיאור האירוע במקום {אולם}. ריק - יודפס שם האולם כפי שהספק כותב אותו.";
 export const VENUE_HE_HINT_AI = "הצעת ה-AI - בדקו ואשרו. מודפס בתיאור האירוע במקום {אולם}.";
 export const VENUE_HE_NEEDS_HEBREW = "השם חייב להכיל אותיות בעברית (או שתשאירו ריק)";
+/** Under the hall's map in the classify dialog (round 2, Task 10): how many sections are excluded for every show of the hall. */
+export const MAP_EXCLUDED_LINE = (n: number): string =>
+  n === 1 ? "גוש אחד מוחרג - לא יימכר בכל ההופעות באולם" : `${n} גושים מוחרגים - לא יימכרו בכל ההופעות באולם`;
+/** The same place with nothing excluded yet: what a click on the map does. */
+export const MAP_HINT = "לחיצה על גוש במפה מחריגה אותו - הוא לא יימכר בכל ההופעות באולם. לחיצה נוספת מחזירה אותו.";
+/** Above the map: hovering a row lights its category. */
+export const MAP_TITLE = "מפת האולם";
+/** The confirm's toast, when the excluded sections changed: the ticket prices follow at the TixStock price sync. */
+export const MAP_PRICES_LINE = "המחירים יתעדכנו בסנכרון הבא";
+/** The map could not be drawn (the drawing is not a usable SVG in the browser). */
+export const MAP_UNAVAILABLE = "לא ניתן להציג את מפת האולם";
 export const COL_STATUS = "סטטוס";
 export const BTN_CONFIRM_CLASSIFY = (n: number): string =>
   n === 0 ? "אשר - יישמר כתבנית האולם" : n === 1 ? "אשר - יחול על ההופעה ויישמר כתבנית האולם" : `אשר - יחול על ${n} ההופעות ויישמר כתבנית האולם`;
@@ -463,6 +474,8 @@ export const LEARN_ZONES = (zones: number, newZones: number): string =>
   `${zones === 1 ? "זון אחד" : `${zones} זונים`} (${newZones === 1 ? "חדש אחד" : `${newZones} חדשים`})`;
 export const LEARN_DROPPED = (n: number): string => (n === 1 ? "קטגוריה אחת נפסלה" : `${n} קטגוריות נפסלו`);
 export const LEARN_DESCRIPTIONS = (n: number): string => (n === 1 ? "תיאור אחד" : `${n} תיאורים`);
+/** Round 2, Task 10: the event's excluded map sections become the hall's. */
+export const LEARN_SECTIONS = (n: number): string => (n === 0 ? "בלי גושים מוחרגים" : n === 1 ? "גוש אחד מוחרג" : `${n} גושים מוחרגים`);
 export const LEARN_SIBLINGS = (n: number): string => `יחול על ${showsHe(n)}`;
 
 // A rule for the run, on a question card (5.4).

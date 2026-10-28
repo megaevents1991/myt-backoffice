@@ -116,6 +116,10 @@ export type ProposeResult =
       venue_he: string | null;
       /** `venue_he` is the AI's proposal (not a stored name) - the dialog says so beside the box. */
       venue_he_ai: boolean;
+      /** The hall's drawing as text (round 2, Task 10) - the dialog's map; sanitized in the browser before it is drawn. */
+      svg: string;
+      /** The map sections the hall already excludes for every show (`venue_maps.dropped_categories.tixstock_sections`). */
+      excludedSections: string[];
       shows: number;
       /** `reason`: null (used) | "not_needed" | "rate_limited" | "error" | the model call's own failure ("off" / "budget" / "timeout" / "bad_answer"). The dialog opens either way. */
       ai: { used: boolean; reason: string | null; problems: string[] };
@@ -124,7 +128,7 @@ export type ProposeResult =
 
 /** `learnPreview`: what the "learn from this event" confirm lists before it applies. */
 export type LearnPreview =
-  | { ok: true; learned: { zones: number; newZones: number; dropped: string[]; descriptions: number }; siblings: number }
+  | { ok: true; learned: { zones: number; newZones: number; dropped: string[]; descriptions: number; sections: number }; siblings: number }
   | { ok: false; kind: string };
 
 /**

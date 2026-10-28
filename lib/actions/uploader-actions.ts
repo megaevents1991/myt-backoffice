@@ -130,6 +130,7 @@ import {
   forgetUnconfirmed,
   isAppliedState,
   isFixedByHand,
+  parseExcludedSectionsInput,
   parseVenueHeInput,
   proposalRows,
   readyToConfirm,
@@ -1258,7 +1259,7 @@ const VENUE_WARNINGS = new Set(["new_venue", "unzoned_tickets", "unzoned_review"
 /** The warnings that say the subject has no page of its own. */
 const NO_PAGE_WARNINGS = new Set(["no_team_page", "no_artist_page"]);
 const HEBREW_LETTER = /[א-ת]/;
-const EMPTY_DROPPED: DroppedCategories = { dropped: [], kept: [] };
+const EMPTY_DROPPED: DroppedCategories = { dropped: [], kept: [], sections: [] };
 /** A description rewrite that had nothing to do (no template saved, or no hall name to print). */
 const NO_REWRITE: DescriptionRewrite = { eventIds: [], live: false, editedByHand: 0, english: 0, failed: 0 };
 
@@ -1344,6 +1345,15 @@ function payloadTickets(payload: Record<string, unknown> | null): EventTicket[] 
   return Array.isArray(raw) ? raw.filter((t): t is EventTicket => isRecord(t) && typeof t.category === "string") : [];
 }
 
+/**
+ * A stored `payload.tx_excluded_sections` - the excluded map sections the uploader itself last wrote to the event (its
+ * build, or the last classification); null when the payload carries no readable list.
+ */
+function payloadSections(payload: Record<string, unknown> | null): string[] | null {
+  const raw = payload?.tx_excluded_sections;
+  return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : null;
+}
+
 /** The venue's drawing: our own copy when it has a template (`getVenueMapDrawing`), else - or when ours cannot be read - the supplier's. */
 async function venueSvg(sourceUrl: string | null, template: VenueTemplateRow | null): Promise<{ ok: true; svg: string } | { ok: false; error: string }> {
   if (template) {
@@ -1387,6 +1397,8 @@ type VenueContext = {
   targets: BuiltItem[];
   events: Map<number, EventTicketsRow>;
   template: VenueTemplateRow | null;
+  /** The drawing's text (ours when the venue has a template, else the supplier's) - the dialog draws the hall's map from it. */
+  svg: string;
   drawing: DrawingCategory[];
   categories: CategoryInput[];
 };
@@ -1422,6 +1434,7 @@ async function readVenueContext(runId: string, sourceUrl: string): Promise<Venue
     targets,
     events,
     template: template.row,
+    svg: svg.svg,
     drawing,
     categories: venueCategories(drawing, targets, events),
   };
@@ -1458,7 +1471,8 @@ type AppliedTemplate = { id: string; svgUrl: string; zones: VenueZone[]; supplie
 /**
  * Spec 6.3 step 1 over an existing row: the zone list REPLACED (`saveVenueZones` - unsure / dropped
  * categories lose their zone, the drawing is republished), the TixStock mapping merged with the forgotten
- * keys mapped to "" (`rememberSupplierCategories`), then `dropped_categories` replaced. The first failure
+ * keys mapped to "" (`rememberSupplierCategories`), then `dropped_categories` written - the dropped and kept
+ * keys and the hall's excluded map sections (round 2, Task 10) replaced, any other key kept. The first failure
  * stops it - nothing of the events has been touched yet.
  */
 async function writeTemplate(id: string, update: TemplateUpdate): Promise<{ ok: true; template: AppliedTemplate } | Refusal> {
@@ -1467,12 +1481,18 @@ async function writeTemplate(id: string, update: TemplateUpdate): Promise<{ ok: 
   const mapping = { ...update.categoryToZone, ...Object.fromEntries(update.forget.map((key) => [key, ""])) };
   const remembered = await rememberSupplierCategories(id, "tixstock", mapping);
   if (!remembered.ok) return { ok: false, kind: "db_error", message: remembered.error };
-  if (!(await writeDroppedCategories(id, update.dropped, update.kept))) return fail("db_error");
+  if (!(await writeDroppedCategories(id, update.dropped, update.kept, update.sections))) return fail("db_error");
   const svgUrl = saved.data.svg_url;
   if (!svgUrl) return { ok: false, kind: "db_error", message: "The venue map has no published drawing" };
   return {
     ok: true,
-    template: { id, svgUrl, zones: saved.data.zones, supplier_categories: remembered.data, dropped: { dropped: update.dropped, kept: update.kept } },
+    template: {
+      id,
+      svgUrl,
+      zones: saved.data.zones,
+      supplier_categories: remembered.data,
+      dropped: { dropped: update.dropped, kept: update.kept, sections: update.sections },
+    },
   };
 }
 
@@ -1493,20 +1513,26 @@ type Rewrite = { eventIds: number[]; reached: number; live: boolean; itemsFailed
 /**
  * Spec 6.3 steps 2-3 over the venue's shows, in board order, one show at a time (ruling R27). Step 2: the
  * event's tickets dropped and zoned by the template (`applyClassification`, `previous` = the template before
- * this write, so zoned tickets follow a relabel - ruling R21) and written with the template's map - one
- * UPDATE of those two columns, skipped when the event is already in that state (`isAppliedState`: a second
+ * this write, so zoned tickets follow a relabel - ruling R21) and its excluded map sections set from the hall's
+ * (round 2, Task 10): what the uploader itself last wrote to the event (`payload.tx_excluded_sections`, else
+ * `previousSections` = the hall's list before this write) follows the hall, a show's own exclusion stays - the
+ * payload rather than the hall's previous list, so a show a cut-off confirm never reached is still told apart.
+ * Written with the template's map - one UPDATE of those three columns (the TixStock price sync re-prices by the
+ * sections on its next run), skipped when the event is already in that state (`isAppliedState`: a second
  * confirm goes on where a cut-off one stopped); a show whose tickets would ALL be dropped is not written (its
  * card gets `all_dropped`, ruling R12). Step 3, right after its event: the item follows it - venue warnings,
- * the `classified` decision and `payload.tickets_and_rates` / `payload.map_image_url` = what the event now
- * holds - so approve's edit diff never reads the classification as a staff edit, and a run cut off between
- * shows leaves no rewritten event whose item looks hand-fixed. It stops at the first failed event write, or
- * past REWRITE_BUDGET_MS: `reached` = how many shows it got through. An item write that fails is counted.
+ * the `classified` decision and `payload.tickets_and_rates` / `payload.map_image_url` /
+ * `payload.tx_excluded_sections` = what the event now holds - so approve's edit diff never reads the
+ * classification as a staff edit, and a run cut off between shows leaves no rewritten event whose item looks
+ * hand-fixed. It stops at the first failed event write, or past REWRITE_BUDGET_MS: `reached` = how many shows it
+ * got through. An item write that fails is counted.
  */
 async function rewriteVenueItems(
   targets: BuiltItem[],
   events: Map<number, EventTicketsRow>,
   template: AppliedTemplate,
   previous: TemplateLike | null,
+  previousSections: readonly string[],
   started: number,
 ): Promise<Rewrite> {
   const tpl: TemplateLike = { zones: template.zones, supplier_categories: template.supplier_categories };
@@ -1527,15 +1553,18 @@ async function rewriteVenueItems(
       reached += 1;
       continue;
     }
-    const applied = applyClassification(row.tickets_and_rates, tpl, template.dropped, previous);
+    const applied = applyClassification(row.tickets_and_rates, tpl, template.dropped, previous, {
+      current: row.tx_excluded_sections,
+      before: payloadSections(item.payload) ?? previousSections,
+    });
     if (applied.tickets.length === 0) {
       // The event is NOT rewritten, so its venue warnings stand as they are: `all_dropped` is only added (once).
       await record(item, { warnings: [...item.warnings.filter((w) => w.code !== "all_dropped"), warning("all_dropped")] });
       reached += 1;
       continue;
     }
-    if (!isAppliedState(row, applied.tickets, template.svgUrl)) {
-      if (!(await writeEventClassification(item.event_id, applied.tickets, template.svgUrl))) break;
+    if (!isAppliedState(row, applied.tickets, template.svgUrl, applied.tx_excluded_sections)) {
+      if (!(await writeEventClassification(item.event_id, applied.tickets, template.svgUrl, applied.tx_excluded_sections))) break;
       eventIds.push(item.event_id);
       if (item.status === "approved" || !row.is_hidden) live = true;
     }
@@ -1547,7 +1576,9 @@ async function rewriteVenueItems(
         ...item.decisions.filter((d) => d.code !== "classified"),
         decision("classified", { zones, dropped: applied.dropped.length, unsure: uniqueTexts(applied.unzoned).length }),
       ],
-      ...(item.payload ? { payload: { ...item.payload, tickets_and_rates: applied.tickets, map_image_url: template.svgUrl } } : {}),
+      ...(item.payload
+        ? { payload: { ...item.payload, tickets_and_rates: applied.tickets, map_image_url: template.svgUrl, tx_excluded_sections: applied.tx_excluded_sections } }
+        : {}),
     });
   }
   return { eventIds, reached, live, itemsFailed };
@@ -1596,6 +1627,8 @@ async function refreshAfterRewrite(rewrite: { eventIds: number[]; live: boolean 
  * The hall's Hebrew name (round 2, D3) rides the same call: asked for while the template has none - even
  * when every category is labelled already - and handed back as `venue_he` (the stored name wins over the
  * proposal; `venue_he_ai` says which it is). No zone description is proposed or shown any more (D4).
+ * The hall's map (round 2, Task 10): `svg` = the drawing's text the dialog draws (read here anyway, read-only - ours
+ * when the venue has a template, else the supplier's), `excludedSections` = the sections the hall already excludes.
  */
 export async function proposeVenueClassification(runId: string, sourceUrl: string): Promise<ProposeResult> {
   const session = await requireAdmin();
@@ -1666,6 +1699,8 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
     proposed: proposed ? Object.fromEntries(proposed) : null,
     venue_he: storedHe ?? proposedHe,
     venue_he_ai: storedHe === null && proposedHe !== null,
+    svg: ctx.svg,
+    excludedSections: ctx.template?.dropped.sections ?? [],
     shows: ctx.targets.length,
     ai,
   };
@@ -1677,15 +1712,17 @@ export async function proposeVenueClassification(runId: string, sourceUrl: strin
  * from the client), `proposed` = the rows as the dialog SHOWED them (null = it carried none), `ai` = whether
  * the dialog opened with the agent's proposal (recorded on `uploader.classified`, ruling R14), `venueHe` = the
  * hall's Hebrew name from the dialog's top box (round 2, D3; `parseVenueHeInput`: absent = the stored name stays,
- * empty = cleared, a Hebrew name = set, anything else `bad_input`). Round 2's other option, `excludedSections`,
- * joins `venueHe` in this record. A venue
+ * empty = cleared, a Hebrew name = set, anything else `bad_input`), `excludedSections` = the map sections the hall
+ * excludes for every show (round 2, Task 10; `parseExcludedSectionsInput`: absent = the stored list stays, a list =
+ * the hall's new list, anything else `bad_input`). A venue
  * category the rows leave out is UNSURE (ruling R16): forgotten unless the template already labels it in
  * Hebrew. A venue with no template needs one NAMED row (ruling R25 - `readyToConfirm`), else `bad_input`
  * with FIRST_CONFIRM_NEEDS_NAME and nothing is written. In order:
  * 1. the template - adopted first when the venue has none (`adopt_failed` stops here, nothing written),
- *    then its zones, mapping and dropped list written, and the hall's Hebrew name (`venue_maps.name_he`) when
- *    it changed;
- * 2-3. the venue's events rewritten, each item following right after its event (`rewriteVenueItems`), then
+ *    then its zones, mapping, dropped list and excluded sections written, and the hall's Hebrew name
+ *    (`venue_maps.name_he`) when it changed;
+ * 2-3. the venue's events rewritten - tickets, map and `tx_excluded_sections` - each item following right after
+ *    its event (`rewriteVenueItems`), then
  *    their descriptions - the ones the uploader wrote itself - filled again, for `{אולם}` prints the hall's
  *    Hebrew name (`rewriteRunDescriptions`; none when no template is saved or the hall has no name at all;
  *    a failure there is only flagged - `describeFailed` on the OK answer - never a failed classification);
@@ -1704,6 +1741,8 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
   const aiShown = input.ai;
   const venueHeInput = parseVenueHeInput(input.venueHe);
   if (!venueHeInput.ok) return fail("bad_input");
+  const sectionsInput = parseExcludedSectionsInput(input.excludedSections);
+  if (!sectionsInput.ok) return fail("bad_input");
 
   const ctx = await readVenueContext(runId, sourceUrl);
   if ("kind" in ctx) return ctx;
@@ -1727,7 +1766,7 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
     if (!adopted.ok) return { ok: false, kind: "adopt_failed", message: adopted.error };
     base = { id: adopted.data.id, zones: adopted.data.zones, supplier_categories: adopted.data.supplier_categories, dropped: EMPTY_DROPPED };
   }
-  const fromRows = templateFromRows(confirmed, ctx.drawing, base, base.dropped);
+  const fromRows = templateFromRows(confirmed, ctx.drawing, base, base.dropped, sectionsInput.value);
   // A category the rows left out is unsure: the slug zone a fresh adopt gave it (or any entry without a Hebrew label) goes.
   const update = forgetUnconfirmed(fromRows, base, [...allowed], confirmed);
   const written = await writeTemplate(base.id, update);
@@ -1740,8 +1779,8 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
     if (named === "db_error") return { ok: false, kind: "db_error", message: "the hall's Hebrew name could not be saved - confirm again" };
   }
 
-  // 2-3. Each event, then its item (zoned tickets follow the template as it stood before this write - `base`).
-  const rewrite = await rewriteVenueItems(ctx.targets, ctx.events, written.template, base, started);
+  // 2-3. Each event, then its item (zoned tickets and the hall's sections follow the template as it stood before this write - `base`).
+  const rewrite = await rewriteVenueItems(ctx.targets, ctx.events, written.template, base, base.dropped.sections, started);
   // ... then their descriptions, read fresh (the rewrite above just changed the items): `{אולם}` prints the hall's name.
   // Not when the rewrite stopped early (its budget, a failed write): the second confirm that finishes it describes too.
   const hallNamed = venueHe !== null || storedHe !== null;
@@ -1772,6 +1811,7 @@ export async function classifyVenue(runId: string, sourceUrl: string, input: unk
       event_ids: rewrite.eventIds,
       ai: aiShown,
       venue_he: venueHe,
+      excluded_sections: update.sections,
     },
   });
   await logClassifyChanges(ctx.run, ctx.name, classificationDiff(shown, confirmed), shown);
@@ -1827,7 +1867,15 @@ async function readLearnContext(itemId: string): Promise<LearnContext | Refusal>
 
   const svg = await venueSvg(venueUrl, template);
   if (!svg.ok) return { ok: false, kind: "svg_failed", message: svg.error };
-  const update = templateFromEvent(row.tickets_and_rates, payloadTickets(item.payload), templateLikeOf(template), drawingCategories(svg.svg), template.dropped);
+  const update = templateFromEvent(
+    row.tickets_and_rates,
+    payloadTickets(item.payload),
+    templateLikeOf(template),
+    drawingCategories(svg.svg),
+    template.dropped,
+    // The event's excluded map sections become the hall's (round 2, Task 10).
+    row.tx_excluded_sections,
+  );
 
   const items = await readRunItems(run.id);
   if (items === null) return fail("db_error");
@@ -1835,7 +1883,7 @@ async function readLearnContext(itemId: string): Promise<LearnContext | Refusal>
   return { item, run, row, template, venueUrl, venueName: item.show.venue?.trim() || item.show.city, update, siblings };
 }
 
-/** "למד מהאירוע הזה" - what the confirm lists before it applies: zones (new ones), dropped categories, descriptions, and how many other shows it rewrites. */
+/** "למד מהאירוע הזה" - what the confirm lists before it applies: zones (new ones), dropped categories, descriptions, the hall's excluded sections after it, and how many other shows it rewrites. */
 export async function learnPreview(itemId: string): Promise<LearnPreview> {
   await requireAdmin();
   if (!isUuid(itemId)) return fail("bad_input");
@@ -1869,7 +1917,8 @@ function taughtChanges(before: VenueTemplateRow, update: LearnContext["update"],
 
 /**
  * "למד מהאירוע הזה והחל" (spec 6.5): the venue template updated from the one event a person arranged in the
- * editor (no AI, nothing asked), then spec 6.3 steps 2-5 for the venue's OTHER shows of the run. The source
+ * editor (no AI, nothing asked) - its excluded map sections included (they become the hall's list) - then spec
+ * 6.3 steps 2-5 for the venue's OTHER shows of the run. The source
  * event is not rewritten; its item gets `taught_venue` and its venue warnings decided from its own tickets
  * (so the panel's row goes once nothing is left to classify). Audited `uploader.classified` with
  * `source: "event"` and a `uploader.classify_changed` row per thing it taught. Same answer as `classifyVenue`
@@ -1890,7 +1939,7 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
   if (!written.ok) return written;
 
   // 2-3. Each other show's event, then its item; then the source's item (its event is the source - untouched).
-  const rewrite = await rewriteVenueItems(targets, events, written.template, templateLikeOf(ctx.template), started);
+  const rewrite = await rewriteVenueItems(targets, events, written.template, templateLikeOf(ctx.template), ctx.template.dropped.sections, started);
   const own = ctx.row.tickets_and_rates;
   const marked = await transitionItem(ctx.item.id, REWRITTEN_STATUSES, {
     // TixStock tickets only, as `applyClassification` counts them (ruling R17: LiveTickets zoning is the editor's board).
@@ -1922,6 +1971,7 @@ export async function learnFromEvent(itemId: string): Promise<ClassifyResult> {
       dropped: learned.dropped,
       kept: ctx.update.kept,
       descriptions: learned.descriptions,
+      excluded_sections: ctx.update.sections,
       event_ids: rewrite.eventIds,
       ai: false,
     },

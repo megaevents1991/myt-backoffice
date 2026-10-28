@@ -4,7 +4,9 @@
  *
  * Order matters - the cheapest checks first, the paid searches last:
  *   1. tickets   - TixStock's feed and LiveTickets' stock through the pure `lib/uploader/tickets.ts`
- *                  (retry once; LiveTickets then falls back to our `live_events` snapshot; its categories
+ *                  (TixStock priced without the listings in the hall's excluded map sections - the venue
+ *                  template is read first for them, round 2 Task 10 - and the event is built with that list;
+ *                  retry once; LiveTickets then falls back to our `live_events` snapshot; its categories
  *                  blocked only for not confirming instantly are brought, marked `nonInstant`, unless
  *                  the plan's `livetickets_non_instant` switch is off). Zero
  *                  tickets = `skipped no_tickets`; zero because a supplier never answered = `error`
@@ -89,6 +91,7 @@ const TIX_DROP_LABEL: Record<TixDropReason, string> = {
   restricted: "restricted view",
   split: "שהמוכר לא מוכר בזוג",
   excluded: "בלי מחיר",
+  sections: "בגושים מוחרגים באולם",
 };
 
 /** Columns of the created row that other jobs rewrite on their own (lights, creatives, ready package, price drop, timestamps). */
@@ -132,14 +135,21 @@ function droppedLines(dropped: { label: string }[]): Decision[] {
   return [...counts].map(([reason, count]) => decision("categories_dropped", { count, reason }));
 }
 
-/** TixStock: the show's feed -> one ticket per sellable category. `reached: false` = no answer after a retry. */
-async function tixstockTickets(eventId: string): Promise<{ tickets: EventTicket[]; decisions: Decision[]; reached: boolean }> {
+/**
+ * TixStock: the show's feed -> one ticket per sellable category, a listing in one of the hall's excluded map
+ * sections never sold nor priced (`excludedSections`, main's rule). `reached: false` = no answer after a retry.
+ */
+async function tixstockTickets(
+  eventId: string,
+  excludedSections: string[],
+): Promise<{ tickets: EventTicket[]; decisions: Decision[]; reached: boolean }> {
   const { fetchTixStockFeed, tixstockTicketPriceUsd } = await import("@/lib/services/tixstock-price-sync");
   const listings = await twice(() => fetchTixStockFeed(eventId));
   if (listings === null) return { tickets: [], decisions: [], reached: false };
-  const out = ticketsFromTixStockFeed(listings, eventId, tixstockTicketPriceUsd, () => crypto.randomUUID());
+  const out = ticketsFromTixStockFeed(listings, eventId, tixstockTicketPriceUsd, () => crypto.randomUUID(), excludedSections);
   const decisions: Decision[] = [];
   if (out.tickets.length > 0) decisions.push(decision("tickets_tixstock", { count: out.tickets.length }));
+  if (excludedSections.length > 0) decisions.push(decision("sections_excluded_by_template", { count: excludedSections.length }));
   // A listing with no category at all arrives as category "" - noise, not a category to name.
   decisions.push(...droppedLines(out.dropped.filter((d) => d.category !== "").map((d) => ({ label: TIX_DROP_LABEL[d.reason] }))));
   return { tickets: out.tickets, decisions, reached: true };
@@ -486,8 +496,12 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
   const tixRef = show.suppliers.tixstock;
   const liveRef = show.suppliers.livetickets;
   const liveRow = liveRef ? liveRowReader(liveRef.event_id) : null;
+  // The venue template, read BEFORE the tickets (round 2, Task 10): the hall's excluded map sections price the
+  // TixStock listings, and the event is built with the same list (step 7). The rest of it is step 4's.
+  const template = tixRef?.venue_map_url ? await venueMapFor(tixRef.venue_map_url) : null;
+  const hallSections = tixRef?.venue_map_url && template?.svg_url ? template.dropped.sections : [];
   const [tix, live] = await Promise.all([
-    tixRef ? tixstockTickets(tixRef.event_id) : null,
+    tixRef ? tixstockTickets(tixRef.event_id, hallSections) : null,
     liveRef && liveRow ? liveTickets(liveRef.event_id, liveRow, planNonInstant(run.plan)) : null,
   ]);
   const unreachable: Supplier[] = [];
@@ -549,7 +563,6 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
   let mapImageUrl = "";
   let newVenue = true;
   let unzoned = tickets.length;
-  const template = tixRef?.venue_map_url ? await venueMapFor(tixRef.venue_map_url) : null;
   if (tixRef?.venue_map_url && template?.svg_url) {
     mapImageUrl = template.svg_url;
     newVenue = false;
@@ -628,7 +641,8 @@ async function build(run: UploaderRun, item: UploaderItem, ctx: BuildContext, tr
     tags: "",
     skip_flight: true,
     is_test: run.is_test,
-    tx_excluded_sections: [],
+    // The hall's excluded map sections - the list step 1 priced the TixStock listings with.
+    tx_excluded_sections: hallSections,
     ticket_only_markup: run.plan.markups.ticket_only,
     event_additional_markup: run.plan.markups.additional,
     package_mode: placed.mode,

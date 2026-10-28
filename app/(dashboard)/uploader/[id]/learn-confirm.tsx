@@ -19,6 +19,7 @@ import {
   LEARN_FAILED,
   LEARN_OPEN_FAILED,
   LEARN_READING,
+  LEARN_SECTIONS,
   LEARN_SIBLINGS,
   LEARN_TITLE,
   LEARN_ZONES,
@@ -28,8 +29,8 @@ import {
 import { rtl } from "./use-run-board";
 
 // "למד מהאירוע הזה" (spec 5.5): a person arranged one event of the hall in the editor (zones, Hebrew
-// descriptions, a dropped section); this small confirm lists what will be learned from it
-// (`learnPreview`) - "7 זונים (3 חדשים) · 1 קטגוריה נפסלה (Away Fans Section) · 5 תיאורים" - and "החל"
+// descriptions, a dropped section, sections excluded on its map); this small confirm lists what will be learned from it
+// (`learnPreview`) - "7 זונים (3 חדשים) · 1 קטגוריה נפסלה (Away Fans Section) · 5 תיאורים · 4 גושים מוחרגים" - and "החל"
 // (`learnFromEvent`) updates the venue template from it and rewrites the hall's other shows of the run.
 // No AI call, nothing asked; the source event itself is not rewritten. Mounted once by the board.
 
@@ -157,6 +158,8 @@ export function LearnConfirm({
               )}
               {" · "}
               {LEARN_DESCRIPTIONS(learned.descriptions)}
+              {" · "}
+              {LEARN_SECTIONS(learned.sections)}
               {" · "}
               <span className="font-medium">{LEARN_SIBLINGS(data.siblings)}</span>
             </span>

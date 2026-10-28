@@ -7,11 +7,22 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { VenueSectionMap } from "@/components/venue-section-map";
 // `@/hooks/use-toast`, not `@/components/ui/use-toast`: the mounted <Toaster /> reads this store.
 import { useToast } from "@/hooks/use-toast";
 import { classifyVenue, proposeVenueClassification } from "@/lib/actions/uploader-actions";
 import type { ProposeResult } from "@/lib/uploader/action-types";
-import { CLASSIFY_TIMEOUT_MS, parseVenueHeInput, readyToConfirm, VENUE_HE_MAX, ZONE_LABEL_MAX, type ClassificationRow, type ConfirmedRow, type ProposedRow } from "@/lib/uploader/classify";
+import {
+  CLASSIFY_TIMEOUT_MS,
+  parseVenueHeInput,
+  readyToConfirm,
+  toggleExcludedSection,
+  VENUE_HE_MAX,
+  ZONE_LABEL_MAX,
+  type ClassificationRow,
+  type ConfirmedRow,
+  type ProposedRow,
+} from "@/lib/uploader/classify";
 import type { PanelRow } from "@/lib/uploader/run-panel";
 import { cn } from "@/lib/utils";
 import { actionErrorText } from "../copy";
@@ -33,6 +44,11 @@ import {
   COL_STATUS,
   COL_VENUE_HE,
   DESCRIBE_FAILED_LINE,
+  MAP_EXCLUDED_LINE,
+  MAP_HINT,
+  MAP_PRICES_LINE,
+  MAP_TITLE,
+  MAP_UNAVAILABLE,
   NETWORK_TEXT,
   PARTIAL_LINE,
   STATUS_AI,
@@ -61,8 +77,14 @@ import { rtl } from "./use-run-board";
 // boxes and one line above the table); the confirm (`classifyVenue`) writes the venue template and the
 // hall's name and rewrites every show of the hall in the run. The confirm sends EVERY row the dialog showed,
 // the rows as they were SHOWN before any edit (`proposed` - the server diffs the two for the agent's
-// lessons), whether the AI proposed (`ai`) and the hall's name (`venueHe`). Mounted once by the board; every
-// opening is a fresh proposal.
+// lessons), whether the AI proposed (`ai`), the hall's name (`venueHe`) and the hall's excluded map sections
+// (`excludedSections`). Mounted once by the board; every opening is a fresh proposal.
+//
+// The hall's map (round 2, Task 10 - Alon: "I must see the map"): the drawing beside the table from `md` up, above
+// it on a phone (`VenueSectionMap`). Hovering (or focusing) a row lights its category on the map; a click on a
+// section EXCLUDES it for every show of the hall - the event editor's exclude-sections look - and the confirm writes
+// the list to the venue template and to `tx_excluded_sections` of every ready / approved show of the hall (the
+// TixStock price sync re-prices without those listings on its next run).
 
 export type PanelVenue = NonNullable<PanelRow["venue"]>;
 
@@ -130,6 +152,12 @@ function statusText(row: ClassificationRow, e: RowEdit): string {
   return "";
 }
 
+/** Two lists of section ids hold the same ids (order aside). */
+function sameSections(a: string[], b: string[]): boolean {
+  const left = new Set(a);
+  return left.size === new Set(b).size && b.every((id) => left.has(id));
+}
+
 /** Enter in a box moves to the next one; in the last box it confirms (spec 11). */
 function onFormKeyDown(e: KeyboardEvent<HTMLFormElement>) {
   if (e.key !== "Enter" || !(e.target instanceof HTMLInputElement)) return;
@@ -161,6 +189,10 @@ export function ClassifyDialog({
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   // The hall's Hebrew name box (round 2, D3): opens with the stored name, else the AI's proposal.
   const [venueHe, setVenueHe] = useState("");
+  // The hall's excluded map sections (round 2, Task 10): open with the stored list; a click on the map toggles one.
+  const [excluded, setExcluded] = useState<string[]>([]);
+  // The row under the pointer (or holding the focus) - its category is lit on the map.
+  const [hovered, setHovered] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   // The hall on screen - kept after `venue` turns null so the dialog closes with its title.
   const [shown, setShown] = useState<PanelVenue | null>(venue);
@@ -182,6 +214,8 @@ export function ClassifyDialog({
       setPhase({ kind: "loading" });
       setEdits({});
       setVenueHe("");
+      setExcluded([]);
+      setHovered(null);
     }
   }
 
@@ -198,6 +232,7 @@ export function ClassifyDialog({
         if (!r.ok) return fail(actionErrorText(r.kind));
         setEdits(Object.fromEntries(r.rows.map((row) => [row.key, editOf(row)])));
         setVenueHe(r.venue_he ?? "");
+        setExcluded(r.excludedSections);
         setPhase({ kind: "ready", data: r });
       })
       .catch(() => {
@@ -242,6 +277,7 @@ export function ClassifyDialog({
         proposed: shownAsProposed(data.rows),
         ai: data.ai.used,
         venueHe: venueHe.trim(),
+        excludedSections: excluded,
       });
       if (!r.ok) {
         toast({
@@ -260,10 +296,13 @@ export function ClassifyDialog({
         });
         return;
       }
-      // Saved either way: a partial run and event descriptions that could not be rewritten are warning lines under the normal toast.
-      const lines = [r.reached < r.total ? PARTIAL_LINE(r.total - r.reached) : null, r.describeFailed ? DESCRIBE_FAILED_LINE : null].filter(
-        (line): line is string => line !== null,
-      );
+      // Saved either way: a partial run and event descriptions that could not be rewritten are warning lines under the normal toast;
+      // a changed list of excluded sections says when the ticket prices follow.
+      const lines = [
+        sameSections(excluded, data.excludedSections) ? null : MAP_PRICES_LINE,
+        r.reached < r.total ? PARTIAL_LINE(r.total - r.reached) : null,
+        r.describeFailed ? DESCRIBE_FAILED_LINE : null,
+      ].filter((line): line is string => line !== null);
       toast({ title: CLASSIFY_DONE(r), description: lines.length === 0 ? undefined : rtl(lines.map((line) => <p key={line}>{line}</p>)) });
       await onDone();
     } catch {
@@ -282,7 +321,7 @@ export function ClassifyDialog({
     >
       <DialogContent
         dir="rtl"
-        className="flex max-h-[90vh] max-w-5xl flex-col gap-4 [&>button:last-child]:left-4 [&>button:last-child]:right-auto"
+        className="flex max-h-[90vh] max-w-6xl flex-col gap-4 [&>button:last-child]:left-4 [&>button:last-child]:right-auto"
       >
         <DialogHeader className="text-start sm:text-start">
           <DialogTitle className="pe-6">{CLASSIFY_TITLE(data?.venue.name || shown?.name || "")}</DialogTitle>
@@ -296,7 +335,7 @@ export function ClassifyDialog({
         ) : (
           <form
             id="uploader-classify"
-            className="flex min-h-0 flex-col gap-3"
+            className="flex min-h-0 flex-col gap-3 overflow-y-auto md:overflow-visible"
             onKeyDown={onFormKeyDown}
             onSubmit={(e) => {
               e.preventDefault();
@@ -328,62 +367,87 @@ export function ClassifyDialog({
                 {venueHeBad ? VENUE_HE_NEEDS_HEBREW : venueHeFromAi ? VENUE_HE_HINT_AI : VENUE_HE_HINT}
               </p>
             </div>
-            <Table containerClassName="max-h-[50vh] rounded-md border" className="min-w-[40rem] text-[13px]">
-              <TableHeader className="sticky top-0 z-10 bg-background">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="h-9 w-[24%] text-start">{COL_CATEGORY}</TableHead>
-                  <TableHead className="h-9 w-[34%] text-start">{COL_LABEL}</TableHead>
-                  <TableHead className="h-9 w-[8%] text-center">{COL_DROP}</TableHead>
-                  <TableHead className="h-9 w-[34%] text-start">{COL_STATUS}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {current.map(({ row, e }) => {
-                  const status = statusText(row, e);
-                  const unsure = isUnsure(e);
-                  return (
-                    <TableRow key={row.key} className={cn("align-top", e.drop && "bg-muted/40")}>
-                      <TableCell className="py-2">
-                        <bdi dir="ltr" className={cn("block break-words font-medium", e.drop && "text-muted-foreground line-through")}>
-                          {row.category}
-                        </bdi>
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <Input
-                          data-box
-                          dir="rtl"
-                          value={e.label}
-                          // An English stored label is no label (ruling R26): shown as a hint, never sent.
-                          placeholder={row.placeholder || undefined}
-                          maxLength={ZONE_LABEL_MAX}
-                          disabled={e.drop || saving}
-                          aria-label={`${COL_LABEL}: ${row.category}`}
-                          onChange={(ev) => setEdit(row.key, { label: ev.target.value, aiUnsure: false })}
-                          className={cn("h-8 text-[13px]", e.aiUnsure && "italic text-muted-foreground")}
-                        />
-                      </TableCell>
-                      <TableCell className="py-2 text-center">
-                        <Switch
-                          checked={e.drop}
-                          disabled={saving}
-                          aria-label={`${COL_DROP}: ${row.category}`}
-                          onCheckedChange={(drop) => setEdit(row.key, { drop })}
-                          className="mt-1"
-                        />
-                      </TableCell>
-                      <TableCell className="py-2 text-xs leading-snug">
-                        <span className={cn(unsure ? "text-warning" : "text-muted-foreground")}>
-                          {status}
-                          {status && " · "}
-                          {row.shows > 0 ? STATUS_SHOWS(row.shows) : STATUS_NOT_SOLD}
-                        </span>
-                        {!row.onMap && <span className="mt-0.5 block text-muted-foreground">{STATUS_OFF_MAP}</span>}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            {/* The map first in the markup (above the table on a phone); from md up it sits beside the table, at the end side. */}
+            <div className="flex min-h-0 flex-col gap-3 md:grid md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:items-start">
+              <div className="flex flex-col gap-1 md:order-last">
+                <p className="text-[13px] font-medium">{MAP_TITLE}</p>
+                <VenueSectionMap
+                  svg={data?.svg ?? ""}
+                  excluded={excluded}
+                  highlightCategory={hovered}
+                  onToggle={(sectionId, wedges) => setExcluded((list) => toggleExcludedSection(list, sectionId, wedges))}
+                  disabled={saving}
+                  className="h-[32vh] md:h-[50vh]"
+                  fallback={<p className="rounded-md border px-3 py-6 text-center text-xs text-muted-foreground">{MAP_UNAVAILABLE}</p>}
+                />
+                <p className={cn("text-[11px] leading-snug", excluded.length > 0 ? "font-medium text-destructive" : "text-muted-foreground")}>
+                  {excluded.length > 0 ? MAP_EXCLUDED_LINE(excluded.length) : MAP_HINT}
+                </p>
+              </div>
+              <Table containerClassName="max-h-[40vh] rounded-md border md:max-h-[50vh]" className="min-w-[34rem] text-[13px]">
+                <TableHeader className="sticky top-0 z-10 bg-background">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="h-9 w-[24%] text-start">{COL_CATEGORY}</TableHead>
+                    <TableHead className="h-9 w-[34%] text-start">{COL_LABEL}</TableHead>
+                    <TableHead className="h-9 w-[8%] text-center">{COL_DROP}</TableHead>
+                    <TableHead className="h-9 w-[34%] text-start">{COL_STATUS}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {current.map(({ row, e }) => {
+                    const status = statusText(row, e);
+                    const unsure = isUnsure(e);
+                    return (
+                      <TableRow
+                        key={row.key}
+                        className={cn("align-top", e.drop && "bg-muted/40", hovered === row.key && row.onMap && "bg-accent/40")}
+                        onMouseEnter={() => setHovered(row.key)}
+                        onMouseLeave={() => setHovered((h) => (h === row.key ? null : h))}
+                        onFocus={() => setHovered(row.key)}
+                        onBlur={() => setHovered((h) => (h === row.key ? null : h))}
+                      >
+                        <TableCell className="py-2">
+                          <bdi dir="ltr" className={cn("block break-words font-medium", e.drop && "text-muted-foreground line-through")}>
+                            {row.category}
+                          </bdi>
+                        </TableCell>
+                        <TableCell className="py-2">
+                          <Input
+                            data-box
+                            dir="rtl"
+                            value={e.label}
+                            // An English stored label is no label (ruling R26): shown as a hint, never sent.
+                            placeholder={row.placeholder || undefined}
+                            maxLength={ZONE_LABEL_MAX}
+                            disabled={e.drop || saving}
+                            aria-label={`${COL_LABEL}: ${row.category}`}
+                            onChange={(ev) => setEdit(row.key, { label: ev.target.value, aiUnsure: false })}
+                            className={cn("h-8 text-[13px]", e.aiUnsure && "italic text-muted-foreground")}
+                          />
+                        </TableCell>
+                        <TableCell className="py-2 text-center">
+                          <Switch
+                            checked={e.drop}
+                            disabled={saving}
+                            aria-label={`${COL_DROP}: ${row.category}`}
+                            onCheckedChange={(drop) => setEdit(row.key, { drop })}
+                            className="mt-1"
+                          />
+                        </TableCell>
+                        <TableCell className="py-2 text-xs leading-snug">
+                          <span className={cn(unsure ? "text-warning" : "text-muted-foreground")}>
+                            {status}
+                            {status && " · "}
+                            {row.shows > 0 ? STATUS_SHOWS(row.shows) : STATUS_NOT_SOLD}
+                          </span>
+                          {!row.onMap && <span className="mt-0.5 block text-muted-foreground">{STATUS_OFF_MAP}</span>}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </form>
         )}
 

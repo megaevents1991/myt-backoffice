@@ -20,6 +20,7 @@ import type { LiveTicketsStock } from "@/lib/services/livetickets-offers";
 import { normalizeSupplierCategory, type SupplierCurrency } from "@/lib/suppliers";
 import {
   hasObstructedViewRestriction,
+  isExcludedSection,
   listingsTheSiteSells,
   PRICED_PARTY,
   type TixStockListingRuleFields,
@@ -36,8 +37,11 @@ export interface TixListing extends TixStockListingRuleFields {
   face_value?: { currency?: string };
 }
 
-/** Why a category (or a listing with none) did not become a ticket. */
-export type TixDropReason = "restricted" | "split" | "excluded";
+/**
+ * Why a category (or a listing with none) did not become a ticket. `sections` = every listing of the category sits in
+ * a map section the hall excludes (round 2, Task 10); `excluded` = no category, or no usable price.
+ */
+export type TixDropReason = "restricted" | "split" | "excluded" | "sections";
 
 /**
  * The colour every supplier ticket wears on the map: the editor's TixStock tickets (events/[id]/page.tsx,
@@ -79,8 +83,13 @@ function pricedUsd(
  * would sell to a pair - cheapest AS PRICED (each listing goes through `priceUsd` first, so a
  * dearer listing in a stronger currency can win).
  *
+ * `excludedSections` = the hall's excluded map sections (the venue template's `tixstock_sections`,
+ * "<category slug>_<section>"): a listing in one of them is never sold nor priced - main's first rule,
+ * through the same `listingsTheSiteSells`; the event is built with the same list, so the site agrees.
+ *
  * `dropped` is what the operator is told about, once per CATEGORY - a category whose every listing
- * the rules refused, `restricted` when any of its listings fails the obstructed-view rule, else
+ * the rules refused: `sections` when every one of them sits in an excluded section, else `restricted`
+ * when any of its listings in the open sections fails the obstructed-view rule, else
  * `split` (the seller will not sell a pair); a category that has a sellable listing keeps its
  * ticket and is not reported even if other listings of it were refused. A category whose sellable
  * listings carry no price is `excluded`, like a listing with no `seat_details.category` at all
@@ -98,6 +107,7 @@ export function ticketsFromTixStockFeed(
   eid: string,
   priceUsd: (cost: number, currency: string) => number,
   newId: () => string,
+  excludedSections: readonly string[] = [],
 ): {
   tickets: EventTicket[];
   dropped: { category: string; reason: TixDropReason }[];
@@ -117,16 +127,17 @@ export function ticketsFromTixStockFeed(
     else byCategory.set(key, { name, listings: [listing] });
   }
 
-  // No section is excluded on a brand-new event (staff set `tx_excluded_sections` later).
-  const sellable = new Set<TixListing>(listingsTheSiteSells(listings, [], PRICED_PARTY));
+  // The hall's excluded sections (none on a hall nobody classified) - the list the event is built with.
+  const sellable = new Set<TixListing>(listingsTheSiteSells(listings, excludedSections, PRICED_PARTY));
 
   const tickets: EventTicket[] = [];
   for (const { name: category, listings: group } of [...byCategory.values()].sort((a, b) => byText(a.name, b.name))) {
     const offered = group.filter((listing) => sellable.has(listing));
     if (offered.length === 0) {
+      const open = group.filter((listing) => !isExcludedSection(listing, excludedSections));
       dropped.push({
         category,
-        reason: group.some(hasObstructedViewRestriction) ? "restricted" : "split",
+        reason: open.length === 0 ? "sections" : open.some(hasObstructedViewRestriction) ? "restricted" : "split",
       });
       continue;
     }
