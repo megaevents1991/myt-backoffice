@@ -372,6 +372,9 @@ assert.ok(uploaderRules.includes(`${NEAR_LOCATION_KM} km`), "the near-location r
 assert.ok(uploaderRules.includes(`${FAR_VENUE_KM} km`), "the far-venue radius reaches the prompt");
 assert.ok(uploaderRules.includes(`${SHOW_WINDOW_DAYS} days`), "the site's selling window reaches the prompt");
 assert.ok(uploaderRules.includes(`$${MARKUP_MAX}`), "the markup ceiling reaches the prompt");
+assert.ok(uploaderRules.includes("ALWAYS asked of the person"), "a show with no location is always asked (round 2, D2) - never a silent skip / ticket-only");
+assert.ok(!uploaderRules.includes("what a show with no location becomes"), "the old 'no location = skip / ticket-only' sentence is gone");
+assert.ok(uploaderRules.includes("rules.livetickets_non_instant"), "the LiveTickets non-instant switch is named (round 2, D1)");
 assert.ok(uploaderRules.includes("ONE subject"), "one subject per brief");
 assert.ok(uploaderRules.includes("home_only"), "a team defaults to home games");
 assert.ok(uploaderRules.includes("NEVER price"), "it never prices");

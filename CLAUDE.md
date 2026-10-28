@@ -1480,8 +1480,8 @@ shows the decisions taken, the warnings and an Approve per event. Admins only: n
 refetches after every step; idle, it polls every `BOARD_IDLE_POLL_MS` 15 s. The waiting toast polls every
 `TOAST_POLL_MS` 60 s.
 
-**Three AI calls; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
-the brief's call (the other two, `classify_venue` and `name_teams`, are in the round "אלון 1" paragraph below; every one a forced tool, code does the rest): a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
+**Four AI calls; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
+the brief's call (the other three, `classify_venue`, `name_teams` and, since 28.10, `propose_location`, are in the rounds "אלון 1" / "אלון 2" below; every one a forced tool, code does the rest): a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
 `claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). `callsPerRun` 3 is the agent layer's per-run ceiling, but every
 `parseBrief` call gets a fresh budget - a re-parse ("ערוך את הבריף") is just another call - but a person
 gets at most `PARSE_RATE_MAX` 10 parses per `PARSE_RATE_WINDOW_MS` 10 min (`rate_limited`, counted on the
@@ -1565,8 +1565,8 @@ includes `is_test` events, a real run's does not. An item split by a "both" answ
 day + IATA re-check (`buildDuplicateFor`; its supplier-id check stays), or its sibling's hidden event would
 read as it.
 
-**Questions are tasks.** A show the code cannot decide (`pick_show`, `pick_date`, `pick_location`;
-`confirm_subject` is reserved, never raised) goes `question` and stops ALONE. The question is a task
+**Questions are tasks.** A show the code cannot decide (`pick_show`, `pick_date`, `pick_location`, and since 28.10
+`same_show` / `create_location`; `confirm_subject` is reserved, never raised) goes `question` and stops ALONE. The question is a task
 (`uploader-questions.ts`: source `uploader`, board `ops`, priority `high`, assignee = the run's asker = the
 sender, `created_by: null` so `notifyTaskAssigned` mails the asker even when they started the run);
 `answerQuestion` closes it and re-queues the item ("דלג" = `skipped_by_answer`), and `priorAnswerFor`
@@ -1589,9 +1589,10 @@ pass - that would cap a 180-day memory at a month - and deletes them in a second
 **Far venue = the "learn slowly" path (Dor, decision 9).** No location within `NEAR_LOCATION_KM` goes
 through stadium memory FIRST (`findVenueMemory` with `{ strict: true }`, which THROWS on a read error). Memory
 carries a two-city setup only from an APPROVED event (live, non-test, not hidden) - never from the same run
-or a test run, so the first far show at a venue is always a human's click. With no memory the plan's
-`rules.without_location` decides, and when the nearest location is within `FAR_VENUE_KM` the card offers
-"בנה כחבילה דרך <city> (N ק"מ) עם פיצול מלון": `rebuildTwoCity` deletes the ticket-only event, re-queues
+or a test run, so the first far show at a venue is always a human's click. With no memory the show ASKS
+(`create_location`, round 2 D2 - never a silent ticket-only or skip; the plan's `rules.without_location` only marks the
+recommended option "(לפי הבריף)"), and when the nearest location is within `FAR_VENUE_KM` one option is the two-city package
+and a ticket-only card keeps "בנה כחבילה דרך <city> (N ק"מ) עם פיצול מלון": `rebuildTwoCity` deletes the ticket-only event, re-queues
 the show and audits `uploader.two_city_chosen` (a city past `FAR_VENUE_KM` from the venue is refused,
 `too_far`); once approved, memory carries it into later runs. Never a guessed flight city.
 
@@ -1632,7 +1633,7 @@ show HAS a TixStock drawing); the fold is a VIEW - `uploader_items.warnings` is 
 ("לבדיקה: <categories>") stays on the card while feeding the venue row. **Classification** (`classify-dialog.tsx`,
 `lib/uploader/classify.ts`, selftest): `proposeVenueClassification(runId, sourceUrl)` reads the drawing read-only
 (`fetchSupplierSvg`, `lib/venue-maps/supplier-svg.ts`) and makes ONE AI call; the dialog is a row per category of the
-DRAWING plus the run's tickets - editable Hebrew zone label (the card title) and description (the line under it), a
+DRAWING plus the run's tickets - editable Hebrew zone label (the card title - no description column since 28.10, D4; the hall's Hebrew name box sits on top), a
 "לפסול" switch, a status. `dropRule` is CODE (word-bounded away / visitor(s) / visiting; the model may add a drop with
 a reason, never remove one; a person can flip any drop; obstructed views are NOT a category rule - they are refused per
 LISTING by `listingsTheSiteSells`). A row the AI is unsure about, or a person empties, is "לבדיקה" until touched: its
@@ -1700,7 +1701,7 @@ mirrors the AI's tool schema key for key and feeds the `plan_edited` lessons). R
 `league` tags' `name_english`, exact then longest containment of 4+ letters; selftest section "Alon 25.10"). Tokens:
 football `{בית} {חוץ} {מפעל} {אירוע} {אולם} {עיר} {תאריך}`, artist `{אמן} {אירוע} {אולם} {עיר} {תאריך}`; a token with
 no Hebrew prints its English value and is named (decision `description_from_template` "עדיין באנגלית: ..."), the venue
-and date print as they are. Filled by the build (step 7, `BuildContext.description`, read per item by
+and date print as they are (since 28.10 `{אולם}` prints the hall's Hebrew name when it has one). Filled by the build (step 7, `BuildContext.description`, read per item by
 `descriptionContextFor` - a failed read keeps the English default), again after the names dialog (`describeAgain`,
 over the items re-read so the rename's decisions stand), and by the board's "תבנית תיאור" dialog
 (`getDescriptionTemplate` / `saveDescriptionTemplate(runId, template, apply)`, live preview on one of the run's own
@@ -1709,6 +1710,88 @@ description still equals the item's `payload.description` (which follows every r
 (`editedByHand`); audited `uploader.description_applied` / `uploader.description_template`. Before the migration the
 dialog says it is not ready and builds keep the English line. (3) Tours board: the "⋯" menu + "Take it" on
 RESERVATIONS rows too, and the folded card on the customer page names its rep.
+
+**Alon's round 2 (28.10.2026; spec `docs/superpowers/specs/2026-10-28-uploader-alon-round-2-design.md`, plan
+`docs/superpowers/plans/2026-10-28-uploader-alon-round-2.md`, migration `20261028114031_uploader_alon_round_2.sql`).**
+Ten notes from Alon's doc (tab "אי אי אפלואדר", `t.fclqdo4xd71i`), diagnosed on prod against run `dc0743eb` (Lazio home
+games) and `ecd50031` (Thirty Seconds to Mars); Dor approved the round with four decisions. **D1** LiveTickets
+categories that are not instant-confirm are BROUGHT, marked `nonInstant: true` (`rules.livetickets_non_instant`, default
+true, read by `planNonInstant`; a switch on the plan card; decision `tickets_livetickets_non_instant`):
+`ticketsFromLiveStock` used to drop every `nonInstantOnly` category, so those shows had zero tickets, while the site
+already sells a category attached on purpose as `nonInstant` (23.09). **D2** a show with no location ALWAYS asks -
+`create_location` (create / `two_city:<id>` / `ticket_only` / `skip`); `rules.without_location` only marks "(לפי הבריף)"
+and puts that option first of the last two, never a silent ticket-only again. **D3** each hall gets a Hebrew name
+(`venue_maps.name_he`, proposed by `classify_venue` as `venue_he`, a person confirms; `{אולם}` prints it, else the
+English venue). **D4** the zone description left the classify dialog and the AI stopped proposing it (a description
+already in a template stays). **Migration** (APPLIED on prod 28.10): `locations.aliases text[]` + a seed (Rome / Roma,
+Milan / Milano, Munich / München, Vienna / Wien, Lisbon / Lisboa, the US cities ...) + the Philadelphia and
+Arlington-Dallas coordinate fixes, `uploader_aliases` (`kind` city | team, no CHECK, `from_key` / `to_key` =
+`normalizeName`, `team_id`, unique `(kind, from_key)`, RLS on, no policies, anon / authenticated revoked),
+`venue_maps.name_he`, and the two `uploader_settings` description-template rows (`on conflict do nothing`: football
+`{בית} נגד {חוץ} ב{אולם}, במסגרת {מפעל}.`, artist `{אמן} יוצא לסיבוב הופעות שחובה לראות! כרטיסים להופעה שלו ב{עיר}.`);
+main never reads `locations`, so `aliases` is backoffice-only, and every new read tolerates the column / table missing.
+**Cleanup:** the names dialog had created 10 duplicate inactive teams on the Lazio run (Cagliari, Lecce, Atalanta,
+Bologna, Venezia, Juventus, Torino, Sassuolo, Udinese, Fiorentina - the LiveTickets spelling twins, ids 58, 61, 64, 67,
+70, 74, 77, 81, 84, 87): soft-deleted on prod 28.10 (`is_deleted = true`, audited). **Same show, same city, same club
+(notes 1, 4, 6, 7):** `lib/uploader/equivalence.ts` is the ONE rule (pure; `buildEquivalence` over the `locations` rows
+- each `shortPlace(name)` + its aliases is a group - and the confirmed `uploader_aliases`, union-find; `cityKey` lets a
+broken `�` / `?` match one letter (LiveTickets' broken "Köln"); `teamKey` = `clubKey(cleanClubName(name))` -
+`cleanClubName` now also strips `ACF SS US AS CFC SV FK SK CD UD RC RCD SL CA` and a trailing `Calcio` or year - then
+the confirmed team aliases as `team:<id>`; loaded by `loadEquivalence` / `recordAlias` in
+`lib/services/uploader-aliases.ts`) and it feeds `groupRows`' GROUPING keys only: `showKey` / `questionKey` (where
+answers and rejections are stored) did not change. The new question **`same_show`** (`shows.ts` `sameShow`): a
+TixStock-only and a LiveTickets-only show of the subject on the SAME day (same home side) whose cities did not match,
+paired uniquely both ways, become ONE item - "TixStock מוכר הופעה ב-Lisboa ו-LiveTickets ב-Lisbon באותו יום (06.04.2027)
+- זו אותה הופעה?" - options `same` / `both` / `skip`; `same` builds one show carrying both suppliers (TixStock's
+identity) and records a CITY alias (LiveTickets' city -> TixStock's) so the next run merges silently, `both` splits like
+`pick_date`'s "both". **A city beats bad coordinates** (`decidePlace` step 3b, warning `venue_coords_far`): a flyable
+location whose name or alias equals the show's city (`cityKey`, country codes agreeing when known) is the package's
+location; TixStock had put "Velodrome Berlin" in the middle of Germany -> Hannover 110 km -> ticket-only. The Locations
+form edits `aliases` ("שמות נוספים"). **A missing location -> create one (note 9):** `decidePlace` step 6 asks
+`create_location` ("אין לנו מיקום ל-Valencia (Roig Arena). מה לעשות?"; `two_city` only within `FAR_VENUE_KM`);
+`pick_location` (no coordinates) gets `create` too. `create` opens `create-location-dialog.tsx`:
+`proposeLocation(itemId)` is the FOURTH AI call (`propose_location`, `lib/services/tour-uploader-location.ts`: the
+agent's discipline - forced non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row, the parse's rate cap; off / no
+answer / cap = the same form, empty but for the venue's coordinates), `createLocationAndAnswer(itemId, input)` validates
+(`validateLocationInput`: a Hebrew letter in the name, IATA `^[A-Z]{3}$`, lat / lon ranges, no existing location with
+the same IATA AND the same city), inserts the row (aliases included), audits `uploader.location_created` (the lesson
+source of `LOCATION_LESSON_SOURCES`), answers with the new id, re-queues the item and answers every other open
+`create_location` of the same city; run rule: `ticket_only` / `skip` reach every open `create_location`, `two_city` and
+a created location only the same city. **Names + pages (notes 3, 4):** `distinctSides` / `missingSides` dedupe by
+`teamKey` (two spellings of one club = one row); the names dialog's third mode **"זה עמוד קיים"**
+(`team-link-picker.tsx`, `searchTeamsForLink` over every `football_teams` row, inactive included, deleted excluded)
+records a team alias (`uploader.team_linked`, a lesson source of the names call) and that team's Hebrew name names the
+events; `createTeamsAndRename` collapses rows with the same `teamKey` into ONE team and re-reads `football_teams` first
+- a row matching by the club rule is linked, never created again. The panel's subject row and every fix row carry **"פתח
+משימה"** (`PanelTask` on the row; the shared `TaskEditor` prefilled - "לבנות עמוד קבוצה: <name>" / "לבנות עמוד אמן:
+<name>" / "<fix>: <name>" - with the run's link, source `creative_gap`, `source_ref` `{ kind: "uploader_page", table,
+row_id, label, url }`, board `marketing`). **Classify dialog (note 5):** "שם האולם בעברית" on top (saved to
+`venue_maps.name_he`; the confirm rewrites the descriptions of the hall's events that are still the uploader's own), no
+description column, and the hall's MAP beside the table (`components/venue-section-map.tsx` over the supplier SVG of
+`source_url`, through the shared allowlist sanitizer `sanitizeAndPrepareSvg` in `lib/tixstock-map.ts` - no
+foreignObject, frames, external urls or unsafe styles): hovering a row lights its category, a click toggles a section
+EXCLUDED (the editor's `svg-excluded` look); pure rules in `classify.ts` (`toggleExcludedSection`,
+`parseExcludedSectionsInput`, `hallExcludedSections`: what came from the hall follows the hall, one a person excluded on
+a single show stays). Stored on the template (`venue_maps.dropped_categories.tixstock_sections`, no migration), written
+to `events.tx_excluded_sections` of every ready / approved show of the hall (prices follow at the next TixStock price
+sync / approve re-check), a new build starts with them, and learn-from-event copies the event's list to the template and
+the hall's other shows. **Plan card (notes 1, 2, 6):** "כוון את ה-AI" (`plan-assist.tsx` `SteerBox`, `parseBrief(brief,
+steer)`) re-parses with the brief, the plan as the card holds it and the instruction (`STEER_MIN` 3 .. `STEER_MAX` 500)
+inside a second closed fence, counts against the parse cap and audits `uploader.plan_steered` (a lesson source of the
+parse); the parse tool also returns `questions: string[]` (at most 5, "ה-AI שואל:", not part of `UploaderPlan`); a card
+with edits asks before a steer replaces them (the test switch and the edited description templates travel along); the
+family's description template is edited ON the card (`DescriptionTemplateEditor`, written by `createRun` when it
+changed) as well as on the board. The agent's house rules now say a no-location show is always asked. **Board (notes 8,
+10):** a new default filter **"פעילים"** (`FILTERS`: active, questions, ready, attention, approved, skipped, rejected,
+errors, all; `inFilter("active")` = not rejected / skipped; `?f=` default `active`), so a rejected card leaves the view
+at once. **Learn in two steps** (`LearnSteps`, `show-card.tsx`): a card whose hall has other shows (`hallmates > 0`)
+always shows "1. סדרו את האירוע בעורך" (the event's editor, new tab) and a disabled "2. למדו והחילו על N ההופעות" with
+"אחרי השמירה בעורך הכפתור נפתח"; once `fixedByHand` is true step 1 reads "✓" and step 2 is the live button;
+`LEARN_RECIPE` is the same recipe in one line under the panel's hall rows and in the classify dialog's footer. **Not
+built:** a standing rule across runs other than aliases; LiveTickets categories in the classify dialog; hotel warm-up
+for a created location (the base-price quote searches hotels live); the menu badge; "בנה בכל זאת"; inline editing of
+board fields. **Deploy:** the migration rode the push to master (applied 28.10); nothing on myt-main; Alon re-runs
+Lazio.
 
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,

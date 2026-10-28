@@ -110,7 +110,7 @@ export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
         without_location: {
           type: "string",
           enum: [...WITHOUT_LOCATION],
-          description: "ticket_only = sell the ticket alone; skip = do not build the show. skip unless the brief asks for ticket-only.",
+          description: "What the brief recommends for a show with no location - the person is asked about every such show either way (create a location / two-city / ticket only / skip). ticket_only = sell the ticket alone; skip = do not build the show. skip unless the brief asks for ticket-only.",
         },
         livetickets_non_instant: {
           type: "boolean",
