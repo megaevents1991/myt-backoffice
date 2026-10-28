@@ -77,7 +77,7 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
   same(count(beacons.doc, "use"), 2, "use: the two #fragment ones stay; external targets and a use with no href go");
   check(count(beacons.doc, "symbol") === 1, "a symbol stays (a use may point at it)");
 
-  // A supplier <style>: @import, external url(), behavior / -moz-binding / expression / javascript: out; url(#id) and the classes stay.
+  // A supplier <style> is REBUILT from an allowlist: at-rules, external url(), loaders and old CSS hooks out; url(#id) and class fills stay, scoped to the drawing.
   const style = clean(
     wrap(
       "<style>@import url(https://evil.example/x.css); .s{fill:url(https://evil.example/b)} .t{fill:url(#grad)} .u{behavior:url(x.htc)} .v{-moz-binding:url(x.xml#b)} .w{width:expression(alert(1))} .st0{fill:#599D52}</style>",
@@ -85,13 +85,40 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
   );
   check(!style.text.includes("@import") && !style.text.includes("evil.example") && !style.text.includes("x.htc") && !style.text.includes("x.xml"), "style: @import and every external url() are out");
   check(!style.text.includes("behavior") && !style.text.includes("-moz-binding") && !style.text.includes("expression("), "style: behavior / -moz-binding / expression( are out");
-  check(style.text.includes("url(#grad)") && style.text.includes(".st0{fill:#599d52}"), "style: url(#id) and the class fills stay");
+  const scopeOf = (doc: Document): string => `svg[data-venue-map="${doc.querySelector("svg")?.getAttribute("data-venue-map") ?? ""}"]`;
+  const styleScope = scopeOf(style.doc);
+  check(/^svg\[data-venue-map="[0-9a-z]+"\]$/.test(styleScope), "the root carries its scope id (data-venue-map)");
+  const styleCss = Array.from(style.doc.querySelectorAll("style")).map((el) => el.textContent ?? "").join("\n");
+  check(styleCss.includes(`${styleScope} .t { fill: url(#grad); }`) && styleCss.includes(`${styleScope} .st0 { fill: #599D52; }`), "style: url(#id) and the class fills stay, scoped to the drawing");
   const escaped = clean(wrap("<style>.x{background:u\\72l(https://evil.example/e)} .st0{fill:red}</style>"));
-  check(!escaped.text.includes("evil.example") && !escaped.text.includes("u\\72l"), "style: a CSS escape that could spell url( again drops the whole supplier style");
-  same(cleanSvgCss(".a{fill:url('#g')} .b{fill:url(\"#h\")}"), ".a{fill:url('#g')} .b{fill:url(\"#h\")}", "cleanSvgCss: quoted url(#id) stays as it is");
-  same(cleanSvgCss(".a{fill:url(https://evil.example/p)}"), ".a{fill:none}", "cleanSvgCss: an external url() becomes none");
-  same(cleanSvgCss('.a{fill:url("https://evil.example/a)b")}'), null, "cleanSvgCss: a url() it cannot read cleanly drops the style");
-  same(cleanSvgCss(".a{fill:red} /* data:x */"), null, "cleanSvgCss: a data: left anywhere drops the style");
+  check(!escaped.text.includes("evil.example") && !escaped.text.includes("u\\72l") && escaped.text.includes(".st0 { fill: red; }"), "style: a CSS escape is no value (that rule's property goes), the plain rule stays");
+  const SC = 'svg[data-venue-map="t"]';
+  same(cleanSvgCss(".a{fill:url('#g')} .b{fill:url(\"#h\")}", SC), `${SC} .a { fill: url('#g'); }\n${SC} .b { fill: url("#h"); }`, "cleanSvgCss: quoted url(#id) stays");
+  same(cleanSvgCss(".a{fill:url(https://evil.example/p)} .b{stroke:#fff}", SC), `${SC} .b { stroke: #fff; }`, "cleanSvgCss: an external url() is no value - its rule goes when nothing else is left");
+  same(cleanSvgCss('.a{fill:url("https://evil.example/a)b")}', SC), "", "cleanSvgCss: a url() with a quote game is no value");
+  same(cleanSvgCss(".a{fill:red} /* data:x */", SC), `${SC} .a { fill: red; }`, "cleanSvgCss: comments are dropped before anything is read");
+
+  // Finding 3 (round 2): CSS resource loaders and document-global rules.
+  same(
+    cleanSvgCss('body{background-image:image-set("https://evil.example/b.png" 1x)} .x{cursor:-webkit-image-set("https://evil.example/c.png" 1x)} .y{cursor:url(https://evil.example/c.cur), pointer}', SC),
+    "",
+    "cleanSvgCss: image-set / -webkit-image-set / a cursor url - and background-image itself - are gone",
+  );
+  same(cleanSvgCss(".y{cursor:pointer} .z{cursor:not-allowed !important}", SC), `${SC} .y { cursor: pointer; }\n${SC} .z { cursor: not-allowed !important; }`, "cleanSvgCss: a keyword cursor stays");
+  same(
+    cleanSvgCss('@font-face{font-family:x;src:url(https://evil.example/f.woff)} @media screen{.a{fill:red}} @namespace svg url(http://www.w3.org/2000/svg); @charset "utf-8"; .k{fill:blue}', SC),
+    `${SC} .k { fill: blue; }`,
+    "cleanSvgCss: every at-rule goes (@font-face, @media with its block, @namespace, @charset)",
+  );
+  same(
+    cleanSvgCss(".a{fill:rgb(10, 20, 30);stroke:hsla(120, 50%, 50%, 0.5);stroke-width:1.5px;font-family:'DMSans-Bold', Arial;font-size:10px;opacity:.5;display:none;position:fixed;content:'x';background:red;width:100vw}", SC),
+    `${SC} .a { fill: rgb(10, 20, 30); stroke: hsla(120, 50%, 50%, 0.5); stroke-width: 1.5px; font-family: 'DMSans-Bold', Arial; font-size: 10px; opacity: .5; display: none; }`,
+    "cleanSvgCss: only the paint / stroke / text properties stay - position, content, background, width go",
+  );
+  same(cleanSvgCss(".a{fill:rgb(calc(1),2,3)} .b{fill:attr(x)} .c{fill:var(--x)} .d{fill:element(#x)} .e{fill:cross-fade(a,b)}", SC), "", "cleanSvgCss: no function but rgb/hsl with numbers and url(#id)");
+  same(cleanSvgCss(".a, svg > g.b:hover, [data-section=\"x_1\"]{fill:red}", SC), `${SC} .a, ${SC} svg > g.b:hover, ${SC} [data-section="x_1"] { fill: red; }`, "cleanSvgCss: every selector of a list is scoped");
+  same(cleanSvgCss("~ div{fill:red} + p{fill:red} .a, ~ b{fill:red}", SC), "", "cleanSvgCss: a selector that starts with a sibling combinator (reaches past the drawing) drops its rule");
+  same(cleanSvgCss("a{b{fill:red}} .c @x{fill:red} .d\\:e{fill:red} .f{fill:red", SC), `${SC} .f { fill: red; }`, "cleanSvgCss: a nested block, an @ or a backslash in a selector drops the rule; an unclosed last rule is still read safely");
 
   // <script>, and on* handlers in any case.
   const script = clean(wrap('<script>alert(1)</script><h:script>alert(2)</h:script><g onclick="alert(3)" ONMOUSEOVER="alert(4)" onLoad="alert(5)" data-section="upper_1"><rect width="1" height="1" onfocus="alert(6)"/></g>'));
@@ -137,6 +164,51 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
   same(sanitizeAndPrepareSvg("<html><body>x</body></html>"), null, "a file with no <svg> is no drawing");
 }
 
+// ---- round 2: the browser re-parse - CDATA, prefixes, namespaces (the review's mXSS harness payloads) ---------------
+// In a browser `innerHTML` re-reads the markup with the HTML parser: svg <title> / <desc> are HTML integration points and a
+// PREFIXED root (<s:svg>) is an unknown element, so CDATA there turns into a comment and what follows into live HTML. The
+// checks are at string level (the HTML re-parse itself is a browser matter - scratchpad/mxss runs it).
+{
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const run = (raw: string): string | null => sanitizeAndPrepareSvg(raw);
+  const firstTag = (out: string): string => /^<([^\s>/]+)/.exec(out)?.[1] ?? "";
+
+  // A / B / J: a prefixed root is no drawing.
+  same(run(`<s:svg xmlns:s="${SVGNS}"><s:g><![CDATA[><img src=x onerror="window.__pwn=1">]]></s:g></s:svg>`), null, "A: a prefixed root (<s:svg>) is refused");
+  same(run(`<s:svg xmlns:s="${SVGNS}"><title xmlns="${SVGNS}"><![CDATA[</title><img src=x onerror="window.__pwn=10">]]></title></s:svg>`), null, "B: a prefixed root with a title CDATA is refused");
+  same(run(`<x:svg xmlns:x="http://www.w3.org/1999/xhtml"><g><![CDATA[><img src=x onerror="window.__pwn=100000">]]></g></x:svg>`), null, "J: a prefixed root in the XHTML namespace is refused");
+
+  // C / D / E: CDATA in g, title and style under a plain root becomes escaped text.
+  for (const [label, raw] of [
+    ["C (CDATA in g)", `<svg xmlns="${SVGNS}"><g><![CDATA[><img src=x onerror="window.__pwn=100">]]></g></svg>`],
+    ["D (CDATA in title)", `<svg xmlns="${SVGNS}"><title><![CDATA[</title><img src=x onerror="window.__pwn=1000">]]></title></svg>`],
+    ["E (CDATA in style)", `<svg xmlns="${SVGNS}"><style><![CDATA[</style><img src=x onerror="window.__pwn=10000">]]></style></svg>`],
+  ] as const) {
+    const out = run(raw) ?? "";
+    check(out !== "" && firstTag(out) === "svg", `${label}: the output is one plain <svg ...>`);
+    check(!out.includes("<![CDATA[") && !out.includes("<img") && !out.includes("</title><img") && !out.includes("</style><img"), `${label}: no CDATA and no raw tag survive`);
+    // In g / title the text stays, escaped; in style it is no CSS rule and the rebuild drops it.
+    check(label.startsWith("E") ? !out.includes("onerror") : out.includes("&lt;img"), `${label}: ${label.startsWith("E") ? "the style keeps no trace of it" : "the text is escaped (&lt;img)"}`);
+  }
+  const titled = run(`<svg xmlns="${SVGNS}"><title>Emirates <![CDATA[& </title>]]> Stadium</title></svg>`) ?? "";
+  check(titled.includes("<title>Emirates &amp; &lt;/title&gt; Stadium</title>"), "title: text and CDATA pieces are one escaped text node");
+
+  // Prefixed elements below a plain root are removed.
+  const prefixedKids = run(`<svg xmlns="${SVGNS}" xmlns:s="${SVGNS}"><s:g data-section="a_1"><s:path d="M0"/></s:g><g data-section="b_2"><path d="M1"/></g><s:style>.x{fill:red}</s:style></svg>`) ?? "";
+  check(!prefixedKids.includes("<s:") && prefixedKids.includes('data-section="b_2"') && !prefixedKids.includes('data-section="a_1"'), "a prefixed element under a plain root goes with its subtree");
+
+  // G: entity-encoded javascript: in href spellings, a link around a shape.
+  const g = run(`<svg xmlns="${SVGNS}" xmlns:xlink="http://www.w3.org/1999/xlink"><use xlink:HREF="&#106;avascript:alert(1)"/><a xlink:href="&#106;avascript:1"><rect width="1" height="1"/></a></svg>`) ?? "";
+  check(g !== "" && !g.toLowerCase().includes("javascript") && !g.includes("<use") && !g.includes("<a ") && g.includes("<rect"), "G: an entity-encoded javascript: href goes (the use with it, the link unwrapped)");
+
+  // I: image-set beacons in a supplier style.
+  const i = run(`<svg xmlns="${SVGNS}"><style>body{background-image:image-set("https://evil.example/b.png" 1x)} .x{cursor:-webkit-image-set("https://evil.example/c.png" 1x)}</style></svg>`) ?? "";
+  check(i !== "" && !i.includes("image-set") && !i.includes("evil.example") && !/(^|[}\s])body\s*\{/.test(i), "I: no image-set, no outside url, no document-global body rule");
+
+  // Not the root: an <svg> nested in another document is not a drawing.
+  same(run(`<html xmlns="http://www.w3.org/1999/xhtml"><svg xmlns="${SVGNS}"><rect width="1" height="1"/></svg></html>`), null, "a document whose root is not <svg> is no drawing");
+}
+
 // ---- a real map keeps what the maps need -----------------------------------------------------------------------
 {
   const raw = readFileSync(join(process.cwd(), "public", "Arsenal-Emirates Stadium.svg"), "utf8");
@@ -157,7 +229,18 @@ const count = (doc: Document, selector: string): number => doc.querySelectorAll(
   same([count(after.doc, ".st6"), count(after.doc, ".st1"), count(after.doc, ".st0")], [count(before, ".st6"), count(before, ".st1"), count(before, ".st0")], "Arsenal: the class fills stay (st6 sections, st1 field lines, st0 pitch)");
   same(count(after.doc, ".block"), count(before, ".block"), "Arsenal: every section shape (.block) keeps its class");
   const css = Array.from(after.doc.querySelectorAll("style")).map((el) => el.textContent ?? "").join("\n");
-  check(css.includes(".st0") && css.includes("#599D52") && css.includes("pointer-events: none !important"), "Arsenal: the supplier style and the injected text style both stay");
+  check(css.includes("pointer-events: none !important"), "Arsenal: the injected text style stays");
+  const arsenalScope = `svg[data-venue-map="${after.doc.querySelector("svg")?.getAttribute("data-venue-map") ?? ""}"]`;
+  for (const rule of [
+    ".st0 { fill: #599D52; }",
+    ".st1 { fill: none; stroke: #FFFFFF; stroke-miterlimit: 10; }",
+    ".st2 { fill: none; stroke: #FFFFFF; stroke-width: 0.75; stroke-miterlimit: 10; }",
+    ".st6 { fill: none; stroke: #000000; stroke-miterlimit: 10; }",
+    ".st4 { font-family: 'DMSans-Bold'; }",
+    ".st9 { font-size: 5.5px; }",
+  ]) {
+    check(css.includes(`${arsenalScope} ${rule}`), `Arsenal: the supplier rule ${rule.split(" ")[0]} stays whole, scoped to the drawing`);
+  }
   check(count(after.doc, ".tier-label") === 0, "Arsenal: the prep still removes the tier labels");
   const root = after.doc.querySelector("svg");
   same([root?.getAttribute("width"), root?.getAttribute("height"), root?.getAttribute("viewBox"), root?.getAttribute("direction")], ["100%", "100%", "0 0 1018.4 824.5", "ltr"], "Arsenal: the prep still sizes the drawing and keeps its viewBox");

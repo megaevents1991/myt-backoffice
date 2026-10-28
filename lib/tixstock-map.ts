@@ -278,15 +278,17 @@ export const isSectionExcluded = (
 /*  SVG sanitisation & preparation                                     */
 /* ------------------------------------------------------------------ */
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 /**
  * The elements a venue drawing may keep - an ALLOWLIST, by local name (case-sensitive, as SVG spells them). Anything
  * else goes with its whole subtree: `foreignObject` (an HTML integration point - an `<iframe srcdoc>` inside it runs
  * script in our origin once the markup is re-parsed by `innerHTML`), script, iframe / object / embed, image / video /
  * audio (external fetches), link / meta / base, form controls, the SMIL animations (`set` / `animate` can write an
- * `href`), `feImage`, `textPath`, and any element of another namespace. `a` is unwrapped (its children kept), `use`
- * stays only with an in-document `#fragment` href, `style` stays with its CSS cleaned (`cleanSvgCss`). The filter
- * primitives below fetch nothing and run nothing; they are kept so a drawing that shades its stands still renders (a
- * shape whose `filter` points at a removed filter may not draw at all).
+ * `href`), `feImage`, `textPath`, and any element of another namespace or with a prefix. `a` is unwrapped (its children
+ * kept), `use` stays only with an in-document `#fragment` href, `style` stays with its CSS REBUILT from an allowlist
+ * (`cleanSvgCss`). The filter primitives below fetch nothing and run nothing; they are kept so a drawing that shades its
+ * stands still renders (a shape whose `filter` points at a removed filter may not draw at all).
  */
 const SVG_ALLOWED_ELEMENTS = new Set([
   "svg", "g", "defs", "path", "polygon", "polyline", "rect", "circle", "ellipse", "line", "text", "tspan", "title",
@@ -294,12 +296,14 @@ const SVG_ALLOWED_ELEMENTS = new Set([
   "filter", "feBlend", "feColorMatrix", "feComposite", "feDropShadow", "feFlood", "feGaussianBlur", "feMerge",
   "feMergeNode", "feMorphology", "feOffset",
 ]);
-/** Elements whose content is text only: an element child of one (an HTML integration point for title / desc) goes. */
+/** The same names lower-cased - what the post-serialization check compares an HTML-parsed element with. */
+const SVG_ALLOWED_LOWER = new Set([...SVG_ALLOWED_ELEMENTS].map((name) => name.toLowerCase()));
+/** Elements whose content is ONE text node: an element child of one (title / desc are HTML integration points) goes. */
 const SVG_TEXT_ONLY_ELEMENTS = new Set(["title", "desc", "style"]);
 /** An in-document reference: `#id`. */
 const SVG_FRAGMENT_REF = /^#[\w.:-]+$/;
-/** Tokens no attribute value or style may carry once whitespace / control characters are taken out (`java\tscript:`). */
-const SVG_UNSAFE_TOKENS = /javascript:|vbscript:|data:|expression\(|@import|-moz-binding|behavior/;
+/** Tokens no attribute value may carry once whitespace / control characters are taken out (`java\tscript:`). */
+const SVG_UNSAFE_TOKENS = /javascript:|vbscript:|data:|expression\(|@import|-moz-binding|behavior|image-set\(|cross-fade\(|element\(|src\(/;
 /** A `url(` that is not `url(#id)` - an external fetch (a beacon) or a script url. */
 const SVG_EXTERNAL_URL = /url\((?!['"]?#[\w.:-]+['"]?\))/;
 
@@ -313,8 +317,8 @@ const flattenSvgValue = (value: string): string =>
   value.replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, "").toLowerCase();
 
 /**
- * Would this attribute / style value fetch or run anything? A script or data url, an old-browser CSS hook, an external
- * `url(`, or a backslash (a CSS escape can spell any of them again: `u\72l(`).
+ * Would this attribute value fetch or run anything? A script or data url, a CSS image loader, an old-browser CSS hook,
+ * an external `url(`, or a backslash (a CSS escape can spell any of them again: `u\72l(`).
  */
 const isUnsafeSvgValue = (value: string): boolean => {
   const flat = flattenSvgValue(value);
@@ -328,23 +332,117 @@ const svgAttrLocalName = (attr: Attr): string => {
   return colon === -1 ? name : name.slice(colon + 1);
 };
 
+/* ---- the supplier's <style>, rebuilt from an allowlist ----------- */
+
+/** The CSS properties a supplier style may set on its own drawing - paint, stroke and text, nothing that loads. */
+const SVG_CSS_PROPERTIES = new Set([
+  "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-opacity", "stroke-linejoin", "stroke-linecap",
+  "stroke-dasharray", "stroke-miterlimit", "opacity", "display", "visibility", "font-family", "font-size", "font-weight",
+  "font-style", "letter-spacing", "text-anchor", "dominant-baseline", "pointer-events", "cursor",
+]);
 /**
- * A supplier `<style>` kept (maps colour their sections by class), cleaned: `@import` rules out, every `url(...)` that
- * is not `url(#id)` replaced by `none`, `expression(` / `behavior` / `-moz-binding` / `javascript:` taken out. null =
- * something unsafe is still there (an escape, a broken url) - the whole style element goes.
+ * One value token: a #hex colour, rgb()/rgba()/hsl()/hsla() with numeric arguments, `url(#id)`, a number with an
+ * optional unit or %, a keyword, or a quoted font name. No other function - no `image-set(`, `src(`, `url(http…)`.
  */
-export const cleanSvgCss = (css: string): string | null => {
-  const cleaned = css
-    .replace(/@import[^;]*;?/gi, "")
-    .replace(/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, (match: string, _quote: string, ref: string) =>
-      SVG_FRAGMENT_REF.test(ref.trim()) ? match : "none",
-    )
-    .replace(/expression\s*\(/gi, "")
-    .replace(/-moz-binding/gi, "")
-    .replace(/behavior/gi, "")
-    .replace(/javascript\s*:/gi, "");
-  return isUnsafeSvgValue(cleaned) ? null : cleaned;
+const CSS_VALUE_TOKEN = String.raw`(?:#[0-9a-fA-F]{3,8}|(?:rgba?|hsla?)\(\s*[-+\d.%\s,/]*\)|url\(\s*#[\w.:-]+\s*\)|url\(\s*'#[\w.:-]+'\s*\)|url\(\s*"#[\w.:-]+"\s*\)|[-+]?(?:\d+\.?\d*|\.\d+)(?:[a-zA-Z]{1,4}|%)?|[a-zA-Z][a-zA-Z-]*|'[^'"\\<>;{}()]*'|"[^'"\\<>;{}()]*")`;
+const CSS_SAFE_VALUE = new RegExp(String.raw`^${CSS_VALUE_TOKEN}(?:\s*,\s*${CSS_VALUE_TOKEN}|\s+${CSS_VALUE_TOKEN})*(?:\s*!important)?$`);
+/** A selector made of plain selector characters only - no `@`, braces, `;`, `\`, `<`, `/` or quotes-with-parens games. */
+const CSS_SAFE_SELECTOR = /^[\w\s.#*>+~:,\-[\]="'()|^$]+$/;
+
+/** Split on `sep` outside parentheses, brackets and quotes. */
+function splitTopLevel(text: string, sep: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let current = "";
+  for (const ch of text) {
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (ch === "(" || ch === "[") {
+      depth += 1;
+    } else if (ch === ")" || ch === "]") {
+      depth -= 1;
+    } else if (ch === sep && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts;
+}
+
+/** A declaration kept as `prop: value`, or null when its property or value is off the allowlist. */
+function safeDeclaration(declaration: string): string | null {
+  const colon = declaration.indexOf(":");
+  if (colon === -1) return null;
+  const prop = declaration.slice(0, colon).trim().toLowerCase();
+  const value = declaration.slice(colon + 1).trim();
+  if (!SVG_CSS_PROPERTIES.has(prop) || value === "" || !CSS_SAFE_VALUE.test(value)) return null;
+  if (prop === "cursor" && !/^[a-zA-Z-]+(?:\s*!important)?$/.test(value)) return null;
+  return `${prop}: ${value}`;
+}
+
+/**
+ * A supplier `<style>` REBUILT from an allowlist (maps colour their sections by class): comments and every at-rule
+ * (`@import`, `@font-face`, `@media`, …) go; each `selectors { declarations }` rule keeps only the allowlisted
+ * properties (`SVG_CSS_PROPERTIES`) whose value is plain colours, numbers, keywords, quoted font names or `url(#id)`;
+ * and every selector is prefixed with `scope` (the drawing's own root, `svg[data-venue-map="…"]`), so the rules can
+ * style nothing outside this map. A rule with an unsafe selector, a nested block or nothing left is dropped.
+ */
+export const cleanSvgCss = (css: string, scope: string): string => {
+  const text = css.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ");
+  const rules: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (ch === "@") {
+      // An at-rule: up to its `;`, or its whole balanced block.
+      const semi = text.indexOf(";", i);
+      const brace = text.indexOf("{", i);
+      if (brace === -1 || (semi !== -1 && semi < brace)) {
+        i = semi === -1 ? text.length : semi + 1;
+        continue;
+      }
+      let depth = 0;
+      let j = brace;
+      for (; j < text.length; j += 1) {
+        if (text[j] === "{") depth += 1;
+        else if (text[j] === "}" && --depth === 0) break;
+      }
+      i = j + 1;
+      continue;
+    }
+    const open = text.indexOf("{", i);
+    if (open === -1) break;
+    const close = text.indexOf("}", open);
+    const selector = text.slice(i, open).trim();
+    const body = close === -1 ? text.slice(open + 1) : text.slice(open + 1, close);
+    i = close === -1 ? text.length : close + 1;
+    if (body.includes("{") || selector === "" || !CSS_SAFE_SELECTOR.test(selector)) continue;
+    const declarations = splitTopLevel(body, ";")
+      .map((d) => d.trim())
+      .filter((d) => d !== "")
+      .map(safeDeclaration)
+      .filter((d): d is string => d !== null);
+    if (declarations.length === 0) continue;
+    const parts = splitTopLevel(selector, ",").map((sel) => sel.trim());
+    // A part that starts with a sibling combinator (`~ x`, `+ x`) would reach past the drawing once scoped - the rule goes.
+    if (parts.some((sel) => sel === "" || /^[~+]/.test(sel))) continue;
+    const selectors = parts.map((sel) => `${scope} ${sel}`);
+    rules.push(`${selectors.join(", ")} { ${declarations.join("; ")}; }`);
+  }
+  return rules.join("\n");
 };
+
+/* ---- the tree --------------------------------------------------- */
 
 /** Drop every attribute that could run or fetch something: `on*`, `src` / `srcdoc` / `srcset`, an href that is not `#id`, an unsafe value. */
 const cleanSvgAttributes = (el: Element): void => {
@@ -368,14 +466,36 @@ const isFragmentUse = (el: Element): boolean => {
 };
 
 /**
- * Sanitize a parsed drawing IN PLACE by the allowlist above. `a` elements are unwrapped first; then every element is
- * kept only when its local name is allowed and it sits in the drawing's own namespace (the root `<svg>`'s - the SVG
- * namespace, or none for a file without `xmlns`); comments and processing instructions go; text-only elements keep
- * their text alone; a kept `style` has its CSS cleaned; every kept element's attributes are cleaned.
+ * Unprefixed: serialized, the tag is the bare name the HTML parser will read. `tagName` carries the prefix in a browser
+ * and in linkedom alike (`s:svg`), `prefix` only in a browser. A prefixed root (`<s:svg>`) is an UNKNOWN element to the
+ * HTML parser, so its content is not SVG foreign content there - `<![CDATA[` turns into a comment and what follows into
+ * live HTML.
  */
-const sanitizeSvgTree = (svg: Element): void => {
+const isUnprefixed = (el: Element): boolean => !el.prefix && el.tagName === el.localName && !el.localName.includes(":");
+
+let namespaceAware: boolean | null = null;
+/**
+ * Does this environment's DOMParser record XML namespaces? A browser's always does; linkedom (the selftest's stand-in)
+ * reads every element as XHTML. Where it does not, the name rules alone decide - and nothing is drawn there anyway.
+ */
+function parserTracksNamespaces(parser: DOMParser): boolean {
+  if (namespaceAware === null) {
+    namespaceAware = parser.parseFromString(`<svg xmlns="${SVG_NS}"/>`, "image/svg+xml").documentElement?.namespaceURI === SVG_NS;
+  }
+  return namespaceAware;
+}
+
+/**
+ * Sanitize a parsed drawing IN PLACE by the allowlist above. `a` elements are unwrapped first; then every element is
+ * kept only when it is unprefixed, its local name is allowed and (where the parser tracks namespaces) it sits in the
+ * drawing's own namespace; comments and processing instructions go; every CDATA section becomes a plain text node (a
+ * text node is escaped when serialized - CDATA is emitted raw and re-read by the HTML parser as markup); text-only
+ * elements are reduced to one text node; a kept `style` is rebuilt (`cleanSvgCss`, scoped to `scope`); every kept
+ * element's attributes are cleaned.
+ */
+const sanitizeSvgTree = (svg: Element, checkNs: boolean, scope: string): void => {
   const ns = svg.namespaceURI;
-  const sameNs = (el: Element): boolean => el.namespaceURI === ns;
+  const doc = svg.ownerDocument;
 
   for (const link of Array.from(svg.querySelectorAll("a"))) {
     const parent = link.parentNode;
@@ -391,13 +511,21 @@ const sanitizeSvgTree = (svg: Element): void => {
     if (!el) break;
     const textOnly = SVG_TEXT_ONLY_ELEMENTS.has(el.localName);
     for (const child of Array.from(el.childNodes)) {
-      if (child.nodeType === TEXT_NODE || child.nodeType === CDATA_SECTION_NODE) continue;
+      if (child.nodeType === TEXT_NODE) continue;
+      if (child.nodeType === CDATA_SECTION_NODE) {
+        el.replaceChild(doc.createTextNode((child as CharacterData).data), child);
+        continue;
+      }
       if (child.nodeType !== ELEMENT_NODE || textOnly) {
         el.removeChild(child);
         continue;
       }
       const kid = child as Element;
-      const allowed = SVG_ALLOWED_ELEMENTS.has(kid.localName) && sameNs(kid) && (kid.localName !== "use" || isFragmentUse(kid));
+      const allowed =
+        isUnprefixed(kid) &&
+        SVG_ALLOWED_ELEMENTS.has(kid.localName) &&
+        (!checkNs || kid.namespaceURI === ns) &&
+        (kid.localName !== "use" || isFragmentUse(kid));
       if (!allowed) {
         el.removeChild(kid);
         continue;
@@ -405,26 +533,61 @@ const sanitizeSvgTree = (svg: Element): void => {
       cleanSvgAttributes(kid);
       stack.push(kid);
     }
-    if (el.localName === "style") {
-      const css = cleanSvgCss(el.textContent ?? "");
-      if (css === null) el.parentNode?.removeChild(el);
-      else el.textContent = css;
-    }
+    // One text node: setting textContent replaces whatever text / CDATA pieces were there.
+    if (el.localName === "style") el.textContent = cleanSvgCss(el.textContent ?? "", scope);
+    else if (textOnly) el.textContent = el.textContent ?? "";
   }
 };
 
 /**
- * Parse raw SVG text, sanitize it by an ALLOWLIST (`sanitizeSvgTree`: only plain drawing elements, no handler, no
- * external or script url, a cleaned `<style>` - the markup is injected with `dangerouslySetInnerHTML`), then prepare
- * it: tier labels out, unlabeled wedges numbered, sized 100%, a text style injected. null = not an SVG.
+ * Defence in depth, where a browser document exists: the markup parsed the way it will be consumed (`innerHTML`, into
+ * an inert `<template>` - nothing loads or runs there) must be one `<svg>` whose every element is an SVG-namespace
+ * allowlisted element with no handler and no outside link. Anything else (an HTML element anywhere) = not drawn.
+ */
+function survivesHtmlReparse(markup: string): boolean {
+  if (typeof document === "undefined") return true;
+  const template = document.createElement("template");
+  template.innerHTML = markup;
+  const top = Array.from(template.content.childNodes);
+  if (top.length !== 1 || top[0].nodeType !== ELEMENT_NODE) return false;
+  const root = top[0] as Element;
+  if (root.namespaceURI !== SVG_NS || root.localName !== "svg") return false;
+  for (const el of [root, ...Array.from(root.querySelectorAll("*"))]) {
+    if (el.namespaceURI !== SVG_NS || !SVG_ALLOWED_LOWER.has(el.localName.toLowerCase())) return false;
+    for (const attr of Array.from(el.attributes)) {
+      const local = svgAttrLocalName(attr);
+      if (local.startsWith("on") || (local === "href" && !SVG_FRAGMENT_REF.test(attr.value.trim()))) return false;
+    }
+  }
+  return true;
+}
+
+/** A short, stable id of a drawing (djb2) - the scope its own CSS is prefixed with. */
+function drawingScopeId(raw: string): string {
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) + hash + raw.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+/**
+ * Parse raw SVG text, sanitize it by an ALLOWLIST (`sanitizeSvgTree`: an unprefixed `<svg>` root in the SVG namespace,
+ * plain drawing elements only, no CDATA, no handler, no external or script url, a supplier `<style>` rebuilt and scoped
+ * to this drawing - the markup is injected with `dangerouslySetInnerHTML`), then prepare it: tier labels out, unlabeled
+ * wedges numbered, sized 100%, a text style injected; and, in a browser, check the result once more as the HTML parser
+ * will read it (`survivesHtmlReparse`). null = not a drawing we draw.
  */
 export const sanitizeAndPrepareSvg = (rawSvg: string): string | null => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(rawSvg, "image/svg+xml");
-  const svg = doc.querySelector("svg");
-  if (!svg) return null;
+  const svg = doc.documentElement;
+  // The root itself: an unprefixed <svg> (in the SVG namespace, or none for a file without xmlns, where namespaces are tracked).
+  if (!svg || svg.localName !== "svg" || !isUnprefixed(svg)) return null;
+  const checkNs = parserTracksNamespaces(parser);
+  if (checkNs && svg.namespaceURI !== SVG_NS && svg.namespaceURI !== null) return null;
 
-  sanitizeSvgTree(svg);
+  const scopeId = drawingScopeId(rawSvg);
+  sanitizeSvgTree(svg, checkNs, `svg[data-venue-map="${scopeId}"]`);
+  svg.setAttribute("data-venue-map", scopeId);
 
   // Remove tier-label elements (visual clutter on venue maps)
   svg.querySelectorAll(".tier-label").forEach((el) => el.remove());
@@ -449,7 +612,7 @@ export const sanitizeAndPrepareSvg = (rawSvg: string): string | null => {
   // Force stable text metrics with an injected override stylesheet.
   // Preserving the SVG-authored transforms avoids the slight label drift
   // introduced by runtime re-centering against fallback fonts.
-  const styleEl = doc.createElementNS("http://www.w3.org/2000/svg", "style");
+  const styleEl = doc.createElementNS(SVG_NS, "style");
   styleEl.textContent = `
     text,
     tspan {
@@ -466,7 +629,8 @@ export const sanitizeAndPrepareSvg = (rawSvg: string): string | null => {
   `;
   svg.appendChild(styleEl);
 
-  return svg.outerHTML;
+  const markup = svg.outerHTML;
+  return survivesHtmlReparse(markup) ? markup : null;
 };
 
 /* ------------------------------------------------------------------ */
