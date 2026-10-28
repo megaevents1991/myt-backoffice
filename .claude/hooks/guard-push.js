@@ -41,6 +41,13 @@ function decide(decision, reason) {
 function userText(entry) {
   if (!entry || entry.type !== "user" || entry.isSidechain || entry.isMeta)
     return null;
+  // A compaction writes its summary as a user entry right AFTER the message that
+  // triggered it (27-28.10: Dor's "push" landed on a full context, the summary
+  // followed ~1 s later, and the gate read the summary as his last message). It
+  // is the harness's text, never his - skip it whole, so the scan reaches the
+  // message before it. Stripping only its opening tag would be worse: the
+  // summary's own words can say "push" and pass the gate for him.
+  if (entry.isCompactSummary) return null;
   const content = entry.message?.content;
   let text = "";
   if (typeof content === "string") text = content;
@@ -56,6 +63,15 @@ function userText(entry) {
   // `/commit-push` itself. The command name IS what he typed - keep it.
   const commandName =
     text.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/)?.[1] ?? "";
+  // The same summary in any entry the flag above misses: it opens with the
+  // self-closing `<artifact-content-authored-by-others/>` notice (which the
+  // strips below never match - they want `<tag>`) or the continuation line.
+  if (
+    /^\s*(<artifact-content-authored-by-others\s*\/>|This session is being continued from a previous conversation)/.test(
+      text,
+    )
+  )
+    return null;
   // Drop harness-injected blocks (system reminders, slash-command wrappers).
   text = text.replace(
     /<(system-reminder|command-[a-z-]+|local-command-[a-z-]+)>[\s\S]*?<\/\1>/g,
