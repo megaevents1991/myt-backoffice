@@ -7,13 +7,19 @@ import { MARKETING_SETTING_KEYS, type MarketingSettings } from "@/types/marketin
 
 type NumKey = Exclude<keyof MarketingSettings, "alert_emails">;
 
-/** The accepted range of each number (inclusive). `budget_bleed_days` is a whole number of days. */
+/** The accepted range of each number (inclusive). Days, sessions, visitors and orders are whole numbers. */
 export const SETTING_BOUNDS: Record<NumKey, { min: number; max: number; integer?: boolean }> = {
   processing_fee_pct: { min: 0, max: 100 },
   monthly_profit_target_usd: { min: 0, max: 100_000_000 },
   budget_bleed_ils: { min: 0, max: 1_000_000 },
   budget_bleed_days: { min: 1, max: 60, integer: true },
   viral_pct: { min: 50, max: 1000 },
+  page_alert_days: { min: 1, max: 60, integer: true },
+  page_min_sessions: { min: 1, max: 1_000_000, integer: true },
+  page_hot_pct: { min: 0.1, max: 100 },
+  influencer_alert_days: { min: 1, max: 60, integer: true },
+  influencer_min_visitors: { min: 1, max: 1_000_000, integer: true },
+  influencer_hot_orders: { min: 1, max: 10_000, integer: true },
 };
 
 export const ALERT_EMAILS_MAX = 10;

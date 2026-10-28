@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, type ComponentProps, type ReactNode } from "react";
+import { Crown, Flame, Music, Trophy, Users } from "lucide-react";
 import { Area, AreaChart, Bar, CartesianGrid, ComposedChart, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
 import { getMarketingOverview } from "@/lib/actions/marketing-actions";
 import { SOURCE_LABEL } from "@/lib/marketing/order-source";
 import type { MarketingCurrency } from "@/lib/services/marketing-pnl";
+import { writeUrlParam } from "@/hooks/use-view-state";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -17,7 +20,9 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { CURRENCY_SIGN, money, ordersText, poasTone, useMarketingLoad, type LoadedView } from "./marketing-shared";
+import { CURRENCY_SIGN, money, ordersText, poasTone, prevPeriodText, useMarketingLoad, type LoadedView } from "./marketing-shared";
+import { LeaderCard, RisingList } from "./sales-tab";
+import { InfluencerCard } from "./influencers-tab";
 
 type Overview = Awaited<ReturnType<typeof getMarketingOverview>>;
 
@@ -133,6 +138,58 @@ export function ExecTab() {
   );
 }
 
+/** "See all" under a leaders row - the tab strip's own mechanism (a history.replaceState on ?tab=), filters kept. */
+const SeeTab = ({ tab, children }: { tab: string; children: ReactNode }) => (
+  <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => writeUrlParam("tab", tab, "exec")}>
+    {children}
+  </Button>
+);
+
+/** Best-selling artist / football team, the risers, and the influencers who sold most and brought most visitors
+ *  (spec 2026-10-28 section 4) - the Sales and Influencers tabs' own numbers. */
+export function Leaders({ leaders, cur }: { leaders: NonNullable<Overview["leaders"]>; cur: MarketingCurrency }) {
+  if (!leaders.ok) {
+    return (
+      <Section title="Leaders">
+        <p className="text-sm text-destructive">The leaders could not load: {leaders.error}</p>
+      </Section>
+    );
+  }
+  return (
+    <Section
+      title={`Leaders · ${prevPeriodText(leaders.prevSince, leaders.prevUntil)}`}
+      note={
+        <div className="flex flex-wrap gap-4">
+          <SeeTab tab="sales">All sales by artist, team and category →</SeeTab>
+          {leaders.showInfluencers && <SeeTab tab="influencers">All influencers →</SeeTab>}
+        </div>
+      }
+    >
+      <div className={cn("grid gap-4 sm:grid-cols-2", leaders.showInfluencers ? "lg:grid-cols-5" : "lg:grid-cols-3")}>
+        <LeaderCard icon={Music} title="Best-selling artist" row={leaders.artist} cur={cur} empty="No artist sold in this period." />
+        <LeaderCard icon={Trophy} title="Best-selling team" row={leaders.team} cur={cur} empty="No football team sold in this period." />
+        {leaders.showInfluencers && (
+          <>
+            <InfluencerCard icon={Crown} title="Top seller" row={leaders.seller} cur={cur} metric="sales" empty="No influencer sold in this period." />
+            <InfluencerCard icon={Users} title="Top traffic maker" row={leaders.traffic} cur={cur} metric="traffic" empty="No influencer brought visitors." />
+          </>
+        )}
+        <Card>
+          <CardHeader className="pb-1">
+            <CardTitle className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <Flame className="h-3.5 w-3.5" aria-hidden />
+              Rising
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RisingList rows={leaders.rising.slice(0, 3)} />
+          </CardContent>
+        </Card>
+      </div>
+    </Section>
+  );
+}
+
 export function ExecBody({ data, view }: { data: Overview; view: LoadedView }) {
   const { cur, brand } = view;
   const { pnl, funnel, src } = data;
@@ -181,6 +238,8 @@ export function ExecBody({ data, view }: { data: Overview; view: LoadedView }) {
               <Metric title="Passengers" value={num(funnel.passengers)} hint="Tickets on Paid orders" tone="text-amber-600 dark:text-amber-400" />
             </div>
           </Section>
+
+          {data.leaders && <Leaders leaders={data.leaders} cur={cur} />}
 
           <Section title="Efficiency">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

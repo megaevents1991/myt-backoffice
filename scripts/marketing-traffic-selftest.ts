@@ -1,6 +1,6 @@
 // Run: npx tsx scripts/marketing-traffic-selftest.ts
 import assert from "node:assert/strict";
-import { buildTraffic, trafficBucket, type TrafficDailyRow, type TrafficSourceUsersRow, type TrafficStepRow } from "../lib/marketing/traffic";
+import { buildTraffic, trafficBucket, withPageSales, type TrafficDailyRow, type TrafficSourceUsersRow, type TrafficStepRow } from "../lib/marketing/traffic";
 import type { FunnelOrder } from "../lib/marketing/funnel";
 
 const partners = new Set(["sagi", "aviran"]);
@@ -111,5 +111,24 @@ const none = buildTraffic({ daily: [], sourceUsers: [], totalUsers: 0, steps: []
 assert.equal(none.engagementRate, null);
 assert.equal(none.conversion, null);
 assert.equal(none.funnels.home[1].pct, null, "no visit -> no percent");
+
+// Landing pages against the previous period + what each page sold + the page alerts' badges (spec 2026-10-28).
+const prevSteps = [
+  { source: "facebook", medium: "cpc", landingPage: "/", eventName: "session_start", sessions: 35 },
+  { source: "google", medium: "cpc", landingPage: "/order/1031", eventName: "session_start", sessions: 40 },
+];
+const withPrev = buildTraffic({ daily, sourceUsers, totalUsers, steps, prevSteps, partnerCodes: partners, src: "all", orders, days });
+const homePage = withPrev.landing.find((l) => l.page === "/")!;
+assert.deepEqual([homePage.prevSessions, homePage.trend.dir, homePage.trend.change], [35, "up", 100], "70 sessions now vs 35");
+assert.deepEqual([homePage.sold, homePage.flag], [null, null], "nothing sold until withPageSales");
+const fbPrev = buildTraffic({ daily, sourceUsers, totalUsers, steps, prevSteps, partnerCodes: partners, src: "meta", orders, days });
+assert.equal(fbPrev.landing.find((l) => l.page === "/")!.prevSessions, 35, "the previous period follows the same source filter");
+assert.equal(fbPrev.landing.find((l) => l.page === "/order/1031"), undefined);
+
+const sold = withPageSales(withPrev.landing, new Map([["/", null], ["/order/1031", { sold: 0, prevSold: 2 }], ["/c/music/artists/oasis", { sold: 3, prevSold: 1 }]]), { page_min_sessions: 40, page_hot_pct: 5 });
+const bySold = new Map(sold.map((l) => [l.page, l]));
+assert.deepEqual([bySold.get("/")!.sold, bySold.get("/")!.flag, bySold.get("/")!.conversion], [null, null, null], "the homepage sells nothing of its own - never judged");
+assert.deepEqual([bySold.get("/order/1031")!.sold, bySold.get("/order/1031")!.flag], [0, "no_sales"], "40 sessions, its event sold nothing");
+assert.deepEqual([bySold.get("/c/music/artists/oasis")!.conversion, bySold.get("/c/music/artists/oasis")!.flag], [7.5, "selling"], "3 orders / 40 sessions = 7.5% >= 5%");
 
 console.log("marketing-traffic selftest: ok");

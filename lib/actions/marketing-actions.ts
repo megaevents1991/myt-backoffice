@@ -11,10 +11,16 @@ import { parseSource, type SourceFilter } from "@/lib/marketing/order-source";
 import { buildFunnel, type Funnel } from "@/lib/marketing/funnel";
 import { funnelOrders } from "@/lib/services/marketing-funnel";
 import { MARKETING_TAG, MARKETING_TTL_S, invalidateMarketing } from "@/lib/services/marketing-cache";
+import { currentUsdIls } from "@/lib/services/marketing-fx";
+import { readMarketingSettings } from "@/lib/services/marketing-settings";
+import { cachedSalesBreakdown } from "@/lib/services/marketing-sales";
+import { cachedInfluencerStats } from "@/lib/services/marketing-influencers";
+import type { RisingRow, SalesRow } from "@/lib/marketing/sales";
+import type { InfluencerRow } from "@/lib/marketing/influencers";
 import { runMarketingSync, type MarketingSyncSummary } from "@/lib/services/marketing-sync";
 import { IG_MEDIA_READ } from "@/lib/marketing/engagement";
 import { validateSettingsPatch } from "@/lib/marketing/settings";
-import { DEFAULT_MARKETING_SETTINGS, MARKETING_SETTING_KEYS, type AdBrand, type AdPlatform, type IgMediaRow, type MarketingAlertRow, type MarketingSettings } from "@/types/marketing.types";
+import { type AdBrand, type AdPlatform, type IgMediaRow, type MarketingAlertRow, type MarketingSettings } from "@/types/marketing.types";
 
 /**
  * Every read here THROWS on a database error (a missing table included, until the marketing
@@ -22,29 +28,8 @@ import { DEFAULT_MARKETING_SETTINGS, MARKETING_SETTING_KEYS, type AdBrand, type 
  * Server actions run behind requireAdmin() as the first line.
  */
 
-async function readSettings(): Promise<MarketingSettings> {
-  const { data, error } = await mdb.from("marketing_settings").select("key, value");
-  if (error) throw new Error(`marketing_settings read: ${error.message}`);
-  const out: MarketingSettings = { ...DEFAULT_MARKETING_SETTINGS };
-  for (const row of (data ?? []) as { key: keyof MarketingSettings; value: unknown }[]) {
-    if (MARKETING_SETTING_KEYS.includes(row.key)) (out as unknown as Record<string, unknown>)[row.key] = row.value;
-  }
-  return out;
-}
-
 /** Paged reads (lib/services/marketing-db.ts `readAll`) stop here: past it the read throws - narrow the range. */
 const READ_MAX = 50_000;
-
-/** USD -> ILS for an order with no stored rate (and a non-ILS spend row): 1 / the newest `fx_rate` the sync wrote
- *  (always a live rate - the sync writes no spend on the fallback rate). The rate service itself is not called here:
- *  its module throws at load without the supplier env (see marketing-sync.ts). Throws when none was ever written. */
-async function currentUsdIls(): Promise<number> {
-  const { data, error } = await mdb.from("ad_spend_daily").select("fx_rate").gt("fx_rate", 0).order("synced_at", { ascending: false }).limit(1);
-  if (error) throw new Error(`ad_spend_daily rate read: ${error.message}`);
-  const fx = Number((data as { fx_rate: number }[] | null)?.[0]?.fx_rate);
-  if (!(fx > 0)) throw new Error("No USD/ILS rate stored yet - run the marketing sync once");
-  return Math.round((1 / fx) * 10_000) / 10_000;
-}
 
 /** The screen's filters as they sit in the URL (`useMarketingFilters`). */
 export interface MarketingQuery { range?: string; from?: string; to?: string; brand?: string; cur?: string; src?: string }
@@ -63,7 +48,7 @@ type PnlView = Pnl & { since: string; until: string; settings: MarketingSettings
 
 async function buildPnlFor(since: string, until: string, brand: AdBrand | "all", currency: MarketingCurrency, platform: AdPlatform | null): Promise<PnlView> {
   const [settings, reservations, spend, entities, usdIls] = await Promise.all([
-    readSettings(),
+    readMarketingSettings(),
     attributedReservations(since, until),
     readAll<Parameters<typeof buildPnl>[0]["spend"][number]>(
       "ad_spend_daily", "platform, campaign_id, adset_key, day, spend, currency, fx_rate, spend_usd, clicks, impressions, platform_conversions, platform_value",
@@ -88,22 +73,46 @@ export async function getMarketingPnl(q: MarketingQuery): Promise<PnlView & { ra
 
 const cachedFunnelOrders = unstable_cache(funnelOrders, ["marketing-funnel-orders"], { tags: [MARKETING_TAG.pnl], revalidate: MARKETING_TTL_S.pnl });
 
+/** The Executive tab's "Leaders" row (spec 2026-10-28 section 4): the best-selling artist and football team, the
+ *  biggest risers, and the influencer who sold most / brought most visitors - out of the Sales and Influencers tabs'
+ *  own cached reads, so the cards and the tabs never disagree. Influencers only for All sources / Partners; nothing
+ *  for "Other brand" (our orders are the Mega Events site's). A failure here never takes the tab down. */
+export type ExecLeaders =
+  | { ok: true; artist: SalesRow | null; team: SalesRow | null; rising: RisingRow[]; seller: InfluencerRow | null; traffic: InfluencerRow | null; showInfluencers: boolean; prevSince: string; prevUntil: string }
+  | { ok: false; error: string };
+
+async function execLeaders(window: MarketingWindow, src: SourceFilter, currency: MarketingCurrency): Promise<ExecLeaders> {
+  try {
+    const showInfluencers = src === "all" || src === "partners";
+    const [sales, settings] = await Promise.all([cachedSalesBreakdown(window.since, window.until, src, currency), readMarketingSettings()]);
+    const inf = showInfluencers
+      ? await cachedInfluencerStats(window.since, window.until, currency, { influencer_min_visitors: settings.influencer_min_visitors, influencer_hot_orders: settings.influencer_hot_orders })
+      : null;
+    return { ok: true, artist: sales.bestArtist, team: sales.bestTeam, rising: sales.rising, seller: inf?.topSeller ?? null, traffic: inf?.topTraffic ?? null, showInfluencers, prevSince: sales.prevSince, prevUntil: sales.prevUntil };
+  } catch (e) {
+    console.error("[marketing] executive leaders:", e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * The Executive tab in ONE action (Next runs a tab's actions one at a time): the P&L (sliced to Meta / Google when
- * the source filter names one) + the funnel of every order of the window (spec 2026-10-14 sections 3-4). The
- * funnel's spend comes from the P&L's own daily series, so the two can never disagree; brand applies to spend only
- * (the funnel's orders are the Mega Events site's - the screen says so under "Other brand").
+ * the source filter names one) + the funnel of every order of the window (spec 2026-10-14 sections 3-4) + the
+ * leaders row (spec 2026-10-28). The funnel's spend comes from the P&L's own daily series, so the two can never
+ * disagree; brand applies to spend only (the funnel's orders are the Mega Events site's - the screen says so under
+ * "Other brand").
  */
-export async function getMarketingOverview(q: MarketingQuery): Promise<{ pnl: PnlView & { range: MarketingWindow["range"] }; funnel: Funnel; src: SourceFilter }> {
+export async function getMarketingOverview(q: MarketingQuery): Promise<{ pnl: PnlView & { range: MarketingWindow["range"] }; funnel: Funnel; src: SourceFilter; leaders: ExecLeaders | null }> {
   await requireAdmin();
   const { window, brand, currency, src } = parseQuery(q);
-  const [pnl, orders] = await Promise.all([
+  const [pnl, orders, leaders] = await Promise.all([
     cachedPnl(window.since, window.until, brand, currency, platformOf(src)),
     cachedFunnelOrders(window.since, window.until),
+    brand === "other" ? Promise.resolve(null) : execLeaders(window, src, currency),
   ]);
   const spendDaily = pnl.daily.map((d) => ({ day: d.day, meta: d.spendMeta, google: d.spendGoogle }));
   const funnel = buildFunnel(orders, spendDaily, daysBetween(window.since, window.until), src);
-  return { pnl: { ...pnl, range: window.range }, funnel, src };
+  return { pnl: { ...pnl, range: window.range }, funnel, src, leaders };
 }
 
 /** `viralPct` rides along (the editable `viral_pct` setting, 200 when never saved) so the grid's "Viral" badge
@@ -120,7 +129,7 @@ export async function getInstagramFeed(q: MarketingQuery): Promise<{ media: IgMe
   const [m, f, settings] = await Promise.all([
     mdb.from("ig_media").select("*").lt("posted_at", israelDayStartUtc(addDays(until, 1))).order("posted_at", { ascending: false }).limit(IG_MEDIA_READ),
     mdb.from("ig_account_daily").select("day, followers").gte("day", since).lte("day", until).order("day", { ascending: false }).limit(400),
-    readSettings(),
+    readMarketingSettings(),
   ]);
   if (m.error) throw new Error(`ig_media read: ${m.error.message}`);
   if (f.error) throw new Error(`ig_account_daily read: ${f.error.message}`);
@@ -151,7 +160,7 @@ function readCampaignBrands(): Promise<CampaignBrandRow[]> {
 /** Everything the Settings tab shows, in ONE action (one guard, both reads side by side) - Next runs a tab's server actions one at a time. */
 export async function getMarketingSettingsPage(): Promise<{ settings: MarketingSettings; brands: CampaignBrandRow[] }> {
   await requireAdmin();
-  const [settings, brands] = await Promise.all([readSettings(), readCampaignBrands()]);
+  const [settings, brands] = await Promise.all([readMarketingSettings(), readCampaignBrands()]);
   return { settings, brands };
 }
 
@@ -163,7 +172,7 @@ export async function saveMarketingSettings(patch: Partial<MarketingSettings>): 
   if (checked.rows.length === 0) return { ok: true };
   let before: MarketingSettings;
   try {
-    before = await readSettings();
+    before = await readMarketingSettings();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -172,7 +181,8 @@ export async function saveMarketingSettings(patch: Partial<MarketingSettings>): 
   const { error } = await mdb.from("marketing_settings").upsert(rows, { onConflict: "key" });
   if (error) return { ok: false, error: error.message };
   await logAudit({ action: "marketing.settings", entityType: "marketing_settings", changes: { before, after: Object.fromEntries(rows.map((r) => [r.key, r.value])) }, actor: { id: session.sub, email: session.email, role: session.role } });
-  invalidateMarketing("pnl", "alerts");
+  // "traffic": the landing table's badges read the page thresholds.
+  invalidateMarketing("pnl", "alerts", "traffic");
   return { ok: true };
 }
 

@@ -283,7 +283,10 @@ export async function runMarketingSync(opts: { dryRun: boolean; only?: SyncStep;
 
   await run("alerts", async () => {
     const r = await runMarketingAlerts({ dryRun: opts.dryRun });
-    return { rows: r.newAlerts, note: `${r.newAlerts} new, ${r.mailed} mailed, ${r.resolved} resolved, mail ${r.mail}` };
+    const note = `${r.newAlerts} new, ${r.mailed} mailed, ${r.resolved} resolved, mail ${r.mail}, pages ${r.pages}${r.wouldOpen?.length ? ` - would open: ${r.wouldOpen.join(" | ")}` : ""}`;
+    // Everything else went through; a GA4 failure still fails the step, so the failure mail names it.
+    if (r.pages.startsWith("GA4 failed")) throw new Error(note);
+    return { rows: r.newAlerts, note };
   });
 
   await run("retention", async () => {

@@ -49,7 +49,10 @@ const obj = (v: unknown): Record<string, unknown> =>
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** What the customer paid us, USD. null unless Paid. */
-export function revenueUsd(r: PnlReservation): number | null {
+/** Only the money columns are read - a caller that has no cost columns (the Sales / Influencers reads) passes these. */
+export type RevenueColumns = Pick<PnlReservation, "status" | "user_shown_price" | "partner_settlement_method" | "agent_card_discount_ils" | "exchange_rate_usd_ils_100">;
+
+export function revenueUsd(r: RevenueColumns): number | null {
   if (!isPaid(r as { status: string | null })) return null;
   const price = num(r.user_shown_price) ?? 0;
   if (r.partner_settlement_method !== "agent_card") return price;

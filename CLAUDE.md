@@ -467,6 +467,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > apart, 10 min, tag `marketing-timelag` (the sync's end-of-run invalidation covers it), so a GA4 failure prints under
 > our half and is never cached. A "How this is measured" card on the tab spells both bases out (Tom's "same basis" ask).
 > Measured 21.10 on Paid orders since 23.07: 139 of 212 measured, median 26 h, 39 under an hour, 19 over 30 days.
+>
+> **Sales, Influencers, leaders, page / influencer alerts (2026-10-28, Dor's list "תוספות לדאשבורד"; spec
+> `docs/superpowers/specs/2026-10-28-marketing-sales-influencers-design.md`; no migration).** Every new number is
+> against the **previous period of the same length** (`previousWindow`, `trendOf` - "New" when it was 0, flat under 5%).
+> (a) **Sales** `?tab=sales` (`getSales`, `lib/services/marketing-sales.ts` -> pure `lib/marketing/sales.ts`): Paid
+> orders by event (site link), artist, football team, category (= the `vertical` tag), league / genre - the event's
+> typed tags; a match tagged with both teams counts for both; source filter applies, brand does not. (b) **Influencers**
+> `?tab=influencers` (`getInfluencers`, `lib/services/marketing-influencers.ts` -> `lib/marketing/influencers.ts`):
+> affiliate partners only, the Partners screen's numbers (`partners_visitors_by_code`, `aff_partner_tracking_code`,
+> `commissionForReservation`). (c) **Executive "Leaders"** (`getMarketingOverview().leaders`, from the same caches):
+> best artist / team, top seller / top traffic maker, Rising; a failure there never takes the tab down. (d) **Traffic**:
+> every landing page links to the site; a fifth GA4 report gives sessions vs the previous period; "Sold" = OUR Paid
+> orders of what the page sells (`lib/marketing/page-subject.ts`: an event page its event, a `/c/` page the events of
+> its category's tags via `categories.link_url` -> `category_tags`; other pages are never judged) - **never GA4's
+> purchases per landing page**, which count only a same-session purchase (5 in the week to 28.10 vs ~30 Paid orders;
+> the Oasis page "0 purchases" while Oasis sold 81 tickets). (e) **Four alert kinds** (`lib/marketing/perf-alerts.ts`,
+> the same rule paints the "No sales" / "Selling" badges): `page_no_sales` / `page_converting` and `influencer_no_sales`
+> / `influencer_selling`, thresholds = six `marketing_settings` keys (defaults 14 days, 150 sessions, 1.5%; 14 days,
+> 30 visitors, 2 Paid orders - calibrated 28.10); at most 3 NEW per kind per run, an open one stays while it qualifies;
+> GA4 down = page kinds skipped, never resolved (`planAlerts(..., skipped)`); a dry run names what it would open.
+> Selftest `scripts/marketing-sales-selftest.ts`.
 
 > **✅ Redesign + Events Factory + Guide (branch `feat/backoffice-redesign`, 2026-09-02).**
 > Everything below is on that branch, migrations already applied to prod.

@@ -113,3 +113,10 @@ export function resolveWindow(input: { range?: string | null; from?: string | nu
     }
   }
 }
+
+/** The window of the same length right before `since..until` - what a trend is measured against ("vs the previous
+ *  period"). 2026-10-01..2026-10-30 -> 2026-09-01..2026-09-30. */
+export function previousWindow(since: string, until: string): { since: string; until: string } {
+  const length = daysBetween(since, until).length;
+  return { since: addDays(since, -length), until: addDays(since, -1) };
+}

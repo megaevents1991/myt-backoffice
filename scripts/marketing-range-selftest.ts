@@ -1,6 +1,6 @@
 // Run: npx tsx scripts/marketing-range-selftest.ts
 import assert from "node:assert/strict";
-import { daysBetween, israelDayOf, israelDayStartUtc, israelToday, resolveWindow } from "../lib/marketing/range";
+import { daysBetween, israelDayOf, israelDayStartUtc, israelToday, previousWindow, resolveWindow } from "../lib/marketing/range";
 
 // 2026-10-14 10:00 Israel (IDT, UTC+3)
 const NOW = new Date("2026-10-14T07:00:00Z");
@@ -41,5 +41,10 @@ assert.equal(days[0], "2026-09-15");
 assert.equal(days[29], "2026-10-14");
 assert.deepEqual(daysBetween("2026-10-14", "2026-10-14"), ["2026-10-14"]);
 assert.deepEqual(daysBetween("2026-03-27", "2026-03-30"), ["2026-03-27", "2026-03-28", "2026-03-29", "2026-03-30"], "across the DST switch");
+
+// The previous period: same length, right before (the Sales / Influencers trends).
+assert.deepEqual(previousWindow("2026-10-01", "2026-10-30"), { since: "2026-09-01", until: "2026-09-30" });
+assert.deepEqual(previousWindow("2026-10-14", "2026-10-14"), { since: "2026-10-13", until: "2026-10-13" }, "one day -> the day before");
+assert.deepEqual(previousWindow("2026-03-01", "2026-03-31"), { since: "2026-01-29", until: "2026-02-28" }, "31 days back, across a short month");
 
 console.log("marketing-range selftest: ok");

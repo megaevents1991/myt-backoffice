@@ -49,6 +49,14 @@ bad({ alert_emails: Array.from({ length: ALERT_EMAILS_MAX + 1 }, (_, i) => `u${i
 assert.equal((ok({ alert_emails: [...Array.from({ length: ALERT_EMAILS_MAX }, (_, i) => `u${i}@x.co`), "U0@x.co"] })[0].value as string[]).length, 10, "a duplicate does not count toward the cap");
 assert.deepEqual(ok({ alert_emails: [] }), [{ key: "alert_emails", value: [] }], "an empty list = the system's default address");
 
+// Pages and influencers (spec 2026-10-28).
+assert.deepEqual(ok({ page_alert_days: 7, page_min_sessions: 200, page_hot_pct: 1.5, influencer_alert_days: 14, influencer_min_visitors: 30, influencer_hot_orders: 2 }).length, 6);
+bad({ page_min_sessions: 0 }, /page_min_sessions must be a whole number from 1/, "0 sessions would judge every page");
+bad({ page_min_sessions: 10.5 }, /page_min_sessions/, "half a session");
+bad({ page_hot_pct: 0 }, /page_hot_pct must be a number from 0.1 to 100/, "0% would make every page 'converting'");
+bad({ influencer_hot_orders: 0 }, /influencer_hot_orders/, "0 orders would make everyone 'selling'");
+bad({ influencer_alert_days: 61 }, /influencer_alert_days/, "past 60 days");
+
 bad(null, /settings must be an object/, "null");
 bad([1, 2], /settings must be an object/, "an array");
 

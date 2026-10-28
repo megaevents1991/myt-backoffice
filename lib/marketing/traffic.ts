@@ -11,6 +11,9 @@ import { classifyEntry } from "@/lib/partner-entry-funnels";
 import { isMetaSource } from "@/lib/services/marketing-attribution";
 import { ORDER_SOURCES, type OrderSource, type SourceFilter } from "@/lib/marketing/order-source";
 import type { FunnelOrder } from "@/lib/marketing/funnel";
+import { pageConversion, pageFlag, type PerfFlag } from "@/lib/marketing/perf-alerts";
+import { trendOf, type Trend } from "@/lib/marketing/sales";
+import type { MarketingSettings } from "@/types/marketing.types";
 
 /** Report A: date x source x medium. `date` is GA4's yyyymmdd. No users here - a user who came back on five days
  *  is in five date rows; users come from report C (per source) and D (the whole period). */
@@ -53,7 +56,22 @@ export type EntryFunnelKind = "home" | "artist" | "event";
 export interface TrafficStep { key: StepKey; sessions: number; pct: number | null }
 export interface SourceMediumRow { sourceMedium: string; sessions: number; users: number; engaged: number; confirmed: number; purchased: number }
 export interface SourceBucketRow extends Omit<SourceMediumRow, "sourceMedium"> { bucket: OrderSource; leads: number; signups: number; rows: SourceMediumRow[] }
-export interface LandingRow { page: string; kind: ReturnType<typeof classifyEntry>; sessions: number; purchased: number }
+/** A landing page of the period against the previous period (spec 2026-10-28). `purchased` = GA4's purchases in
+ *  sessions that started on it; `sold` = OUR Paid orders of what it sells (null = it sells nothing of its own) -
+ *  filled by `withPageSales`, as is `flag` (the page alerts' own rule) and `conversion` (sold / sessions). */
+export interface LandingRow {
+  page: string;
+  kind: ReturnType<typeof classifyEntry>;
+  sessions: number;
+  purchased: number;
+  prevSessions: number;
+  sold: number | null;
+  prevSold: number | null;
+  conversion: number | null;
+  flag: PerfFlag | null;
+  /** On sessions. */
+  trend: Trend;
+}
 export type DailyBuckets = { day: string } & Record<OrderSource, number>;
 
 export interface TrafficView {
@@ -73,7 +91,7 @@ export interface TrafficView {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const pct = (part: number, whole: number) => (whole > 0 ? r2((part / whole) * 100) : null);
-const LANDING_MAX = 25;
+const LANDING_MAX = 40;
 
 export function trafficBucket(source: string, medium: string, partnerCodes: Set<string>): OrderSource {
   const s = (source ?? "").trim().toLowerCase();
@@ -94,6 +112,8 @@ export function buildTraffic(input: {
   /** Report D: unique users of the period, every source (the "All sources" card). */
   totalUsers: number;
   steps: TrafficStepRow[];
+  /** Report E: report B's landing pages over the previous period (session_start only). */
+  prevSteps?: TrafficStepRow[];
   partnerCodes: Set<string>;
   src: SourceFilter;
   orders: FunnelOrder[];
@@ -146,7 +166,7 @@ export function buildTraffic(input: {
     const kind = classifyEntry("VISIT", r.landingPage);
     stepSums[kind][r.eventName] = (stepSums[kind][r.eventName] ?? 0) + r.sessions;
     let l = landing.get(r.landingPage);
-    if (!l) { l = { page: r.landingPage, kind, sessions: 0, purchased: 0 }; landing.set(r.landingPage, l); }
+    if (!l) { l = { page: r.landingPage, kind, sessions: 0, purchased: 0, prevSessions: 0, sold: null, prevSold: null, conversion: null, flag: null, trend: { dir: "none", change: null } }; landing.set(r.landingPage, l); }
     if (r.eventName === "session_start") l.sessions += r.sessions;
     if (r.eventName === "purchase") l.purchased += r.sessions;
     const row = smRow(r, b);
@@ -159,6 +179,13 @@ export function buildTraffic(input: {
     const visited = sum("visited");
     return keys.map((key) => ({ key, sessions: sum(key), pct: key === "visited" ? null : pct(sum(key), visited) }));
   };
+
+  // ---- the same pages over the previous period (report E), same source filter
+  const prevLanding = new Map<string, number>();
+  for (const r of input.prevSteps ?? []) {
+    if (!keep(bucketOf(r)) || r.eventName !== "session_start") continue;
+    prevLanding.set(r.landingPage, (prevLanding.get(r.landingPage) ?? 0) + r.sessions);
+  }
 
   // ---- our orders by source
   const orderCount = new Map<OrderSource, { leads: number; signups: number }>();
@@ -197,6 +224,23 @@ export function buildTraffic(input: {
     funnels: { home: funnel("home"), artist: funnel("artist"), event: funnel("event") },
     otherEntries: stepSums.other.session_start ?? 0,
     sources,
-    landing: [...landing.values()].sort((a, b) => b.sessions - a.sessions).slice(0, LANDING_MAX),
+    landing: [...landing.values()]
+      .sort((a, b) => b.sessions - a.sessions)
+      .slice(0, LANDING_MAX)
+      .map((l) => ({ ...l, prevSessions: prevLanding.get(l.page) ?? 0, trend: trendOf(l.sessions, prevLanding.get(l.page) ?? 0) })),
   };
+}
+
+/** The landing rows with what each page SOLD (our Paid orders - lib/services/marketing-page-sales.ts) and the page
+ *  alerts' badge. Pure. */
+export function withPageSales(
+  landing: LandingRow[],
+  sales: Map<string, { sold: number; prevSold: number } | null>,
+  settings: Pick<MarketingSettings, "page_min_sessions" | "page_hot_pct">,
+): LandingRow[] {
+  return landing.map((l) => {
+    const s = sales.get(l.page) ?? null;
+    const sold = s?.sold ?? null;
+    return { ...l, sold, prevSold: s?.prevSold ?? null, conversion: pageConversion(l.sessions, sold), flag: pageFlag({ sessions: l.sessions, sold }, settings) };
+  });
 }

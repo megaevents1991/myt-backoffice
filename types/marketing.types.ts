@@ -66,8 +66,13 @@ export interface IgMediaRow {
   insights_at: string | null;
 }
 
+/** Every alert rule's kind (`marketing_alerts.kind` is free text - a new kind needs no migration). The page and
+ *  influencer kinds come in pairs: a negative one (traffic, no sales) and a positive one (selling). */
+export const MARKETING_ALERT_KINDS = ["budget_bleed", "viral_post", "page_no_sales", "page_converting", "influencer_no_sales", "influencer_selling"] as const;
+export type MarketingAlertKind = (typeof MARKETING_ALERT_KINDS)[number];
+
 export interface MarketingAlertRow {
-  kind: "budget_bleed" | "viral_post";
+  kind: MarketingAlertKind;
   key: string;
   payload: Record<string, unknown>;
   first_seen_at: string;
@@ -82,6 +87,16 @@ export interface MarketingSettings {
   budget_bleed_ils: number;
   budget_bleed_days: number;
   viral_pct: number;
+  /** Pages (GA4 landing pages): the days a page is judged over, the sessions it needs before it is judged at all,
+   *  and the purchase rate (%) that makes it a converting page. */
+  page_alert_days: number;
+  page_min_sessions: number;
+  page_hot_pct: number;
+  /** Influencers (affiliate partners): the days they are judged over, the visitors that make "traffic, no sales",
+   *  and the Paid orders that make "selling". */
+  influencer_alert_days: number;
+  influencer_min_visitors: number;
+  influencer_hot_orders: number;
   alert_emails: string[];
 }
 
@@ -91,6 +106,14 @@ export const DEFAULT_MARKETING_SETTINGS: MarketingSettings = {
   budget_bleed_ils: 1500,
   budget_bleed_days: 3,
   viral_pct: 200,
+  // Calibrated on the 30 days to 28.10: 150 sessions in 14 days names the event pages that sold nothing (811, 1044,
+  // 1190...), 1.5% names Celine Dion / football / Stevie Wonder - and not the Oasis page (0.7%: huge traffic).
+  page_alert_days: 14,
+  page_min_sessions: 150,
+  page_hot_pct: 1.5,
+  influencer_alert_days: 14,
+  influencer_min_visitors: 30,
+  influencer_hot_orders: 2,
   alert_emails: [],
 };
 

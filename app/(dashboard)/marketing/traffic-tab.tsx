@@ -1,10 +1,11 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Home, Music, Ticket, type LucideIcon } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Home, Music, Ticket, type LucideIcon } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
+import { PUBLIC_SITE_URL } from "@/lib/site";
 import { getTraffic } from "@/lib/actions/marketing-traffic-actions";
 import { SOURCE_LABEL } from "@/lib/marketing/order-source";
 import { STEP_HINT, STEP_LABEL, type EntryFunnelKind, type TrafficStep } from "@/lib/marketing/traffic";
@@ -13,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useMarketingLoad } from "./marketing-shared";
+import { PerfFlagBadge, prevPeriodText, TrendChip, useMarketingLoad } from "./marketing-shared";
 
 type Loaded = Extract<Awaited<ReturnType<typeof getTraffic>>, { connected: true; error?: undefined }>;
 
@@ -169,6 +170,9 @@ function SourcesTable({ sources }: { sources: Loaded["sources"] }) {
 
 const KIND_LABEL: Record<string, string> = { home: "Home", artist: "Artist / team", event: "Event", other: "Other" };
 
+/** A GA4 landing page on the site, or null for GA4's "(not set)". */
+export const landingHref = (page: string): string | null => (page.startsWith("/") ? `${PUBLIC_SITE_URL}${page}` : null);
+
 export function TrafficTab() {
   const { data, view, error, loading } = useMarketingLoad(getTraffic);
   if (error) return <p className="text-sm text-destructive">{error}</p>;
@@ -188,7 +192,7 @@ export function TrafficTab() {
   return <TrafficBody data={data} loading={loading} allSources={view.src === "all"} />;
 }
 
-function TrafficBody({ data, loading, allSources }: { data: Loaded; loading: boolean; allSources: boolean }) {
+export function TrafficBody({ data, loading, allSources }: { data: Loaded; loading: boolean; allSources: boolean }) {
   return (
     <div className={cn("space-y-6", loading && "opacity-60 transition-opacity")}>
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -229,7 +233,17 @@ function TrafficBody({ data, loading, allSources }: { data: Loaded; loading: boo
         <SourcesTable sources={data.sources} />
       </SectionCard>
 
-      <SectionCard title="Top landing pages">
+      <SectionCard
+        title="Top landing pages"
+        description={
+          <>
+            Click a page to open it on the site. &quot;Sold&quot; = our Paid orders of what the page sells (an event page: its event; a category,
+            artist or team page: its events; other pages: —). &quot;No sales&quot; = {num(data.pageRule.page_min_sessions)}+ sessions and nothing sold;
+            &quot;Selling&quot; = 2+ orders at {data.pageRule.page_hot_pct}%+ of sessions - the page alerts&apos; rule (Settings tab). Sessions{" "}
+            {prevPeriodText(data.prevSince, data.prevUntil)}. &quot;GA4 purchases&quot; counts only a purchase in the same session.
+          </>
+        }
+      >
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -237,22 +251,46 @@ function TrafficBody({ data, loading, allSources }: { data: Loaded; loading: boo
                 <TableHead>Page</TableHead>
                 <TableHead>Kind</TableHead>
                 <TableHead className="text-end">Sessions</TableHead>
-                <TableHead className="text-end">Purchased</TableHead>
+                <TableHead className="text-end">vs previous</TableHead>
+                <TableHead className="text-end">GA4 purchases</TableHead>
+                <TableHead className="text-end">Sold</TableHead>
+                <TableHead className="text-end">Sale rate</TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.landing.map((l) => (
-                <TableRow key={l.page}>
-                  <TableCell dir="ltr" className="max-w-[28rem] truncate font-mono text-xs" title={l.page}>
-                    {l.page}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{KIND_LABEL[l.kind] ?? l.kind}</Badge>
-                  </TableCell>
-                  <TableCell className="text-end tabular-nums">{num(l.sessions)}</TableCell>
-                  <TableCell className="text-end tabular-nums">{num(l.purchased)}</TableCell>
-                </TableRow>
-              ))}
+              {data.landing.map((l) => {
+                const href = landingHref(l.page);
+                return (
+                  <TableRow key={l.page}>
+                    <TableCell dir="ltr" className="max-w-[28rem] truncate font-mono text-xs" title={l.page}>
+                      {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline">
+                          {l.page}
+                          <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                        </a>
+                      ) : (
+                        l.page
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{KIND_LABEL[l.kind] ?? l.kind}</Badge>
+                    </TableCell>
+                    <TableCell className="text-end tabular-nums">{num(l.sessions)}</TableCell>
+                    <TableCell className="text-end">
+                      <TrendChip trend={l.trend} title={`Previous period: ${num(l.prevSessions)} sessions`} />
+                    </TableCell>
+                    <TableCell className="text-end tabular-nums text-muted-foreground">{num(l.purchased)}</TableCell>
+                    <TableCell className="text-end font-medium tabular-nums" title={l.prevSold !== null ? `Previous period: ${num(l.prevSold)}` : undefined}>
+                      {l.sold === null ? "—" : num(l.sold)}
+                    </TableCell>
+                    <TableCell className="text-end tabular-nums">{pctText(l.conversion)}</TableCell>
+                    <TableCell>
+                      <PerfFlagBadge flag={l.flag} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

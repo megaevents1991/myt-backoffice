@@ -63,6 +63,13 @@ assert.deepEqual(plan.toMail.map((c) => `${c.kind}:${c.key}`), ["budget_bleed:ne
 assert.deepEqual(plan.toResolve.sort(), ["viral_post:gone", "viral_post:gone-mailed"], "open alerts no candidate asks for any more are resolved - an unmailed one that vanished is never mailed");
 assert.deepEqual(planAlerts([cand("viral_post", "a"), cand("viral_post", "a")], []).toMail.length, 1, "deduped by kind:key");
 assert.equal(planAlerts([], [{ kind: "viral_post", key: "a", last_mailed_at: null }]).toMail.length, 0, "nothing live = nothing to mail");
+// A kind the run could not evaluate (GA4 not connected / failing) keeps its open alerts: "not checked" is not "cleared".
+const ga4Down = planAlerts([cand("influencer_selling", "sagi")], [
+  { kind: "page_no_sales", key: "/order/812", last_mailed_at: "2026-10-07T05:00:00Z" },
+  { kind: "influencer_selling", key: "aviran", last_mailed_at: "2026-10-07T05:00:00Z" },
+], new Set(["page_no_sales", "page_converting"]));
+assert.deepEqual(ga4Down.toResolve, ["influencer_selling:aviran"], "the page alert stays open; the influencer that stopped selling resolves");
+assert.equal(planAlerts([], [{ kind: "page_no_sales", key: "/a", last_mailed_at: null }]).toResolve.length, 1, "evaluated and gone = resolved");
 
 // The mail body escapes everything typed by someone else (a campaign name from Ads Manager) and the origin in the href.
 const evil = budgetBleedAlerts({ spend: [{ ...spend("c1", "2026-10-07", 9000), name: `<a href="x">evil</a> & 'co'` }], purchasesByCampaign: new Map(), settings: { budget_bleed_ils: 1500, budget_bleed_days: 3 }, now });
@@ -71,6 +78,7 @@ assert.ok(!html.includes('<a href="x">'), "an injected tag must not survive");
 assert.ok(html.includes("&lt;a href=&quot;x&quot;&gt;evil&lt;/a&gt; &amp; &#39;co&#39;"), "the name comes out escaped");
 assert.ok(html.includes('<a href="https://app.example/marketing?tab=alerts">'), "the real link is intact");
 assert.ok(alertMailHtml([], 'https://x.example/"><script>').includes("&quot;&gt;&lt;script&gt;"), "the origin is escaped too");
+assert.ok(alertMailHtml([cand("page_no_sales", "/x"), cand("influencer_selling", "sagi")], "https://app.example").includes("<b>Page with no sales</b>"), "the new kinds carry their tab's words");
 assert.ok(alertMailHtml(evil, "https://app.example").includes("<b>Budget bleed</b>") && alertMailHtml(viral, "https://app.example").includes("<b>Viral post</b>"), "the kind labels are the tab's words, intact");
 
 // windowStart is the rule's `since` and the runner's spend read: 3 days ending 2026-10-08 starts on the 6th.

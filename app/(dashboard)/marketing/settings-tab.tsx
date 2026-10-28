@@ -41,6 +41,12 @@ const NUM_FIELDS: { key: NumKey; label: string; hint: string }[] = [
   { key: "budget_bleed_ils", label: "Budget bleed - amount (₪)", hint: "Spend with no purchase at all" },
   { key: "budget_bleed_days", label: "Budget bleed - days", hint: "The window the spend is counted over" },
   { key: "viral_pct", label: "Viral - % of average", hint: "200 = twice the usual engagement" },
+  { key: "page_alert_days", label: "Pages - days", hint: "The window a landing page is judged over (GA4)" },
+  { key: "page_min_sessions", label: "Pages - sessions to judge", hint: "Fewer sessions = not judged; this many and nothing it sells was ordered = \"no sales\"" },
+  { key: "page_hot_pct", label: "Pages - converting at (%)", hint: "Paid orders per 100 sessions (and at least 2) = a converting page" },
+  { key: "influencer_alert_days", label: "Influencers - days", hint: "The window an influencer is judged over" },
+  { key: "influencer_min_visitors", label: "Influencers - visitors, no sale", hint: "This many visitors and no Paid order = \"no sales\"" },
+  { key: "influencer_hot_orders", label: "Influencers - Paid orders", hint: "This many Paid orders = \"selling\"" },
 ];
 
 const toForm = (s: MarketingSettings): FormState => ({
@@ -49,6 +55,12 @@ const toForm = (s: MarketingSettings): FormState => ({
   budget_bleed_ils: String(s.budget_bleed_ils),
   budget_bleed_days: String(s.budget_bleed_days),
   viral_pct: String(s.viral_pct),
+  page_alert_days: String(s.page_alert_days),
+  page_min_sessions: String(s.page_min_sessions),
+  page_hot_pct: String(s.page_hot_pct),
+  influencer_alert_days: String(s.influencer_alert_days),
+  influencer_min_visitors: String(s.influencer_min_visitors),
+  influencer_hot_orders: String(s.influencer_hot_orders),
   alert_emails: s.alert_emails.join(", "),
 });
 
@@ -59,7 +71,7 @@ function parseNum(raw: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** The six inputs and "Save". Settings in, so it can be rendered without a load. */
+/** The number inputs, the alert emails and "Save". Settings in, so it can be rendered without a load. */
 export function SettingsFormView({ initial }: { initial: MarketingSettings }) {
   const { toast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(initial));

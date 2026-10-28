@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
 import { afterUrlWrite, useQueryState } from "@/hooks/use-view-state";
 import type { MarketingQuery } from "@/lib/actions/marketing-actions";
@@ -8,6 +9,10 @@ import { israelToday, MAX_SPAN_DAYS, resolveWindow, type MarketingWindow } from 
 import { parseSource, SOURCE_FILTERS, SOURCE_LABEL, type SourceFilter } from "@/lib/marketing/order-source";
 import type { MarketingCurrency } from "@/lib/services/marketing-pnl";
 import type { AdBrand, AdPlatform } from "@/types/marketing.types";
+import type { Trend } from "@/lib/marketing/sales";
+import type { PerfFlag } from "@/lib/marketing/perf-alerts";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { DateRangePicker, type DatePreset } from "@/components/date-range-picker";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -227,3 +232,46 @@ export function MarketingFilterBar({ showSource = true }: { showSource?: boolean
     </div>
   );
 }
+
+// ---- trends and flags (spec 2026-10-28): the Sales, Influencers and Traffic tabs and the Executive leaders
+
+export const GOOD_TONE = "text-emerald-600 dark:text-emerald-400";
+
+/** "↑ 35%" / "↓ 12%" / "New" / "≈" against the previous period; `title` says what the previous number was. */
+export function TrendChip({ trend, title, className }: { trend: Trend; title?: string; className?: string }) {
+  if (trend.dir === "none") return <span className={cn("text-xs text-muted-foreground", className)} title={title}>—</span>;
+  if (trend.dir === "new") {
+    return (
+      <Badge variant="outline" className={cn("px-1.5 py-0 text-[10px] font-medium", GOOD_TONE, className)} title={title}>
+        New
+      </Badge>
+    );
+  }
+  const Icon = trend.dir === "up" ? ArrowUpRight : trend.dir === "down" ? ArrowDownRight : Minus;
+  const tone = trend.dir === "up" ? GOOD_TONE : trend.dir === "down" ? "text-destructive" : "text-muted-foreground";
+  const change = trend.change ?? 0;
+  return (
+    <span dir="ltr" className={cn("inline-flex items-center gap-0.5 text-xs font-medium tabular-nums", tone, className)} title={title}>
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {change > 0 ? "+" : ""}
+      {change}%
+    </span>
+  );
+}
+
+/** The page / influencer rule's badge - the same words as the alerts. */
+export function PerfFlagBadge({ flag, title }: { flag: PerfFlag | null; title?: string }) {
+  if (!flag) return null;
+  return flag === "no_sales" ? (
+    <Badge variant="destructive" className="px-1.5 py-0 text-[10px]" title={title}>
+      No sales
+    </Badge>
+  ) : (
+    <Badge className="border-transparent bg-emerald-600 px-1.5 py-0 text-[10px] text-white hover:bg-emerald-600" title={title}>
+      Selling
+    </Badge>
+  );
+}
+
+/** "vs 01.09 → 30.09" - which days a trend is measured against. */
+export const prevPeriodText = (since: string, until: string): string => `vs ${since} → ${until}`;
