@@ -26,6 +26,8 @@ export type ParseBriefResult =
       planToken?: string;
       /** Which markups came from the last run (not from the brief). */
       fromPrior: ("ticket_only" | "additional")[];
+      /** What the model asked the person (`parseQuestions`) - shown on the plan card, answered through "כוון את ה-AI"; [] when the agent is off, failed or had none. */
+      questions: string[];
       /** null = the preview's read failed (`previewKind` says why) - the parse itself is never thrown away. */
       preview: PlanPreview | null;
       previewKind?: string;
@@ -33,6 +35,12 @@ export type ParseBriefResult =
       problems: string[];
     }
   | { ok: false; kind: string };
+
+/**
+ * `parseBrief`'s steer ("כוון את ה-AI", round 2): the person's instruction (3..500 characters), the plan as the card holds it
+ * now, and the questions the model asked that the instruction answers. The server reads all three field by field (`parseSteer`).
+ */
+export type SteerInput = { instruction: string; plan: UploaderPlan; questions?: string[] };
 
 export type PreviewResult = { ok: true; preview: PlanPreview } | { ok: false; kind: string; problems?: string[] };
 
@@ -45,9 +53,19 @@ export type CreateRunInput = {
   /** Ignored: the asker is always the session's user. Kept so existing callers stay valid. */
   asker_id: string | null;
   is_test: boolean;
+  /**
+   * The family's standing description template as the plan card has it (round 2, Task 11): saved with the run only when it
+   * differs from the stored one; `null` / blank clears it; absent = the card did not touch it. The family is the plan's
+   * subject kind's (`familyOf`), never the client's.
+   */
+  descriptionTemplate?: string | null;
 };
 
-export type CreateRunResult = { ok: true; runId: string } | { ok: false; kind: string; problems?: string[] };
+/** `template`: "saved" = the card's template was written; "failed" = it could not be (a token the family lacks, a database error) - the run was made anyway. Absent = nothing to save. */
+export type CreateRunResult = { ok: true; runId: string; template?: "saved" | "failed" } | { ok: false; kind: string; problems?: string[] };
+
+/** `getFamilyTemplate`: the family's standing template (null = none saved, or the table is not migrated yet). */
+export type FamilyTemplateResult = { ok: true; template: string | null } | { ok: false; kind: string };
 
 /** One step of the build loop. `done` = nothing left to claim (or the run is stopped / unknown); `kind` names a refusal. */
 export type BuildStep = { done: boolean; itemId?: string; status?: ItemStatus; kind?: string };

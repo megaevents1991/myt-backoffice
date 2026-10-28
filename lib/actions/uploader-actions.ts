@@ -156,9 +156,9 @@ import {
   withLocationOption,
   type LocationInput,
 } from "@/lib/uploader/location";
-import { cleanTemplate, DESCRIPTION_TOKENS, familyOf, usesCompetition } from "@/lib/uploader/description";
+import { cleanTemplate, DESCRIPTION_TOKENS, familyOf, TEMPLATE_FAMILIES, templateEdit, usesCompetition, type TemplateFamily } from "@/lib/uploader/description";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
-import { applyPriorDefaults, emptyPlan, parsePlanInput } from "@/lib/uploader/plan";
+import { applyPriorDefaults, emptyPlan, parsePlanInput, parseSteer, type Steer } from "@/lib/uploader/plan";
 import { planTokenFor, verifyPlanToken } from "@/lib/uploader/plan-token";
 import {
   answerEffect,
@@ -200,6 +200,7 @@ import type {
   CreateRunResult,
   DescriptionSaveResult,
   DescriptionTemplateView,
+  FamilyTemplateResult,
   LearnPreview,
   LocationCreateResult,
   LocationProposeResult,
@@ -210,6 +211,7 @@ import type {
   PreviewResult,
   ProposeResult,
   RunView,
+  SteerInput,
   TeamSearchResult,
   TeamsResult,
 } from "@/lib/uploader/action-types";
@@ -241,11 +243,23 @@ import type { ItemStatus, SubjectKind, UploaderItem, UploaderPlan, UploaderQuest
  * failed call, opens the manual form (`emptyPlan`, or what could be salvaged). The last real run's
  * markups fill the ones the brief left empty (`fromPrior`), then the plan is previewed - a failed
  * preview read still hands back the (paid) parse, with `preview: null` and `previewKind`.
+ *
+ * With a `steer` (the plan card's "כוון את ה-AI", round 2) the same call is made again with the plan as the card holds it
+ * and the person's instruction (3..500 characters, `steer_invalid` otherwise - nothing is called). It counts against the
+ * per-person parse cap like a first parse. A steer REPLACES the person's plan, so only a clean answer does: agent off ->
+ * `agent_off`, no usable answer -> `steer_failed`, and the card stays as it was. An answered steer is audited
+ * `uploader.plan_steered` (what the parser learns from).
  */
-export async function parseBrief(brief: string): Promise<ParseBriefResult> {
+export async function parseBrief(brief: string, steer?: SteerInput): Promise<ParseBriefResult> {
   const session = await requireAdmin();
   if (typeof brief !== "string" || brief.trim() === "") return fail("bad_input");
   if (brief.length > BRIEF_MAX) return fail("brief_too_long");
+  let steered: Steer | null = null;
+  if (steer !== undefined) {
+    steered = parseSteer(steer);
+    if (steered === null) return fail("steer_invalid");
+    if (!agentEnabled(TOUR_UPLOADER_AGENT)) return fail("agent_off");
+  }
 
   // A paid call: at most PARSE_RATE_MAX per person per PARSE_RATE_WINDOW_MS (`agent.call` rows). A
   // count that cannot be read lets the parse through (logged) - the cap is a brake, not the gate.
@@ -258,11 +272,15 @@ export async function parseBrief(brief: string): Promise<ParseBriefResult> {
   let planAi: UploaderPlan | null = null;
   let agent: "on" | "off" | "failed";
   let problems: string[] = [];
+  let questions: string[] = [];
   try {
-    const outcome = await parseBriefWithAgent(brief, newBudget(TOUR_UPLOADER_AGENT), { userId: session.sub });
+    const outcome = await parseBriefWithAgent(brief, newBudget(TOUR_UPLOADER_AGENT), { userId: session.sub, ...(steered ? { steer: steered } : {}) });
+    // A steer replaces the plan on the person's screen: only a clean answer may (the paid call is already counted).
+    if (steered !== null && !outcome.ok) return fail("steer_failed");
     if (outcome.ok) {
       base = outcome.plan;
       planAi = outcome.plan;
+      questions = outcome.questions;
       agent = "on";
     } else if (outcome.reason === "off") {
       base = emptyPlan();
@@ -293,9 +311,19 @@ export async function parseBrief(brief: string): Promise<ParseBriefResult> {
   const key = planTokenKey();
   const signed = planAi !== null && key !== null ? { planToken: await planTokenFor(planAi, brief, key) } : {};
 
+  // What the person asked for and what the parser answered - the lesson of a steer (only an answer is one).
+  if (steered !== null && planAi !== null) {
+    await logAudit({
+      action: "uploader.plan_steered",
+      entityType: "agent",
+      entityId: null,
+      metadata: { agent: AGENT, user_id: session.sub, steer: steered.instruction, before: steered.plan, after: planAi, brief_excerpt: brief.slice(0, BRIEF_EXCERPT) },
+    });
+  }
+
   const preview = await previewOf(plan, false);
-  if (!preview.ok) return { ok: true, plan, planAi, ...signed, fromPrior, preview: null, previewKind: preview.kind, agent, problems };
-  return { ok: true, plan, planAi, ...signed, fromPrior, preview: preview.preview, agent, problems };
+  if (!preview.ok) return { ok: true, plan, planAi, ...signed, fromPrior, questions, preview: null, previewKind: preview.kind, agent, problems };
+  return { ok: true, plan, planAi, ...signed, fromPrior, questions, preview: preview.preview, agent, problems };
 }
 
 /** The plan card after an edit (or the manual form): the plan is checked again first. `isTest` = the card's test switch. */
@@ -440,6 +468,10 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
     }
   }
 
+  // The plan card's description template (round 2): written once the run exists, so a refused run never changes the
+  // standing rule - and before the board's first build, which reads it. It never fails the run.
+  const template = input.descriptionTemplate === undefined ? "unchanged" : await saveCardTemplate(run.id, plan, input.descriptionTemplate, askerId);
+
   for (const change of planEdits(planAi, plan, lastMarkups)) {
     await logAudit({
       action: "uploader.plan_edited",
@@ -463,7 +495,50 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
     },
   });
   await recomputeRun(run.id);
-  return { ok: true, runId: run.id };
+  return { ok: true, runId: run.id, ...(template === "unchanged" ? {} : { template }) };
+}
+
+/**
+ * The template the plan card sent with the run, saved when it differs from the family's stored one (`templateEdit`).
+ * "unchanged" = nothing to write; "failed" = refused (a token the family lacks, a non-text value), not readable, the table
+ * not migrated yet or the write failed - logged, and the run goes on. Audited like the board dialog's save
+ * (`uploader.description_template`, with `via: "plan_card"`). Never throws.
+ */
+async function saveCardTemplate(runId: string, plan: UploaderPlan, raw: unknown, userId: string): Promise<"saved" | "unchanged" | "failed"> {
+  const family = familyOf(plan.subject.kind);
+  try {
+    const stored = await readDescriptionTemplate(family);
+    if (!stored.ok || !stored.ready) {
+      console.error(`uploader-actions: the ${family} template was not saved with run ${runId} - ${stored.ok ? "the table is not migrated" : "the stored one could not be read"}`);
+      return "failed";
+    }
+    const edit = templateEdit(stored.template, raw, family);
+    if (edit.kind === "unchanged") return "unchanged";
+    if (edit.kind === "invalid") {
+      console.error(`uploader-actions: the ${family} template was not saved with run ${runId} - ${edit.problem}`);
+      return "failed";
+    }
+    if ((await writeDescriptionTemplate(family, edit.template, userId)) !== "ok") return "failed";
+    await logAudit({
+      action: "uploader.description_template",
+      entityType: "uploader_run",
+      entityId: runId,
+      metadata: { agent: AGENT, run_id: runId, family, template: edit.template, via: "plan_card" },
+    });
+    return "saved";
+  } catch (e) {
+    console.error(`uploader-actions: the ${family} template was not saved with run ${runId}`, errorText(e));
+    return "failed";
+  }
+}
+
+/** The family's standing description template for the plan card's editor (null = none saved, or the table is not migrated yet). */
+export async function getFamilyTemplate(family: TemplateFamily): Promise<FamilyTemplateResult> {
+  await requireAdmin();
+  if (typeof family !== "string" || !(TEMPLATE_FAMILIES as readonly string[]).includes(family)) return fail("bad_input");
+  const read = await readDescriptionTemplate(family);
+  if (!read.ok) return fail("db_error");
+  return { ok: true, template: read.template };
 }
 
 /** The run's subject: the cached resolve when it is fresh (`freshSubjectCache`), else resolved now and cached. THROWS like `resolveSubject`. */

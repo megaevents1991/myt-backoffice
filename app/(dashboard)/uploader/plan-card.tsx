@@ -18,13 +18,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { createRun, previewPlan } from "@/lib/actions/uploader-actions";
+import { createRun, parseBrief, previewPlan } from "@/lib/actions/uploader-actions";
 import type { PlanPreview } from "@/lib/uploader/action-types";
 import { MARKUP_MAX, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
+import { familyOf } from "@/lib/uploader/description";
 import { parsePlanInput, planNonInstant } from "@/lib/uploader/plan";
 import { cn } from "@/lib/utils";
 import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
 import { actionErrorText, AGENT_OFF_LINE, SUBJECT_KIND_HE } from "./copy";
+import { AiQuestions, DescriptionTemplateEditor, SteerBox, useFamilyTemplate, type TemplateDrafts } from "./plan-assist";
 
 // The plan card ("מה הבנתי", spec §5.2): the parsed brief - or the manual form when the agent is
 // off - as editable fields, a live preview of what the plan finds, and "בנה את האירועים (N)".
@@ -47,6 +49,13 @@ export type PlanSeed = {
   preview: PlanPreview | null;
   agent: AgentAnswer;
   problems: string[];
+  /** What the model asked the person ("ה-AI שואל:"); [] = nothing, or no model. */
+  questions: string[];
+  /**
+   * A steer replaces the card with a new seed: what is not the plan travels along - the test switch (a person who
+   * turned it on must not build a live run by steering) and the description templates they edited.
+   */
+  carry?: { isTest: boolean; templates: TemplateDrafts };
 };
 
 const SUBJECT_KINDS: SubjectKind[] = ["artist", "team", "competition"];
@@ -97,6 +106,7 @@ export function PlanCard({
   navigating,
   onEditBrief,
   onCreated,
+  onSteered,
 }: {
   seed: PlanSeed;
   brief: string;
@@ -104,6 +114,8 @@ export function PlanCard({
   navigating: boolean;
   onEditBrief: () => void;
   onCreated: (runId: string) => void;
+  /** "כוון את ה-AI" answered: the new plan opens as a fresh card (a new seed). */
+  onSteered: (seed: Omit<PlanSeed, "id">) => void;
 }) {
   const { toast } = useToast();
   const [plan, setPlan] = useState<UploaderPlan>(seed.plan);
@@ -112,7 +124,7 @@ export function PlanCard({
     additional: markupText(seed.plan.markups.additional),
   });
   const [touched, setTouched] = useState<MarkupKey[]>([]);
-  const [isTest, setIsTest] = useState(false);
+  const [isTest, setIsTest] = useState(seed.carry?.isTest ?? false);
   const [preview, setPreview] = useState<PlanPreview>(seed.preview ?? EMPTY_PREVIEW);
   const [check, setCheck] = useState<Check>(IDLE);
   /** The counts on screen belong to the plan as it stands: false after a failed check, until a new one lands ("—", B9). */
@@ -122,8 +134,12 @@ export function PlanCard({
   const [retry, setRetry] = useState(0);
   const [nameTouched, setNameTouched] = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
+  /** A steer is in flight (the model is answering), or waits for the confirm that it replaces the person's edits. */
+  const [steering, setSteering] = useState(false);
+  const [confirmSteer, setConfirmSteer] = useState<string | null>(null);
+  const tpl = useFamilyTemplate(familyOf(plan.subject.kind), seed.carry?.templates);
 
-  const busy = creating || navigating;
+  const busy = creating || navigating || steering;
   const shapeOk = useMemo(() => parsePlanInput(plan).ok, [plan]);
   const searchKey = searchKeyOf(plan, isTest);
   const needsName = plan.subject.name_en.trim() === "";
@@ -220,11 +236,48 @@ export function PlanCard({
 
   // Anything changed since the card opened - "ערוך את הבריף" then asks before throwing it away.
   const seedJson = useMemo(() => JSON.stringify(seed.plan), [seed.plan]);
-  const edited =
-    isTest ||
+  /** The plan's own fields differ from what the card opened with - the part a steer would replace (the test switch and the template travel along). */
+  const planEdited =
     JSON.stringify(plan) !== seedJson ||
     markupDraft.ticket_only !== markupText(seed.plan.markups.ticket_only) ||
     markupDraft.additional !== markupText(seed.plan.markups.additional);
+  const edited = isTest || planEdited || tpl.dirty;
+
+  /** "שלח": a steer that would replace the person's edits asks first (like "ערוך את הבריף" does). */
+  function requestSteer(instruction: string) {
+    if (busy) return;
+    if (planEdited) setConfirmSteer(instruction);
+    else void steer(instruction);
+  }
+
+  /** The model reads the brief, the plan as it stands and the instruction again; its answer opens as a fresh card. The card stays as it was on any failure. */
+  async function steer(instruction: string) {
+    if (busy) return;
+    setConfirmSteer(null);
+    setSteering(true);
+    try {
+      const res = await parseBrief(brief, { instruction, plan, ...(seed.questions.length > 0 ? { questions: seed.questions } : {}) });
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "ה-AI לא עודכן", description: actionErrorText(res.kind) });
+        return;
+      }
+      onSteered({
+        plan: res.plan,
+        planAi: res.planAi,
+        planToken: res.planToken ?? null,
+        fromPrior: res.fromPrior,
+        preview: res.preview,
+        agent: res.agent,
+        problems: res.problems,
+        questions: res.questions,
+        carry: { isTest, templates: tpl.drafts },
+      });
+    } catch {
+      toast({ variant: "destructive", title: "ה-AI לא עודכן", description: actionErrorText("") });
+    } finally {
+      setSteering(false);
+    }
+  }
 
   async function build() {
     if (!canBuild) return;
@@ -237,6 +290,8 @@ export function PlanCard({
         ...(seed.planToken ? { planToken: seed.planToken } : {}),
         asker_id: null,
         is_test: isTest,
+        // Only what the person changed: an untouched box must never overwrite a template another person saved meanwhile.
+        ...(tpl.payload !== undefined ? { descriptionTemplate: tpl.payload } : {}),
       });
       if (!res.ok) {
         const problems = res.problems?.slice(0, 3).join(" · ");
@@ -247,6 +302,14 @@ export function PlanCard({
         });
         setCreating(false);
         return;
+      }
+      // The run is made either way - a template that could not be saved is told, never a reason to stop.
+      if (res.template === "failed") {
+        toast({
+          variant: "destructive",
+          title: "הריצה נוצרה, אבל תבנית התיאור לא נשמרה",
+          description: "בדקו אותה ב\"תבנית תיאור\" בלוח הריצה ושמרו שוב.",
+        });
       }
       onCreated(res.runId);
     } catch {
@@ -494,6 +557,13 @@ export function PlanCard({
         </label>
       </fieldset>
 
+      {/* ---- under the plan: what the AI asks, how to steer it, the standing description template ---- */}
+      <fieldset disabled={busy} className="space-y-6 border-t p-5 sm:p-6">
+        {!manual && <AiQuestions questions={seed.questions} />}
+        {!manual && <SteerBox disabled={creating || navigating} steering={steering} onSend={requestSteer} />}
+        <DescriptionTemplateEditor tpl={tpl} subject={plan.subject} disabled={busy} />
+      </fieldset>
+
       {/* ---- what the plan finds, and the one action that builds it ---- */}
       <div className="space-y-3 rounded-b-lg bg-sidebar px-5 py-4 text-sidebar-foreground sm:px-6">
         <div aria-live="polite" className="space-y-1">
@@ -581,6 +651,21 @@ export function PlanCard({
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={confirmSteer !== null} onOpenChange={(open) => !open && setConfirmSteer(null)}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader className="sm:text-start">
+            <AlertDialogTitle>לכוון את ה-AI?</AlertDialogTitle>
+            <AlertDialogDescription>
+              השינויים שעשיתם בתוכנית יוחלפו בתוכנית ש-AI יחזיר. הוא מקבל את התוכנית כפי שהיא עכשיו, אבל לא בטוח שישמור כל שינוי.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:space-x-0">
+            <AlertDialogCancel>הישארו בתוכנית</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmSteer !== null && void steer(confirmSteer)}>כוון</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={confirmBack} onOpenChange={setConfirmBack}>
         <AlertDialogContent dir="rtl">

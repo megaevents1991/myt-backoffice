@@ -18,7 +18,7 @@
 // listing, never prices and never creates anything. Specs: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md,
 // docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md.
 import { FAR_VENUE_KM, MARKUP_MAX, NEAR_LOCATION_KM, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
-import { emptyPlan } from "@/lib/uploader/plan";
+import { emptyPlan, parsePlanInput, planDiff } from "@/lib/uploader/plan";
 import type { UploaderPlan } from "@/types/uploader.types";
 import type { AgentDefinition, AgentLearningSource, AuditLessonRow } from "./types";
 
@@ -70,6 +70,17 @@ function shown(v: unknown): string {
   return JSON.stringify(v) ?? "null";
 }
 
+/** How much of a steer / of its brief a `uploader.plan_steered` lesson quotes (the line as a whole is cut at `lessonChars`). */
+const STEER_LESSON_CHARS = 120;
+const STEER_EXCERPT_CHARS = 100;
+
+/** The fields a steer changed, from the audited plans; null when the row holds no readable pair (nothing is said about fields then). */
+function steeredFields(before: unknown, after: unknown): string[] | null {
+  const isObject = (v: unknown): boolean => typeof v === "object" && v !== null && !Array.isArray(v);
+  if (!isObject(before) || !isObject(after)) return null;
+  return planDiff(parsePlanInput(before).plan, parsePlanInput(after).plan).map((c) => c.field);
+}
+
 /** The audit row's metadata, or null when it carries none. */
 const metaOf = (row: AuditLessonRow): Meta | null => row.metadata;
 
@@ -79,7 +90,8 @@ const metaOf = (row: AuditLessonRow): Meta | null => row.metadata;
  * nothing and is dropped.
  *
  * `uploader.plan_edited` first: it is the direct correction of the agent's own work (what it read
- * wrongly, on which brief). The rest say what staff decided where code could not: the option they
+ * wrongly, on which brief), and `uploader.plan_steered` next - what a person told it to change before
+ * confirming (round 2). The rest say what staff decided where code could not: the option they
  * picked, a show they rejected and why, what they fixed after the build, a venue they built two-city.
  * Last come the newer calls' own sources: the zone labels staff changed, the team names they gave, the
  * locations they created.
@@ -94,6 +106,22 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
       // `null` is a legitimate value on either side ("from null to 75"), so presence is the test.
       if (!m || !field || !excerpt || !("from" in m) || !("to" in m)) return null;
       return `staff corrected ${field} from ${shown(m.from)} to ${shown(m.to)} on a brief like: ${excerpt}`;
+    },
+  },
+  {
+    // What staff told the parser to change on a plan it had already answered (the plan card's "כוון את ה-AI", round 2).
+    // The changed fields come first and the steer is cut short: `lessonChars` cuts a line from its tail, and the
+    // fields are what the model can act on. `before` / `after` are the plans before and after the answer (jsonb) -
+    // a row without a readable pair still teaches the steer itself.
+    action: "uploader.plan_steered",
+    toLesson: (row) => {
+      const m = metaOf(row);
+      const steer = text(m?.steer);
+      const excerpt = text(m?.brief_excerpt);
+      if (!m || !steer || !excerpt) return null;
+      const changed = steeredFields(m.before, m.after);
+      const fields = changed === null ? "" : ` (${changed.length === 0 ? "no field changed" : `changed ${changed.join(", ")}`})`;
+      return `staff steered the plan${fields} with: "${steer.slice(0, STEER_LESSON_CHARS)}" on a brief like: ${excerpt.slice(0, STEER_EXCERPT_CHARS)}`;
     },
   },
   {
@@ -250,6 +278,7 @@ export const TOUR_UPLOADER_LEARNS_FROM: AgentLearningSource[] = [
  */
 export const PARSE_LESSON_SOURCES: string[] = [
   "uploader.plan_edited",
+  "uploader.plan_steered",
   "uploader.answered",
   "uploader.rejected",
   "uploader.edited",

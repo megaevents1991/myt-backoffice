@@ -51,6 +51,14 @@ export const OPEN_WINDOW_MONTHS = 24;
 /** `createRun` raises at most this many question tasks (a task + a mail each); further questions wait on the board without a task. */
 export const MAX_QUESTION_TASKS_PER_RUN = 20;
 
+/** What the model may ask the person on the plan card (`questions` of its answer): at most this many, each cut to QUESTION_MAX characters. */
+export const QUESTIONS_MAX = 5;
+export const QUESTION_MAX = 200;
+
+/** The instruction a person types to steer the model on the plan card ("כוון את ה-AI"): STEER_MIN..STEER_MAX characters after trimming. */
+export const STEER_MIN = 3;
+export const STEER_MAX = 500;
+
 /** `parseBrief` calls the model at most this many times per person per PARSE_RATE_WINDOW_MS (counted on the `agent.call` audit rows). */
 export const PARSE_RATE_MAX = 10;
 export const PARSE_RATE_WINDOW_MS = 10 * 60_000;

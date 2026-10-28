@@ -60,6 +60,7 @@ export function UploaderClient({
           preview: res.preview,
           agent: res.agent,
           problems: res.problems,
+          questions: res.questions,
         },
       });
     } catch {
@@ -73,8 +74,13 @@ export function UploaderClient({
     if (brief.length > briefMax) return;
     setStage({
       name: "plan",
-      seed: { id: ++seedId.current, plan: emptyPlan(), planAi: null, planToken: null, fromPrior: [], preview: null, agent: "off", problems: [] },
+      seed: { id: ++seedId.current, plan: emptyPlan(), planAi: null, planToken: null, fromPrior: [], preview: null, agent: "off", problems: [], questions: [] },
     });
+  }
+
+  /** "כוון את ה-AI" answered: its plan opens as a fresh card (a new seed), carrying the test switch and the template edits. */
+  function steered(seed: Omit<PlanSeed, "id">) {
+    setStage({ name: "plan", seed: { id: ++seedId.current, ...seed } });
   }
 
   function created(runId: string) {
@@ -106,6 +112,7 @@ export function UploaderClient({
           navigating={stage.name === "navigating"}
           onEditBrief={() => setStage({ name: "compose", returned: true })}
           onCreated={created}
+          onSteered={steered}
         />
       )}
       <RunsList runs={runs} />

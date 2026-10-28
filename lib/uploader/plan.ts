@@ -11,7 +11,7 @@
  * Pure - no DB, no network. Selftest: scripts/tour-uploader-selftest.ts.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { LIST_MAX, MARKUP_MAX, NAME_MAX, NOTE_MAX, OPEN_WINDOW_MONTHS, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
+import { LIST_MAX, MARKUP_MAX, NAME_MAX, NOTE_MAX, OPEN_WINDOW_MONTHS, QUESTION_MAX, QUESTIONS_MAX, SHOW_WINDOW_DAYS, STEER_MAX, STEER_MIN } from "@/lib/uploader/constants";
 import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
 
 const SUBJECT_KINDS = ["artist", "team", "competition"] as const satisfies readonly SubjectKind[];
@@ -47,8 +47,10 @@ export function planNonInstant(plan: UploaderPlan): boolean {
 /**
  * The tool schema the model must answer with (a forced tool call). It mirrors `UploaderPlan`
  * key for key - the selftest compares the two, so a field added to the type cannot be forgotten
- * here. Used as a forced, non-strict tool call - the min/max/pattern fields are hints to the
- * model; `parsePlanInput` enforces them.
+ * here - plus `questions`, which is NOT part of the plan: what the model asks the person
+ * (`parseQuestions`), shown on the plan card and answered through the steering box. Used as a
+ * forced, non-strict tool call - the min/max/pattern fields are hints to the model;
+ * `parsePlanInput` enforces them.
  */
 export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
   type: "object",
@@ -151,8 +153,15 @@ export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
       maxItems: LIST_MAX,
       description: "Anything in the brief that fits no field above, so the person can read it. [] when nothing is left over.",
     },
+    questions: {
+      type: "array",
+      items: { type: "string", maxLength: QUESTION_MAX },
+      maxItems: QUESTIONS_MAX,
+      description:
+        "Short questions for the person, in the brief's language: what you could not map to a field or could not decide (a team or artist you do not recognise, a request that fits no field, a date you cannot read). [] when nothing is unclear - never a question the brief already answers.",
+    },
   },
-  required: ["subject", "scope", "rules", "markups", "suppliers", "notes"],
+  required: ["subject", "scope", "rules", "markups", "suppliers", "notes", "questions"],
   additionalProperties: false,
 };
 
@@ -367,6 +376,46 @@ export function parsePlanInput(raw: unknown, now: Date = new Date()): PlanParse 
     // An object whose property reads throw (a hostile getter / Proxy) - nothing here is trustworthy.
     return { ok: false, plan: emptyPlan(), problems: [`plan: unreadable (${e instanceof Error ? e.message : String(e)})`] };
   }
+}
+
+/**
+ * What the model asked the person (`questions` of its answer): text entries only, trimmed, a blank
+ * dropped, each cut to QUESTION_MAX characters, the first QUESTIONS_MAX kept. Anything else (no list,
+ * a stray number) is noise - never a problem, never a throw: a question is a convenience, not the plan.
+ */
+export function parseQuestions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const text = entry.trim().slice(0, QUESTION_MAX).trimEnd();
+    if (text !== "") out.push(text);
+    if (out.length === QUESTIONS_MAX) break;
+  }
+  return out;
+}
+
+/** The steering instruction ("כוון את ה-AI"): trimmed, STEER_MIN..STEER_MAX characters, else null. A long one is refused, never cut - it is what the person meant. */
+export function cleanSteer(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.trim();
+  return text.length >= STEER_MIN && text.length <= STEER_MAX ? text : null;
+}
+
+/** What a steer is: the person's instruction, the plan as the card holds it, and (optionally) the questions the model asked last time. */
+export type Steer = { instruction: string; plan: UploaderPlan; questions?: string[] };
+
+/**
+ * The steer a browser sent, read field by field: the instruction through `cleanSteer`, the plan through
+ * `parsePlanInput` (the salvaged plan - a card with a blank name still steers), the questions through
+ * `parseQuestions`. null = no steer at all (not an object, a bad instruction, no plan).
+ */
+export function parseSteer(raw: unknown): Steer | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const { instruction, plan, questions } = raw as Record<string, unknown>;
+  const text = cleanSteer(instruction);
+  if (text === null || typeof plan !== "object" || plan === null || Array.isArray(plan)) return null;
+  return { instruction: text, plan: parsePlanInput(plan).plan, questions: parseQuestions(questions) };
 }
 
 /** Every leaf of the plan the diff compares, in the order the plan card and the lesson print them. `suppliers` is fixed, so it is not one. */

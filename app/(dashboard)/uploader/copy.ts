@@ -59,6 +59,10 @@ const ACTION_ERROR_HE: Record<string, string> = {
   no_template: "לאירוע הזה אין תבנית אולם ללמוד ממנה",
   // Round 2: the names dialog's "זה עמוד קיים" - the page picked is gone (deleted since the search) or cannot name an event.
   team_not_found: "העמוד שנבחר לא נמצא - בחרו עמוד אחר",
+  // Round 2: the plan card's "כוון את ה-AI". `steer_invalid` = an instruction under 3 or over 500 characters; the card stays as it was in every case.
+  steer_invalid: "ההוראה צריכה להיות בין 3 ל-500 תווים",
+  agent_off: "הסוכן כבוי - אי אפשר לכוון אותו, ערכו את התוכנית ידנית",
+  steer_failed: "ה-AI לא הצליח לעדכן את התוכנית - נסחו את ההוראה אחרת, או ערכו ידנית. התוכנית נשארה כפי שהייתה",
   // Round 2: the create-location form (its own `problem` says what is wrong when the server gives one).
   invalid: "פרטי המיקום לא תקינים - בדקו את הטופס",
 };

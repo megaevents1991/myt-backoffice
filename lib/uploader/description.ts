@@ -158,3 +158,51 @@ export function descriptionValues(input: {
     תאריך: { he: dayOf(show.date), en: null },
   };
 }
+
+/**
+ * The sample the plan card's template preview fills (round 2, Task 11): the run has no shows yet, so every
+ * token gets a made-up Hebrew value - football: ברצלונה against ויאריאל at קאמפ נאו in הלה ליגה; an artist
+ * run: the plan's Hebrew name (else the English one, else a placeholder) in לונדון at The O2. Every token of
+ * the family has a value, so no chip can print nothing; `today` (YYYY-MM-DD) is the date the preview shows.
+ */
+export function previewValues(family: TemplateFamily, subject: { name_he: string | null; name_en: string }, today: string): DescriptionValues {
+  const fixed = (value: string): TokenValue => ({ he: value, en: null });
+  const date = fixed(dayOf(today));
+  if (family === "football") {
+    return {
+      בית: fixed("ברצלונה"),
+      חוץ: fixed("ויאריאל"),
+      מפעל: fixed("הלה ליגה"),
+      אירוע: fixed("ברצלונה - ויאריאל"),
+      אולם: fixed("קאמפ נאו"),
+      עיר: fixed("ברצלונה"),
+      תאריך: date,
+    };
+  }
+  const artist = any(subject.name_he) ?? any(subject.name_en) ?? "שם האמן";
+  return {
+    אמן: fixed(artist),
+    אירוע: fixed(artist),
+    אולם: fixed("The O2"),
+    עיר: fixed("לונדון"),
+    תאריך: date,
+  };
+}
+
+/**
+ * What `createRun` does with the template the plan card sent: `unchanged` (the cleaned text equals the stored one -
+ * nothing is written), `change` (the new template, or null = clear it), or `invalid` (`cleanTemplate`'s own
+ * problem - the run is made anyway and the toast says the template was not saved). `stored` is what
+ * `readDescriptionTemplate` found (null = none).
+ */
+export function templateEdit(
+  stored: string | null,
+  raw: unknown,
+  family: TemplateFamily,
+): { kind: "unchanged" } | { kind: "change"; template: string | null } | { kind: "invalid"; problem: string } {
+  const clean = cleanTemplate(raw, family);
+  if (!clean.ok) return { kind: "invalid", problem: clean.problem };
+  const current = cleanTemplate(stored, family);
+  const same = current.ok ? current.template === clean.template : stored === clean.template;
+  return same ? { kind: "unchanged" } : { kind: "change", template: clean.template };
+}

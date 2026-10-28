@@ -324,10 +324,10 @@ assert.equal(uploaderDef.lessonLookbackDays, 180);
 assert.deepEqual(
   uploaderDef.learnsFrom.map((s) => s.action),
   [
-    "uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback",
+    "uploader.plan_edited", "uploader.plan_steered", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback",
     "uploader.classify_changed", "uploader.team_created", "uploader.team_linked", "uploader.location_created",
   ],
-  "the correction of the parse itself is the sharpest source, so it is declared first; the newer calls' sources follow the older six",
+  "the corrections of the parse itself are the sharpest sources, so they are declared first (an edit, then a steer); the newer calls' sources follow the older ones",
 );
 
 // Switch: opt-in, fails closed, and its own - no other agent's switch turns it on.
@@ -436,6 +436,39 @@ assert.equal(
 );
 assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", subject: "X", city: "Y", date: "2027-01-01" }), null, "no answer = no lesson");
 assert.equal(uploaderLessonFor("uploader.answered", { agent: U, kind: "pick_date", city: "Y", date: "2027-01-01", answer: "a" }), null, "no subject = no lesson");
+
+// uploader.plan_steered - what staff told the parser to change on a plan it had already answered (round 2, Task 11).
+const steerBefore = { subject: { kind: "artist", name_he: null, name_en: "Eric Clapton" }, scope: { exclude_cities: [], notes: [] }, notes: [] };
+const steerAfter = { subject: { kind: "artist", name_he: null, name_en: "Eric Clapton" }, scope: { exclude_cities: ["Berlin"] }, notes: ["no Berlin"] };
+assert.equal(
+  uploaderLessonFor("uploader.plan_steered", { agent: U, user_id: "u1", steer: "בלי ברלין", brief_excerpt: "תעלה את סיור קלפטון", before: steerBefore, after: steerAfter }),
+  'staff steered the plan (changed scope.exclude_cities, notes) with: "בלי ברלין" on a brief like: תעלה את סיור קלפטון',
+  "the lesson names the fields the steer changed, the steer itself and the brief",
+);
+assert.equal(
+  uploaderLessonFor("uploader.plan_steered", { agent: U, steer: "אותו דבר", brief_excerpt: "x", before: steerBefore, after: steerBefore }),
+  'staff steered the plan (no field changed) with: "אותו דבר" on a brief like: x',
+  "a steer that changed nothing is still a lesson (the parser could not apply it)",
+);
+assert.equal(
+  uploaderLessonFor("uploader.plan_steered", { agent: U, steer: "בלי ברלין", brief_excerpt: "x" }),
+  'staff steered the plan with: "בלי ברלין" on a brief like: x',
+  "no plans on the row: the steer and the brief are the lesson",
+);
+assert.equal(
+  uploaderLessonFor("uploader.plan_steered", { agent: U, steer: "בלי ברלין", brief_excerpt: "x", before: "oops", after: 5 }),
+  'staff steered the plan with: "בלי ברלין" on a brief like: x',
+  "plans that are not plans are ignored, never thrown at",
+);
+{
+  const long = uploaderLessonFor("uploader.plan_steered", { agent: U, steer: "ש".repeat(500), brief_excerpt: "ב".repeat(160), before: steerBefore, after: steerAfter }) ?? "";
+  assert.ok(long.length <= uploaderDef.lessonChars, `a long steer is cut so the line fits lessonChars (${long.length})`);
+  assert.ok(long.includes("scope.exclude_cities") && long.includes("on a brief like"), "... and the changed fields and the brief marker survive the cut");
+}
+assert.equal(uploaderLessonFor("uploader.plan_steered", { agent: U, brief_excerpt: "x" }), null, "no steer = no lesson");
+assert.equal(uploaderLessonFor("uploader.plan_steered", { agent: U, steer: "   ", brief_excerpt: "x" }), null, "a blank steer = no lesson");
+assert.equal(uploaderLessonFor("uploader.plan_steered", { agent: U, steer: "בלי ברלין" }), null, "a steer with no brief to read teaches nothing");
+assert.equal(uploaderLessonFor("uploader.plan_steered", null), null, "no metadata at all");
 
 // uploader.rejected - a built event staff turned down, and why (the reason is the lesson).
 assert.equal(
@@ -607,8 +640,8 @@ assert.deepEqual(NAMES_LESSON_SOURCES, ["uploader.team_created", "uploader.team_
 assert.deepEqual(LOCATION_LESSON_SOURCES, ["uploader.location_created"]);
 assert.deepEqual(
   PARSE_LESSON_SOURCES,
-  ["uploader.plan_edited", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback"],
-  "the parse reads exactly what it read before the new calls existed",
+  ["uploader.plan_edited", "uploader.plan_steered", "uploader.answered", "uploader.rejected", "uploader.edited", "uploader.two_city_chosen", "agent.feedback"],
+  "the parse reads what it always read, plus what staff steered it to change (round 2)",
 );
 {
   const declared = uploaderDef.learnsFrom.map((s) => s.action).sort();
@@ -791,7 +824,7 @@ async function testLessonSourceFilter(): Promise<void> {
     assert.deepEqual(names, ["staff named Newcastle United FC 'ניוקאסל יונייטד' (English page name Newcastle United)"]);
 
     const parse = await loadAgentLessons(uploaderDef, { sources: PARSE_LESSON_SOURCES });
-    assert.deepEqual(asked.at(-1)?.actions, [...PARSE_LESSON_SOURCES], "the parse asks for the six it always read");
+    assert.deepEqual(asked.at(-1)?.actions, [...PARSE_LESSON_SOURCES], "the parse asks for its own sources, the steer included");
     assert.deepEqual(parse, ["staff corrected markups.additional from null to 75 on a brief like: תוסיף 75 דולר"], "and never sees a classification or a team name");
 
     const before = asked.length;
@@ -818,7 +851,7 @@ async function testParseBriefGates(): Promise<void> {
     delete process.env.ANTHROPIC_API_KEY;
     const budget = newBudget(TOUR_UPLOADER_AGENT);
     const off = await parseBriefWithAgent("תעלה את סיור אריק קלפטון", budget);
-    assert.deepEqual(off, { ok: false, reason: "off", plan: null, problems: [] }, "agent off -> reason off, no plan, no throw");
+    assert.deepEqual(off, { ok: false, reason: "off", plan: null, questions: [], problems: [] }, "agent off -> reason off, no plan, no throw");
     assert.equal(budget.remaining, TOUR_UPLOADER_AGENT.callsPerRun, "an agent that never ran never spent its budget");
 
     process.env.TOUR_UPLOADER_AI = "on";
@@ -833,7 +866,7 @@ async function testParseBriefGates(): Promise<void> {
     assert.equal(budget.remaining, TOUR_UPLOADER_AGENT.callsPerRun, "an empty brief costs no call");
 
     const spent = await parseBriefWithAgent("תעלה את סיור אריק קלפטון", { remaining: 0 });
-    assert.deepEqual(spent, { ok: false, reason: "budget", plan: null, problems: [] }, "a spent run budget refuses the call");
+    assert.deepEqual(spent, { ok: false, reason: "budget", plan: null, questions: [], problems: [] }, "a spent run budget refuses the call");
   } finally {
     console.warn = savedWarn;
     process.env = savedEnv;
