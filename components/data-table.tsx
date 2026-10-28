@@ -174,10 +174,17 @@ const HEADER_BUTTON =
  * a row's Edit / View / ⋯ never sits behind a sideways scroll. The pinned cell
  * needs a solid fill to cover what scrolls under it, so each row tint (hover,
  * selected, open) is mixed over the card instead of layered with alpha.
+ *
+ * A row that wears a translucent wash of its own (the tours TODAY rows) names it in
+ * `--row-wash` / `--row-wash-hover`: the pinned cell lays that same wash over its
+ * opaque fill as a background image - the card plus the wash, exactly what the
+ * rest of the row shows - so the colour reaches the row's last cell (Alon 28.10).
+ * `--row-pin-hover` replaces the grey hover fill under it. Rows that set none look
+ * as before.
  */
 const PINNED_COLUMN_ID = "actions";
 const PINNED_CELL =
-  "sticky end-0 z-[1] bg-card shadow-[inset_0_-1px_0_hsl(var(--border))] [tr:last-child>&]:shadow-none [tr:hover>&]:bg-[color:color-mix(in_srgb,hsl(var(--muted))_50%,hsl(var(--card)))] [tr[data-state=selected]>&]:bg-muted";
+  "sticky end-0 z-[1] bg-card shadow-[inset_0_-1px_0_hsl(var(--border))] [tr:last-child>&]:shadow-none [tr:hover>&]:bg-[color:var(--row-pin-hover,color-mix(in_srgb,hsl(var(--muted))_50%,hsl(var(--card))))] [tr[data-state=selected]>&]:bg-muted [background-image:linear-gradient(var(--row-wash,transparent),var(--row-wash,transparent))] [tr:hover>&]:[background-image:linear-gradient(var(--row-wash-hover,transparent),var(--row-wash-hover,transparent))]";
 const PINNED_CELL_OPEN = "bg-[color:color-mix(in_srgb,hsl(var(--muted))_40%,hsl(var(--card)))]";
 const PINNED_HEAD =
   "sticky end-0 z-[1] bg-[color:color-mix(in_srgb,hsl(var(--muted))_60%,hsl(var(--card)))]";
