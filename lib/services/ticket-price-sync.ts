@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase-server";
 import { Event, EventTicket } from "@/types/app.types";
 import { CURRENCIES } from "@/types/live-events.types";
+import { rateOf, readNewestFile } from "@/lib/currency-api";
 
 interface ExchangeRateData {
   rate: number;
@@ -42,10 +43,6 @@ class MultiCurrencyExchangeRateService {
   // Until a fetch lands it equals the fallback rate.
   private rawRates: Record<SupportedCurrency, number> = { EUR: 1.15, ILS: 0.34, GBP: 1.33 };
 
-  private readonly JSDELIVR_BASE =
-    "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies";
-  private readonly CLOUDFLARE_BASE =
-    "https://latest.currency-api.pages.dev/v1/currencies";
   // Conservative bounds to reject outliers (currency -> USD per unit)
   private readonly RATE_LIMITS: Record<
     SupportedCurrency,
@@ -85,47 +82,45 @@ class MultiCurrencyExchangeRateService {
     return rate >= bounds.min && rate <= bounds.max;
   }
 
+  // Both mirrors of the currency API at once, the file with the newer date wins
+  // (lib/currency-api.ts, the same file as myt-main's): on 2026-10-29 one jsDelivr CDN still
+  // served the day before's file at noon, and jsDelivr was asked first.
   private async fetchCurrencyRate(
     currency: SupportedCurrency,
   ): Promise<{ rounded: number; raw: number } | null> {
     const base = currency.toLowerCase();
-    const urls = [
-      `${this.JSDELIVR_BASE}/${base}.json`,
-      `${this.CLOUDFLARE_BASE}/${base}.json`,
-    ];
+    const read = (raw: number | null) => {
+      if (raw === null) return null;
+      const rounded = Math.ceil(raw * 100) / 100; // Round to 2 decimals
+      return this.isValidRate(currency, rounded) ? { rounded, raw } : null;
+    };
 
-    for (const url of urls) {
-      try {
-        console.log(`🔄 Fetching ${currency}/USD from ${url}`);
+    console.log(`🔄 Fetching ${currency}/USD from both currency API mirrors`);
+    const file = await readNewestFile(base, {
+      fetchJson: async (url) => {
         const response = await this.fetchWithTimeout(url);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-
-        const data = await response.json();
-        const rawRate = data?.[base]?.["usd"];
-        if (typeof rawRate !== "number" || !Number.isFinite(rawRate)) {
-          throw new Error(`Missing or invalid "usd" field in "${base}" entry`);
-        }
-        const rounded = Math.ceil(rawRate * 100) / 100; // Round to 2 decimals
-        if (!this.isValidRate(currency, rounded)) {
-          throw new Error(
-            `Out-of-range rate for ${currency}: ${rounded} (limits ${this.RATE_LIMITS[currency].min}-${this.RATE_LIMITS[currency].max})`,
-          );
-        }
-        console.log(`✅ ${currency}/USD rate fetched: ${rounded}`);
-        return { rounded, raw: rawRate };
-      } catch (error) {
+        return response.json();
+      },
+      accept: (f) => read(rateOf(f, "usd")) !== null,
+      onError: (source, error) =>
         console.warn(
-          `⚠️ Currency API (${url}) ${currency}/USD failed: ${
+          `⚠️ Currency API (${source}) ${currency}/USD failed: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
-        );
-      }
+        ),
+    });
+    const rate = file ? read(rateOf(file, "usd")) : null;
+    if (!file || !rate) {
+      console.error(`❌ All endpoints failed for ${currency}/USD`);
+      return null;
     }
-
-    console.error(`❌ All endpoints failed for ${currency}/USD`);
-    return null;
+    console.log(
+      `✅ ${currency}/USD rate fetched: ${rate.rounded} (${file.source}, ${file.date ?? "no date"})`,
+    );
+    return rate;
   }
 
   // Coalesce concurrent updates per currency
