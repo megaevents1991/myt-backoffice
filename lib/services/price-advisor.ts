@@ -4,7 +4,7 @@
 // lib/services/price-light-judge.ts (agent #1).
 import Anthropic from "@anthropic-ai/sdk";
 import { PRICE_ADVISOR_AGENT } from "@/lib/agents";
-import { agentEnabled, agentModel, anthropicKey, callCostUsd, takeBudget, type AgentBudget } from "@/lib/agents/switch";
+import { agentEnabled, agentModel, anthropicKey, answerWithTool, callCostUsd, takeBudget, type AgentBudget } from "@/lib/agents/switch";
 import { adviceBlock, type PriceAdviceFact } from "@/lib/services/price-advice";
 import type { Scope } from "@/types/price-light.types";
 
@@ -84,7 +84,7 @@ export interface WordAdviceResult {
  * Agent off, no budget left, no facts, or ANY failure (timeout, truncation, bad tool output, an
  * invented number) -> the deterministic block alone, `ai: false`, never a throw. Agent on -> one
  * Anthropic call, same discipline as extractAndJudge: maxRetries 0, the definition's timeout, a
- * forced tool call, `stop_reason === "max_tokens"` treated as a failure.
+ * requested tool call (`answerWithTool`), `stop_reason === "max_tokens"` treated as a failure.
  */
 export async function wordAdvice(input: WordAdviceInput): Promise<WordAdviceResult> {
   const { eventName, scope, facts, budget, memory } = input;
@@ -99,11 +99,12 @@ export async function wordAdvice(input: WordAdviceInput): Promise<WordAdviceResu
     const res = await client.messages.create({
       model,
       max_tokens: 1_000,
-      system: systemPrompt(memory),
+      system: `${systemPrompt(memory)}\n\n${answerWithTool("advice")}`,
       tools: [TOOL],
-      tool_choice: { type: "tool", name: "advice" },
-      // Opus 5 thinks adaptively by default, so reasoning tokens come out of max_tokens BEFORE
-      // the forced tool call - low effort keeps this cheap and inside the ceiling above.
+      // `auto`, never a forced call: Opus 5.5 answers a forced tool_choice with a 400 (answerWithTool).
+      tool_choice: { type: "auto" },
+      // The model always thinks adaptively, so reasoning tokens come out of max_tokens BEFORE
+      // the tool call - low effort keeps this cheap and inside the ceiling above.
       output_config: { effort: "low" },
       messages: [{ role: "user", content: userPrompt(eventName, scope, facts) }],
     });

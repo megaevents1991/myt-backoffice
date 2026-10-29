@@ -11,7 +11,7 @@ import { AGENT_KEYS, agentFor, PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT, TOUR_UPLO
 import { interleave, loadAgentLessons, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, traceAgentLessons } from "@/lib/agents/memory";
 import { CLASSIFY_LESSON_SOURCES, LOCATION_LESSON_SOURCES, NAMES_LESSON_SOURCES, PARSE_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
 import { SupabaseClient } from "@supabase/supabase-js";
-import { agentEnabled, agentModel, anthropicKey, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
+import { agentEnabled, agentModel, anthropicKey, answerWithTool, callCostUsd, newBudget, takeBudget } from "@/lib/agents/switch";
 import type { AgentKey, AuditLessonRow } from "@/lib/agents/types";
 import { AI_VERDICT_PARSER, coerceBool, coerceNum } from "@/lib/services/price-light-judge";
 import { adviceBlock, type PriceAdviceFact } from "@/lib/services/price-advice";
@@ -80,7 +80,10 @@ assert.equal(takeBudget(undefined), true, "no budget = no ceiling (ad-hoc caller
 // ---- cost ------------------------------------------------------------------------------------
 assert.equal(callCostUsd(def, 1_000_000, 0), def.usdPerMInput);
 assert.equal(callCostUsd(def, 0, 1_000_000), def.usdPerMOutput);
-assert.equal(callCostUsd(def, 2_211, 143), Math.round(((2_211 * 5 + 143 * 25) / 1_000_000) * 10_000) / 10_000);
+assert.equal(callCostUsd(def, 2_211, 143), Math.round(((2_211 * 4 + 143 * 20) / 1_000_000) * 10_000) / 10_000, "Opus 5.5 pricing, $4 / $20");
+
+// ---- the tool is asked for, never forced (Opus 5.5 answers a forced tool_choice with a 400) -------
+assert.match(answerWithTool("verdict"), /`verdict` tool, exactly once/);
 
 // ---- house rules are GENERATED, not hand-written ----------------------------------------------
 const rules = def.houseRules();
@@ -238,7 +241,7 @@ const advisorDef = agentFor("price-advisor");
 assert.equal(advisorDef.key, "price-advisor");
 assert.equal(advisorDef.switchEnv, "PRICE_ADVISOR_AI");
 assert.equal(advisorDef.modelEnv, "PRICE_ADVISOR_AI_MODEL");
-assert.equal(advisorDef.defaultModel, "claude-opus-5");
+assert.equal(advisorDef.defaultModel, "claude-opus-5-5");
 assert.equal(advisorDef.callsPerRun, 15);
 assert.equal(advisorDef.timeoutMs, 12_000);
 assert.equal(advisorDef.confidenceMin, 0);
@@ -311,7 +314,7 @@ assert.equal(uploaderDef.key, "tour-uploader");
 assert.equal(uploaderDef.title, "Tour uploader");
 assert.equal(uploaderDef.switchEnv, "TOUR_UPLOADER_AI");
 assert.equal(uploaderDef.modelEnv, "TOUR_UPLOADER_AI_MODEL");
-assert.equal(uploaderDef.defaultModel, "claude-opus-5");
+assert.equal(uploaderDef.defaultModel, "claude-opus-5-5");
 assert.equal(uploaderDef.timeoutMs, 20_000);
 assert.equal(uploaderDef.callsPerRun, 3);
 assert.equal(uploaderDef.confidenceMin, 0);
@@ -354,7 +357,7 @@ assert.deepEqual(
     process.env.AI_AGENTS = "off";
     assert.equal(agentEnabled(uploaderDef), false, "master switch stops it too");
     process.env.AI_AGENTS = "";
-    assert.equal(agentModel(uploaderDef), "claude-opus-5");
+    assert.equal(agentModel(uploaderDef), "claude-opus-5-5");
     process.env.TOUR_UPLOADER_AI_MODEL = "claude-sonnet-5";
     assert.equal(agentModel(uploaderDef), "claude-sonnet-5", "its own env overrides the default model");
   } finally {

@@ -24,7 +24,7 @@ export { PRICE_ADVISOR_AGENT, PRICE_LIGHT_AGENT, TOUR_UPLOADER_AGENT };
 export { loadActiveTaughtRules, loadAgentLessons, loadAgentMemory, traceAgentLessons, memoryBlock, TAUGHT_BLOCK_MAX_CHARS, TAUGHT_RULES_MAX } from "./memory";
 export { maturityFrom, MATURITY_MIN_DECISIONS, rowBelongsToAgent, type MaturityRow } from "./maturity";
 export {
-  AGENTS_MASTER_SWITCH_ENV, agentEnabled, agentModel, agentsMasterSwitchOff, anthropicKey,
+  AGENTS_MASTER_SWITCH_ENV, agentEnabled, agentModel, agentsMasterSwitchOff, anthropicKey, answerWithTool,
   callCostUsd, newBudget, takeBudget, type AgentBudget,
 } from "./switch";
 export {

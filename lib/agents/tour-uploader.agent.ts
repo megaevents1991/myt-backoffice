@@ -332,7 +332,7 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
   ],
   switchEnv: "TOUR_UPLOADER_AI",
   modelEnv: "TOUR_UPLOADER_AI_MODEL",
-  defaultModel: "claude-opus-5",
+  defaultModel: "claude-opus-5-5",
   // A staff member waits on the plan card (or a dialog) while this runs, so the timeout is longer than the
   // nightly agents' - but there is still no SDK retry: a hung call falls back to the manual form. The
   // brief, `name_teams` and `propose_location` wait this long; `classify_venue` waits CLASSIFY_TIMEOUT_MS (lib/uploader/classify.ts,
@@ -341,8 +341,8 @@ export const TOUR_UPLOADER_AGENT: AgentDefinition = {
   callsPerRun: 3,
   // No confidence gate: the plan is confirmed by a person, and its shape is checked field by field.
   confidenceMin: 0,
-  usdPerMInput: 5,     // Opus 5 pricing, same as the other agents
-  usdPerMOutput: 25,
+  usdPerMInput: 4,     // Opus 5.5 pricing, same as the other agents
+  usdPerMOutput: 20,
   memoryMaxChars: 4_000,
   lessonMax: 10,
   lessonChars: 340,

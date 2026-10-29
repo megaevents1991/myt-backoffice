@@ -1334,11 +1334,13 @@ that stores `"unknown"` never overwrites an AI answer). Constants live only in t
 `AI_CONFIDENCE_MIN 0.8` (below it → `unsure`), `AI_TIMEOUT_MS 12000` with `maxRetries: 0`,
 `AI_CALLS_PER_RUN 40` (run-wide ceiling the nightly threads through `matchAllForEvent` as a shared
 `aiBudget`; past it matching carries on rule-only and the summary reports `aiCalls`),
-`AI_MAX_CANDIDATES 10`, `AI_DETAIL_TEXT_MAX 6000`, `AI_MODEL_DEFAULT "claude-opus-5"`,
-`AI_USD_PER_M_INPUT 5` / `AI_USD_PER_M_OUTPUT 25` (Opus 5 pricing - cost computed and stored per
-call in `ai_verdict`). The call is `max_tokens: 4000` + `output_config: { effort: "low" }` and
-treats `stop_reason === "max_tokens"` as a failure: Opus 5 thinks adaptively, so a small ceiling
-truncates the reasoning before the forced tool call ever lands. `scripts/price-light-judge-smoke.ts
+`AI_MAX_CANDIDATES 10`, `AI_DETAIL_TEXT_MAX 6000`, default model `"claude-opus-5-5"`, $4 / $20 per
+million tokens in / out (Opus 5.5 pricing, `defaultModel` / `usdPerMInput` / `usdPerMOutput` in the agent
+definition - cost computed and stored per call in `ai_verdict`). The call is `max_tokens: 4000` + `output_config: { effort: "low" }` and
+treats `stop_reason === "max_tokens"` as a failure: the model always thinks adaptively, so a small ceiling
+truncates the reasoning before the tool call ever lands. **No forced tool call (29.10, Opus 5.5):** 5.5 answers
+`tool_choice` "tool" / "any" with HTTP 400, so every agent call runs on `tool_choice: auto` and its system prompt
+ends with `answerWithTool(name)` (`lib/agents/switch.ts`); an answer with no tool call was already a failed answer. `scripts/price-light-judge-smoke.ts
 <eventId>` (`npx tsx`, needs the key) smoke-tests one call live. **First live run (2026-09-15)
 found Opus 5 answering the tool with STRINGS** (`"same_event": "true"`, `"nights": "3"` - the schema
 allows `["boolean","string"]`); the reader accepted only real booleans/numbers, so every verdict read
@@ -1468,7 +1470,7 @@ scope (a markup cut to orange/green, a cheaper LiveTickets ticket, a nights gap 
 already backed by the light's own arithmetic). The one call site is `openAutoRedTasks`
 (`price-light-nightly.ts`), for a scope that turned red tonight; `wordAdvice()`
 (`lib/services/price-advisor.ts`) is the one place it calls Claude, same discipline as the judge
-(`maxRetries: 0`, its own `timeoutMs`, a forced tool call, `stop_reason === "max_tokens"` = failure).
+(`maxRetries: 0`, its own `timeoutMs`, a requested tool call (`answerWithTool`), `stop_reason === "max_tokens"` = failure).
 **It can never state a number the facts didn't give it**: `numbersAreFromFacts()` checks every
 `$<number>` in the model's text against the facts' own text, and a text that fails is discarded -
 the task gets the deterministic block alone. AI-worded advice keeps the deterministic block
@@ -1505,8 +1507,8 @@ refetches after every step; idle, it polls every `BOARD_IDLE_POLL_MS` 15 s. The 
 `TOAST_POLL_MS` 60 s.
 
 **Four AI calls; everything else is code.** `parseBriefWithAgent` (`lib/services/tour-uploader-parse.ts`) is
-the brief's call (the other three, `classify_venue`, `name_teams` and, since 28.10, `propose_location`, are in the rounds "אלון 1" / "אלון 2" below; every one a forced tool, code does the rest): a forced, NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
-`claude-opus-5` (`TOUR_UPLOADER_AI_MODEL`). `callsPerRun` 3 is the agent layer's per-run ceiling, but every
+the brief's call (the other three, `classify_venue`, `name_teams` and, since 28.10, `propose_location`, are in the rounds "אלון 1" / "אלון 2" below; every one a requested tool, code does the rest): a requested (`answerWithTool`, `tool_choice: auto`), NON-strict tool `plan`, `timeoutMs` 20 s, `maxRetries: 0`, default model
+`claude-opus-5-5` (`TOUR_UPLOADER_AI_MODEL`). `callsPerRun` 3 is the agent layer's per-run ceiling, but every
 `parseBrief` call gets a fresh budget - a re-parse ("ערוך את הבריף") is just another call - but a person
 gets at most `PARSE_RATE_MAX` 10 parses per `PARSE_RATE_WINDOW_MS` 10 min (`rate_limited`, counted on the
 `agent.call` rows' `metadata.user_id`). The system prompt holds the rules, house rules and taught rules
@@ -1696,7 +1698,7 @@ dialog says so in a fixed line. **A rule for the run:** `runRuleOf` / `applyRule
 every location is an option of every `pick_location`, so "among its options" would filter nothing); each other question
 goes through the same per-item path, audited `uploader.answered` with `rule_applied`. **The two new AI calls**
 (`lib/services/tour-uploader-classify.ts`: `classifyVenueWithAgent`, `nameTeamsWithAgent`) are the parse's discipline -
-same agent and `TOUR_UPLOADER_AI` switch, forced non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row with cost and
+same agent and `TOUR_UPLOADER_AI` switch, requested non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row with cost and
 `user_id`, no price / listing / URL in the prompt - and the dialogs share the parse's cap (`PARSE_RATE_MAX` 10 per
 `PARSE_RATE_WINDOW_MS` 10 min per person, checked by the actions); off / no answer / the cap -> the SAME dialog with empty
 boxes (`aiLine`: off / no answer -> "ה-AI כבוי / לא ענה - מלאו את השמות ידנית"; the cap -> "יותר מדי קריאות ל-AI בזמן קצר - מלאו את השמות ידנית"). **Learning is per call:** `loadAgentLessons(def, { sources })` -
@@ -1776,7 +1778,7 @@ form edits `aliases` ("שמות נוספים"). **A missing location -> create o
 `create_location` ("אין לנו מיקום ל-Valencia (Roig Arena). מה לעשות?"; `two_city` only within `FAR_VENUE_KM`);
 `pick_location` (no coordinates) gets `create` too. `create` opens `create-location-dialog.tsx`:
 `proposeLocation(itemId)` is the FOURTH AI call (`propose_location`, `lib/services/tour-uploader-location.ts`: the
-agent's discipline - forced non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row, the parse's rate cap; off / no
+agent's discipline - requested non-strict tool, 20 s, `maxRetries: 0`, an `agent.call` row, the parse's rate cap; off / no
 answer / cap = the same form with what the show knows - the venue's coordinates, its ISO-2 country and the supplier's
 city spelling as the first alias, `locationFallback`), `createLocationAndAnswer(itemId, input)` validates
 (`validateLocationInput`: a Hebrew letter in the name, IATA `^[A-Z]{3}$`, lat / lon ranges, and the city's existing rows
@@ -2085,7 +2087,7 @@ AI_AGENTS=
 # exactly phase-0 behaviour (aiEnabled() false). Needs the key above as well - turning this on
 # without it does nothing (still rule-only).
 PRICE_LIGHT_AI=
-# Model id for the judge. Empty -> AI_MODEL_DEFAULT "claude-opus-5" (price-light-judge.ts).
+# Model id for the judge. Empty -> its own defaultModel "claude-opus-5-5" (price-light.agent.ts).
 PRICE_LIGHT_AI_MODEL=
 # Agent #2 - the price advisor (lib/agents/price-advisor.agent.ts). Same opt-in, fails-closed rule
 # as PRICE_LIGHT_AI above (needs ANTHROPIC_API_KEY too, and AI_AGENTS=off still stops it): unset,
@@ -2093,7 +2095,7 @@ PRICE_LIGHT_AI_MODEL=
 # never a throw. It only ever WORDS and RANKS facts the light already computed - it never sets a
 # light, never writes a price, and can never state a number the facts didn't give it.
 PRICE_ADVISOR_AI=
-# Model id for the advisor. Empty -> its own defaultModel "claude-opus-5" (price-advisor.agent.ts).
+# Model id for the advisor. Empty -> its own defaultModel "claude-opus-5-5" (price-advisor.agent.ts).
 PRICE_ADVISOR_AI_MODEL=
 # Agent #3 - the tour uploader (lib/agents/tour-uploader.agent.ts, /uploader). Same opt-in, fails-closed rule
 # (needs ANTHROPIC_API_KEY too, and AI_AGENTS=off still stops it): unset, empty or anything but "on" = off =
@@ -2102,7 +2104,7 @@ PRICE_ADVISOR_AI_MODEL=
 # on only AFTER migration 20261021115818 is applied AND myt-main's hidden-event gate is live (it is, 21.10) -
 # see "Agent #3" under Agents for the deploy order and the mondial-site blocker.
 TOUR_UPLOADER_AI=
-# Model id for the uploader. Empty -> its own defaultModel "claude-opus-5" (tour-uploader.agent.ts).
+# Model id for the uploader. Empty -> its own defaultModel "claude-opus-5-5" (tour-uploader.agent.ts).
 TOUR_UPLOADER_AI_MODEL=
 # Set -> crawler connects to a remote stealth browser over CDP (Browserbase/Bright Data) and
 # that provider owns the fingerprint (UA/locale/timezone/proxy). Unset -> local @sparticuz/chromium.

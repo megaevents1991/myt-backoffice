@@ -2,7 +2,7 @@
 // returns a structured verdict, never throws past the caller.
 import Anthropic from "@anthropic-ai/sdk";
 import { PRICE_LIGHT_AGENT } from "@/lib/agents";
-import { agentEnabled, agentModel, anthropicKey, callCostUsd } from "@/lib/agents/switch";
+import { agentEnabled, agentModel, anthropicKey, answerWithTool, callCostUsd } from "@/lib/agents/switch";
 import type { Judge } from "@/lib/services/price-light-match";
 import type { LightEvent } from "@/lib/services/price-light-store";
 import { UNKNOWN_ATTRS, type ExtractedAttrs, type ListingRow } from "@/types/price-light.types";
@@ -163,9 +163,11 @@ export async function extractAndJudge(input: JudgeInput, opts: JudgeOptions = {}
     // key, and going through the same accessor means a placeholder can never reach the client.
     const client = new Anthropic({ apiKey: anthropicKey() ?? undefined, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
     const res = await client.messages.create({
-      model, max_tokens: 4_000, system: systemPrompt(opts.memory), tools: [TOOL], tool_choice: { type: "tool", name: "verdict" },
-      // Opus 5 thinks adaptively by default, so the reasoning tokens come out of
-      // max_tokens BEFORE the forced tool call - 400 truncated the answer away.
+      model, max_tokens: 4_000, system: `${systemPrompt(opts.memory)}\n\n${answerWithTool("verdict")}`, tools: [TOOL],
+      // `auto`, never a forced call: Opus 5.5 answers a forced tool_choice with a 400 (answerWithTool).
+      tool_choice: { type: "auto" },
+      // The model always thinks adaptively, so the reasoning tokens come out of
+      // max_tokens BEFORE the tool call - 400 truncated the answer away.
       // Low effort + a real ceiling keeps the verdict cheap and complete.
       output_config: { effort: "low" },
       messages: [{ role: "user", content: userPrompt(input.event, shown) }],

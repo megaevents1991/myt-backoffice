@@ -126,7 +126,7 @@ export const PRICE_ADVISOR_AGENT: AgentDefinition = {
   ],
   switchEnv: "PRICE_ADVISOR_AI",
   modelEnv: "PRICE_ADVISOR_AI_MODEL",
-  defaultModel: "claude-opus-5",
+  defaultModel: "claude-opus-5-5",
   // Same discipline as the price-light judge (lib/agents/price-light.agent.ts): a short timeout and
   // no SDK retry, because the nightly's wall-clock budget is only checked BETWEEN events.
   timeoutMs: 12_000,
@@ -134,8 +134,8 @@ export const PRICE_ADVISOR_AGENT: AgentDefinition = {
   // No confidence gate: this agent never decides same_event/found/unsure like the judge does, it
   // only words facts that are already true. The field exists on every agent regardless.
   confidenceMin: 0,
-  usdPerMInput: 5,     // Opus 5 pricing, same as the price-light agent
-  usdPerMOutput: 25,
+  usdPerMInput: 4,     // Opus 5.5 pricing, same as the price-light agent
+  usdPerMOutput: 20,
   memoryMaxChars: 4_000,
   lessonMax: 10,
   lessonChars: 340,

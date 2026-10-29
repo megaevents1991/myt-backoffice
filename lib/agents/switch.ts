@@ -62,6 +62,16 @@ export function callCostUsd(def: AgentDefinition, inputTokens: number, outputTok
   return Math.round(usd * 10_000) / 10_000;
 }
 
+/**
+ * The line every agent's system prompt ends with. Claude Opus 5.5 refuses a FORCED tool call
+ * (`tool_choice` "tool" / "any" = HTTP 400), so each call runs on `tool_choice: auto` and asks for
+ * its one tool here instead. Nothing is guaranteed by `auto`: every caller already treats an answer
+ * with no tool call as a failed answer (rule-only / the deterministic block / the manual form).
+ */
+export function answerWithTool(name: string): string {
+  return `Answer only by calling the \`${name}\` tool, exactly once. Write no text outside the tool call.`;
+}
+
 /** Run-wide ceiling on calls, shared (and mutated) across everything one run touches. */
 export interface AgentBudget { remaining: number }
 

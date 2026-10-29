@@ -193,15 +193,15 @@ export const PRICE_LIGHT_AGENT: AgentDefinition = {
   ],
   switchEnv: "PRICE_LIGHT_AI",
   modelEnv: "PRICE_LIGHT_AI_MODEL",
-  defaultModel: "claude-opus-5",
+  defaultModel: "claude-opus-5-5",
   // 12s, not 20s, and no SDK retry: the nightly checks its wall-clock budget only BETWEEN events,
   // so a slow call inside one event is time the budget cannot see. Two events' worth of hung calls
   // used to be enough to strand the tail of a run.
   timeoutMs: 12_000,
   callsPerRun: 40,
   confidenceMin: 0.8,
-  usdPerMInput: 5,     // Opus 5 pricing
-  usdPerMOutput: 25,
+  usdPerMInput: 4,     // Opus 5.5 pricing
+  usdPerMOutput: 20,
   // Room for a human's whole sentence (2026-09-19): at 200 a real staff note ("במודעה מופיע תיק גב,
   // לא מצוין מזוודה, ולכן...") was cut before its point. ~250 more input tokens a call.
   memoryMaxChars: 4_000,

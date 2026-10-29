@@ -1,12 +1,12 @@
 // The ONE place Claude is called for the tour uploader (agent #3, lib/agents/tour-uploader.agent.ts).
 // Reads one staff-typed brief and answers with the plan (types/uploader.types.ts `UploaderPlan`)
-// through a forced `plan` tool call. Nothing else in the feature calls a model: the shows, the
+// through one `plan` tool call. Nothing else in the feature calls a model: the shows, the
 // locations, the tickets and every price are deterministic code (lib/uploader/*).
 //
 // Same call discipline as lib/services/price-advisor.ts (agent #2) - the definition's timeout,
-// `maxRetries: 0`, a forced tool call, `stop_reason === "max_tokens"` treated as a failure - and it
+// `maxRetries: 0`, one requested tool call (`answerWithTool` - Opus 5.5 refuses a forced one), `stop_reason === "max_tokens"` treated as a failure - and it
 // never throws past `parseBriefWithAgent`: every failure comes back as a `ParseOutcome` the caller
-// turns into "fill the plan by hand". The tool call is forced but NOT strict (no `strict: true`):
+// turns into "fill the plan by hand". The tool call is requested but NOT strict (no `strict: true`):
 // `PLAN_TOOL_SCHEMA` is only the model's guide, `parsePlanInput` (lib/uploader/plan.ts) is what
 // enforces the shape, and a plan with a bad field comes back salvaged so nothing the model got
 // right is lost.
@@ -20,7 +20,7 @@
 // person's screen and their instruction, inside its own closed fence (STEER_OPEN ... STEER_CLOSE).
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  agentEnabled, agentModel, anthropicKey, callCostUsd, loadActiveTaughtRules, loadAgentLessons, memoryBlock, takeBudget,
+  agentEnabled, agentModel, anthropicKey, answerWithTool, callCostUsd, loadActiveTaughtRules, loadAgentLessons, memoryBlock, takeBudget,
   TOUR_UPLOADER_AGENT, type AgentBudget,
 } from "@/lib/agents";
 import { PARSE_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
@@ -30,7 +30,7 @@ import { parsePlanInput, parseQuestions, PLAN_TOOL_SCHEMA, type Steer } from "@/
 import type { UploaderPlan } from "@/types/uploader.types";
 
 const TOOL_NAME = "plan";
-/** The plan is a small object; the ceiling also has to cover the adaptive reasoning that comes out of it before the forced tool call. */
+/** The plan is a small object; the ceiling also has to cover the adaptive reasoning that comes out of it before the tool call. */
 const MAX_TOKENS = 2_000;
 
 const SYSTEM = `You are the brief parser of an Israeli travel company's tour uploader. The company sells event packages (ticket + flight + hotel). A staff member types a brief about ONE tour, in Hebrew or English, and you turn it into one plan by calling the \`plan\` tool exactly once.
@@ -209,11 +209,12 @@ export async function parseBriefWithAgent(
     const res = await client.messages.create({
       model,
       max_tokens: MAX_TOKENS,
-      system,
+      system: `${system}\n\n${answerWithTool(TOOL_NAME)}`,
       tools: [TOOL],
-      tool_choice: { type: "tool", name: TOOL_NAME },
-      // Opus 5 thinks adaptively by default, so reasoning tokens come out of max_tokens BEFORE
-      // the forced tool call - low effort keeps this cheap and inside the ceiling above.
+      // `auto`, never a forced call: Opus 5.5 answers a forced tool_choice with a 400 (answerWithTool).
+      tool_choice: { type: "auto" },
+      // The model always thinks adaptively, so reasoning tokens come out of max_tokens BEFORE
+      // the tool call - low effort keeps this cheap and inside the ceiling above.
       output_config: { effort: "low" },
       messages: [{ role: "user", content: user }],
     });

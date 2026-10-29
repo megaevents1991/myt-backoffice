@@ -2,7 +2,7 @@
  * Tour uploader (agent #3) - the plan a brief becomes, and every rule about trusting one.
  *
  * `UploaderPlan` (types/uploader.types.ts) is what staff confirm before anything is built. The
- * model fills it through one forced tool call (`PLAN_TOOL_SCHEMA`); `parsePlanInput` checks that
+ * model fills it through one tool call (`PLAN_TOOL_SCHEMA`); `parsePlanInput` checks that
  * answer field by field. A bad field never throws and never hides the rest: it is named in
  * `problems` and replaced by the empty plan's value, so the manual form opens with everything
  * that could be salvaged. Spec: docs/superpowers/specs/2026-10-21-tour-uploader-agent-design.md
@@ -45,11 +45,11 @@ export function planNonInstant(plan: UploaderPlan): boolean {
 }
 
 /**
- * The tool schema the model must answer with (a forced tool call). It mirrors `UploaderPlan`
+ * The tool schema the model must answer with (one requested tool call). It mirrors `UploaderPlan`
  * key for key - the selftest compares the two, so a field added to the type cannot be forgotten
  * here - plus `questions`, which is NOT part of the plan: what the model asks the person
  * (`parseQuestions`), shown on the plan card and answered through the steering box. Used as a
- * forced, non-strict tool call - the min/max/pattern fields are hints to the model;
+ * requested, non-strict tool call - the min/max/pattern fields are hints to the model;
  * `parsePlanInput` enforces them.
  */
 export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {

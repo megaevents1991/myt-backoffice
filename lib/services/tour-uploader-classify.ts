@@ -1,7 +1,7 @@
 // The tour uploader's two newer model calls (agent #3, lib/agents/tour-uploader.agent.ts), next to the
 // brief parse (lib/services/tour-uploader-parse.ts) and in exactly its discipline: `agentEnabled` else
 // `off`, the run's call budget, a timeout (the definition's; `classify_venue` its own CLASSIFY_TIMEOUT_MS,
-// ruling R28) with `maxRetries: 0`, a forced NON-strict tool
+// ruling R28) with `maxRetries: 0`, a requested NON-strict tool
 // call, `effort: "low"`, `stop_reason === "max_tokens"` is a failure, every call that got an answer is
 // audited as `agent.call`, and nothing here throws - every failure is a typed outcome the action turns
 // into "fill it in by hand".
@@ -25,7 +25,7 @@
 // Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md section 8.
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  agentEnabled, agentModel, anthropicKey, callCostUsd, loadActiveTaughtRules, loadAgentLessons, memoryBlock, takeBudget,
+  agentEnabled, agentModel, anthropicKey, answerWithTool, callCostUsd, loadActiveTaughtRules, loadAgentLessons, memoryBlock, takeBudget,
   TOUR_UPLOADER_AGENT, type AgentBudget,
 } from "@/lib/agents";
 import { CLASSIFY_LESSON_SOURCES, NAMES_LESSON_SOURCES } from "@/lib/agents/tour-uploader.agent";
@@ -38,7 +38,7 @@ import type { SubjectKind } from "@/types/uploader.types";
 
 const CLASSIFY_TOOL_NAME = "classify_venue";
 const NAMES_TOOL_NAME = "name_teams";
-/** 80 rows of one short Hebrew label, plus the adaptive reasoning that comes out of the budget before the forced tool call. */
+/** 80 rows of one short Hebrew label, plus the adaptive reasoning that comes out of the budget before the tool call. */
 export const CLASSIFY_MAX_TOKENS = 6_000;
 /** A few dozen name pairs. */
 export const NAMES_MAX_TOKENS = 2_000;
@@ -69,7 +69,7 @@ export const userFrom = (blocks: string[][], def: AgentDefinition, lessons: stri
 };
 
 /**
- * One audited, budgeted model call with a forced tool. Off, nothing to ask, no budget left, a timeout or
+ * One audited, budgeted model call that asks for one tool. Off, nothing to ask, no budget left, a timeout or
  * any thrown error -> a `Failure`, never a throw. A call that got an answer back is audited as `agent.call`
  * (cost, tokens, which call, who asked) whatever becomes of the answer - the AI Factory sums the month's
  * spend from those rows and the per-person cap counts them. `nothingToAsk` is checked after the switch and
@@ -106,10 +106,11 @@ export async function askAgent(
     const res = await client.messages.create({
       model,
       max_tokens: spec.maxTokens,
-      system,
+      system: `${system}\n\n${answerWithTool(spec.tool.name)}`,
       tools: [spec.tool],
-      tool_choice: { type: "tool", name: spec.tool.name },
-      // Opus 5 thinks adaptively by default, so reasoning tokens come out of max_tokens BEFORE the forced tool call.
+      // `auto`, never a forced call: Opus 5.5 answers a forced tool_choice with a 400 (answerWithTool).
+      tool_choice: { type: "auto" },
+      // The model always thinks adaptively, so reasoning tokens come out of max_tokens BEFORE the tool call.
       output_config: { effort: "low" },
       messages: [{ role: "user", content: user }],
     });

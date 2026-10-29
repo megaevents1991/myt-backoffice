@@ -5,7 +5,7 @@
 //
 // The discipline of the brief parse and the two round-1 calls, through the same `askAgent` (lib/services/
 // tour-uploader-classify.ts): `agentEnabled` else `off`, the run's call budget, the agent's timeout (20 s)
-// with `maxRetries: 0`, a forced NON-strict tool call, `stop_reason === "max_tokens"` is a failure, a call
+// with `maxRetries: 0`, a requested NON-strict tool call (`answerWithTool`), `stop_reason === "max_tokens"` is a failure, a call
 // that got an answer is audited as `agent.call` (cost, tokens, `user_id` - the per-person cap counts those
 // rows), and nothing here throws - every failure is a typed outcome the action turns into "fill it in by hand".
 //
@@ -26,7 +26,7 @@ import { LOCATION_ALIAS_MAX, LOCATION_NAME_MAX, parseLocationProposal, type Loca
 import type { SubjectKind } from "@/types/uploader.types";
 
 const TOOL_NAME = "propose_location";
-/** A handful of short fields, plus the adaptive reasoning that comes out of the budget before the forced tool call. */
+/** A handful of short fields, plus the adaptive reasoning that comes out of the budget before the tool call. */
 export const LOCATION_MAX_TOKENS = 2_000;
 /** How many aliases the model is asked for (the form keeps `LOCATION_ALIASES_MAX`, the show's own spelling among them). */
 export const LOCATION_ALIASES_ASKED = 5;
