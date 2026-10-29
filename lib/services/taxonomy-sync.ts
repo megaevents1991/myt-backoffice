@@ -1,13 +1,15 @@
 import { supabase } from "@/lib/supabase-server";
 import { slugify } from "@/lib/slug";
-import { applyTagRules } from "@/lib/services/auto-tagger";
+import { applyTagRules, ruleText } from "@/lib/services/auto-tagger";
 
 /**
  * Templates → taxonomy sync. Creating an artist / football-team CMS card also
  * creates its taxonomy trio (Dor, 2026-08-13):
  *
  *   1. an `event_tags` row (type artist/team) - the feed + filter key
- *   2. a `tag_rules` row (event name contains the English name → the tag)
+ *   2. `tag_rules` rows (event name contains the English name → the tag, and
+ *      the Hebrew name too - a supplier's English spelling drifts: "Atlético
+ *      de Madrid" never contained the rule's "Atletico Madrid")
  *   3. a leaf category under the אומנים / הקבוצות שלנו hub, composed of it
  *
  * then runs the auto-tagger so existing events pick the tag up immediately.
@@ -21,6 +23,36 @@ import { applyTagRules } from "@/lib/services/auto-tagger";
 const tbl = (t: string) => (supabase as any).from(t);
 
 const HUB_SLUG = { artist: "artists", team: "teams" } as const;
+
+/** Letters (spaces aside) a Hebrew name needs before it becomes a rule - a
+ *  three-letter name ("אדל") is a substring of too many other words. */
+const HEBREW_RULE_MIN_LETTERS = 4;
+
+export function hebrewRuleWorthy(name: string): boolean {
+  return (
+    /[\u05d0-\u05ea]/.test(name) &&
+    ruleText(name).replace(/\s/g, "").length >= HEBREW_RULE_MIN_LETTERS
+  );
+}
+
+/** One `name` rule per (tag, pattern) - idempotent. */
+async function ensureNameRule(tagId: number, pattern: string): Promise<void> {
+  const { data: existingRule, error: ruleFindErr } = await tbl("tag_rules")
+    .select("id")
+    .eq("tag_id", tagId)
+    .eq("field", "name")
+    .eq("pattern", pattern)
+    .maybeSingle();
+  if (ruleFindErr) throw ruleFindErr;
+  if (existingRule) return;
+  const { error } = await tbl("tag_rules").insert({
+    tag_id: tagId,
+    field: "name",
+    pattern,
+    is_active: true,
+  });
+  if (error) throw error;
+}
 
 export async function ensurePersonTaxonomy(
   input: {
@@ -115,23 +147,10 @@ export async function ensurePersonTaxonomy(
     tagId = data.id;
   }
 
-  // 2. Rule: event name contains the English name → the tag.
-  const { data: existingRule, error: ruleFindErr } = await tbl("tag_rules")
-    .select("id")
-    .eq("tag_id", tagId)
-    .eq("field", "name")
-    .eq("pattern", nameEnglish)
-    .maybeSingle();
-  if (ruleFindErr) throw ruleFindErr;
-  if (!existingRule) {
-    const { error } = await tbl("tag_rules").insert({
-      tag_id: tagId,
-      field: "name",
-      pattern: nameEnglish,
-      is_active: true,
-    });
-    if (error) throw error;
-  }
+  // 2. Rules: event name contains the English name → the tag; the Hebrew
+  // name too, unless it is too short to be told apart inside another word.
+  await ensureNameRule(tagId, nameEnglish);
+  if (hebrewRuleWorthy(name)) await ensureNameRule(tagId, name);
 
   // 3. Leaf category under the hub, composed of the tag.
   let categoryId: number | undefined;

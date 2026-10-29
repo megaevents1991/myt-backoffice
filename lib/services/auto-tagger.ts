@@ -6,7 +6,8 @@ import type { TagRuleField, TagType } from "@/types/taxonomy.types";
  * and never removes any, so manual curation is never undone.
  *
  * Matching:
- *  - field "name": case-insensitive contains vs `${name} ${name_english}`
+ *  - field "name": contains vs `${name} ${name_english}`, both sides through
+ *    `ruleText` - case, accents and hyphens never decide a match
  *  - field "city": case-insensitive equality vs location->>'city_iata'
  *
  * Implication pass: an event carrying (or gaining) a league/team tag also
@@ -32,18 +33,40 @@ export type MatchableEvent = {
   location: { city_iata?: string | null } | null;
 };
 
+/**
+ * A name rule and an event name compare in this form: lower case, accents
+ * dropped, hyphens and dashes as spaces, spaces collapsed. Supplier spellings
+ * drift ("Atlético" vs a rule's "Atletico", "Paris Saint-Germain" vs "Paris
+ * Saint Germain", "Andre Rieu" vs "André Rieu") and a plain `includes` left
+ * those events untagged - off their team / artist / league pages. Hebrew is
+ * untouched (its marks are outside the Latin combining range).
+ */
+export function ruleText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[-\u2010-\u2015_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function matchRuleTags(
   event: MatchableEvent,
   rules: LoadedRule[],
 ): number[] {
-  const hay = `${event.name ?? ""} ${event.name_english ?? ""}`.toLowerCase();
+  const hay = ruleText(`${event.name ?? ""} ${event.name_english ?? ""}`);
   const iata = (event.location?.city_iata ?? "").trim().toLowerCase();
   const out = new Set<number>();
   for (const r of rules) {
-    const p = r.pattern.trim().toLowerCase();
-    if (!p) continue;
-    if (r.field === "name" && hay.includes(p)) out.add(r.tag_id);
-    if (r.field === "city" && iata && iata === p) out.add(r.tag_id);
+    if (r.field === "name") {
+      const p = ruleText(r.pattern);
+      if (p && hay.includes(p)) out.add(r.tag_id);
+    }
+    if (r.field === "city") {
+      const p = r.pattern.trim().toLowerCase();
+      if (p && iata && iata === p) out.add(r.tag_id);
+    }
   }
   return [...out];
 }
