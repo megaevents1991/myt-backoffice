@@ -592,6 +592,8 @@ export async function createTask(input: {
         row_id: sourceRef.row_id,
         label: sourceRef.label,
         url: sourceRef.url,
+        // the uploader's page task names the need it answers (a short snake_case code, nothing else travels)
+        ...(typeof sourceRef.code === "string" && /^[a-z_]{1,40}$/.test(sourceRef.code) ? { code: sourceRef.code } : {}),
       }
     : null;
 

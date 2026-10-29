@@ -14,7 +14,10 @@
  * "לבדיקה: <categories>" line - but it feeds the venue row: the hall still has categories to review.
  *
  * The subject's page row and the fix rows also carry `task` - what "פתח משימה" opens the shared task dialog with
- * (round "אלון 2", spec 5).
+ * (round "אלון 2", spec 5): since Alon round 3 (note 1) the task is WRITTEN (`steps` - what to do, per warning code),
+ * and once a task for that page and that need exists (`PageTaskRef`, not cancelled - open or done) the row leaves the
+ * panel and its code leaves the cards (`handedOffCodes`): the work moved to the marketing board, it is no longer the
+ * run's.
  *
  * Selftest: scripts/tour-uploader-selftest.ts (sections "Round אלון 1, Task 4" and "Round אלון 2, Task 8").
  * Spec: docs/superpowers/specs/2026-10-22-uploader-alon-round-1-design.md (5.1);
@@ -69,18 +72,26 @@ export function isRunLevel(item: UploaderItem, w: Warning): boolean {
   return !NEEDS_DRAWING.has(w.code) || drawingOf(item) !== null;
 }
 
-/** The warnings the card still prints, and how many it folded into the "N הערות ברמת הריצה" line. */
-export function cardWarnings(item: UploaderItem): { card: Warning[]; folded: number } {
-  const card = item.warnings.filter((w) => !isRunLevel(item, w));
-  return { card, folded: item.warnings.length - card.length };
+/**
+ * The warnings the card still prints, and how many it folded into the "N הערות ברמת הריצה" line. A code in `handedOff`
+ * (a page task already exists for it - `handedOffCodes`) is neither printed nor folded.
+ */
+export function cardWarnings(item: UploaderItem, handedOff: ReadonlySet<string> = NONE): { card: Warning[]; folded: number } {
+  const kept = item.warnings.filter((w) => !handedOff.has(w.code));
+  const card = kept.filter((w) => !isRunLevel(item, w));
+  return { card, folded: kept.length - card.length };
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 // ---- the panel's rows -----------------------------------------------------------------------------------
 
 /**
  * What the "פתח משימה" button opens the shared task dialog with (round "אלון 2", spec 5): the title, and the
  * `source_ref` the task is linked back by (`kind: "uploader_page"` is added by the button). `row_id` = the
- * page row's id when it exists, else the subject's English name; `url` = where the fix lives.
+ * page row's id when it exists, else the subject's English name; `url` = where the fix lives; `code` = the warning
+ * it answers (kept in `source_ref`, so a later run knows the need is handed off); `steps` = what to do, in Hebrew
+ * (Alon round 3: "צריך כבר לכתוב מה המשימה").
  */
 export type PanelTask = {
   title: string;
@@ -88,7 +99,32 @@ export type PanelTask = {
   row_id: number | string;
   label: string;
   url: string;
+  code: string;
+  steps: string;
 };
+
+/**
+ * An `uploader_page` task already on the board (`getRun`'s `pageTasks`): not deleted, not cancelled - open or done
+ * (the item warnings are frozen at build time, so a done task must not bring a stale row back). `code` is null on a
+ * task made before Alon round 3 (it is then matched by its title); `row_id` is text.
+ */
+export type PageTaskRef = { table: string; row_id: string; label: string; code: string | null; title: string };
+
+const plain = (s: string): string => s.trim().toLowerCase();
+
+/**
+ * Does an existing task already answer this row's task? Same page table, same need (the code; a task with no code:
+ * the same title) and the same page - its row id, or its name (the row id appears once the names dialog creates the
+ * page, after the task was opened by name).
+ */
+export function coveredBy(task: PanelTask, refs: readonly PageTaskRef[]): boolean {
+  return refs.some(
+    (r) =>
+      r.table === task.table &&
+      (r.code !== null ? r.code === task.code : plain(r.title) === plain(task.title)) &&
+      (r.row_id === String(task.row_id) || (plain(r.label) !== "" && plain(r.label) === plain(task.label))),
+  );
+}
 
 export type PanelRow = {
   kind: "venue" | "names" | "subject" | "fix" | "info";
@@ -138,17 +174,46 @@ function templateUrl(table: PanelTask["table"], rowId: number | null): string {
   return table === "artists" ? `/templates/artists/${rowId}/edit` : `/templates/football/${rowId}/edit`;
 }
 
+/** What to do, per warning code (Alon round 3, note 1) - the first lines of the task's description. `name` = the page's English name. */
+export function taskSteps(code: string, name: string): string {
+  const who = name === "" ? "" : ` ${iso(name)}`;
+  switch (code) {
+    case "no_team_page":
+      return `לבנות את עמוד הקבוצה${who} באתר: ב-Templates ← קבוצות ליצור את הקבוצה (או להשלים את העמוד הכבוי, אם כבר נוצר מלוח ההעלאה) עם שם בעברית, סמל, תמונה ראשית וביוגרפיה - ולהפעיל אותו (Active).`;
+    case "no_artist_page":
+      return `לבנות את עמוד האמן${who} באתר: ב-Templates ← אמנים ליצור את האמן (או להשלים את העמוד הכבוי, אם כבר נוצר מלוח ההעלאה) עם שם בעברית, תמונה, גזרה וביוגרפיה - ולהפעיל אותו (Active).`;
+    case "no_crest":
+      return `להעלות סמל לקבוצה${who} (PNG עם רקע שקוף) בעמוד הקבוצה ב-Templates.`;
+    case "no_bio":
+      return `לכתוב ביוגרפיה בעברית${name === "" ? "" : ` ל-${iso(name)}`} בעמוד שלו ב-Templates.`;
+    case "no_cutout":
+      return `להעלות גזרה (תמונה בלי רקע) לאמן${who}: בעמוד האמן ב-Templates, "Upload + cut out".`;
+    case "no_event_gallery":
+      return `להעלות תמונות לגלריית האירועים של${who === "" ? " האמן" : who}: בעמוד האמן ב-Templates, "Upload + cut out" (התמונות מתחלפות על כרטיסי האירועים באתר ובמודעות).`;
+    default:
+      return "";
+  }
+}
+
 /**
  * The task for a page row: "<what is missing>: <the subject>". Named by the page row's id when there is one,
  * else by the subject's English name - the one thing that says which page it is. `url` = the fix's own link
  * (a fix row's warning carried it), else the row's Templates page. Undefined when the subject has neither a
  * name nor a row.
  */
-function pageTask(base: string, table: PanelTask["table"], subject: PanelSubject, url?: string): PanelTask | undefined {
+function pageTask(base: string, code: string, table: PanelTask["table"], subject: PanelSubject, url?: string): PanelTask | undefined {
   const name = subject.name_en.trim();
   const rowId = isRowId(subject.row_id) ? subject.row_id : null;
   if (name === "" && rowId === null) return undefined;
-  return { title: name === "" ? base : `${base}: ${name}`, table, row_id: rowId ?? name, label: name, url: url ?? templateUrl(table, rowId) };
+  return {
+    title: name === "" ? base : `${base}: ${name}`,
+    table,
+    row_id: rowId ?? name,
+    label: name,
+    url: url ?? templateUrl(table, rowId),
+    code,
+    steps: taskSteps(code, name),
+  };
 }
 
 /** A counted item with the run-level warnings it carries (possibly none - it may carry only an `unzoned_review`). */
@@ -252,7 +317,7 @@ function subjectRow(carriers: Carrier[], subject: PanelSubject): PanelRow[] {
   if (group.length === 0) return [];
   const isTeam = group.some((c) => has(c, "no_team_page"));
   const name = subject.name_en.trim();
-  const task = pageTask(`לבנות עמוד ${isTeam ? "קבוצה" : "אמן"}`, isTeam ? "football_teams" : "artists", subject);
+  const task = pageTask(`לבנות עמוד ${isTeam ? "קבוצה" : "אמן"}`, isTeam ? "no_team_page" : "no_artist_page", isTeam ? "football_teams" : "artists", subject);
   return [
     {
       kind: "subject",
@@ -286,7 +351,7 @@ function fixRows(carriers: Carrier[], subject: PanelSubject): PanelRow[] {
     const group = carriers.filter((c) => has(c, code));
     if (group.length === 0) continue;
     const fix_url = group.flatMap((c) => c.run.filter((w) => w.code === code)).find((w) => !!w.fix_url)?.fix_url;
-    const task = pageTask(text, fixTable(code, subject.kind), subject, fix_url);
+    const task = pageTask(text, code, fixTable(code, subject.kind), subject, fix_url);
     rows.push({
       kind: "fix",
       key: `fix:${code}`,
@@ -306,26 +371,46 @@ function infoRow(carriers: Carrier[]): PanelRow[] {
   return [{ kind: "info", key: "info:no_category_twin", text: "אין עמוד קטגוריה (/c/) תאום - לידיעה", count: group.length, action: null }];
 }
 
+const carriersOf = (items: UploaderItem[]): Carrier[] =>
+  items
+    .filter((item) => COUNTED_STATUSES.includes(item.status))
+    .map((item): Carrier => ({ item, run: item.warnings.filter((w) => isRunLevel(item, w)) }));
+
+/**
+ * The warning codes whose page task already exists (`coveredBy` over `pageTasks`): their panel rows leave and the
+ * cards drop them (`cardWarnings`). Alon round 3, note 1: "להעלים את זה מהלוח כי זה לא ברמת הריצה יותר".
+ */
+export function handedOffCodes(items: UploaderItem[], subject: PanelSubject, pageTasks: readonly PageTaskRef[]): Set<string> {
+  const out = new Set<string>();
+  if (pageTasks.length === 0) return out;
+  const carriers = carriersOf(items);
+  for (const row of [...subjectRow(carriers, subject), ...fixRows(carriers, subject)]) {
+    if (row.task && coveredBy(row.task, pageTasks)) out.add(row.task.code);
+  }
+  return out;
+}
+
 /**
  * The panel's rows for a run, in the spec's order: a row per hall (venue), the Hebrew names, the
  * subject's page, the fixes (crest, bio, cut-out, gallery), the information line. `fixedByHand` and
  * `missing` are `getRun`'s (`RunBoard.fixedByHand` / `missingNames`); `subject` names the page rows
- * (`row_id` = `RunBoard.subjectRowId`) and the task each of them offers. Empty = no panel.
+ * (`row_id` = `RunBoard.subjectRowId`) and the task each of them offers; a page or fix row whose task
+ * already exists (`pageTasks`, `RunBoard.pageTasks`) is left out. Empty = no panel.
  */
 export function runLevelRows(
   items: UploaderItem[],
   fixedByHand: Record<string, boolean>,
   subject: PanelSubject,
   missing: string[],
+  pageTasks: readonly PageTaskRef[] = [],
 ): PanelRow[] {
-  const carriers = items
-    .filter((item) => COUNTED_STATUSES.includes(item.status))
-    .map((item): Carrier => ({ item, run: item.warnings.filter((w) => isRunLevel(item, w)) }));
+  const carriers = carriersOf(items);
+  const open = (row: PanelRow): boolean => !(row.task && coveredBy(row.task, pageTasks));
   return [
     ...venueRows(carriers, fixedByHand),
     ...namesRow(carriers, missing),
-    ...subjectRow(carriers, subject),
-    ...fixRows(carriers, subject),
+    ...subjectRow(carriers, subject).filter(open),
+    ...fixRows(carriers, subject).filter(open),
     ...infoRow(carriers),
   ];
 }

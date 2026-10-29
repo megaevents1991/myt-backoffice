@@ -23,6 +23,8 @@ import {
   showLabel,
   TASK_FROM_RUN,
   TASK_ORIGIN,
+  TASK_PAGE_LINE,
+  TASK_WAITING,
 } from "./board-words";
 import { ACTION } from "./card-shell";
 import type { PanelVenue } from "./classify-dialog";
@@ -35,7 +37,9 @@ import type { PanelVenue } from "./classify-dialog";
 // dialogs remove them and the board reads the run again); the panel leaves with its last row.
 // `id="run-panel"` is where a card's folded line ("N הערות ברמת הריצה - בפאנל למעלה") scrolls to.
 // The subject's page row and every fix row also carry `row.task` (round "אלון 2", spec 5): "פתח משימה" opens the
-// shared TaskEditor (a task for the missing page / picture) prefilled from it, on the marketing board.
+// shared TaskEditor (a task for the missing page / picture) prefilled from it, on the marketing board - WRITTEN (what to
+// do, how many shows wait, the page) and on whoever got the last such task (Alon round 3, note 1). Once it is saved the
+// board reads the run again and the row leaves (`runLevelRows` drops a row a task already covers).
 
 const ICON: Record<PanelRow["kind"], typeof MapPinned> = {
   venue: MapPinned,
@@ -52,9 +56,15 @@ export function RunPanel({
   onClassify,
   onLearn,
   onNames,
+  assignee,
+  onTaskSaved,
 }: {
   /** The run - a task's description links back to its board. */
   runId: string;
+  /** Who a new page task starts on (`RunBoard.pageTaskAssignee`); null = the dialog's usual default. */
+  assignee: string | null;
+  /** A page task was saved: the board reads the run again (its row leaves the panel). */
+  onTaskSaved: () => void;
   /** `runLevelRows(board.items, board.fixedByHand, subject, board.missingNames)`; the board renders the panel only when it is not empty. */
   rows: PanelRow[];
   /** The run's items - names the other events a person arranged at the same hall. */
@@ -67,26 +77,36 @@ export function RunPanel({
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const byId = new Map(items.map((i) => [i.id, i]));
 
-  /** The shared task dialog, prefilled: a creative-gap task on the marketing board that links back to this run and to where the fix lives. */
-  function openTask(task: PanelTask) {
+  /**
+   * The shared task dialog, prefilled: a creative-gap task on the marketing board, written - what to do, how many shows
+   * of the run wait for it, the page and the run - on whoever got the last such task.
+   */
+  function openTask(task: PanelTask, waiting: number) {
+    const origin = window.location.origin;
+    const lines = [
+      ...(task.steps ? [task.steps, ""] : []),
+      `${TASK_WAITING(waiting)}. ${TASK_FROM_RUN}: ${origin}/uploader/${runId}`,
+      `${TASK_PAGE_LINE}: ${task.url.startsWith("/") ? `${origin}${task.url}` : task.url}`,
+    ];
     setEditor({
       open: true,
       task: null,
       defaults: { board: "marketing" },
       prefill: {
         title: task.title,
-        description: `${TASK_FROM_RUN}: ${window.location.origin}/uploader/${runId}`,
+        description: lines.join("\n"),
         priority: "medium",
         source: "creative_gap",
-        source_ref: { kind: "uploader_page", table: task.table, row_id: task.row_id, label: task.label, url: task.url },
+        source_ref: { kind: "uploader_page", table: task.table, row_id: task.row_id, label: task.label, url: task.url, code: task.code },
         origin: TASK_ORIGIN,
+        assignee_id: assignee,
       },
     });
   }
 
-  function taskButton(task: PanelTask) {
+  function taskButton(task: PanelTask, waiting: number) {
     return (
-      <Button type="button" variant="outline" size="sm" onClick={() => openTask(task)} className={ACTION}>
+      <Button type="button" variant="outline" size="sm" onClick={() => openTask(task, waiting)} className={ACTION}>
         <ListTodo aria-hidden />
         {BTN_OPEN_TASK}
       </Button>
@@ -213,7 +233,7 @@ export function RunPanel({
                 {(act || row.task) && (
                   <span className="flex flex-wrap items-center gap-1.5">
                     {act}
-                    {row.task && taskButton(row.task)}
+                    {row.task && taskButton(row.task, row.count)}
                   </span>
                 )}
               </li>
@@ -236,7 +256,10 @@ export function RunPanel({
         state={editor}
         isManager
         onClose={() => setEditor({ open: false, task: null })}
-        onSaved={() => setEditor({ open: false, task: null })}
+        onSaved={() => {
+          setEditor({ open: false, task: null });
+          onTaskSaved();
+        }}
       />
     </section>
   );

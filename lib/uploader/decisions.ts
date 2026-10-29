@@ -146,6 +146,8 @@ function stable(v: unknown): string {
 /** The value of one whitelisted field; `undefined` = the object does not carry it at all. */
 function fieldOf(o: Record<string, unknown>, field: (typeof EDIT_WHITELIST)[number]): unknown {
   if (field !== "tickets_count") return o[field];
+  // a payload a learn rebased keeps the count the uploader wrote (edit-changes.ts `withBuiltCount`); a row never has it
+  if (typeof o.built_tickets_count === "number") return o.built_tickets_count;
   if (o.tickets_and_rates === undefined) return undefined;
   return Array.isArray(o.tickets_and_rates) ? o.tickets_and_rates.length : 0;
 }

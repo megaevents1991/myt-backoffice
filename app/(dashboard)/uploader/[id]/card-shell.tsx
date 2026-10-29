@@ -243,9 +243,11 @@ function goToRunPanel() {
  * `fold` (the run panel is on screen, spec 5.1): the run-level warnings (`cardWarnings`) leave the card
  * for one grey line that jumps to the panel - a view only, the stored warnings are untouched.
  */
-export function Notices({ item, fold = false }: { item: UploaderItem; fold?: boolean }) {
+export function Notices({ item, fold = false, handedOff }: { item: UploaderItem; fold?: boolean; handedOff?: ReadonlySet<string> }) {
   const offer = farVenueTarget(item) !== null;
-  const { card, folded } = fold ? cardWarnings({ ...item, warnings: item.warnings ?? [] }) : { card: item.warnings ?? [], folded: 0 };
+  // A code a page task already answers (Alon round 3) is the marketing board's now: never printed, never folded.
+  const own = handedOff ? (item.warnings ?? []).filter((w) => !handedOff.has(w.code)) : (item.warnings ?? []);
+  const { card, folded } = fold ? cardWarnings({ ...item, warnings: own }) : { card: own, folded: 0 };
   const warnings = card.filter((w) => !(offer && w.code === "far_venue"));
   const blockers = item.blockers ?? [];
   if (warnings.length === 0 && blockers.length === 0 && folded === 0) return null;

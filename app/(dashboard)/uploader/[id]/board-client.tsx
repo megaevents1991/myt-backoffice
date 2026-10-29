@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useUrlState } from "@/hooks/use-view-state";
 import { answerQuestion, approveAll, approveItem, rebuildTwoCity, rejectItem, resumeRun, retryItem, stopRun } from "@/lib/actions/uploader-actions";
 import type { RunBoard } from "@/lib/uploader/action-types";
-import { runLevelRows } from "@/lib/uploader/run-panel";
+import { handedOffCodes, runLevelRows } from "@/lib/uploader/run-panel";
 import { applyRuleTo, canResume, runRuleOf } from "@/lib/uploader/run-rules";
 import type { UploaderItem } from "@/types/uploader.types";
 import { actionErrorText } from "../copy";
@@ -57,12 +57,6 @@ type RunDialog =
   | { kind: "description" }
   | { kind: "location"; itemId: string }
   | null;
-
-/** The show's TixStock drawing - what makes two shows the same hall for the panel and the learn button. */
-const drawingOf = (item: UploaderItem): string | null => {
-  const url = item.show.suppliers?.tixstock?.venue_map_url;
-  return typeof url === "string" && url.trim() !== "" ? url : null;
-};
 
 // The review board of one run (spec §5.3, §11, §13; mockup B): the header, the filter pills, a card
 // per show, and the sticky bar - and the handlers behind every card's buttons. Reading the run and
@@ -329,41 +323,26 @@ export function BoardClient({
   // ---- round "אלון 1": the run panel, the learn button, a rule for the run --------------------------------
 
   const fixedByHand = useMemo(() => board?.fixedByHand ?? {}, [board]);
-  /** The panel's rows (pure, lib/uploader/run-panel.ts); empty = no panel, and the cards keep every warning. */
+  const subject = useMemo(
+    () => (board ? { kind: board.run.plan.subject.kind, name_en: board.run.plan.subject.name_en, row_id: board.subjectRowId ?? null } : null),
+    [board],
+  );
+  /** The panel's rows (pure, lib/uploader/run-panel.ts); empty = no panel, and the cards keep every warning. A page / fix row a task already covers is left out (Alon round 3). */
   const panelRows = useMemo(
-    () =>
-      board
-        ? runLevelRows(
-            items,
-            fixedByHand,
-            { kind: board.run.plan.subject.kind, name_en: board.run.plan.subject.name_en, row_id: board.subjectRowId ?? null },
-            board.missingNames ?? [],
-          )
-        : [],
-    [board, items, fixedByHand],
+    () => (board && subject ? runLevelRows(items, fixedByHand, subject, board.missingNames ?? [], board.pageTasks ?? []) : []),
+    [board, subject, items, fixedByHand],
   );
   const panelShown = panelRows.length > 0;
+  /** The warning codes whose page task already exists - the cards drop them too (neither printed nor folded). */
+  const handedOff = useMemo(() => (board && subject ? handedOffCodes(items, subject, board.pageTasks ?? []) : new Set<string>()), [board, subject, items]);
 
   /**
-   * drawing url -> the ready / approved shows of that hall with an event - every show `learnFromEvent`
-   * rewrites, zoned or not (Alon 25.10: once "סווג כרטיסים" had zoned the hall, counting only the unzoned
-   * ones hid the learn button for good).
+   * The ready / approved shows of the run with an event - what "למדו והחילו" may carry an edit to (the hall's shows
+   * for the venue kind, any show for a ticket description - Alon round 3; before it only the hall counted, and a
+   * LiveTickets-only show had no learn at all).
    */
-  const builtByDrawing = useMemo(() => {
-    const out = new Map<string, Set<string>>();
-    for (const i of items) {
-      const url = drawingOf(i);
-      if (url === null || i.event_id === null || (i.status !== "ready" && i.status !== "approved")) continue;
-      out.set(url, (out.get(url) ?? new Set<string>()).add(i.id));
-    }
-    return out;
-  }, [items]);
-  /** The OTHER shows of this item's hall that "learn from this event" would rewrite. */
-  const hallmates = (item: UploaderItem): number => {
-    const url = drawingOf(item);
-    const set = url === null ? undefined : builtByDrawing.get(url);
-    return set ? set.size - (set.has(item.id) ? 1 : 0) : 0;
-  };
+  const built = useMemo(() => new Set(items.filter((i) => i.event_id !== null && (i.status === "ready" || i.status === "approved")).map((i) => i.id)), [items]);
+  const learnTargets = (item: UploaderItem): number => built.size - (built.has(item.id) ? 1 : 0);
 
   /** question item id -> how many OTHER open questions its picked answer's rule would answer (spec 5.4). */
   const similar = useMemo(() => {
@@ -479,6 +458,9 @@ export function BoardClient({
             onClassify={(venue) => setDialog({ kind: "classify", venue })}
             onLearn={(itemId) => setDialog({ kind: "learn", itemId })}
             onNames={() => setDialog({ kind: "names" })}
+            // the remembered assignee only while still on the staff list (else the dialog would show an empty pick)
+            assignee={board.pageTaskAssignee && people.has(board.pageTaskAssignee) ? board.pageTaskAssignee : null}
+            onTaskSaved={() => void refresh()}
           />
         )}
 
@@ -530,8 +512,9 @@ export function BoardClient({
                       art={board.subjectArt}
                       subjectNameEn={board.run.plan.subject.name_en}
                       edited={board.edited[item.id] === true}
-                      fixedByHand={fixedByHand[item.id] === true}
-                      hallmates={hallmates(item)}
+                      fixedByHand={(board.editKinds?.[item.id] ?? []).length > 0}
+                      learnTargets={learnTargets(item)}
+                      handedOff={handedOff}
                       panelShown={panelShown}
                       people={people}
                       busy={busy[item.id] ?? null}

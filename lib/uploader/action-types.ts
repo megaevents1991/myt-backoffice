@@ -5,7 +5,9 @@
  */
 import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
+import type { DescriptionPlan, EditKind } from "@/lib/uploader/edit-changes";
 import type { LocationInput } from "@/lib/uploader/location";
+import type { PageTaskRef } from "@/lib/uploader/run-panel";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
 import type { LinkTeam, TeamRow } from "@/lib/uploader/team-names";
 import type { ItemStatus, UploaderItem, UploaderPlan, UploaderRun } from "@/types/uploader.types";
@@ -89,6 +91,16 @@ export type RunBoard = {
   missingNames: string[];
   /** The id of the subject's page row (`football_teams` / `artists`) the run's cached subject found; null = none yet, or no readable cache. The panel's "פתח משימה" names its task by it. */
   subjectRowId: number | null;
+  /**
+   * item id -> the kinds of change a person made in the editor since the item's baseline (Alon round 3, note 2b):
+   * `venue` (= `fixedByHand`) and / or `descriptions` (a ticket description cleared or set). The card's learn step 1
+   * reads "✓" when any is there. Absent / empty = nothing to learn.
+   */
+  editKinds: Record<string, EditKind[]>;
+  /** The `uploader_page` tasks already opened, not cancelled (Alon round 3, note 1): a panel row they cover leaves. [] when the read failed. */
+  pageTasks: PageTaskRef[];
+  /** The assignee of the newest `uploader_page` task - who "פתח משימה" starts on; null = none yet. */
+  pageTaskAssignee: string | null;
 };
 
 /** `getRun`'s answer when the run exists: the board, or `{ run: null, kind: "db_error" }` when a read failed (`getRun` answers null only for "no such run"). */
@@ -145,9 +157,37 @@ export type ProposeResult =
   | { ok: false; kind: "bad_input" | "not_found" | "db_error" | "svg_failed"; message?: string };
 
 /** `learnPreview`: what the "learn from this event" confirm lists before it applies. */
+/**
+ * `learnPreview` (Alon round 3): the HALL kind - what the venue template learns and how many other shows of the hall
+ * it rewrites, `{ ok: false }` when it cannot be learned (no template, the drawing unreadable), null = no hall change;
+ * the DESCRIPTIONS kind - the plan and how many tickets on how many other shows it changes, null = none; `others` =
+ * the run's other built shows.
+ */
 export type LearnPreview =
-  | { ok: true; learned: { zones: number; newZones: number; dropped: string[]; descriptions: number; sections: number }; siblings: number }
+  | {
+      ok: true;
+      venue:
+        | { ok: true; learned: { zones: number; newZones: number; dropped: string[]; descriptions: number; sections: number }; siblings: number }
+        | { ok: false; kind: string; message?: string }
+        | null;
+      descriptions: { plan: DescriptionPlan; events: number; tickets: number } | null;
+      others: number;
+    }
   | { ok: false; kind: string };
+
+/**
+ * `learnFromEvent` (Alon round 3): `venue` = the hall part's answer (`classifyVenue`'s shape; null = not applied),
+ * `descriptions` = what the descriptions pass wrote (`cut` = shows the time budget left - a second "החל" finishes them;
+ * `failed` = writes that did not land), `note` = the note for the AI (null = none sent).
+ */
+export type LearnResult =
+  | {
+      ok: true;
+      venue: ClassifyResult | null;
+      descriptions: { events: number; tickets: number; cut: number; failed: number } | null;
+      note: "saved" | "failed" | null;
+    }
+  | { ok: false; kind: string; message?: string };
 
 /**
  * `proposeTeamNames`: the names dialog's rows; `renamable` = the built shows a confirm gives a Hebrew name with

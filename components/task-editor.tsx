@@ -77,6 +77,8 @@ export interface TaskPrefill {
   source_ref: TaskSourceRef;
   /** Shown as a small note under the form ("From creative gap: Liverpool"). */
   origin: string;
+  /** Who the new task starts on (the uploader's page task: whoever got the last one); absent / null = the usual default. */
+  assignee_id?: string | null;
 }
 
 export interface TaskEditorState {
@@ -163,7 +165,7 @@ export function TaskEditor({
   const [priority, setPriority] = useState<TaskPriority>(
     task?.priority ?? prefill?.priority ?? "medium",
   );
-  const [assignee, setAssignee] = useState<string>(task ? (task.assignee_id ?? "unassigned") : ownDefault);
+  const [assignee, setAssignee] = useState<string>(task ? (task.assignee_id ?? "unassigned") : (prefill?.assignee_id ?? ownDefault));
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
   const { defaults } = state;
   const [board, setBoard] = useState<TaskBoard>(

@@ -337,8 +337,12 @@ export const BTN_NAMES = "תן שמות בעברית";
 export const BTN_OPEN_TEMPLATES = "פתח ב-Templates";
 /** The panel's page rows (the subject's page, a missing crest / bio / cut-out / gallery): opens the shared task dialog prefilled (round "אלון 2", spec 5). */
 export const BTN_OPEN_TASK = "פתח משימה";
-/** First line of the task's description - followed by the run's absolute board link. */
+/** The task's description, after its steps (Alon round 3, note 1): the run's absolute board link. */
 export const TASK_FROM_RUN = "מתוך ריצת העלאה";
+/** ... how many shows of the run wait for it. */
+export const TASK_WAITING = (n: number): string => (n === 1 ? "הופעה אחת בריצה מחכה לזה" : `${n} הופעות בריצה מחכות לזה`);
+/** ... and where the fix lives. */
+export const TASK_PAGE_LINE = "העמוד";
 /** The small note under the task form ("From ..."), the `origin` of the prefill. */
 export const TASK_ORIGIN = "מה-AI Uploader";
 /** Under a venue row with several events arranged by hand: the other ones, each offered as a source too. */
@@ -481,7 +485,36 @@ export const LEARN_LOCKED_LINE = "אחרי השמירה בעורך הכפתור 
 /** The one-line recipe under the panel's venue rows and in the classify dialog's footer. */
 export const LEARN_RECIPE = 'רוצים לסדר ידנית? סדרו אירוע אחד בעורך, חזרו ולחצו "למדו והחילו" בכרטיס שלו';
 export const LEARN_TITLE = "ללמוד מהאירוע הזה?";
-export const LEARN_DESCRIPTION = "תבנית האולם תתעדכן מהאירוע שסודר בעורך, ושאר ההופעות באולם בריצה ייכתבו לפיה. בלי AI. האירוע עצמו לא משתנה.";
+export const LEARN_DESCRIPTION = "מה שיניתם באירוע הזה בעורך מאז הלמידה האחרונה. סמנו מה להחיל על שאר ההופעות - בלי AI. האירוע עצמו לא משתנה.";
+// Alon round 3 (note 2b): the dialog lists each kind of change with a checkbox, and an optional note for the AI.
+export const LEARN_KIND_VENUE = "תבנית האולם";
+export const LEARN_KIND_VENUE_HINT = "זונים, קטגוריות שנפסלו, תיאורי TixStock וגושים מוחרגים - לשאר ההופעות באותו אולם";
+export const LEARN_VENUE_UNAVAILABLE = 'אי אפשר ללמוד את האולם מהאירוע הזה. אפשר לסווג אותו מהפאנל ("סווג כרטיסים"); השאר עדיין יוחל.';
+export const LEARN_KIND_DESCRIPTIONS = "תיאורי כרטיסי LiveTickets";
+export const LEARN_KIND_DESCRIPTIONS_HINT =
+  "מחיקה - בכל ההופעות בריצה; תיאור חדש - רק באותו אולם. כרטיס שמישהו כתב לו תיאור בעצמו לא נוגעים בו. תיאורי TixStock הולכים עם תבנית האולם.";
+export const LEARN_VENUE_PART_FAILED = "תבנית האולם לא נשמרה עד הסוף - לחצו שוב על \"החל\"";
+export const LEARN_CLEAR_ALL = (supplier: string): string => `כל התיאורים של ${supplier} נמחקו - יימחקו בכל ההופעות`;
+export const LEARN_CLEARED = "התיאור נמחק";
+export const LEARN_SET = "תיאור חדש";
+export const LEARN_DESC_REACH = (tickets: number, events: number): string =>
+  tickets === 0
+    ? "בשאר ההופעות אין כרטיס שעדיין מחזיק את התיאור המקורי - אין מה לשנות"
+    : `יחול על ${tickets === 1 ? "כרטיס אחד" : `${tickets} כרטיסים`} ב-${showsHe(events)}`;
+export const LEARN_MORE = (n: number): string => `ועוד ${n}`;
+export const LEARN_NOTHING = "לא מצאתי שינוי באירוע מאז הלמידה האחרונה - אפשר רק לכתוב הערה ל-AI.";
+export const LEARN_NOTE_LABEL = "הערה ל-AI (לא חובה)";
+export const LEARN_NOTE_HINT =
+  "נשמרת כחוק קבוע של ה-AI Uploader ונקראת בכל ריצה הבאה (פענוח הבריף, סיווג, שמות, מיקום). היא לא משנה אירועים בעצמה - את זה עושים הסימונים למעלה.";
+export const LEARN_NOTE_PLACEHOLDER = "למשל: בלאציו לא מביאים את התיאורים באנגלית של LiveTickets";
+export const LEARN_EVENT_DESCRIPTION_NOTE = 'תיאור האירוע עצמו? לכל ההופעות - דרך "תבנית תיאור" בראש הלוח.';
+export const LEARN_DESC_DONE = (tickets: number, events: number): string =>
+  `${tickets === 1 ? "תיאור כרטיס אחד" : `${tickets} תיאורי כרטיסים`} עודכנו ב-${showsHe(events)}`;
+export const LEARN_DESC_PARTIAL = (left: number): string => `${notReached(left)} בתיאורים - לחצו שוב על "${BTN_LEARN_CONFIRM}" כדי לסיים.`;
+export const LEARN_DESC_FAILED = (n: number): string => (n === 1 ? "כתיבה אחת לא נשמרה - נסו שוב" : `${n} כתיבות לא נשמרו - נסו שוב`);
+export const LEARN_NOTE_SAVED = "ההערה נשמרה כחוק של ה-AI";
+export const LEARN_NOTE_FAILED = "ההערה ל-AI לא נשמרה";
+export const LEARN_SAVED_NOTHING = "נשמר";
 export const LEARN_READING = "קורא את האירוע…";
 export const BTN_LEARN_CONFIRM = "החל";
 export const LEARN_FAILED = "הלמידה מהאירוע לא נשמרה";

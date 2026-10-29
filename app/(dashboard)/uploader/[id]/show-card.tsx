@@ -182,10 +182,11 @@ const Pill = ({ item }: { item: UploaderItem }) => (
 );
 
 /**
- * Learn from an event in two clear steps (spec 5.5, round 2 - Alon: "not clear which flow"). A card whose hall has other
- * shows always shows both: 1. arrange this event's tickets in the editor (a link, new tab); 2. "למדו והחילו" - disabled,
- * with the line that says it opens after the editor's save, until `fixedByHand` says a person did arrange it. Then the
- * board's learn confirm takes it from there.
+ * Learn from an event in two clear steps (spec 5.5, round 2 - Alon: "not clear which flow"). A card with other built
+ * shows in its run always shows both: 1. arrange this event in the editor (a link, new tab); 2. "למדו והחילו" - disabled,
+ * with the line that says it opens after the editor's save, until `fixed` says a person changed it since its last learn
+ * (the hall's tickets or a ticket description - Alon round 3; every new edit opens it again). Then the board's learn
+ * dialog takes it from there.
  */
 function LearnSteps({
   item,
@@ -250,10 +251,12 @@ export type ShowCardProps = {
   art: SubjectArt;
   subjectNameEn: string;
   edited: boolean;
-  /** `RunBoard.fixedByHand[item.id]`: a person arranged this event's TixStock tickets in the editor. */
+  /** `RunBoard.editKinds[item.id]` is not empty: a person changed this event in the editor (the hall's tickets or a ticket description) since its last learn - learn step 1 reads "✓". */
   fixedByHand: boolean;
-  /** Other ready / approved shows of the same hall (drawing) with an event - what "learn from this event" rewrites, zoned or not; above 0 the card shows the two learn steps. */
-  hallmates: number;
+  /** Other ready / approved shows of the run with an event - what "למדו והחילו" may carry an edit to (Alon round 3); above 0 the card shows the two learn steps. */
+  learnTargets: number;
+  /** The warning codes whose page task already exists (`handedOffCodes`): never printed on the card, never folded. */
+  handedOff: ReadonlySet<string>;
   /** The run panel is on screen: the run-level warnings fold into one line that jumps to it. */
   panelShown: boolean;
   /** user id -> display name */
@@ -270,11 +273,11 @@ export type ShowCardProps = {
 };
 
 export function ShowCard(props: ShowCardProps) {
-  const { item, art, subjectNameEn, edited, fixedByHand, hallmates, panelShown, people, busy, focused, now } = props;
+  const { item, art, subjectNameEn, edited, fixedByHand, learnTargets, handedOff, panelShown, people, busy, focused, now } = props;
   const { onFocusCard, onApprove, onReject, onRetry, onRebuild, onLearn } = props;
   const learn =
-    hallmates > 0 && item.event_id !== null ? (
-      <LearnSteps item={item} eventId={item.event_id} siblings={hallmates} fixed={fixedByHand} busy={busy} onLearn={onLearn} />
+    learnTargets > 0 && item.event_id !== null ? (
+      <LearnSteps item={item} eventId={item.event_id} siblings={learnTargets} fixed={fixedByHand} busy={busy} onLearn={onLearn} />
     ) : null;
   const shell = (tone: CardTone, body: ReactNode, footer?: ReactNode) => (
     <CardShell item={item} art={art} tone={tone} focused={focused} onFocusCard={onFocusCard} footer={footer}>
@@ -291,7 +294,7 @@ export function ShowCard(props: ShowCardProps) {
           <ShowLine item={item} subjectNameEn={subjectNameEn} />
           <SupplierChips item={item} />
           <Decisions item={item} />
-          <Notices item={item} fold={panelShown} />
+          <Notices item={item} fold={panelShown} handedOff={handedOff} />
           {learn}
           <FarVenueButton item={item} busy={busy} onRebuild={onRebuild} />
         </>,
@@ -376,7 +379,7 @@ export function ShowCard(props: ShowCardProps) {
           )}
           <SupplierChips item={item} />
           <Decisions item={item} hide={rejectedLine ? "rejected_before" : undefined} />
-          <Notices item={item} fold={panelShown} />
+          <Notices item={item} fold={panelShown} handedOff={handedOff} />
           <FarVenueButton item={item} busy={busy} onRebuild={onRebuild} />
         </>,
         <Button asChild variant="outline" size="sm" className={ACTION}>

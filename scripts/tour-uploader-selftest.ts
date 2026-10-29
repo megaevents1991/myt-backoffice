@@ -128,7 +128,21 @@ import {
   type TemplateLike,
 } from "@/lib/uploader/classify";
 import { farVenueOffer, warning, WARNING_TEXT, warningsFor, type BuildFacts, type SubjectRows } from "@/lib/uploader/warnings";
-import { cardWarnings, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows, subjectRowId, type PanelRow } from "@/lib/uploader/run-panel";
+import {
+  applyDescriptionPlan,
+  cleanLearnOptions,
+  descriptionChanges,
+  descriptionPlan,
+  editKindsOf,
+  isEmptyPlan,
+  keepHandDescriptions,
+  LEARN_NOTE_MAX,
+  patchDescriptions,
+  rebaseTickets,
+  sameVenue,
+  withBuiltCount,
+} from "@/lib/uploader/edit-changes";
+import { cardWarnings, coveredBy, handedOffCodes, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows, subjectRowId, taskSteps, type PageTaskRef, type PanelRow } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { normalizeName } from "@/lib/on-tour";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX, ZONE_LABEL_MAX as SVG_ZONE_LABEL_MAX } from "@/lib/venue-maps/svg-zones";
@@ -4657,16 +4671,16 @@ const supplierSvg = ((): typeof import("@/lib/venue-maps/supplier-svg") => {
   const NONE = { dropped: [], kept: [], sections: [] };
   const confirmedRow = (category: string, extra: Partial<ConfirmedRow> = {}): ConfirmedRow => ({ category, label_he: "", description_he: "", drop: false, unsure: false, ...extra });
 
-  // -- R20: an item a learn already taught from is no longer "fixed by hand" ---------------------------------
+  // -- R20 (Alon round 3): "fixed by hand" is a diff against the payload; a learn's REBASE is the exit, not a decision --
   const builtTickets = [tix("Cat 1"), tix("Cat 2")];
   const editedRow = { tickets_and_rates: [tix("Cat 1", { zoneId: "cat-1" }), tix("Cat 2")] };
-  same(isFixedByHand({ payload: { tickets_and_rates: builtTickets }, decisions: [] }, editedRow), true, "R20 isFixedByHand: an event arranged in the editor is fixed by hand");
+  same(isFixedByHand({ payload: { tickets_and_rates: builtTickets } }, editedRow), true, "R20 isFixedByHand: an event arranged in the editor is fixed by hand");
   same(
-    isFixedByHand({ payload: { tickets_and_rates: builtTickets }, decisions: [{ code: "zones_from_template" }, { code: "taught_venue" }] }, editedRow),
+    isFixedByHand({ payload: { tickets_and_rates: editedRow.tickets_and_rates } }, editedRow),
     false,
-    "R20 isFixedByHand: once its decisions carry taught_venue it stops counting as fixed (the exit from the fixed state)",
+    "R20 isFixedByHand: once a learn rebased the payload to the event it stops counting as fixed (the exit from the fixed state)",
   );
-  same(isFixedByHand({ payload: { tickets_and_rates: builtTickets }, decisions: [] }, { tickets_and_rates: builtTickets }), false, "R20 isFixedByHand: an untouched event is not");
+  same(isFixedByHand({ payload: { tickets_and_rates: builtTickets } }, { tickets_and_rates: builtTickets }), false, "R20 isFixedByHand: an untouched event is not");
 
   // -- R21: applyClassification re-syncs every zoned TixStock ticket ----------------------------------------
   const previousTpl: TemplateLike = {
@@ -6255,22 +6269,22 @@ async function supplierSvgFetchChecks(): Promise<void> {
   const noPage = [mk("p1", [W("no_team_page")])];
   same(
     rowOf(runLevelRows(noPage, {}, { ...lazio, row_id: null }, []), "subject").task,
-    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: "Lazio", label: "Lazio", url: "/templates" },
+    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: "Lazio", label: "Lazio", url: "/templates", code: "no_team_page", steps: taskSteps("no_team_page", "Lazio") },
     "task: a team run with no page - the name is the row id, the link is the Templates hub",
   );
   same(
     rowOf(runLevelRows(noPage, {}, lazio, []), "subject").task,
-    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: "Lazio", label: "Lazio", url: "/templates" },
+    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: "Lazio", label: "Lazio", url: "/templates", code: "no_team_page", steps: taskSteps("no_team_page", "Lazio") },
     "task: no row_id given at all reads as no row",
   );
   same(
     rowOf(runLevelRows(noPage, {}, { ...lazio, row_id: 55 }, []), "subject").task,
-    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/templates/football/55/edit" },
+    { title: "לבנות עמוד קבוצה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/templates/football/55/edit", code: "no_team_page", steps: taskSteps("no_team_page", "Lazio") },
     "task: the page row exists (made by hand mid-run) - its id and the Templates edit page of team 55",
   );
   same(
     rowOf(runLevelRows([mk("p2", [W("no_artist_page")])], {}, { kind: "artist", name_en: "Eric Clapton", row_id: null }, []), "subject").task,
-    { title: "לבנות עמוד אמן: Eric Clapton", table: "artists", row_id: "Eric Clapton", label: "Eric Clapton", url: "/templates" },
+    { title: "לבנות עמוד אמן: Eric Clapton", table: "artists", row_id: "Eric Clapton", label: "Eric Clapton", url: "/templates", code: "no_artist_page", steps: taskSteps("no_artist_page", "Eric Clapton") },
     "task: an artist run with no page",
   );
   same(
@@ -6298,7 +6312,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
   );
   same(
     rowOf(runLevelRows(noPage, {}, { kind: "team", name_en: "", row_id: 55 }, []), "subject").task,
-    { title: "לבנות עמוד קבוצה", table: "football_teams", row_id: 55, label: "", url: "/templates/football/55/edit" },
+    { title: "לבנות עמוד קבוצה", table: "football_teams", row_id: 55, label: "", url: "/templates/football/55/edit", code: "no_team_page", steps: taskSteps("no_team_page", "") },
     "task: no name but a row - the title has no colon",
   );
 
@@ -6306,7 +6320,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
   const crestRows = runLevelRows([mk("f1", [W("no_crest", "/assets?q=Lazio")])], {}, { ...lazio, row_id: 55 }, []);
   same(
     rowOf(crestRows, "fix", "fix:no_crest").task,
-    { title: "אין סמל לקבוצה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/assets?q=Lazio" },
+    { title: "אין סמל לקבוצה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/assets?q=Lazio", code: "no_crest", steps: taskSteps("no_crest", "Lazio") },
     "task: a crest fix row - its text, the team, the warning's fix_url",
   );
   same(
@@ -6317,23 +6331,23 @@ async function supplierSvgFetchChecks(): Promise<void> {
   const bioTeam = rowOf(runLevelRows([mk("f3", [W("no_bio", "/templates/football/55/edit#fix-bio")])], {}, { ...lazio, row_id: 55 }, []), "fix", "fix:no_bio");
   same(
     bioTeam.task,
-    { title: "אין ביוגרפיה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/templates/football/55/edit#fix-bio" },
+    { title: "אין ביוגרפיה: Lazio", table: "football_teams", row_id: 55, label: "Lazio", url: "/templates/football/55/edit#fix-bio", code: "no_bio", steps: taskSteps("no_bio", "Lazio") },
     "task: a bio fix row on a team run is the team's",
   );
   const artist = { kind: "artist" as const, name_en: "Eric Clapton", row_id: 9 };
   same(
     rowOf(runLevelRows([mk("f4", [W("no_bio", "/templates/artists/9/edit#fix-bio")])], {}, artist, []), "fix", "fix:no_bio").task,
-    { title: "אין ביוגרפיה: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-bio" },
+    { title: "אין ביוגרפיה: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-bio", code: "no_bio", steps: taskSteps("no_bio", "Eric Clapton") },
     "task: a bio fix row on an artist run is the artist's",
   );
   same(
     rowOf(runLevelRows([mk("f5", [W("no_cutout", "/templates/artists/9/edit#fix-image")])], {}, artist, []), "fix", "fix:no_cutout").task,
-    { title: "אין גזרה לאמן: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-image" },
+    { title: "אין גזרה לאמן: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-image", code: "no_cutout", steps: taskSteps("no_cutout", "Eric Clapton") },
     "task: a cut-out fix row",
   );
   same(
     rowOf(runLevelRows([mk("f6", [W("no_event_gallery", "/templates/artists/9/edit#fix-gallery")])], {}, artist, []), "fix", "fix:no_event_gallery").task,
-    { title: "אין גלריית אירועים: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-gallery" },
+    { title: "אין גלריית אירועים: Eric Clapton", table: "artists", row_id: 9, label: "Eric Clapton", url: "/templates/artists/9/edit#fix-gallery", code: "no_event_gallery", steps: taskSteps("no_event_gallery", "Eric Clapton") },
     "task: a gallery fix row",
   );
   same(
@@ -6920,10 +6934,187 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(sectionsFixedByHand(payloadB4([]), rowB4(null)), false, "B4: a null row list reads as none");
   same(sectionsFixedByHand(null, rowB4(["a_1"])), false, "B4: no payload -> nothing to compare");
   same(sectionsFixedByHand(payloadB4([]), null), false, "B4: no row -> nothing to compare");
-  same(isFixedByHand({ payload: payloadB4([]), decisions: [] }, rowB4(["a_1"])), true, "B4: isFixedByHand - sections alone, tickets untouched -> fixed (learn step 2 unlocks)");
-  same(isFixedByHand({ payload: payloadB4([]), decisions: [] }, rowB4([])), false, "B4: isFixedByHand - nothing changed -> not fixed");
-  same(isFixedByHand({ payload: payloadB4([]), decisions: [{ code: "taught_venue" }] }, rowB4(["a_1"])), false, "B4: isFixedByHand - once it taught the venue it stops counting (R20)");
-  same(isFixedByHand({ payload: payloadB4([]), decisions: [] }, { tickets_and_rates: builtTickets }), false, "B4: isFixedByHand - a row read without the column is no change");
+  same(isFixedByHand({ payload: payloadB4([]) }, rowB4(["a_1"])), true, "B4: isFixedByHand - sections alone, tickets untouched -> fixed (learn step 2 unlocks)");
+  same(isFixedByHand({ payload: payloadB4([]) }, rowB4([])), false, "B4: isFixedByHand - nothing changed -> not fixed");
+  same(isFixedByHand({ payload: payloadB4(["a_1"]) }, rowB4(["a_1"])), false, "B4: isFixedByHand - a payload rebased to the event's sections stops counting (round 3)");
+  same(isFixedByHand({ payload: payloadB4([]) }, { tickets_and_rates: builtTickets }), false, "B4: isFixedByHand - a row read without the column is no change");
+}
+
+// ---- Alon round 3 (29.10): "what you changed" (edit-changes.ts), the rebase, the page task hand-off ----------
+{
+  const tix = (category: string, extra: Partial<EventTicket> = {}): EventTicket => ({
+    id: `t-${category}`,
+    category,
+    price: 100,
+    description: "",
+    colorOnTheMap: "rgb(5, 32, 60)",
+    supplier: "tixstock",
+    ...extra,
+  });
+  const lt = (category: string, description = "", extra: Partial<EventTicket> = {}): EventTicket =>
+    tix(category, { id: `lt-${category}`, supplier: "livetickets", supplierCategory: category, description, ...extra });
+
+  // -- descriptionChanges / descriptionPlan ---------------------------------------------------------------
+  const built = [tix("Cat 1"), lt("Tribuna Monte Mario", "E-ticket. Seats in pairs."), lt("Curva Nord", "Away fans nearby.")];
+  const allCleared = [tix("Cat 1"), lt("Tribuna Monte Mario", ""), lt("Curva Nord", "")];
+  same(
+    descriptionChanges(built, allCleared).map((c) => [c.supplier, c.key, c.from !== "", c.to]),
+    [
+      ["livetickets", "tribuna monte mario", true, ""],
+      ["livetickets", "curva nord", true, ""],
+    ],
+    "descriptionChanges: two LiveTickets descriptions cleared",
+  );
+  same(descriptionChanges(built, built), [], "descriptionChanges: nothing changed - none");
+  same(descriptionChanges(built, [...built, lt("New Cat", "typed")]), [], "descriptionChanges: a category the baseline did not have is no description change");
+  same(descriptionChanges([lt("Curva Nord", "  Away  ")], [lt("Curva Nord", "Away")]), [], "descriptionChanges: whitespace around a description is no change");
+  const allPlan = descriptionPlan(descriptionChanges(built, allCleared), allCleared);
+  same(allPlan, { clearAll: ["livetickets"], clear: [], set: [] }, "descriptionPlan: every LiveTickets description left empty (Alon's Lazio) = clear them all, no per-category lines");
+  const oneCleared = [tix("Cat 1"), lt("Tribuna Monte Mario", ""), lt("Curva Nord", "Away fans nearby.")];
+  same(
+    descriptionPlan(descriptionChanges(built, oneCleared), oneCleared),
+    { clearAll: [], clear: [{ supplier: "livetickets", key: "tribuna monte mario", category: "Tribuna Monte Mario" }], set: [] },
+    "descriptionPlan: one category cleared while another keeps its text = that category only",
+  );
+  const oneSet = [tix("Cat 1"), lt("Tribuna Monte Mario", "יציע מרכזי"), lt("Curva Nord", "Away fans nearby.")];
+  same(
+    descriptionPlan(descriptionChanges(built, oneSet), oneSet).set,
+    [{ supplier: "livetickets", key: "tribuna monte mario", category: "Tribuna Monte Mario", text: "יציע מרכזי" }],
+    "descriptionPlan: a description typed = a set",
+  );
+  same(
+    descriptionChanges([tix("Cat 1", { description: "old" }), tix("Cat 2")], [tix("Cat 1"), tix("Cat 2")]),
+    [],
+    "descriptionChanges: a TixStock description is NOT a description change - it follows the hall template (review finding 4)",
+  );
+  check(isEmptyPlan({ clearAll: [], clear: [], set: [] }) && !isEmptyPlan(allPlan), "isEmptyPlan");
+
+  // -- applyDescriptionPlan on another show ----------------------------------------------------------------
+  const otherBaseline = [tix("Cat 1"), lt("Tribuna Monte Mario", "E-ticket."), lt("Curva Sud", "Home end."), lt("Distinti", "Corner.")];
+  const otherRow = [tix("Cat 1"), lt("Tribuna Monte Mario", "E-ticket."), lt("Curva Sud", "Home end."), lt("Distinti", "typed by Liz"), lt("Extra", "added later")];
+  const cleared = applyDescriptionPlan(otherRow, otherBaseline, allPlan, false);
+  same(
+    cleared.tickets.map((t) => t.description),
+    ["", "", "", "typed by Liz", "added later"],
+    "applyDescriptionPlan: clear-all empties every LiveTickets description that is still the show's own - never one a person typed, never a ticket its baseline does not know",
+  );
+  same([cleared.changed, [...cleared.bySlot.keys()]], [2, ["livetickets|tribuna monte mario", "livetickets|curva sud"]], "applyDescriptionPlan: counts and slots");
+  same(applyDescriptionPlan(otherRow, otherBaseline, allPlan, false).tickets[0], otherRow[0], "applyDescriptionPlan: a TixStock ticket is untouched by a LiveTickets plan");
+  const setPlan = { clearAll: [], clear: [], set: [{ supplier: "livetickets" as const, key: "tribuna monte mario", category: "Tribuna Monte Mario", text: "יציע מרכזי" }] };
+  same(applyDescriptionPlan(otherRow, otherBaseline, setPlan, false).changed, 0, "applyDescriptionPlan: a set never reaches a show at another venue");
+  same(applyDescriptionPlan(otherRow, otherBaseline, setPlan, true).tickets[1].description, "יציע מרכזי", "applyDescriptionPlan: ... and reaches one at the same venue");
+  same(applyDescriptionPlan(otherBaseline, otherBaseline, { clearAll: [], clear: [], set: [] }, true).changed, 0, "applyDescriptionPlan: an empty plan changes nothing");
+  same(
+    patchDescriptions(otherBaseline, cleared.bySlot).map((t) => t.description),
+    ["", "", "", "Corner."],
+    "patchDescriptions: the show's payload follows only the slots the plan changed",
+  );
+  // review finding 7: a show a person already cleared by hand is adopted - the event untouched, its baseline follows
+  const handCleared = applyDescriptionPlan([tix("Cat 1"), lt("Curva Sud", ""), lt("Distinti", "typed by Liz")], [tix("Cat 1"), lt("Curva Sud", "Home end."), lt("Distinti", "Corner.")], allPlan, false);
+  same(
+    [handCleared.changed, handCleared.adopted, [...handCleared.bySlot]],
+    [0, 1, [["livetickets|curva sud", ""]]],
+    "applyDescriptionPlan: a description already cleared by hand is adopted (no write, the baseline follows); one typed to other text stays the person's",
+  );
+
+  // -- keepHandDescriptions: a hall rewrite keeps a hand-typed LiveTickets description out of the baseline (finding 1) --
+  const oldBase = [tix("Cat 1"), lt("Curva Sud", "Home end."), lt("Distinti", "Corner.")];
+  const rowBefore = [tix("Cat 1"), lt("Curva Sud", "יציע הבית"), lt("Distinti", "Corner.")];
+  const written = [tix("Cat 1", { zoneId: "z-1" }), lt("Curva Sud", "יציע הבית"), lt("Distinti", "Corner.")];
+  const kept = keepHandDescriptions(written, rowBefore, oldBase);
+  same(kept.map((t) => t.description), ["", "Home end.", "Corner."], "keepHandDescriptions: the hand-typed text is not taken into the baseline");
+  same(kept[0].zoneId, "z-1", "keepHandDescriptions: everything the rewrite wrote stays");
+  same(
+    applyDescriptionPlan(rowBefore, kept, allPlan, false).tickets.map((t) => t.description),
+    ["", "יציע הבית", ""],
+    "keepHandDescriptions: so the next description pass never overwrites the hand-typed text",
+  );
+  same(
+    editKindsOf({ tickets_and_rates: kept }, { tickets_and_rates: written }),
+    ["descriptions"],
+    "keepHandDescriptions: and the show's own edit stays visible on its card",
+  );
+
+  // -- withBuiltCount: a learn's rebase keeps the approve-time lesson of a deleted category (finding 2) --------
+  const builtPayload = { name: "Lazio - Roma", tickets_and_rates: [tix("Cat 1"), tix("Cat 2"), tix("Away")] };
+  const rebased: Record<string, unknown> = { ...withBuiltCount(builtPayload), tickets_and_rates: [tix("Cat 1"), tix("Cat 2")] };
+  same(rebased.built_tickets_count, 3, "withBuiltCount: the count the uploader wrote is kept");
+  same(withBuiltCount({ ...rebased, tickets_and_rates: [] }).built_tickets_count, 3, "withBuiltCount: set once - a second learn keeps the first count");
+  same(
+    editDiff(rebased, { name: "Lazio - Roma", tickets_and_rates: [tix("Cat 1"), tix("Cat 2")] }).map((d) => [d.field, d.from, d.to]),
+    [["tickets_count", 3, 2]],
+    "editDiff: after a rebase the deleted category is still a staff edit at approve",
+  );
+
+  // -- rebaseTickets + editKindsOf: a learn consumes what it applied, the next edit is seen again (note 2a) --
+  const payloadTickets = [tix("Cat 1"), tix("Cat 2"), lt("Tribuna Monte Mario", "E-ticket.")];
+  const edited = [tix("Cat 1", { zoneId: "z-1" }), tix("Cat 2"), lt("Tribuna Monte Mario", "")];
+  same(editKindsOf({ tickets_and_rates: payloadTickets }, { tickets_and_rates: edited }), ["venue", "descriptions"], "editKindsOf: a zone and a cleared description = both kinds");
+  same(editKindsOf({ tickets_and_rates: payloadTickets }, { tickets_and_rates: payloadTickets }), [], "editKindsOf: untouched = none");
+  same(editKindsOf(null, { tickets_and_rates: edited }), [], "editKindsOf: no payload = nothing to compare");
+  const both = rebaseTickets(payloadTickets, edited, { venue: true, descriptions: true });
+  same(editKindsOf({ tickets_and_rates: both }, { tickets_and_rates: edited }), [], "rebaseTickets (both): the item stops counting right after the learn");
+  const secondEdit = [tix("Cat 1", { zoneId: "z-2" }), tix("Cat 2"), lt("Tribuna Monte Mario", "")];
+  same(editKindsOf({ tickets_and_rates: both }, { tickets_and_rates: secondEdit }), ["venue"], "rebaseTickets: a SECOND edit of the same event is seen again (Alon: 'didn't notice I edited again')");
+  const venueOnly = rebaseTickets(payloadTickets, edited, { venue: true, descriptions: false });
+  same(editKindsOf({ tickets_and_rates: venueOnly }, { tickets_and_rates: edited }), ["descriptions"], "rebaseTickets (venue only): the unticked descriptions stay pending");
+  const descOnly = rebaseTickets(payloadTickets, edited, { venue: false, descriptions: true });
+  same(editKindsOf({ tickets_and_rates: descOnly }, { tickets_and_rates: edited }), ["venue"], "rebaseTickets (descriptions only): the unticked hall stays pending");
+  same(rebaseTickets(payloadTickets, edited, { venue: false, descriptions: false }), payloadTickets, "rebaseTickets: nothing applied = the payload as it was");
+
+  // -- sameVenue ------------------------------------------------------------------------------------------
+  const show = (venue: string | null, city: string, map: string | null = null): ShowIdentity =>
+    ({ venue, city, suppliers: { tixstock: map === null ? null : { event_id: "1", name: "x", ticket_count: 1, venue_map_url: map }, livetickets: null } }) as unknown as ShowIdentity;
+  check(sameVenue(show("Stadio Olimpico", "Rome"), show("stadio  olimpico", "ROME")), "sameVenue: the same venue in the same city (normalized)");
+  check(!sameVenue(show("Stadio Olimpico", "Rome"), show("Stadio Olimpico", "Turin")), "sameVenue: another city is another venue");
+  check(sameVenue(show("A", "Rome", "https://m/x.svg"), show("B", "Roma", "https://m/x.svg")), "sameVenue: the same TixStock drawing is the same venue whatever the names");
+  check(!sameVenue(show(null, "Rome"), show(null, "Rome")), "sameVenue: no drawing and no venue name = no known venue");
+
+  // -- cleanLearnOptions ----------------------------------------------------------------------------------
+  same(cleanLearnOptions(undefined), { venue: true, descriptions: true, note: null }, "cleanLearnOptions: nothing sent = both kinds, no note");
+  same(cleanLearnOptions({ venue: false, note: "  בלאציו בלי תיאורים באנגלית  " }), { venue: false, descriptions: true, note: "בלאציו בלי תיאורים באנגלית" }, "cleanLearnOptions: trimmed note, absent flag = on");
+  same(cleanLearnOptions({ note: "   " }), { venue: true, descriptions: true, note: null }, "cleanLearnOptions: a blank note is none");
+  for (const bad of [[], "x", { venue: "yes" }, { note: 5 }, { note: "ab" }, { note: "x".repeat(LEARN_NOTE_MAX + 1) }]) {
+    same(cleanLearnOptions(bad), null, `cleanLearnOptions: refused (${JSON.stringify(bad).slice(0, 30)})`);
+  }
+
+  // -- the page task hand-off (note 1) --------------------------------------------------------------------
+  const task = { title: "אין סמל לקבוצה: Lazio", table: "football_teams" as const, row_id: 55, label: "Lazio", url: "/assets?q=Lazio", code: "no_crest", steps: taskSteps("no_crest", "Lazio") };
+  const ref = (over: Partial<PageTaskRef>): PageTaskRef => ({ table: "football_teams", row_id: "55", label: "Lazio", code: "no_crest", title: task.title, ...over });
+  check(coveredBy(task, [ref({})]), "coveredBy: same page, same need");
+  check(!coveredBy(task, [ref({ code: "no_bio" })]), "coveredBy: another need of the same page does not cover it");
+  check(!coveredBy(task, [ref({ table: "artists" })]), "coveredBy: another table does not");
+  check(coveredBy(task, [ref({ row_id: "Lazio" })]), "coveredBy: a task opened by name before the page existed still covers it once the page has an id");
+  check(!coveredBy(task, [ref({ row_id: "Lazio", label: "Roma" })]), "coveredBy: another page does not");
+  check(coveredBy(task, [ref({ code: null })]), "coveredBy: a task made before round 3 (no code) is matched by its title");
+  check(!coveredBy(task, [ref({ code: null, title: "אין ביוגרפיה: Lazio" })]), "coveredBy: ... and another title does not");
+  check(!coveredBy(task, [ref({ row_id: "99", label: "" })]), "coveredBy: an empty label never matches");
+  for (const code of ["no_team_page", "no_artist_page", "no_crest", "no_bio", "no_cutout", "no_event_gallery"]) {
+    check(taskSteps(code, "Lazio").length > 20 && taskSteps(code, "Lazio").includes("Lazio"), `taskSteps: ${code} says what to do, naming the page`);
+  }
+  same(taskSteps("no_category_twin", "Lazio"), "", "taskSteps: a code with no task has no steps");
+
+  type Warns = UploaderItem["warnings"];
+  const W = (code: string): Warns[number] => ({ code, text: `${code}!` });
+  const item = (id: string, warnings: Warns): UploaderItem =>
+    ({
+      id,
+      status: "ready",
+      warnings,
+      show: { city: "Rome", venue: "Stadio Olimpico", suppliers: { tixstock: null, livetickets: null } },
+      updated_at: "2026-10-29T09:00:00.000Z",
+      event_id: 1,
+    }) as unknown as UploaderItem;
+  const items = [item("a", [W("no_crest"), W("no_bio")]), item("b", [W("no_crest")])];
+  const subject = { kind: "team" as const, name_en: "Lazio", row_id: 55 };
+  const keys = (rows: PanelRow[]) => rows.map((r) => r.key);
+  same(keys(runLevelRows(items, {}, subject, [])), ["fix:no_crest", "fix:no_bio"], "runLevelRows: no task yet - both fix rows");
+  same(keys(runLevelRows(items, {}, subject, [], [ref({})])), ["fix:no_bio"], "runLevelRows: the crest task exists - its row leaves the panel");
+  same(keys(runLevelRows(items, {}, subject, [], [ref({}), ref({ code: "no_bio", title: "אין ביוגרפיה: Lazio" })])), [], "runLevelRows: both handed off - no panel");
+  same([...handedOffCodes(items, subject, [ref({})])], ["no_crest"], "handedOffCodes: the codes a task already answers");
+  same(handedOffCodes(items, subject, []).size, 0, "handedOffCodes: no tasks - none");
+  same(cardWarnings(items[0], new Set(["no_crest"])), { card: [], folded: 1 }, "cardWarnings: a handed-off code is neither printed nor folded");
+  same(cardWarnings(items[0]), { card: [], folded: 2 }, "cardWarnings: without hand-off both fold");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

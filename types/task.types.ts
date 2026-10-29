@@ -84,6 +84,9 @@ export type TaskSourceRef = {
   /** recurring weekly_digest only - the ISO week ("2026-W38") this digest covers, the
    *  dedupe key alongside row_id (see isoWeek in lib/services/task-rules/week.ts). */
   week?: string;
+  /** `uploader_page` only - the warning code the task answers ("no_crest", "no_team_page"...): a later run of the
+   *  same page knows the need is handed off (lib/uploader/run-panel.ts `coveredBy`). */
+  code?: string;
 };
 
 export interface Task {

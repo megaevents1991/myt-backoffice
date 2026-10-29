@@ -792,17 +792,17 @@ export function sectionsFixedByHand(
 }
 
 /**
- * The board's "fixed by hand" for one item (`getRun`'s `fixedByHand`, the panel's `fixed` venue row and the
- * card's learn button): `ticketsFixedByHand` or `sectionsFixedByHand` (an editor save that only excluded map
- * sections unlocks the learn too - B4), until the item has taught the venue (ruling R20). A learn never rewrites its
- * source event, so the payload's tickets keep differing for ever; once the decisions carry `taught_venue` the item
- * stops counting and the venue row falls back to `new` / `unzoned` by its warnings.
+ * The board's "fixed by hand" for one item (`getRun`'s `fixedByHand`, the panel's `fixed` venue row): `ticketsFixedByHand`
+ * or `sectionsFixedByHand` (an editor save that only excluded map sections unlocks the learn too - B4), against the
+ * item's payload. A learn REBASES its source item's payload to what the event holds (Alon round 3, note 2a -
+ * `rebaseTickets` in edit-changes.ts), so the item stops counting right after it taught the venue and counts again
+ * the moment a person edits the event once more. (Round 1's R20 used the `taught_venue` decision as the exit, which
+ * hid every later edit for good; an item taught that way lights up again until one more learn rebases it.)
  */
 export function isFixedByHand(
-  item: { payload: Record<string, unknown> | null; decisions: { code: string }[] },
+  item: { payload: Record<string, unknown> | null },
   row: { tickets_and_rates: unknown; tx_excluded_sections?: unknown } | null,
 ): boolean {
-  if (item.decisions.some((d) => d.code === "taught_venue")) return false;
   return ticketsFixedByHand(item.payload, row) || sectionsFixedByHand(item.payload, row);
 }
 

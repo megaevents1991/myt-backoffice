@@ -24,6 +24,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { cleanVenueHe, parseDroppedCategories, type DroppedCategories } from "@/lib/uploader/classify";
 import { editDiff } from "@/lib/uploader/decisions";
+import type { PageTaskRef } from "@/lib/uploader/run-panel";
 import type { LocationInput } from "@/lib/uploader/location";
 import {
   artSearchPattern,
@@ -1048,6 +1049,67 @@ export async function writeEventClassification(eventId: number, tickets: EventTi
     metadata: { agent: AGENT, via: "uploader.classify" },
   });
   return true;
+}
+
+/**
+ * An event's tickets after "learn from this event" carried a ticket description over (Alon round 3, note 2b) -
+ * `tickets_and_rates` only, never through `updateEvent`, only while the event is not deleted. Audited as an `update`
+ * of the event. false = the write failed or the event is gone (logged).
+ */
+export async function writeEventTickets(eventId: number, tickets: EventTicket[], changed: number): Promise<boolean> {
+  const { data, error } = (await db
+    .from("events")
+    .update({ tickets_and_rates: tickets })
+    .eq("id", eventId)
+    .is("is_deleted", null)
+    .select("id")) as DbResult<{ id: number }[]>;
+  if (error) {
+    logDb(`event ${eventId} tickets write`, error);
+    return false;
+  }
+  if ((data ?? []).length === 0) {
+    console.error(`uploader: event ${eventId} tickets were not written - deleted meanwhile`);
+    return false;
+  }
+  await logAudit({
+    action: "update",
+    entityType: "event",
+    entityId: eventId,
+    changes: { ticket_descriptions: changed },
+    metadata: { agent: AGENT, via: "uploader.learn_descriptions" },
+  });
+  return true;
+}
+
+/** How many `uploader_page` tasks the board reads (newest first) - far more than one subject ever opens. */
+const PAGE_TASKS_MAX = 300;
+
+/**
+ * The run panel's page tasks (Alon round 3, note 1): every `uploader_page` task that is not deleted and not cancelled,
+ * as `PageTaskRef`s, and the assignee of the newest one that has an assignee (the "פתח משימה" dialog starts on that
+ * person - Alon picks Liz once, it stays). null = the read failed (logged) - the board then hides nothing.
+ */
+export async function readPageTasks(): Promise<{ refs: PageTaskRef[]; assignee: string | null } | null> {
+  const { data, error } = (await db
+    .from("tasks")
+    .select("title,status,assignee_id,source_ref")
+    .eq("source_ref->>kind", "uploader_page")
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(PAGE_TASKS_MAX)) as DbResult<{ title: string; status: string; assignee_id: string | null; source_ref: unknown }[]>;
+  if (error) {
+    logDb("uploader page tasks read", error);
+    return null;
+  }
+  const rows = data ?? [];
+  const text = (v: unknown): string => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+  const refs: PageTaskRef[] = [];
+  for (const row of rows) {
+    if (row.status === "cancelled" || typeof row.source_ref !== "object" || row.source_ref === null) continue;
+    const ref = row.source_ref as Record<string, unknown>;
+    refs.push({ table: text(ref.table), row_id: text(ref.row_id), label: text(ref.label), code: text(ref.code) || null, title: row.title ?? "" });
+  }
+  return { refs, assignee: rows.find((r) => r.assignee_id)?.assignee_id ?? null };
 }
 
 /** An event's Hebrew name (`events.name` only, only while not deleted), audited as an `update` of the event. false = failed or gone (logged). */

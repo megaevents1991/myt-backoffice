@@ -1856,15 +1856,20 @@ opens the dialog with the steps, "N הופעות בריצה מחכות לזה", 
 `runLevelRows` and the code from the cards (`handedOffCodes` -> `cardWarnings(item, handedOff)` / `Notices`), in any
 later run of the same page too. **(2) A second edit is seen again.** `isFixedByHand` is a plain diff against the payload
 (the `taught_venue` exit of R20 is gone - it hid every later edit for good); a learn REBASES the source item's payload
-over the kinds it applied (`rebaseTickets`; neither `tickets_and_rates` nor descriptions are in `EDIT_WHITELIST`, and
-`templateFromEvent` then finds only new drops). An item taught before 29.10 lights up again once; one learn clears it.
+over the kinds that went through CLEANLY (`rebaseTickets`; a kind cut by the budget or with a failed write stays
+pending, "החל" again finishes it) and keeps the count the uploader wrote (`withBuiltCount` -> `built_tickets_count`,
+which `decisions.ts` `fieldOf` reads for `tickets_count`, so a deleted category is still the edit at approve);
+`templateFromEvent` then finds only new drops. An item taught before 29.10 lights up again once; one learn clears it.
 **(3) "What you changed".** `lib/uploader/edit-changes.ts` (pure, selftest section "Alon round 3"): `editKindsOf` =
-`venue` (= `isFixedByHand`) and / or `descriptions` (a TixStock / LiveTickets ticket description cleared or set, per
-category key) -> `RunBoard.editKinds` (the card's step 1 "✓"); `descriptionPlan`: every description of a supplier left
-empty = `clearAll` on every other built show of the run, one category cleared = that category run-wide, one category
-SET = the shows at the same venue only (`sameVenue`: same drawing, else same venue + city); `applyDescriptionPlan`
-touches a ticket only while its description still equals that show's baseline, and the show's payload follows the
-descriptions only (`patchDescriptions`). `learnPreview` = `{ venue (ok / why not / null), descriptions ({ plan, events,
+`venue` (= `isFixedByHand`) and / or `descriptions` (a LIVETICKETS ticket description cleared or set, per category key -
+TixStock's follow the hall template, whose `inStepWithTemplate` would refill a code clear) -> `RunBoard.editKinds` (the
+card's step 1 "✓"); `descriptionPlan`: every LiveTickets description left empty = `clearAll` on every other built show
+of the run, one category cleared = that category run-wide, one category SET = the shows at the same venue only
+(`sameVenue`: same drawing, else same venue + city); `applyDescriptionPlan` touches a ticket only while its description
+still equals that show's baseline (one already at the target by hand is `adopted` - no write, the baseline follows),
+and the show's payload follows the descriptions only (`patchDescriptions`). **`rewriteVenueItems` (classify AND learn)
+keeps a hand-typed LiveTickets description out of a show's new baseline (`keepHandDescriptions`)** - else the next
+description pass would overwrite it. `learnPreview` = `{ venue (ok / why not / null), descriptions ({ plan, events,
 tickets } / null), others }`; `learnFromEvent(itemId, { venue, descriptions, note })` - the hall part as before
 (`readHallContext`, template + `rewriteVenueItems`), then `descriptionPass` over the shows read again, then the source
 rebase, then `note` (3-500 chars) as a taught rule via `addAgentInstruction("tour-uploader", ...)`; audited

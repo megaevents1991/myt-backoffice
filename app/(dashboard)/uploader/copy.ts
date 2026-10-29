@@ -57,6 +57,8 @@ const ACTION_ERROR_HE: Record<string, string> = {
   svg_failed: "לא הצלחתי לקרוא את המפה של הספק",
   adopt_failed: "לא הצלחתי לאמץ את המפה",
   no_template: "לאירוע הזה אין תבנית אולם ללמוד ממנה",
+  // Alon round 3: "למדו והחילו" with nothing ticked that changed and no note.
+  nothing_to_learn: "לא סומן שום דבר להחיל",
   // Round 2: the names dialog's "זה עמוד קיים" - the page picked is gone (deleted since the search) or cannot name an event.
   team_not_found: "העמוד שנבחר לא נמצא - בחרו עמוד אחר",
   // Round 2: the plan card's "כוון את ה-AI". `steer_invalid` = an instruction under 3 or over 500 characters; the card stays as it was in every case.
