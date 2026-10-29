@@ -22,6 +22,7 @@ import {
 
 import { createOfflineFlight } from "@/lib/actions/offline-flight-actions";
 import { legTimesSuperRefine } from "@/lib/flight-leg-times";
+import { normalizeAirlineCode } from "@/lib/airline-lookup";
 import type { OfflineFlight } from "@/types/offline-flight.types";
 
 const isoDurationPattern = /^P(T(\d+H)?(\d+M)?(\d+S)?)?$/;
@@ -196,20 +197,23 @@ export function InlineFlightForm({
   }, [inboundDepartureTime]);
 
   const validateAirlineCode = async () => {
-    if (!airlineCode) { toast.error("Enter an airline code first"); return; }
+    // " iz " pasted from a sheet is IZ; anything else goes as typed and the route says what is wrong.
+    const code = normalizeAirlineCode(airlineCode) ?? (airlineCode ?? "").trim().toUpperCase();
+    if (!code) { toast.error("Enter an airline code first"); return; }
+    if (code !== airlineCode) form.setValue("airline_code", code);
     setIsValidating(true);
     try {
       const res = await fetch("/api/validate-airline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ airlineCode }),
+        body: JSON.stringify({ airlineCode: code }),
       });
       const data = await res.json();
       if (data.success) {
         toast.success(`Found: ${data.airlineName}`);
         setMetadataName(data.airlineName);
         setIsValidated(true);
-        form.setValue("metadata_iata", airlineCode);
+        form.setValue("metadata_iata", data.iataCode ?? code);
         form.setValue("metadata_name", data.airlineName);
         form.setValue("metadata_logo", data.airlineLogo);
       } else {

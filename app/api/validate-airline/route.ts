@@ -1,175 +1,87 @@
-import { NextRequest, NextResponse } from 'next/server';
-const chromium = require('@sparticuz/chromium');
-const playwright = require('playwright-core');
+import { NextRequest, NextResponse } from "next/server";
+import {
+  AVCODES_SEARCH_URL,
+  avcodesSearchBody,
+  normalizeAirlineCode,
+  parseAvcodesResult,
+} from "@/lib/airline-lookup";
 
-// Dev-mode lookup table so validation works without Chromium
-const DEV_AIRLINES: Record<string, { airlineName: string; icaoCode: string }> = {
-  LY: { airlineName: 'El Al Israel Airlines', icaoCode: 'ELY' },
-  W6: { airlineName: 'Wizz Air', icaoCode: 'WZZ' },
-  FR: { airlineName: 'Ryanair', icaoCode: 'RYR' },
-  LH: { airlineName: 'Lufthansa', icaoCode: 'DLH' },
-  BA: { airlineName: 'British Airways', icaoCode: 'BAW' },
-  AF: { airlineName: 'Air France', icaoCode: 'AFR' },
-  TK: { airlineName: 'Turkish Airlines', icaoCode: 'THY' },
-  LO: { airlineName: 'LOT Polish Airlines', icaoCode: 'LOT' },
-  U2: { airlineName: 'easyJet', icaoCode: 'EZY' },
-  IB: { airlineName: 'Iberia', icaoCode: 'IBE' },
-};
+// A plain POST of avcodes' search form - no browser (lib/airline-lookup.ts says why).
+const LOOKUP_TIMEOUT_MS = 10_000;
+const LOOKUP_ATTEMPTS = 2;
+
+const LOOKUP_DOWN = "The airline lookup (avcodes.co.uk) did not answer - try again in a minute";
+
+/** The result page's HTML; one more try on a network error or a 5xx. Throws when neither answered. */
+async function fetchAvcodes(code: string): Promise<string> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= LOOKUP_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(AVCODES_SEARCH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: avcodesSearchBody(code),
+        signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+        cache: "no-store",
+      });
+      if (res.ok) return await res.text();
+      lastError = new Error(`avcodes answered HTTP ${res.status}`);
+      if (res.status < 500) break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { airlineCode } = await request.json();
-
-    if (!airlineCode || typeof airlineCode !== 'string') {
+    const body = await request.json().catch(() => null);
+    const raw = body && typeof body === "object" ? (body as { airlineCode?: unknown }).airlineCode : undefined;
+    const code = normalizeAirlineCode(raw);
+    if (!code) {
       return NextResponse.json(
-        { error: 'Airline code is required' },
+        { error: "Enter the two-character IATA airline code (e.g. LY, W6)" },
         { status: 400 }
       );
     }
 
-    // In development, skip Chromium and use the lookup table
-    if (process.env.NODE_ENV === 'development') {
-      const entry = DEV_AIRLINES[airlineCode.toUpperCase()];
-      if (entry) {
+    let html: string;
+    try {
+      html = await fetchAvcodes(code);
+    } catch (error) {
+      console.error(`Airline validation: avcodes did not answer for ${code}:`, error);
+      return NextResponse.json({ error: LOOKUP_DOWN }, { status: 502 });
+    }
+
+    const result = parseAvcodesResult(html);
+    switch (result.kind) {
+      case "found":
         return NextResponse.json({
           success: true,
-          airlineName: entry.airlineName,
-          airlineLogo: `https://www.avcodes.co.uk/images/logos/${entry.icaoCode.substring(0, 3)}.png`,
-          icaoCode: entry.icaoCode,
+          airlineName: result.airlineName,
+          airlineLogo: result.airlineLogo,
+          icaoCode: result.icaoCode,
+          iataCode: code,
         });
-      }
-      return NextResponse.json({ error: 'Airline code not found' }, { status: 404 });
-    }
-
-    const browser = await playwright.chromium.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath(),
-    headless: true,
-    });
-
-    const page = await browser.newPage();
-
-    try {
-      // Navigate to the airline code search page
-      await page.goto('https://www.avcodes.co.uk/airlcodesearch.asp');
-
-      // Wait for the input field to be available
-      await page.waitForSelector('body > div.container.mt-2 > main:nth-child(2) > form > div > div:nth-child(2) > input');
-
-      // Enter the airline code
-      await page.fill('body > div.container.mt-2 > main:nth-child(2) > form > div > div:nth-child(2) > input', airlineCode);
-
-      // Submit the form (you might need to adjust this based on the actual form submission)
-      await page.click('body > div.container.mt-2 > main:nth-child(2) > form button[type="submit"], body > div.container.mt-2 > main:nth-child(2) > form input[type="submit"]');
-
-      // Wait for results (adjust timeout as needed)
-      await page.waitForTimeout(2000);
-
-      // Get the page content or specific result elements
-      const results = await page.textContent('body');
-      
-      await browser.close();
-
-      if (!results) {
+      case "not_found":
+        return NextResponse.json({ error: `Airline code ${code} not found` }, { status: 404 });
+      case "historical_only":
         return NextResponse.json(
-          { error: 'No results found' },
+          { error: `Airline code ${code} is no longer in use (avcodes holds only historical records)` },
           { status: 404 }
         );
-      }
-
-      // Parse airline name and ICAO code from results
-      const parseResults = (text: string) => {
-        try {
-          // Find airline name after "This is Current Data"
-          const currentDataMarker = 'This is Current Data';
-          const currentDataIndex = text.indexOf(currentDataMarker);
-          if (currentDataIndex === -1) {
-            // If the primary marker isn't found, we might be on a page without results or an error page.
-            // Try to find a common error message or lack of ICAO code as an indicator.
-            if (!text.includes("ICAO Code:")) {
-              throw new Error('Valid airline data section not found (missing "ICAO Code:" marker).');
-            }
-            // If ICAO code exists but "This is Current Data" doesn't, it's an unexpected format.
-            throw new Error(`"${currentDataMarker}" section not found, but ICAO code was present. Unexpected page format.`);
-          }
-
-          // Look for the airline name after "This is Current Data"
-          const afterCurrentData = text.substring(currentDataIndex + currentDataMarker.length);
-          
-          // Regex to capture airline name.
-          // It looks for text starting after "This is Current Data",
-          // allowing various characters, and stopping before known subsequent markers.
-          const nameMatch = afterCurrentData.match(/^\s*([A-Za-z0-9\s\-\.\&\'\/()]+?)\s*(?=Full Name:|IATA Code:|ICAO Code:)/);
-          let airlineName = '';
-          
-          if (nameMatch && nameMatch[1]) {
-            // Clean up the airline name - trim and normalize spaces
-            airlineName = nameMatch[1].trim().replace(/\s+/g, ' ');
-          } else {
-            // Fallback or error if name pattern isn't matched after "This is Current Data"
-            // This might indicate an unusual airline name format or an empty name field.
-            console.warn("Could not directly parse airline name using primary regex. The page structure might have changed or the name is unusual.");
-            // As a very basic fallback, you could try to grab the first significant line, but this is risky.
-            // For now, we'll rely on the regex and if it fails, airlineName remains empty, triggering later error.
-          }
-
-          // Find ICAO code after "ICAO Code: " - this regex seems robust enough.
-          // It's applied to the original 'text' as ICAO code might be outside 'afterCurrentData' or easier to find globally.
-          const icaoMatch = text.match(/ICAO Code:\s*([A-Z]{3,4})/); // Allow 3 or 4 char ICAO codes
-          let icaoCode = '';
-          let airlineLogo = '';
-          
-          if (icaoMatch && icaoMatch[1]) {
-            icaoCode = icaoMatch[1];
-            // Use only the first 3 chars for the logo URL as per original requirement,
-            // even if a 4-char ICAO code is captured.
-            airlineLogo = `https://www.avcodes.co.uk/images/logos/${icaoCode.substring(0,3)}.png`;
-          }
-
-          return {
-            airlineName,
-            icaoCode,
-            airlineLogo
-          };
-        } catch (error) {
-          // Ensure error is an instance of Error for proper message handling
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          throw new Error(`Failed to parse results: ${errorMessage}`);
-        }
-      };
-
-      const parsedData = parseResults(results);
-
-      if (!parsedData.airlineName) {
+      case "no_icao":
         return NextResponse.json(
-          { error: 'Could not extract airline name from results. The page content might not contain it or the format is unexpected.' },
+          { error: `${result.airlineName} (${code}) has no ICAO code on avcodes, so there is no logo to use` },
           { status: 404 }
         );
-      }
-      if (!parsedData.icaoCode) {
-         return NextResponse.json(
-          { error: 'Could not extract ICAO code from results. The page content might not contain it or the format is unexpected.' },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        airlineName: parsedData.airlineName,
-        airlineLogo: parsedData.airlineLogo,
-        icaoCode: parsedData.icaoCode // Optional: include ICAO code in response
-      });
-
-    } catch (error) {
-      await browser.close();
-      throw error;
+      case "unreadable":
+        console.error(`Airline validation: avcodes page for ${code} unreadable: ${result.reason}`);
+        return NextResponse.json({ error: LOOKUP_DOWN }, { status: 502 });
     }
-
   } catch (error) {
-    console.error('Airline validation error:', error);
-    return NextResponse.json(
-      { error: 'Failed to validate airline code' },
-      { status: 500 }
-    );
+    console.error("Airline validation error:", error);
+    return NextResponse.json({ error: "Failed to validate airline code" }, { status: 500 });
   }
 }

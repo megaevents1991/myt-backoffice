@@ -884,7 +884,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   columns (`event-actions.ts`, `offline-flight-actions.ts`, `partner-actions.ts`) - map
 >   columns explicitly + validate prices/commission are positive finite (pattern:
 >   `offline-hotel-room-actions.ts` `replaceOfflineHotelRooms`).
-> - **Unauth resource-abuse proxies** (`validate-airline` headless Chromium, `flights/search`
+> - **Unauth resource-abuse proxies** (`validate-airline` - a plain POST to avcodes since 29.10, still no guard; `flights/search`
 >   Amadeus prod, `map-proxy`, `proxy-image`, `dashboard/counts`) - add auth or shared-secret + rate
 >   limit. **Closed 2026-10-05:** the eight provider routes (`live-events/{events,tickets,categories,performers}`,
 >   `tixstock/{events,tickets}`, `p1-events/events`, `sports-events/live-tickets`) answered anyone with no session
@@ -1271,7 +1271,7 @@ Soft deletes use the `is_deleted` column - set to a `MM-DD-YYYY` date string (no
 Exchange rates (EUR, ILS, GBP → USD) are managed via `lib/services/exchange-rate-client.ts` and the `/api/exchange-rates` route. The sync services call this when converting ticket prices.
 **Both mirrors, newest date (2026-10-29):** the rate source (fawazahmed0 currency-api) is read from jsDelivr AND Cloudflare Pages at once and the file with the newer `date` wins (tie = jsDelivr; a hung mirror costs 1.5 s of grace) - `lib/currency-api.ts`, used by `MultiCurrencyExchangeRateService` in `lib/services/ticket-price-sync.ts`. One jsDelivr CDN kept the 28.10 `@latest` file until noon on 29.10 (`s-maxage` 12 h); jsDelivr was asked first, so the site priced with yesterday's dollar (travel rate 3.14 instead of 3.17). **The file is byte-identical in myt-main (`lib/currencyApi.ts`) and mega-family (`lib/server/currency-api.ts`) - change one = copy it to the other two (`cmp` them).** Selftest `scripts/currency-api-selftest.ts`.
 
-`/api/validate-airline` uses headless Playwright + `@sparticuz/chromium` to scrape airline codes from avcodes.co.uk. It has a dedicated Vercel function config with 1024 MB memory / 30s timeout.
+`/api/validate-airline` (the offline flight forms' "Validate" button - "Create Flight" stays disabled until it passes) is a plain POST of avcodes.co.uk's search form (`airlcoderes.asp`, `iataairl=<code>`), 10 s timeout, one retry on a network error or 5xx; the code is trimmed, upper-cased and stripped of hidden marks (`normalizeAirlineCode`) and the result page read by the pure `parseAvcodesResult` (`lib/airline-lookup.ts`, selftest `scripts/airline-lookup-selftest.ts`): the FIRST current record's name + ICAO (logo = avcodes' `/images/logos/<ICAO>.png`). Answers: 400 bad format, 404 not found / only historical / no ICAO, 502 "did not answer" (also a page it cannot read), 200 with `iataCode` = the cleaned code. **No browser (2026-10-29):** it used to launch headless Chromium per click; on 29.10 one crash on a reused Vercel instance left every later call there failing with `net::ERR_INSUFFICIENT_RESOURCES` for half an hour (Liz could not add an IZ flight), a code with a space failed, and "not found" read the same as "site down". The 1024 MB / 30 s function config in `vercel.json` is left over from the browser.
 
 ### Event creation automation (2026-09-02)
 

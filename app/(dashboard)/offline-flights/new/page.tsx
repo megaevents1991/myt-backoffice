@@ -39,6 +39,7 @@ import {
   toStopoverColumns,
 } from "@/lib/flight-stops";
 import { legTimesSuperRefine } from "@/lib/flight-leg-times";
+import { normalizeAirlineCode } from "@/lib/airline-lookup";
 import {
   Popover,
   PopoverContent,
@@ -420,12 +421,15 @@ export default function NewOfflineFlightPage() {
   }, [destinationIata, departureTime, inboundDepartureTime]);
 
   const validateAirlineCode = async () => {
-    const airlineCode = form.getValues("airline_code");
+    // " iz " pasted from a sheet is IZ; anything else goes as typed and the route says what is wrong.
+    const typed = form.getValues("airline_code");
+    const airlineCode = normalizeAirlineCode(typed) ?? typed.trim().toUpperCase();
 
     if (!airlineCode) {
       toast.error("Please enter an airline code first");
       return;
     }
+    if (airlineCode !== typed) form.setValue("airline_code", airlineCode);
 
     setIsValidating(true);
     setValidationResult(null);
@@ -451,7 +455,7 @@ export default function NewOfflineFlightPage() {
         setIsValidated(true);
 
         // Auto-fill metadata fields
-        form.setValue("metadata_iata", airlineCode);
+        form.setValue("metadata_iata", data.iataCode ?? airlineCode);
         form.setValue("metadata_name", data.airlineName);
         form.setValue("metadata_logo", data.airlineLogo);
       } else {
