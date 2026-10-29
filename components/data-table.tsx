@@ -37,7 +37,7 @@ import { matchesSearch } from "@/lib/search";
 import { tableStateKey } from "@/lib/view-state";
 import {
   cleanStoredFilters,
-  filterSummary,
+  filterChips,
   matchesHeaderFilter,
   rowsLeftFilter,
   type HeaderFilterKind,
@@ -771,33 +771,35 @@ export function DataTable<TData, TValue>({
         </div>
       </div>
 
-      {/* A narrowed list says so: one chip per header filter (a click opens it, the cross drops it). */}
+      {/* A narrowed list says so: a chip per ticked value, or per text / date filter (Alon 29.10) - a click opens the
+          column's filter, the cross drops that value alone. */}
       {activeFilters.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5" aria-label="Filters">
-          {activeFilters.map(({ id, value, spec }) => (
-            <span
-              key={id}
-              className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/30 bg-primary/5 ps-2.5 text-xs"
-            >
-              <button
-                type="button"
-                className="min-w-0 truncate py-1 text-start"
-                onClick={() => setOpenFilter(id)}
-                title={`Change the ${spec.label} filter`}
+          {activeFilters.flatMap(({ id, value, spec }) =>
+            filterChips(value, (v) => headerValueLabel(spec, v)).map((chip) => (
+              <span
+                key={`${id}:${chip.key}`}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/30 bg-primary/5 ps-2.5 text-xs"
               >
-                <span className="font-semibold">{spec.label}:</span>{" "}
-                <span dir="auto">{filterSummary(value, (v) => headerValueLabel(spec, v))}</span>
-              </button>
-              <button
-                type="button"
-                className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={`Remove the ${spec.label} filter`}
-                onClick={() => table.getColumn(id)?.setFilterValue(undefined)}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
+                <button
+                  type="button"
+                  className="min-w-0 truncate py-1 text-start"
+                  onClick={() => setOpenFilter(id)}
+                  title={`Change the ${spec.label} filter`}
+                >
+                  <span className="font-semibold">{spec.label}:</span> <bdi>{chip.text}</bdi>
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={`Remove ${chip.text} from the ${spec.label} filter`}
+                  onClick={() => table.getColumn(id)?.setFilterValue(chip.without)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )),
+          )}
           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => table.resetColumnFilters()}>
             Clear all
           </Button>

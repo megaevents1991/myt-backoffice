@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   cleanStoredFilters,
   distinctValues,
+  filterChips,
   filterSummary,
   isActiveFilter,
   matchesHeaderFilter,
@@ -90,6 +91,22 @@ assert.equal(filterSummary({ kind: "text", text: "samnon" }), "“samnon”");
 assert.equal(filterSummary({ kind: "date", from: "2026-10-01", to: "2026-10-31" }), "01.10.2026 – 31.10.2026");
 assert.equal(filterSummary({ kind: "date", from: "2026-10-01", to: null }), "from 01.10.2026");
 assert.equal(filterSummary({ kind: "date", from: null, to: "2026-10-31" }), "until 31.10.2026");
+
+// a chip per VALUE (Alon 29.10: "הוא עושה תגית אחת לכולם"): each removed on its own, the column's filter shrinking
+const two = { kind: "values", values: ["new", "no_answer"] } as const;
+assert.deepEqual(
+  filterChips({ ...two, values: [...two.values] }, (v) => v.toUpperCase()),
+  [
+    { key: "v:new", text: "NEW", without: { kind: "values", values: ["no_answer"] } },
+    { key: "v:no_answer", text: "NO_ANSWER", without: { kind: "values", values: ["new"] } },
+  ],
+);
+assert.deepEqual(filterChips({ kind: "values", values: ["new"] }), [{ key: "v:new", text: "new", without: undefined }], "the last value drops the filter");
+assert.deepEqual(filterChips({ kind: "values", values: [""] }), [{ key: "v:", text: "None", without: undefined }], "the empty value without a label");
+assert.equal(filterChips({ kind: "values", values: ["a", "b", "c", "d", "e"] }).length, 5, "no '+N' - every value is a chip");
+// a text or a date filter is one chip
+assert.deepEqual(filterChips({ kind: "text", text: "samnon" }), [{ key: "text", text: "“samnon”", without: undefined }]);
+assert.deepEqual(filterChips({ kind: "date", from: "2026-10-01", to: null }), [{ key: "date", text: "from 01.10.2026", without: undefined }]);
 
 // a row an edit took out of the filtered list (it is still in the data) - not one that left the data
 assert.deepEqual(rowsLeftFilter(["a", "b", "c"], ["a"], ["a", "b"]), ["b"]);

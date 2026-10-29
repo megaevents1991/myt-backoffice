@@ -109,6 +109,29 @@ export function filterSummary(filter: HeaderFilterValue, label?: (value: string)
   }
 }
 
+/** One chip above the table: what it says, and the column's filter once its cross is clicked (undefined = none left). */
+export interface FilterChip {
+  key: string;
+  text: string;
+  without: HeaderFilterValue | undefined;
+}
+
+/**
+ * The chips of one column's filter (Alon 29.10: "הוא עושה תגית אחת לכולם"): a chip per ticked VALUE, each removed on
+ * its own; a text or a date filter is one chip.
+ */
+export function filterChips(filter: HeaderFilterValue, label?: (value: string) => string): FilterChip[] {
+  if (filter.kind !== "values") return [{ key: filter.kind, text: filterSummary(filter, label), without: undefined }];
+  return filter.values.map((value) => {
+    const rest = filter.values.filter((v) => v !== value);
+    return {
+      key: `v:${value}`,
+      text: label?.(value) ?? (value === "" ? EMPTY_LABEL : value),
+      without: rest.length ? { kind: "values", values: rest } : undefined,
+    };
+  });
+}
+
 /**
  * Rows an edit took out of a filtered list: shown before, still in the data, shown no more. (A row that left the
  * data - deleted, handed to another rep - is not news for the filter.)
