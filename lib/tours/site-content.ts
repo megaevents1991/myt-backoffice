@@ -612,24 +612,25 @@ const REVIEWS_BLOCK: HomeSection = { id: "b_reviews", visible: true, type: "revi
  * The sections a term page came with from WordPress (the "extras" of the import:
  * the reasons row, the sliders, the "on a fingertip" summary), as sections staff
  * can edit (lib/tours/term-extras.ts). Their ids start with `x_`. They sit in the
- * default layout where the site has always drawn them: the reasons above the tour
- * list, the sliders and the summary after the lead form.
+ * default layout where the site draws them: the reasons right after the tour list
+ * (above it until 29.10 - Alon + Dor: "לא ירד בקטגוריה ותגיות כמו לדוגמא בר מצווה"),
+ * the sliders and the summary after the lead form.
  */
 export interface TermExtrasSections {
-  beforeTours: HomeSection[];
+  afterTours: HomeSection[];
   afterLead: HomeSection[];
 }
-export const NO_TERM_EXTRAS: TermExtrasSections = { beforeTours: [], afterLead: [] };
+export const NO_TERM_EXTRAS: TermExtrasSections = { afterTours: [], afterLead: [] };
 export const TERM_EXTRA_IDS = { reasons: "x_reasons", slider: "x_slider", destSlider: "x_destSlider", summary: "x_summary" } as const;
 const isExtraId = (id: string): boolean => id.startsWith("x_");
 
 /** The sections of a page that came with it from WordPress, apart from the rest, each where the site drew it. */
 export function splitTermExtras(sections: HomeSection[]): { rest: HomeSection[]; extras: TermExtrasSections } {
-  const extras: TermExtrasSections = { beforeTours: [], afterLead: [] };
+  const extras: TermExtrasSections = { afterTours: [], afterLead: [] };
   const rest: HomeSection[] = [];
   for (const section of sections) {
     if (!isExtraId(section.id)) rest.push(section);
-    else if (section.id === TERM_EXTRA_IDS.reasons) extras.beforeTours.push(section);
+    else if (section.id === TERM_EXTRA_IDS.reasons) extras.afterTours.push(section);
     else extras.afterLead.push(section);
   }
   return { rest, extras };
@@ -644,18 +645,18 @@ export function splitTermExtras(sections: HomeSection[]): { rest: HomeSection[];
  */
 export function defaultTermLayout(kind: TermPageKind, added: HomeSection[] = [], extras: TermExtrasSections = NO_TERM_EXTRAS): HomeSection[] {
   const taken = new Set(added.map((s) => s.id));
-  const before = extras.beforeTours.filter((s) => !taken.has(s.id));
+  const tours = extras.afterTours.filter((s) => !taken.has(s.id));
   const after = extras.afterLead.filter((s) => !taken.has(s.id));
   switch (kind) {
     case "audiences":
-      return [block("subcategories"), ...added, ...before, block("term_tours"), block("term_description"), LEAD_BLOCK, ...after, REVIEWS_BLOCK];
+      return [block("subcategories"), ...added, block("term_tours"), ...tours, block("term_description"), LEAD_BLOCK, ...after, REVIEWS_BLOCK];
     case "tags":
-      return [...added, ...before, block("term_tours"), block("term_description"), LEAD_BLOCK, ...after, REVIEWS_BLOCK];
+      return [...added, block("term_tours"), ...tours, block("term_description"), LEAD_BLOCK, ...after, REVIEWS_BLOCK];
     case "destinations":
-      return [block("term_description"), ...added, ...before, block("term_tours"), LEAD_BLOCK, ...after];
+      return [block("term_description"), ...added, block("term_tours"), ...tours, LEAD_BLOCK, ...after];
     case "categories":
       // a category page never showed its description: the part is there, switched off
-      return [...added, ...before, block("term_tours"), block("term_description", false), LEAD_BLOCK, ...after];
+      return [...added, block("term_tours"), ...tours, block("term_description", false), LEAD_BLOCK, ...after];
   }
 }
 

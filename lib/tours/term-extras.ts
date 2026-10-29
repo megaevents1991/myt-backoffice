@@ -83,22 +83,22 @@ function summarySection(value: unknown): HomeSection | null {
 }
 
 /**
- * The sections one term page came with, each where the site has always drawn it:
- * the reasons row above the tour list; the sliders and the summary after the lead form.
+ * The sections one term page came with, each where the site draws it:
+ * the reasons row right after the tour list; the sliders and the summary after the lead form.
  */
 export function termExtrasSections(kind: string, slug: string, extrasRow: unknown): TermExtrasSections {
   const term = obj(obj(obj(extrasRow).terms)[`${kind}/${slug}`]);
-  const beforeTours: HomeSection[] = [];
+  const afterTours: HomeSection[] = [];
   const afterLead: HomeSection[] = [];
   const reasons = reasonsSection(term.reasons);
-  if (reasons) beforeTours.push(reasons);
+  if (reasons) afterTours.push(reasons);
   const slider = bannersSection(TERM_EXTRA_IDS.slider, term.slider);
   if (slider) afterLead.push(slider);
   const destSlider = bannersSection(TERM_EXTRA_IDS.destSlider, term.destSlider);
   if (destSlider) afterLead.push(destSlider);
   const summary = summarySection(term.summary);
   if (summary) afterLead.push(summary);
-  return { beforeTours, afterLead };
+  return { afterTours, afterLead };
 }
 
 /**

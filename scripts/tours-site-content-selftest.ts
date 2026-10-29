@@ -252,8 +252,8 @@ const extrasRow = {
   },
 };
 const tagExtras = termExtrasSections("tags", "חמישיות", extrasRow);
-check("a tag's reasons row and destination slider, as sections", [tagExtras.beforeTours.map((s) => s.id), tagExtras.afterLead.map((s) => s.id)], [["x_reasons"], ["x_destSlider"]]);
-check("the reasons keep their icon as a site path and get the title the site wrote", tagExtras.beforeTours[0], {
+check("a tag's reasons row and destination slider, as sections", [tagExtras.afterTours.map((s) => s.id), tagExtras.afterLead.map((s) => s.id)], [["x_reasons"], ["x_destSlider"]]);
+check("the reasons keep their icon as a site path and get the title the site wrote", tagExtras.afterTours[0], {
   id: "x_reasons",
   visible: true,
   type: "reasons",
@@ -276,15 +276,15 @@ check("a destination's summary: the intro card and the columns without the impor
 check("a term with nothing from WordPress has no extras", termExtrasSections("tags", "אחר", extrasRow), NO_TERM_EXTRAS);
 check("no extras row at all", termExtrasSections("tags", "חמישיות", null), NO_TERM_EXTRAS);
 const tagPage = readTermSections("tags", undefined, tagExtras);
-check("a tag page nobody arranged opens with the reasons above the tour list and the slider after the lead form", tagPage.map((s) => s.id), ["x_reasons", "b_term_tours", "b_term_description", "b_lead_form", "x_destSlider", "b_reviews"]);
+check("a tag page nobody arranged opens with the reasons below the tour list and the slider after the lead form", tagPage.map((s) => s.id), ["b_term_tours", "x_reasons", "b_term_description", "b_lead_form", "x_destSlider", "b_reviews"]);
 check("the page it opens with is a valid page to save", termSectionsSchema("tags").safeParse(tagPage).success, true);
 const destPage = readTermSections("destinations", undefined, destExtras);
 check("a destination page opens with its summary after the lead form", destPage.map((s) => s.id), ["b_term_description", "b_term_tours", "b_lead_form", "x_summary"]);
 check("a summary is no part of the home page", homeSchema.safeParse({ sections: [destPage[3]] }).success, false);
-const rearranged = [tagPage[4], tagPage[0], { id: "s_text", visible: true, type: "text", title: "", html: "" }] as HomeSection[];
+const rearranged = [tagPage[4], tagPage[1], { id: "s_text", visible: true, type: "text", title: "", html: "" }] as HomeSection[];
 const split = splitTermExtras(rearranged);
-check("the reset tells the parts the page came with from the ones staff added", [split.rest.map((s) => s.id), split.extras.beforeTours.map((s) => s.id), split.extras.afterLead.map((s) => s.id)], [["s_text"], ["x_reasons"], ["x_destSlider"]]);
-check("the reset puts them back where the site drew them", defaultTermLayout("tags", split.rest, split.extras).map((s) => s.id), ["s_text", "x_reasons", "b_term_tours", "b_term_description", "b_lead_form", "x_destSlider", "b_reviews"]);
+check("the reset tells the parts the page came with from the ones staff added", [split.rest.map((s) => s.id), split.extras.afterTours.map((s) => s.id), split.extras.afterLead.map((s) => s.id)], [["s_text"], ["x_reasons"], ["x_destSlider"]]);
+check("the reset puts them back where the site draws them", defaultTermLayout("tags", split.rest, split.extras).map((s) => s.id), ["s_text", "b_term_tours", "x_reasons", "b_term_description", "b_lead_form", "x_destSlider", "b_reviews"]);
 
 // ---- the tour list and the sub-categories carry picks
 const oldBlocks = readTermSections("audiences", [
