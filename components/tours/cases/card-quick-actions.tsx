@@ -7,7 +7,8 @@
  * booking-link body is booking-link-card.tsx's own OfferSummary (send / send again / withdraw) - building or
  * editing an offer is the one thing that opens the card. A host says how a fresh row lands on screen.
  * NotesCell / OfferCell are the same two bodies behind a board CELL (Alon 28.10: "לערוך את כל השדות כבר במסך
- * רזרויישן") - the cell prints the field, a click edits it in a popover.
+ * רזרויישן") - the cell prints the field, a click edits it in a popover. On the board "Build an offer" / "Edit and
+ * resend" open the builder in a window over the list (`buildOffer`, Alon 29.10); the customer page opens the card.
  */
 import { useState, type ReactNode } from "react";
 import { CalendarClock, Link2, MoreHorizontal, StickyNote, UserPlus } from "lucide-react";
@@ -34,6 +35,8 @@ export interface CardActionHost {
   apply: (action: () => Promise<ActionResult<CaseRow>>, done: string) => Promise<boolean>;
   /** Opens the card at a section - the customer page unfolds it, the board navigates to it. */
   openCard: (section: "link" | "notes") => void;
+  /** Builds or edits the offer where the reader is (the board's window); without it the card opens at its link. */
+  buildOffer?: () => void;
 }
 
 /** The notes column's limit (updateCase NOTES_MAX). */
@@ -113,7 +116,8 @@ export function OfferPanel({
   };
   const openBuilder = () => {
     onDone();
-    host.openCard("link");
+    if (host.buildOffer) host.buildOffer();
+    else host.openCard("link");
   };
   if (!offer) {
     return (

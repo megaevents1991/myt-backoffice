@@ -907,12 +907,12 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
           Confirm → <span dir="rtl">{statusOf("paid", statuses)?.label ?? "Paid"}</span>
         </Button>
       )}
-      {["new", "no_answer", "returned", "offer_sent", "future"].includes(row.status) && (
+      {["new", "no_answer", "returned", "offer_sent", "future", "waitlist"].includes(row.status) && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ status: "no_answer", followUpDate: tomorrowOf(today) })}>
           No answer · call tomorrow
         </Button>
       )}
-      {["no_answer", "offer_sent", "future"].includes(row.status) && statusOf("returned", statuses) && (
+      {["no_answer", "offer_sent", "future", "waitlist"].includes(row.status) && statusOf("returned", statuses) && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ status: "returned", followUpDate: today })}>
           The customer came back
         </Button>

@@ -105,6 +105,7 @@ export const SYSTEM_STATUS_KEYS = [
   "returned",
   "offer_sent",
   "future",
+  "waitlist",
   "pending_payment",
   "deposit_paid",
   "paid",
@@ -137,6 +138,8 @@ export const DEFAULT_STATUSES: CaseStatus[] = [
   st("offer_sent", "הצעה נשלחה", "indigo"),
   // interested in a tour that is not on sale for them yet - needs the tour and a season
   st("future", "ליד עתידי", "cyan"),
+  // a waiting-list / "tell me when it opens" form: its own card, off TODAY and LEADS, on WAITING LIST (Alon 29.10)
+  st("waitlist", "רשימת המתנה", "amber"),
   st("pending_payment", "ממתין לתשלום", "orange"),
   // counts as paid: the seats are held
   st("deposit_paid", "שולם מקדמה", "teal"),
@@ -367,8 +370,6 @@ export interface RouteCard {
   createdAt: string;
   /** When the card was last touched - a WhatsApp message joins the newest by this (2026-10-21). */
   updatedAt?: string | null;
-  /** The form that opened it - a waiting-list card is told apart by it (28.10). */
-  kind?: string;
 }
 export function isOpenCard(card: RouteCard, statuses: readonly CaseStatus[], today: string): boolean {
   if (card.toFile || isClosedStatus(card.status, statuses)) return false;
@@ -379,12 +380,21 @@ export function isOpenCard(card: RouteCard, statuses: readonly CaseStatus[], tod
 const UNROUTED_KINDS = new Set(["booking", "advisor", "manual", "newsletter"]);
 /** "Put me on the waiting list" / "tell me when tours open" - a wish about a tour, not a deal yet. */
 const WAITING_LIST_KINDS = new Set(["waitlist", "notify"]);
+/** The status a waiting list waits in - off TODAY and LEADS, on the board's WAITING LIST tab (Alon 29.10). */
+export const WAITLIST_STATUS = "waitlist";
 /**
- * A waiting-list card: opened by a waiting-list form and still at New. Once a rep moves its status it is a deal like
- * any other (Dor 28.10).
+ * A waiting-list card IS its status: a waiting-list form opens one, a rep may move any card there. Once a rep moves it on
+ * it is a deal like any other (Dor 28.10).
  */
-export const isWaitingListCard = (card: { kind?: string; status: string }): boolean =>
-  !!card.kind && WAITING_LIST_KINDS.has(card.kind) && card.status === "new";
+export const isWaitingListCard = (card: { status: string }): boolean => card.status === WAITLIST_STATUS;
+/**
+ * The status a new card opens in (SQL twin: public.leads_fill): a waiting-list or "tell me when it opens" form waits in
+ * "Waiting list" (Alon 29.10: "הסטטוס לא צריך להיות חדש"); everything else is New. A company list without the status
+ * (the migration not applied yet) keeps New.
+ */
+export function newCardStatus(kind: string, statuses: readonly CaseStatus[]): string {
+  return WAITING_LIST_KINDS.has(kind) && statusOf(WAITLIST_STATUS, statuses) ? WAITLIST_STATUS : "new";
+}
 /** `new` may name the open card of the same tour it did not join - the new card points at it (leads.related_lead_id). */
 export type InquiryRoute = { kind: "join"; cardId: string } | { kind: "file" } | { kind: "new"; relatedCardId?: string };
 
@@ -393,8 +403,8 @@ export type InquiryRoute = { kind: "join"; cardId: string } | { kind: "file" } |
  * 20261028...waitlist_routing). Its tour has an open card -> it joins it (newest first); no tour while open cards
  * exist -> the rep files it; else a new card. A WHATSAPP message (2026-10-21) is the continuation of a conversation,
  * not a form about a tour: it joins the customer's newest open card (by updatedAt) whatever its tour, and is never
- * filed. A WAITING LIST (Alon 28.10: "לא לשייך לקארד שכבר יש לו סטטוס אחר") joins only a card of its tour still at
- * New - else it opens its own card next to that deal; every other form of the tour passes over a waiting-list card
+ * filed. A WAITING LIST (Alon 28.10 + 29.10) never folds into a deal: it joins the tour's waiting-list card, else it
+ * opens its own card next to the tour's newest open card; every other form of the tour passes over a waiting-list card
  * while the tour has another open card (Dor 28.10: the deal card wins).
  */
 export function routeInquiry(
@@ -413,8 +423,8 @@ export function routeInquiry(
   if (form.packageId) {
     const same = open.filter((c) => c.packageId === form.packageId);
     if (WAITING_LIST_KINDS.has(form.kind)) {
-      const fresh = same.find((c) => c.status === "new");
-      if (fresh) return { kind: "join", cardId: fresh.id };
+      const waiting = same.find(isWaitingListCard);
+      if (waiting) return { kind: "join", cardId: waiting.id };
       return same[0] ? { kind: "new", relatedCardId: same[0].id } : { kind: "new" };
     }
     const target = same.find((c) => !isWaitingListCard(c)) ?? same[0];
@@ -423,10 +433,14 @@ export function routeInquiry(
   return open.length ? { kind: "file" } : { kind: "new" };
 }
 
-/** The status a card takes when the customer comes back on it (a form joined it, or the rep filed one there). */
-export function statusOnReturn(status: string, statuses: readonly CaseStatus[]): string {
+/**
+ * The status a card takes when the customer comes back on it (a form joined it, or the rep filed one there). An inquiry
+ * on a waiting-list card wants the tour now - it came back; another waiting-list form changes nothing (29.10).
+ */
+export function statusOnReturn(status: string, statuses: readonly CaseStatus[], formKind?: string): string {
   if (!statusOf("returned", statuses)) return status;
-  return status === "no_answer" || status === "offer_sent" || status === "future" ? "returned" : status;
+  if (formKind && WAITING_LIST_KINDS.has(formKind)) return status;
+  return status === "no_answer" || status === "offer_sent" || status === "future" || status === WAITLIST_STATUS ? "returned" : status;
 }
 
 /**
@@ -942,6 +956,10 @@ export interface BoardPage {
   order: string[];
   /** What each card should know about its customer's earlier deals - computed over EVERY card of the customer, hidden ones too. */
   known: Record<string, KnownFrom>;
+  /** The company has a site address - a booking link can be built from a row (29.10). */
+  hasSite: boolean;
+  /** The company's own WhatsApp number is connected (Cloud API) - the builder offers "Send on WhatsApp". */
+  whatsappApi: boolean;
 }
 
 /** A customer's page in one load: the person and every card, the card to open first. */

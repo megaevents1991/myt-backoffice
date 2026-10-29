@@ -219,7 +219,8 @@ export function OfferSummary(props: SendProps & { onEdit: () => void; onWithdraw
  * date), the customer's rooms - each with the site's price and the total, discounts included - and the day
  * to follow up; "Prepare offer" keeps it on the case, and it counts as sent only through WhatsApp or e-mail,
  * which moves the case to "Offer sent". The offer stays visible with Edit and resend / Withdraw. Nothing
- * loads until the builder opens.
+ * loads until the builder opens. A board row opens it in a window (`bare`, `startBuilding` - Alon 29.10: the booking
+ * link was the one field a row could not finish).
  */
 export function BookingLinkCard({
   caseId,
@@ -231,6 +232,8 @@ export function BookingLinkCard({
   email,
   firstName,
   onChanged,
+  startBuilding = false,
+  bare = false,
 }: {
   caseId: string;
   defaultDepartureId: string | null;
@@ -242,6 +245,10 @@ export function BookingLinkCard({
   email: string | null;
   firstName: string | null;
   onChanged: () => void;
+  /** Open straight into the builder - from the offer as it stands, when there is one (a board row's window). */
+  startBuilding?: boolean;
+  /** No section chrome: the window around it already says what it is. */
+  bare?: boolean;
 }) {
   const run = useActionToast();
   const confirm = useConfirm();
@@ -301,6 +308,15 @@ export function BookingLinkCard({
     if (!start && answer.data.length) setPickerOpen(true);
   };
 
+  // once, when the window opens - a later render (the fresh offer after a save) must not reopen the builder
+  const started = useRef(false);
+  useEffect(() => {
+    if (!startBuilding || started.current || !hasSite) return;
+    started.current = true;
+    void open(offer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on mount only
+  }, []);
+
   const bump = (key: string, by: 1 | -1) =>
     setCounts((current) => {
       if (by > 0 && total >= LINK_ROOMS_MAX) return current;
@@ -347,13 +363,8 @@ export function BookingLinkCard({
 
   const priceOf = (key: string) => quote?.lines.find((l) => l.key === key);
 
-  return (
-    <Section
-      icon={Link2}
-      tone="brand"
-      title="Booking link"
-      description="An offer: the site opens on the tour with the customer's rooms; the booking lands on this case."
-    >
+  const body = (
+    <>
       {!hasSite ? (
         <p className="text-sm text-muted-foreground">The company has no site address yet - set it in the company settings.</p>
       ) : !building ? (
@@ -387,7 +398,8 @@ export function BookingLinkCard({
         </div>
       ) : (
         <div className="space-y-3">
-          <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+          {/* `modal`: in the board's window the list would otherwise swallow the mouse wheel (the dialog locks scroll) */}
+          <Popover open={pickerOpen} onOpenChange={setPickerOpen} modal>
             <PopoverTrigger asChild>
               <Button variant="outline" role="combobox" aria-expanded={pickerOpen} aria-label="Tour and date" className="w-full justify-between font-normal">
                 <span className="truncate" dir="auto">
@@ -543,6 +555,17 @@ export function BookingLinkCard({
           </Button>
         </div>
       )}
+    </>
+  );
+  if (bare) return <div className="space-y-3">{body}</div>;
+  return (
+    <Section
+      icon={Link2}
+      tone="brand"
+      title="Booking link"
+      description="An offer: the site opens on the tour with the customer's rooms; the booking lands on this case."
+    >
+      {body}
     </Section>
   );
 }

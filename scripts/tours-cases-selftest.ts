@@ -24,6 +24,7 @@ import {
   inquiriesOf,
   isOpenCard,
   isWaitingListCard,
+  newCardStatus,
   knownFrom,
   paymentAnswerOf,
   routeInquiry,
@@ -248,10 +249,10 @@ const next = validateStatuses([...drafts(custom), { key: null, label: "y", color
 assert.ok(next.ok && next.statuses.at(-1)?.key === "custom_5");
 const reordered = validateStatuses([...drafts(S)].reverse(), S);
 assert.ok(reordered.ok && reordered.statuses[0].key === S.at(-1)?.key, "the order is the order saved");
-// Nir's list (19.10): the ten statuses + spam on, the old ones off but kept
+// Nir's list (19.10) + Waiting list after "future" (Alon 29.10): on; the old ones off but kept
 assert.deepEqual(
   S.filter((s) => s.isActive).map((s) => s.key),
-  ["new", "no_answer", "returned", "offer_sent", "future", "pending_payment", "deposit_paid", "paid", "not_relevant", "cancelled", "spam"],
+  ["new", "no_answer", "returned", "offer_sent", "future", "waitlist", "pending_payment", "deposit_paid", "paid", "not_relevant", "cancelled", "spam"],
 );
 assert.deepEqual(S.filter((s) => !s.isActive).map((s) => s.key), ["in_progress", "follow_up", "done", "payment_failed", "payment_review"]);
 assert.ok(!validateStatuses(drafts(S).map((s) => (s.key === "returned" ? { ...s, isActive: false } : s)), S).ok, "a status the code reads stays on");
@@ -524,9 +525,9 @@ assert.deepEqual(
   { kind: "join", cardId: "k2" },
   "the newest open card of the tour",
 );
-// a waiting list joins only a card still at New; another status = its own card, pointing at that deal (Alon 28.10)
-assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "new" })], S, TODAY), { kind: "join", cardId: "k1" });
-for (const status of ["no_answer", "offer_sent", "future", "pending_payment", "deposit_paid"]) {
+// a waiting list is a card of its own in the status "Waiting list", next to the deal of its tour (Alon 29.10: "הסטטוס לא
+// צריך להיות חדש ... רק ל-WAITING LIST"); it never folds into a deal - not even one still at New
+for (const status of ["new", "no_answer", "offer_sent", "future", "pending_payment", "deposit_paid"]) {
   assert.deepEqual(
     routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status })], S, TODAY),
     { kind: "new", relatedCardId: "k1" },
@@ -538,29 +539,45 @@ assert.deepEqual(
   { kind: "new", relatedCardId: "k1" },
   "nor into a paid trip ahead",
 );
-assert.deepEqual(
-  routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "new" }), card({ id: "k2", status: "offer_sent", createdAt: "2026-10-12T10:00:00Z" })], S, TODAY),
-  { kind: "join", cardId: "k1" },
-  "the New card of the tour, though another card is newer",
-);
 assert.deepEqual(routeInquiry({ kind: "notify", packageId: "tour-a" }, [card({ status: "offer_sent" })], S, TODAY), { kind: "new", relatedCardId: "k1" }, "notify = waitlist");
 assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "not_relevant" })], S, TODAY), { kind: "new" }, "no open card: a plain new one");
 assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-b" }, [card({ status: "offer_sent" })], S, TODAY), { kind: "new" }, "another tour's deal is not its neighbour");
-// ...and afterwards the deal card wins: a waiting-list card at New is passed over while the tour has another open card
-const waiting = card({ id: "k2", kind: "waitlist", status: "new", createdAt: "2026-10-12T10:00:00Z" });
+// a second waiting-list form of the tour joins the waiting-list card, not the deal
+const waiting = card({ id: "k2", status: "waitlist", createdAt: "2026-10-12T10:00:00Z" });
+assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "offer_sent" }), waiting], S, TODAY), { kind: "join", cardId: "k2" }, "a second waiting-list form joins the first");
+assert.deepEqual(routeInquiry({ kind: "notify", packageId: "tour-a" }, [waiting], S, TODAY), { kind: "join", cardId: "k2" });
+// ...and every other form of the tour goes to the deal card while there is one
 assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [card({ status: "offer_sent" }), waiting], S, TODAY), { kind: "join", cardId: "k1" });
-assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [waiting], S, TODAY), { kind: "join", cardId: "k2" }, "only waiting-list cards open: the newest of them");
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [card({ status: "new" }), waiting], S, TODAY), { kind: "join", cardId: "k1" }, "a deal at New wins too");
+assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-a" }, [waiting], S, TODAY), { kind: "join", cardId: "k2" }, "only the waiting-list card open: it takes the inquiry");
 assert.deepEqual(
   routeInquiry({ kind: "lead", packageId: "tour-a" }, [card({ status: "offer_sent" }), { ...waiting, status: "offer_sent" }], S, TODAY),
   { kind: "join", cardId: "k2" },
   "a waiting-list card a rep moved on is a deal like any other",
 );
-assert.deepEqual(routeInquiry({ kind: "waitlist", packageId: "tour-a" }, [card({ status: "offer_sent" }), waiting], S, TODAY), { kind: "join", cardId: "k2" }, "a second waiting-list form joins the first");
-assert.equal(isWaitingListCard({ kind: "waitlist", status: "new" }), true);
-assert.equal(isWaitingListCard({ kind: "notify", status: "new" }), true);
-assert.equal(isWaitingListCard({ kind: "waitlist", status: "no_answer" }), false);
-assert.equal(isWaitingListCard({ kind: "lead", status: "new" }), false);
-assert.equal(isWaitingListCard({ status: "new" }), false, "no kind known");
+// a waiting-list card IS its status - opened by any form, or moved there by a rep
+assert.equal(isWaitingListCard({ status: "waitlist" }), true);
+assert.equal(isWaitingListCard({ status: "new" }), false, "a New card is no waiting list, whatever opened it");
+assert.equal(isWaitingListCard({ status: "no_answer" }), false);
+// the status a new card opens in
+assert.equal(newCardStatus("waitlist", S), "waitlist");
+assert.equal(newCardStatus("notify", S), "waitlist");
+assert.equal(newCardStatus("lead", S), "new");
+assert.equal(newCardStatus("booking", S), "new");
+assert.equal(newCardStatus("waitlist", S.filter((s) => s.key !== "waitlist")), "new", "a list without the status (before the migration)");
+assert.equal(
+  DEFAULT_STATUSES.some((s) => s.key === "waitlist" && s.isSystem && !s.isClosed && s.isActive),
+  true,
+  "Waiting list is a system status, open",
+);
+// out of TODAY: a waiting-list card waits for its tour, not for a call - unless the customer wrote, or the rep set a day
+{
+  const facts = { status: "waitlist", followUpDate: null, toFile: false, paymentAnswer: null, confirmationPending: false, waUnseen: 0 };
+  assert.equal(todayReason(facts, S, TODAY), null, "a fresh waiting list is not on TODAY");
+  assert.equal(todayReason({ ...facts, waUnseen: 1 }, S, TODAY), "whatsapp", "the customer wrote");
+  assert.equal(todayReason({ ...facts, followUpDate: TODAY }, S, TODAY), "today", "the rep's own day");
+  assert.equal(todayReason({ ...facts, status: "new" }, S, TODAY), "new");
+}
 assert.deepEqual(routeInquiry({ kind: "lead", packageId: "tour-b" }, [card()], S, TODAY), { kind: "new" }, "another tour = another card");
 assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [card()], S, TODAY), { kind: "file" });
 assert.deepEqual(routeInquiry({ kind: "contact", packageId: null }, [card({ status: "not_relevant" })], S, TODAY), { kind: "new" }, "only closed cards: a fresh start");
@@ -572,6 +589,10 @@ assert.equal(statusOnReturn("offer_sent", S), "returned");
 assert.equal(statusOnReturn("future", S), "returned");
 assert.equal(statusOnReturn("paid", S), "paid", "a paid card keeps its status - the follow-up day calls the rep");
 assert.equal(statusOnReturn("no_answer", S.filter((s) => s.key !== "returned")), "no_answer", "before the migration");
+assert.equal(statusOnReturn("waitlist", S), "returned", "an inquiry on a waiting-list card: the customer wants the tour now");
+assert.equal(statusOnReturn("waitlist", S, "waitlist"), "waitlist", "another waiting-list form keeps it waiting");
+assert.equal(statusOnReturn("waitlist", S, "notify"), "waitlist");
+assert.equal(statusOnReturn("no_answer", S, "waitlist"), "no_answer", "a waiting-list form never says the customer came back");
 
 // the card's step: lead -> offer -> order -> paid
 assert.equal(cardStage("new", false, S), 0);

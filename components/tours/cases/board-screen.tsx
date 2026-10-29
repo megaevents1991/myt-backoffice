@@ -14,14 +14,16 @@
  * - RESERVATIONS: one row per order (a site booking or one a rep typed, each with its T number); a customer with two
  *   orders shows twice. Live / Past / Cancelled.
  * - LEADS: the cards with no order yet. Open / Closed. Bulk assign for a manager.
+ * - WAITING LIST: the cards in the status "Waiting list" - a waiting-list / notify-me form from the site waits here, off
+ *   TODAY and LEADS, until a rep moves its status (Alon 29.10). First in line first.
  * - ALL: the old table - bulk changes, export.
  * The server already answers only the cards the viewer may see (a manager all, a rep their own + the unassigned).
  * Every row opens its customer, with that card highlighted. TODAY / RESERVATIONS / LEADS share one load (listBoard).
  */
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { CalendarClock, ListChecks, Loader2, PlusCircle, RefreshCw } from "lucide-react";
+import { CalendarClock, Hourglass, ListChecks, Loader2, PlusCircle, RefreshCw } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,7 @@ import {
   customerLabel,
   followUpDue,
   isClosedStatus,
+  isWaitingListCard,
   sourceLabel,
   statusOf,
   todayRank,
@@ -85,9 +88,11 @@ import { CasesScreen } from "@/components/tours/cases/cases-screen";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
 import { CardActionsMenu, NotesCell, OfferCell, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
+import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-const TABS = ["today", "reservations", "leads", "all"] as const;
+const TABS = ["today", "reservations", "leads", "waitlist", "all"] as const;
 const PHASES: BookingPhase[] = ["active", "past", "cancelled"];
 const PHASE_TAB_LABELS: Record<BookingPhase, string> = { active: "Live", past: "Past", cancelled: "Cancelled" };
 const LEAD_VIEWS = ["open", "closed"] as const;
@@ -185,6 +190,9 @@ export function BoardScreen() {
   const [editingStatuses, setEditingStatuses] = useState(false);
   const [todaySelection, setTodaySelection] = useState<Record<string, boolean>>({});
   const [leadSelection, setLeadSelection] = useState<Record<string, boolean>>({});
+  const [waitSelection, setWaitSelection] = useState<Record<string, boolean>>({});
+  // the card whose booking link is being built in the window over the list (Alon 29.10)
+  const [buildingFor, setBuildingFor] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const today = todayIso();
 
@@ -229,12 +237,14 @@ export function BoardScreen() {
       .filter((r): r is OrderRow => !!r.card && !r.card.toFile && (shownIds.has(r.card.id) || (!!ref && r.order.ref === ref)));
   }, [data, cardById, shownIds, q]);
   const phaseCount = (p: BookingPhase) => orderRows.filter((r) => r.order.phase === p).length;
-  const isLead = useCallback((c: CaseRow) => !c.toFile && !ordersByCard.get(c.id)?.length, [ordersByCard]);
+  // a waiting list is not a lead yet - it has its own tab (Alon 29.10)
+  const isLead = useCallback((c: CaseRow) => !c.toFile && !isWaitingListCard(c) && !ordersByCard.get(c.id)?.length, [ordersByCard]);
   const leadRows = useMemo(
     () => cards.filter((c) => isLead(c) && (leadView === "closed") === isClosedStatus(c.status, statuses)),
     [cards, isLead, leadView, statuses],
   );
   const leadCount = (v: LeadView) => cards.filter((c) => isLead(c) && (v === "closed") === isClosedStatus(c.status, statuses)).length;
+  const waitRows = useMemo(() => cards.filter((c) => !c.toFile && isWaitingListCard(c)), [cards]);
 
   const open = useCallback((cardId: string) => router.push(`/tours/reservations/${cardId}`), [router]);
 
@@ -254,14 +264,21 @@ export function BoardScreen() {
     [repName, run, setData, toast, viewer],
   );
   const save = useCallback((card: CaseRow, change: CaseChange, done: string) => apply(card, () => updateCase(card.id, change), done), [apply]);
-  // the quick actions' host (22.10): the same patch, and "open the card" = its customer page at that section
+  // the quick actions' host (22.10): the same patch, "open the card" = its customer page at that section, and the
+  // booking link is built in a window over the list - the one field a row could not finish (Alon 29.10)
   const hostFor = useCallback(
     (card: CaseRow): CardActionHost => ({
       apply: (action, done) => apply(card, action, done),
       openCard: (section) => router.push(`/tours/reservations/${card.id}?focus=${section}`),
+      buildOffer: () => setBuildingFor(card.id),
     }),
     [apply, router],
   );
+  const buildingCard = buildingFor ? cardById.get(buildingFor) : undefined;
+  // a card that left the list (handed to another rep) closes its window for good - it never reopens on a later reload
+  useEffect(() => {
+    if (buildingFor && data && !buildingCard) setBuildingFor(null);
+  }, [buildingFor, buildingCard, data]);
 
   // the viewer's own order: shown at once, saved behind it - ONE save in flight, the newest order replaces anything still
   // waiting (two quick drags never race; an older save can never land after a newer one). A failed save toasts; the screen
@@ -523,7 +540,7 @@ export function BoardScreen() {
                 <>
                   <WhatsAppButton iconOnly phone={card.phone} message={`היי ${card.firstName ?? ""}`.trim()} />
                   <MailButton iconOnly email={card.email} />
-                  {["new", "no_answer", "returned", "offer_sent", "future"].includes(card.status) && (
+                  {["new", "no_answer", "returned", "offer_sent", "future", "waitlist"].includes(card.status) && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -810,6 +827,10 @@ export function BoardScreen() {
     [busy, currentUserId, followUpCell, hostFor, repCell, repLabel, repName, statusCell, statusLabel, statuses, today],
   );
 
+  // the LEADS columns, but "Today" - a waiting list reaches TODAY only on a WhatsApp message or a day the rep set, and
+  // its "Follow-up" column already says the second
+  const waitColumns = useMemo(() => leadColumns.filter((c) => c.id !== "today"), [leadColumns]);
+
   const segment = <T extends string>(value: T, onChange: (next: T) => void, options: { id: T; label: string; count: number }[]) => (
     <div className="inline-flex overflow-hidden rounded-md border" role="radiogroup">
       {options.map((o) => (
@@ -883,6 +904,10 @@ export function BoardScreen() {
           </TabsTrigger>
           <TabsTrigger value="leads" className="gap-2 font-semibold tracking-wide">
             LEADS {data && <CountPill count={leadCount("open")} />}
+          </TabsTrigger>
+          <TabsTrigger value="waitlist" className="gap-2 font-semibold tracking-wide">
+            <Hourglass className="h-4 w-4" />
+            WAITING LIST {data && <CountPill count={waitRows.length} />}
           </TabsTrigger>
           <TabsTrigger value="all" className="font-semibold tracking-wide">
             ALL
@@ -983,6 +1008,36 @@ export function BoardScreen() {
           )}
         </TabsContent>
 
+        <TabsContent value="waitlist" className="space-y-3">
+          {data ? (
+            <DataTable
+              columns={waitColumns}
+              data={waitRows}
+              dense
+              grid
+              getRowId={(c) => c.id}
+              defaultPageSize={50}
+              pageSizeOptions={[25, 50, 100]}
+              // first in line first: when a date opens, the rep calls them in the order they asked
+              defaultSorting={[{ id: "created", desc: false }]}
+              enableRowSelection={viewer.manager}
+              rowSelection={waitSelection}
+              onRowSelectionChange={setWaitSelection}
+              bulkActions={bulkBar(waitSelection, () => setWaitSelection({}))}
+              filters={toolbar}
+              onRowClick={(c) => open(c.id)}
+              stateKey="tours-board-waitlist"
+              emptyState={{
+                title: "Nobody is waiting",
+                description:
+                  'A waiting-list or "tell me when it opens" form from the site lands here, off TODAY and LEADS. Move its status when you call - it then works like any card.',
+              }}
+            />
+          ) : (
+            loading && <DataTableSkeleton rows={10} label="Loading the waiting list" />
+          )}
+        </TabsContent>
+
         <TabsContent value="all">
           <CasesScreen embedded />
         </TabsContent>
@@ -1002,6 +1057,34 @@ export function BoardScreen() {
               else router.push(`/tours/reservations/${id}`);
             }}
           />
+          {/* mounted only while open - it starts in the builder, from the card's offer when there is one; it closes by
+              itself when the card leaves the list (handed to another rep) */}
+          {buildingCard && (
+            <Dialog open onOpenChange={(next) => !next && setBuildingFor(null)}>
+              <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Booking link</DialogTitle>
+                  <DialogDescription dir="auto">
+                    {[caseName(buildingCard) || buildingCard.phone, buildingCard.tourName].filter(Boolean).join(" · ") || "Card"}
+                  </DialogDescription>
+                </DialogHeader>
+                <BookingLinkCard
+                  key={buildingCard.id}
+                  bare
+                  startBuilding
+                  caseId={buildingCard.id}
+                  defaultDepartureId={buildingCard.departureId}
+                  hasSite={data.hasSite}
+                  whatsappApi={data.whatsappApi}
+                  offer={buildingCard.offer ?? null}
+                  phone={buildingCard.phone}
+                  email={buildingCard.email}
+                  firstName={buildingCard.firstName}
+                  onChanged={() => void reload({ quiet: true })}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
           <StatusesDialog
             open={editingStatuses}
             onOpenChange={setEditingStatuses}

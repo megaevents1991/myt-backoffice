@@ -1786,12 +1786,14 @@ export async function saveBoardOrder(ids: string[]): Promise<ActionResult<{ save
 export async function listBoard(): Promise<ActionResult<BoardPage>> {
   try {
     const { session, company } = await requireCompanyRep("tours");
-    const [page, statuses, reps, viewer, order] = await Promise.all([
+    const [page, statuses, reps, viewer, order, whatsappApi] = await Promise.all([
       allCaseRecords(company),
       statusesOf(company),
       repsOf(company),
       boardViewerFor(session, company),
       boardOrderOf(company, session.sub),
+      // the row's booking-link builder offers the company's own number when it is connected (never throws)
+      whatsappApiReady(company),
     ]);
     if (page.error) throw new Error(`leads: ${page.error.message}`);
     const records = page.rows.map(withDefaults);
@@ -1811,6 +1813,8 @@ export async function listBoard(): Promise<ActionResult<BoardPage>> {
       viewer,
       order,
       known: knownForCards(all, cards, statuses),
+      hasSite: !!company.siteUrl,
+      whatsappApi,
     });
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the reservations");
@@ -2204,7 +2208,7 @@ export async function fileInquiry(inquiryId: string, cardId: string | null): Pro
       email: inquiry.email?.trim().toLowerCase() || null,
       fields: asObject(inquiry.payload),
     };
-    const nextStatus = statusOnReturn(target.status, statuses);
+    const nextStatus = statusOnReturn(target.status, statuses, inquiry.kind ?? undefined);
     const { error: targetError } = await supabaseTyped
       .from("leads")
       .update({ status: nextStatus, follow_up_date: today, payload: { ...payload, inquiries: [...inquiries, entry] } as unknown as Json })
