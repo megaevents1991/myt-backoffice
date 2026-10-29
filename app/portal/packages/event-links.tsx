@@ -6,6 +6,8 @@ import { Check, Copy, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { partnerLink } from "@/lib/site";
+import { matchesSearch } from "@/lib/search";
+import { ShowMoreButton } from "../show-more-button";
 import type { BuilderEvent } from "@/lib/actions/portal-package-actions";
 
 const dateFmt = (value: string) => new Date(value).toLocaleDateString("he-IL");
@@ -27,17 +29,26 @@ export function EventLinks({
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
-  const matches = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return events.slice(0, 8);
-    return events
-      .filter(
-        (e) =>
-          e.name.toLowerCase().includes(term) ||
-          e.location_name.toLowerCase().includes(term)
+  // Nearest first (the server sorts by date): 8 rows, 12 for a search, and
+  // "הצג עוד" opens every other match - a far show was out of reach.
+  const allMatches = useMemo(() => {
+    const term = query.trim();
+    if (!term) return events;
+    return events.filter((e) =>
+      matchesSearch(
+        term,
+        e.name,
+        e.name_english,
+        e.location_name,
+        ...(e.tag_list ?? []).map((t) => t.name)
       )
-      .slice(0, 12);
+    );
   }, [events, query]);
+  const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
+  const matches =
+    expandedQuery === query.trim()
+      ? allMatches
+      : allMatches.slice(0, query.trim() ? 12 : 8);
 
   const copyLink = async (eventId: number) => {
     try {
@@ -117,6 +128,10 @@ export function EventLinks({
           ))}
         </ul>
       )}
+      <ShowMoreButton
+        hidden={allMatches.length - matches.length}
+        onClick={() => setExpandedQuery(query.trim())}
+      />
       <p className="text-xs text-muted-foreground">
         הקישור נושא את קוד המעקב שלכם ומנחית את הלקוח ישר על עמוד ההזמנה של
         האירוע - כל הזמנה שתגיע דרכו משויכת אליכם אוטומטית.

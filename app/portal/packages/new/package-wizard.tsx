@@ -13,6 +13,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { BedDouble, Plane, Search, Ticket } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { matchesSearch } from "@/lib/search";
+import { ShowMoreButton } from "../../show-more-button";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
 import { isTicketOnlyEvent } from "@/lib/package-mode";
 import {
@@ -221,17 +223,27 @@ export function PackageWizard({
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [step]);
 
-  const matches = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return events.slice(0, 8);
-    return events
-      .filter(
-        (e) =>
-          e.name.toLowerCase().includes(term) ||
-          e.location_name.toLowerCase().includes(term),
-      )
-      .slice(0, 8);
+  // Every match, nearest date first (the server sorts by date); the picker shows
+  // the first 8 and "הצג עוד" opens the rest - a package for a show months away
+  // was unreachable behind the 8 nearest. Same token search as the dashboard:
+  // Hebrew + English name, venue and the artist / team / league tags.
+  const allMatches = useMemo(() => {
+    const term = query.trim();
+    if (!term) return events;
+    return events.filter((e) =>
+      matchesSearch(
+        term,
+        e.name,
+        e.name_english,
+        e.location_name,
+        ...(e.tag_list ?? []).map((t) => t.name),
+      ),
+    );
   }, [events, query]);
+  // Expanded for one query only - typing again starts the list short.
+  const [expandedQuery, setExpandedQuery] = useState<string | null>(null);
+  const matches =
+    expandedQuery === query.trim() ? allMatches : allMatches.slice(0, 8);
 
   // Guards the inventory load against a quick event re-pick: only the LAST
   // selected event's response may land (stale flights/hotels used to win).
@@ -1014,6 +1026,7 @@ export function PackageWizard({
                           <img
                             src={e.image_url}
                             alt=""
+                            loading="lazy"
                             className="size-12 shrink-0 rounded-full border-2 border-white object-cover object-top shadow-md"
                           />
                         ) : (
@@ -1041,6 +1054,10 @@ export function PackageWizard({
                 ))}
               </ul>
             )}
+            <ShowMoreButton
+              hidden={allMatches.length - matches.length}
+              onClick={() => setExpandedQuery(query.trim())}
+            />
           </section>
         )}
 

@@ -29,6 +29,7 @@ import { matchesSearch } from "@/lib/search";
 import { computePerPersonPackagePrice } from "@/lib/package-price";
 import type { BuilderEvent } from "@/lib/actions/portal-package-actions";
 import { isTicketOnlyEvent } from "@/lib/package-mode";
+import { ShowMoreButton } from "./show-more-button";
 
 const dateFmt = (value: string) => new Date(value).toLocaleDateString("he-IL");
 const usd = (value: number) => `$${Math.round(value).toLocaleString("en-US")}`;
@@ -177,7 +178,7 @@ export function DashboardSearch({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events, month]);
 
-  const matches = useMemo(() => {
+  const results = useMemo(() => {
     const term = query.trim().toLowerCase();
     const price = (e: BuilderEvent) =>
       (ticketsOnly ? ticketOnlyPerPerson(e) : e.site_price) ?? Infinity;
@@ -238,9 +239,10 @@ export function DashboardSearch({
     });
 
     // Default view: 8 recommended rows; once the user filters/sorts, more.
+    // "הצג עוד" under the list opens the rest of the search.
     const untouched =
       !term && month === "all" && sort === "recommended" && advActiveCount === 0;
-    return sorted.slice(0, untouched ? 8 : 30);
+    return { all: sorted, limit: untouched ? 8 : 30 };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     events,
@@ -258,6 +260,27 @@ export function DashboardSearch({
     city,
     priceMax,
   ]);
+
+  // "הצג עוד" opens every match of THIS search; any change to the search
+  // starts the list short again (no effect - the key simply stops matching).
+  const searchKey = JSON.stringify([
+    query.trim(),
+    genre,
+    month,
+    sort,
+    ticketsOnly,
+    dateFrom,
+    dateTo,
+    league,
+    team,
+    musicGenre,
+    artist,
+    city,
+    priceMax,
+  ]);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const matches =
+    expandedKey === searchKey ? results.all : results.all.slice(0, results.limit);
 
   const copyLink = async (eventId: number) => {
     try {
@@ -533,6 +556,7 @@ export function DashboardSearch({
                     <img
                       src={event.image_url}
                       alt=""
+                      loading="lazy"
                       className="size-10 shrink-0 rounded-full border-2 border-white object-cover object-top shadow-sm"
                     />
                   ) : null}
@@ -604,6 +628,10 @@ export function DashboardSearch({
           })}
         </ul>
       )}
+      <ShowMoreButton
+        hidden={results.all.length - matches.length}
+        onClick={() => setExpandedKey(searchKey)}
+      />
     </div>
   );
 }
