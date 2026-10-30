@@ -15,7 +15,7 @@ import {
   creativeLine,
   existingEventId,
   farVenueTarget,
-  LEARN_LOCKED_LINE,
+  LEARN_ANYTIME_LINE,
   LEARN_STEP_1,
   LEARN_STEP_1_DONE,
   LEARN_STEP_2,
@@ -183,10 +183,9 @@ const Pill = ({ item }: { item: UploaderItem }) => (
 
 /**
  * Learn from an event in two clear steps (spec 5.5, round 2 - Alon: "not clear which flow"). A card with other built
- * shows in its run always shows both: 1. arrange this event in the editor (a link, new tab); 2. "למדו והחילו" - disabled,
- * with the line that says it opens after the editor's save, until `fixed` says a person changed it since its last learn
- * (the hall's tickets or a ticket description - Alon round 3; every new edit opens it again). Then the board's learn
- * dialog takes it from there.
+ * shows in its run always shows both: 1. arrange this event in the editor (a link, new tab; "✓" once `fixed` says a person
+ * changed something a learn can carry since its last learn); 2. "למדו והחילו" - never locked (second-edit round, Alon: "דרך
+ * לתת לזה טריגר"): the board's learn dialog says what changed, who gets it, why not, or that it found nothing.
  */
 function LearnSteps({
   item,
@@ -203,7 +202,7 @@ function LearnSteps({
   busy: BusyKind | null;
   onLearn: (item: UploaderItem) => void;
 }) {
-  const lockedId = `learn-locked-${item.id}`;
+  const lineId = `learn-line-${item.id}`;
   return (
     <div className="space-y-1.5 rounded-md border border-info/40 px-2.5 py-2">
       {fixed ? (
@@ -229,8 +228,8 @@ function LearnSteps({
         type="button"
         variant="outline"
         size="sm"
-        disabled={!fixed || busy !== null}
-        aria-describedby={fixed ? undefined : lockedId}
+        disabled={busy !== null}
+        aria-describedby={fixed ? undefined : lineId}
         onClick={() => onLearn(item)}
         className="h-auto min-h-8 w-full justify-start whitespace-normal py-1.5 text-start text-[13px] leading-snug"
       >
@@ -238,8 +237,8 @@ function LearnSteps({
         <span className="min-w-0">{LEARN_STEP_2(siblings)}</span>
       </Button>
       {!fixed && (
-        <p id={lockedId} className="text-xs text-muted-foreground">
-          {LEARN_LOCKED_LINE}
+        <p id={lineId} className="text-xs text-muted-foreground">
+          {LEARN_ANYTIME_LINE}
         </p>
       )}
     </div>
@@ -251,7 +250,7 @@ export type ShowCardProps = {
   art: SubjectArt;
   subjectNameEn: string;
   edited: boolean;
-  /** `RunBoard.editKinds[item.id]` is not empty: a person changed this event in the editor (the hall's tickets or a ticket description) since its last learn - learn step 1 reads "✓". */
+  /** `RunBoard.editKinds[item.id]` is not empty: a person changed something in the editor a learn can carry (the hall's tickets, a ticket description, the event's description or place) since its last learn - learn step 1 reads "✓". */
   fixedByHand: boolean;
   /** Other ready / approved shows of the run with an event - what "למדו והחילו" may carry an edit to (Alon round 3); above 0 the card shows the two learn steps. */
   learnTargets: number;

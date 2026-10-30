@@ -181,6 +181,19 @@ export function BoardClient({
     await refresh();
   }, [refresh]);
   const closeDialog = useCallback(() => setDialog(null), []);
+
+  // `?learn=<item>` = the editor's toast after a save ("להחיל על N ההופעות?", second-edit round): the board opens that card's
+  // learn dialog once it has the run, and the address forgets it - a refresh does not open it again.
+  const boardLoaded = board !== null;
+  useEffect(() => {
+    if (!boardLoaded) return;
+    const url = new URL(window.location.href);
+    const wanted = url.searchParams.get("learn");
+    if (!wanted) return;
+    url.searchParams.delete("learn");
+    window.history.replaceState(window.history.state, "", url);
+    setDialog({ kind: "learn", itemId: wanted });
+  }, [boardLoaded]);
   /** A location created and the question answered with it (its toast already shown): the show builds now - wake the loop. */
   const locationDone = useCallback(async () => {
     setDialog(null);

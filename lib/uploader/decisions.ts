@@ -118,6 +118,7 @@ export function decision(code: DecisionCode, p: DecisionParams = {}): Decision {
 export const EDIT_WHITELIST = [
   "name",
   "name_english",
+  "description",
   "date",
   "def_date_depart",
   "def_date_return",
@@ -135,7 +136,7 @@ export const EDIT_WHITELIST = [
 ] as const;
 
 /** JSON with the keys of every object sorted: jsonb hands keys back in its own order, so key order must not make two equal objects differ. */
-function stable(v: unknown): string {
+export function stable(v: unknown): string {
   if (v === undefined) return "null";
   return JSON.stringify(v, (_key, value: unknown) => {
     if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
@@ -143,13 +144,20 @@ function stable(v: unknown): string {
   });
 }
 
-/** The value of one whitelisted field; `undefined` = the object does not carry it at all. */
+/**
+ * The value of one whitelisted field; `undefined` = the object does not carry it at all. A payload a learn rebased keeps what the
+ * uploader first wrote (`built_tickets_count`, `built_fields` - edit-changes.ts), so the edit a person made stays an edit; a row has
+ * neither. A description compares trimmed, as the learn's kinds read it (a trailing newline is no edit).
+ */
 function fieldOf(o: Record<string, unknown>, field: (typeof EDIT_WHITELIST)[number]): unknown {
-  if (field !== "tickets_count") return o[field];
-  // a payload a learn rebased keeps the count the uploader wrote (edit-changes.ts `withBuiltCount`); a row never has it
-  if (typeof o.built_tickets_count === "number") return o.built_tickets_count;
-  if (o.tickets_and_rates === undefined) return undefined;
-  return Array.isArray(o.tickets_and_rates) ? o.tickets_and_rates.length : 0;
+  if (field === "tickets_count") {
+    if (typeof o.built_tickets_count === "number") return o.built_tickets_count;
+    if (o.tickets_and_rates === undefined) return undefined;
+    return Array.isArray(o.tickets_and_rates) ? o.tickets_and_rates.length : 0;
+  }
+  const built = typeof o.built_fields === "object" && o.built_fields !== null ? (o.built_fields as Record<string, unknown>) : null;
+  const value = built && field in built ? built[field] : o[field];
+  return field === "description" && typeof value === "string" ? value.trim() : value;
 }
 
 /**

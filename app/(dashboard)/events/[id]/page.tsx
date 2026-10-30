@@ -31,6 +31,8 @@ import { Switch } from "@/components/ui/switch";
 import { FlightsEditableTable } from "@/components/flights-editable-table";
 import { EventFlightLock } from "@/components/event-flight-lock";
 import { useToast } from "@/hooks/use-toast";
+import { editTouchesLearnFields } from "@/lib/uploader/edit-changes";
+import { promptUploaderLearn } from "./uploader-learn-prompt";
 import { useConfirm } from "@/components/confirm-provider";
 import type { Event, EventTicket, EventType } from "@/types/app.types";
 import {
@@ -1645,6 +1647,7 @@ export default function EventPage({
         // moment ago.
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { locked_flight_id, ...eventWithoutLock } = event;
+        const touchedLearnFields = editTouchesLearnFields(initialEventRef.current, event as unknown as Record<string, unknown>);
         await updateEvent(event.id, eventWithoutLock);
         // Links: only when actually changed, never on a failed baseline load
         // (isolated - a link failure never reports the event save as failed).
@@ -1656,6 +1659,8 @@ export default function EventPage({
           title: "Success",
           description: "Event has been saved successfully.",
         });
+        // An event of an AI Uploader run: ask whether to carry this edit to the run's other shows (never blocks the save).
+        if (touchedLearnFields) void promptUploaderLearn(event.id);
       }
     } catch (error) {
       console.error(

@@ -1897,6 +1897,31 @@ learn kind.
 location is still asked (D2) - the value only adds "(לפי הבריף)" to one option; a stored "skip" / "ticket_only" plan reads as
 before. The parse tool's enum, the house rules, the plan card's dropdown + hint and the board chip follow.
 
+**The second-edit round (30.10, Alon's note on the 29.10 brief; spec `docs/superpowers/specs/2026-10-30-uploader-second-edit-round-design.md`;
+no migration).** Measured on Oasis run `2e7481b9`: his second edit changed `location.name` + the EVENT's description, which no kind watched, so
+step 2 stayed locked; no write of the system ever carried an event description (1303, 1305-1307 were his own saves, 1308 kept "ללונדון").
+**(1) The button never locks:** "למדו והחילו" opens at any moment (only `busy` disables it) and the dialog says what changed, who gets it and
+why not, or that it found nothing (`LEARN_ANYTIME_LINE`). **(2) The question after a save:** the editor's save calls `promptUploaderLearn` ->
+`learnPromptForEvent` (never throws, a non-admin / no built item / nothing to carry = null), a toast asks and opens `/uploader/<run>?learn=<item>`
+in a new tab; the board opens that dialog once and forgets the parameter. **(3) Two new kinds** (`EditKind` `event_description`, `place`; pure in
+`lib/uploader/edit-changes.ts`, selftest section "The second-edit round"): `eventDescriptionChange` / `descriptionVerdict` = same hall (`sameVenue`), untouched, and
+reading what the SOURCE read before the edit - which keeps a football run safe (Lazio's texts each name another opponent: `different`, the dialog
+points at "תבנית תיאור"); a cleared description is not carried. `placeChange` / `placeVerdict` = `PLACE_FIELDS` (location, event_location, lodging_*,
+split_default_nights - only those that changed; a payload that never set one reads as its DB default), same hall, same start; a new `city_iata`
+is not carried (`flightChanged`: flights and base prices). `eventFieldsPass` writes through `writeEventFields` (direct columns, audited with from / to),
+the show's payload follows also where a person already typed the same (`already`), `uploader.learned_fields`; a cut or failed pass stays pending on the source
+(`rebaseEventFields`). **The round 3 ruling "the event's description is not a kind" is reversed:** a carried text gets `payload.description_by_hand`, and
+`descriptionIsAPersons` makes `rewriteRunDescriptions` leave it (`editedByHand`) - without it a later classify or names confirm would overwrite it silently, because the baseline
+now equals it. **(4) A reason per show:** `learnShowRows` -> `LearnPreview.shows`, a verdict per kind (`ShowVerdict`: `applies`, `count`, `reason` = `other_hall` /
+`typed_by_hand` / `different` / `already` / `no_category`; a `reason` beside `applies` = partly), `ShowList` in `learn-confirm.tsx`; `notCarriedEdits` names what no kind carries (dates,
+prices, a ticket renamed, a LiveTickets zone, a TixStock description cleared, a blank description, a new flight city). **(5) A typed description is an edit:** `description` joins
+`EDIT_WHITELIST` and `EDIT_EVENT_COLUMNS` (with `lodging_note`) - the "נערך" tag, the approve flag, the `uploader.edited` lesson. Rules checked read-only on the live Oasis and Lazio
+rows. **The review before the commit:** `sameVenue` now needs the same venue name plus the same drawing or city (a shared drawing alone is no hall - "General Admission.svg"
+serves 244 venues; this also tightens the round-3 ticket `set`); `flightChanged` compares through an empty IATA; a learn keeps `payload.built_fields` so `editDiff` still sees the edit
+(as `built_tickets_count`); the toast counts `showsReached` (none = no toast) and asks only when this save touched a carried field (`editTouchesLearnFields`); a kind no show would take stays
+unticked and pending. Known and left: a stale editor tab saving old values over a carried text reads as a new edit (whole-form `updateEvent` saves are older than this round). Not built: forcing a
+skipped show (a person types it there); carrying a dates / price / ticket-label edit.
+
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
 light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own

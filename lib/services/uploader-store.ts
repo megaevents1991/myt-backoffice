@@ -47,6 +47,7 @@ import {
   type SubjectArtRow,
   type SubjectCache,
 } from "@/lib/uploader/run-rules";
+import { PLACE_FIELDS, type PlaceField } from "@/lib/uploader/edit-changes";
 import type { SupplierCategoryMap, VenueZone } from "@/lib/venue-maps/svg-zones";
 import type { EventTicket } from "@/types/app.types";
 import type { Json } from "@/types/database.types";
@@ -980,14 +981,22 @@ export type EventTicketsRow = {
   is_hidden: boolean;
   name: string;
   tx_excluded_sections: string[];
+  /** The event's own fields the learn's `event_description` and `place` kinds read ("" = no description). */
+  description: string;
+  location: unknown;
+  event_location: unknown;
+  lodging_mode: unknown;
+  lodging_default: unknown;
+  lodging_note: unknown;
+  split_default_nights: unknown;
 };
 
 const isTicket = (v: unknown): v is EventTicket =>
   typeof v === "object" && v !== null && !Array.isArray(v) && typeof (v as { category?: unknown }).category === "string";
 
 /**
- * The tickets, map, excluded sections, hidden flag and name of these events - soft-deleted ones are no row (a
- * deleted show is never rewritten). In chunks of IN_CHUNK; null = a read failed (logged). `events.is_hidden` is
+ * The tickets, map, excluded sections, hidden flag, name, description and place of these events - soft-deleted ones are
+ * no row (a deleted show is never rewritten). In chunks of IN_CHUNK; null = a read failed (logged). `events.is_hidden` is
  * newer than the generated types - read through `db`.
  */
 export async function readEventTickets(ids: number[]): Promise<Map<number, EventTicketsRow> | null> {
@@ -996,10 +1005,10 @@ export async function readEventTickets(ids: number[]): Promise<Map<number, Event
   for (let i = 0; i < wanted.length; i += IN_CHUNK) {
     const { data, error } = (await db
       .from("events")
-      .select("id,name,tickets_and_rates,map_image_url,is_hidden,tx_excluded_sections")
+      .select("id,name,tickets_and_rates,map_image_url,is_hidden,tx_excluded_sections,description,location,event_location,lodging_mode,lodging_default,lodging_note,split_default_nights")
       .in("id", wanted.slice(i, i + IN_CHUNK))
       .is("is_deleted", null)) as DbResult<
-      { id: number; name: string | null; tickets_and_rates: unknown; map_image_url: string | null; is_hidden: boolean | null; tx_excluded_sections: unknown }[]
+      ({ id: number; name: string | null; tickets_and_rates: unknown; map_image_url: string | null; is_hidden: boolean | null; tx_excluded_sections: unknown; description: string | null } & Record<PlaceField, unknown>)[]
     >;
     if (error) {
       logDb("events (tickets) read", error);
@@ -1014,10 +1023,60 @@ export async function readEventTickets(ids: number[]): Promise<Map<number, Event
         tx_excluded_sections: Array.isArray(row.tx_excluded_sections)
           ? row.tx_excluded_sections.filter((id): id is string => typeof id === "string")
           : [],
+        description: row.description ?? "",
+        location: row.location,
+        event_location: row.event_location,
+        lodging_mode: row.lodging_mode,
+        lodging_default: row.lodging_default,
+        lodging_note: row.lodging_note,
+        split_default_nights: row.split_default_nights,
       });
     }
   }
   return rows;
+}
+
+/** The ready / approved item of an event, if the uploader built it (the newest one); null = none, or the read failed (logged). */
+export async function readBuiltItemOfEvent(eventId: number): Promise<UploaderItem | null> {
+  const { data, error } = (await db
+    .from("uploader_items")
+    .select(ITEM_COLUMNS)
+    .eq("event_id", eventId)
+    .in("status", ["ready", "approved"])
+    .order("created_at", { ascending: false })
+    .limit(1)) as DbResult<UploaderItem[]>;
+  if (error) {
+    logDb(`item of event ${eventId} read`, error);
+    return null;
+  }
+  return data?.[0] ?? null;
+}
+
+/**
+ * An event's own fields after "learn from this event" carried them over (second-edit round) - only the description and
+ * the place columns, never through `updateEvent`, only while the event is not deleted. Audited as an `update` of the
+ * event with from / to. false = the write failed or the event is gone (logged).
+ */
+export async function writeEventFields(eventId: number, fields: Record<string, unknown>, before: Record<string, unknown>): Promise<boolean> {
+  const update = Object.fromEntries((["description", ...PLACE_FIELDS] as string[]).filter((c) => c in fields).map((c) => [c, fields[c]]));
+  if (Object.keys(update).length === 0) return true;
+  const { data, error } = (await db.from("events").update(update).eq("id", eventId).is("is_deleted", null).select("id")) as DbResult<{ id: number }[]>;
+  if (error) {
+    logDb(`event ${eventId} fields write`, error);
+    return false;
+  }
+  if ((data ?? []).length === 0) {
+    console.error(`uploader: event ${eventId} fields were not written - deleted meanwhile`);
+    return false;
+  }
+  await logAudit({
+    action: "update",
+    entityType: "event",
+    entityId: eventId,
+    changes: Object.fromEntries(Object.entries(update).map(([c, to]) => [c, { from: before[c] ?? null, to }])),
+    metadata: { agent: AGENT, via: "uploader.learn_fields" },
+  });
+  return true;
 }
 
 /**

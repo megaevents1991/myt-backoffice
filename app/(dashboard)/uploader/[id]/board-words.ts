@@ -2,6 +2,7 @@
 // Every component of the board reads its wording and its "may this card do X" answers from here,
 // so two cards can never word or judge the same thing two ways. A server action's `kind` in Hebrew
 // is the screen-wide `actionErrorText` (../copy.ts).
+import type { EditKind, NotCarried, PlaceField, SkipReason } from "@/lib/uploader/edit-changes";
 import type { SubjectArt } from "@/lib/uploader/action-types";
 import { siteCardPrice, type SiteCardPriceEvent } from "@/lib/package-price";
 import { iso } from "@/lib/uploader/run-panel";
@@ -481,7 +482,7 @@ export function TEAMS_DONE(r: { created: number; linked?: number; renamed: numbe
 export const LEARN_STEP_1 = "1. סדרו את האירוע בעורך";
 export const LEARN_STEP_1_DONE = "1. האירוע סודר בעורך";
 export const LEARN_STEP_2 = (n: number): string => (n === 1 ? "2. למדו והחילו על ההופעה הנוספת" : `2. למדו והחילו על ${n} ההופעות`);
-export const LEARN_LOCKED_LINE = "אחרי השמירה בעורך הכפתור נפתח";
+export const LEARN_ANYTIME_LINE = "אפשר ללחוץ בכל רגע - תראו מה השתנה, על מה זה יחול ולמה לא על השאר";
 /** The one-line recipe under the panel's venue rows and in the classify dialog's footer. */
 export const LEARN_RECIPE = 'רוצים לסדר ידנית? סדרו אירוע אחד בעורך, חזרו ולחצו "למדו והחילו" בכרטיס שלו';
 export const LEARN_TITLE = "ללמוד מהאירוע הזה?";
@@ -502,12 +503,65 @@ export const LEARN_DESC_REACH = (tickets: number, events: number): string =>
     ? "בשאר ההופעות אין כרטיס שעדיין מחזיק את התיאור המקורי - אין מה לשנות"
     : `יחול על ${tickets === 1 ? "כרטיס אחד" : `${tickets} כרטיסים`} ב-${showsHe(events)}`;
 export const LEARN_MORE = (n: number): string => `ועוד ${n}`;
-export const LEARN_NOTHING = "לא מצאתי שינוי באירוע מאז הלמידה האחרונה - אפשר רק לכתוב הערה ל-AI.";
+export const LEARN_NOTHING = "לא מצאתי שינוי שאפשר להחיל מאז הלמידה האחרונה. נבדקים: תבנית האולם, תיאורי כרטיסי LiveTickets, תיאור האירוע, מיקום ולינה. אפשר לכתוב הערה ל-AI.";
 export const LEARN_NOTE_LABEL = "הערה ל-AI (לא חובה)";
 export const LEARN_NOTE_HINT =
   "נשמרת כחוק קבוע של ה-AI Uploader ונקראת בכל ריצה הבאה (פענוח הבריף, סיווג, שמות, מיקום). היא לא משנה אירועים בעצמה - את זה עושים הסימונים למעלה.";
 export const LEARN_NOTE_PLACEHOLDER = "למשל: בלאציו לא מביאים את התיאורים באנגלית של LiveTickets";
-export const LEARN_EVENT_DESCRIPTION_NOTE = 'תיאור האירוע עצמו? לכל ההופעות - דרך "תבנית תיאור" בראש הלוח.';
+export const LEARN_KIND_EVENT_DESCRIPTION = "תיאור האירוע";
+export const LEARN_KIND_EVENT_DESCRIPTION_HINT = "רק להופעות באותו אולם שהטקסט שלהן עדיין זהה למה שהיה כאן לפני העריכה. טקסט שמישהו כתב בהופעה אחרת נשאר שלו.";
+export const LEARN_TEMPLATE_HINT = 'בהופעות אחרות הטקסט שונה (למשל שם יריבה אחר). לשינוי בכולן - "תבנית תיאור" בראש הלוח.';
+export const LEARN_KIND_PLACE = "מיקום ולינה";
+export const LEARN_KIND_PLACE_HINT = "רק להופעות באותו אולם שעדיין טסות לאותו מקום. מיקום שמישהו שינה בהופעה אחרת נשאר שלו.";
+export const PLACE_FIELD_LABEL: Record<PlaceField, string> = {
+  location: "שם המיקום",
+  event_location: "עיר האירוע",
+  lodging_mode: "אפשרויות לינה",
+  lodging_default: "לינת ברירת מחדל",
+  lodging_note: "הערת לינה",
+  split_default_nights: "לילות בפיצול",
+};
+export const LEARN_REACH_EVENTS = (n: number): string => (n === 0 ? "לא יחול על אף הופעה - הסיבות ברשימה למטה" : `יחול על ${showsHe(n)}`);
+export const LEARN_SHOWS_TITLE = "מה יקרה בכל הופעה";
+/** A kind's short name in the per-show list. */
+export const LEARN_KIND_SHORT: Record<EditKind, string> = { venue: "אולם", descriptions: "כרטיסים", event_description: "תיאור", place: "מיקום" };
+/** Why a kind does not reach a show. `different` reads by kind: a text or a place. */
+export const LEARN_SKIP_TEXT = (kind: EditKind, reason: SkipReason): string => {
+  switch (reason) {
+    case "other_hall":
+      return kind === "venue" ? "שרטוט אחר" : "אולם אחר";
+    case "typed_by_hand":
+      return "נכתב שם ידנית - נשאר";
+    case "different":
+      return kind === "place" ? "מיקום אחר" : "נוסח אחר";
+    case "already":
+      return "כבר זהה";
+    case "no_category":
+      return "אין שם כרטיס כזה";
+  }
+};
+export const LEARN_NOT_CARRIED_TITLE = "השתנה כאן ולא מוחל על הופעות אחרות:";
+export const LEARN_NOT_CARRIED: Record<NotCarried, string> = {
+  name: "שם האירוע",
+  name_english: "השם באנגלית",
+  date: "תאריך",
+  def_date_depart: "תאריך יציאה",
+  def_date_return: "תאריך חזרה",
+  base_flight_price: "בסיס טיסה",
+  base_hotel_price: "בסיס מלון",
+  event_additional_markup: "תוספת לאירוע",
+  ticket_only_markup: "תוספת כרטיס בלבד",
+  package_mode: "סוג החבילה",
+  flight_city: "עיר הטיסה - משנה טיסות ומחירי בסיס, ולכן גם המיקום והלינה לא מוחלים",
+  description_cleared: "תיאור שנמחק - לא מוחקים תיאור בכל ההופעות בבת אחת",
+  ticket_label: "שם של כרטיס",
+  livetickets_zone: "אזור של כרטיס LiveTickets - נקבע בלוח האזורים של כל אירוע",
+  livetickets_tickets: "כרטיס LiveTickets שנוסף או נמחק",
+  tixstock_description_cleared: "תיאור TixStock שנמחק - ההופעות האחרות מקבלות אותו מתבנית האולם",
+};
+export const LEARN_FIELDS_DONE = (events: number, description: boolean, place: boolean): string =>
+  `${description && place ? "התיאור והמיקום עודכנו" : description ? "התיאור עודכן" : "המיקום עודכן"} ב-${showsHe(events)}`;
+export const LEARN_FIELDS_PARTIAL = (left: number): string => `${notReached(left)} בתיאור ובמיקום - לחצו שוב על "${BTN_LEARN_CONFIRM}" כדי לסיים.`;
 export const LEARN_DESC_DONE = (tickets: number, events: number): string =>
   `${tickets === 1 ? "תיאור כרטיס אחד" : `${tickets} תיאורי כרטיסים`} עודכנו ב-${showsHe(events)}`;
 export const LEARN_DESC_PARTIAL = (left: number): string => `${notReached(left)} בתיאורים - לחצו שוב על "${BTN_LEARN_CONFIRM}" כדי לסיים.`;

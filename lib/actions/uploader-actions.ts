@@ -86,6 +86,7 @@ import {
   planTokenKey,
   previewOf,
   raiseQuestion,
+  readBuiltItemOfEvent,
   readEditRows,
   readEventTickets,
   readItem,
@@ -113,6 +114,7 @@ import {
   writeDroppedCategories,
   writeEventClassification,
   writeEventName,
+  writeEventFields,
   writeEventTickets,
   writeNamesTaskId,
   writeSubjectCache,
@@ -147,22 +149,34 @@ import {
   type TemplateUpdate,
 } from "@/lib/uploader/classify";
 import { FAR_VENUE_KM, MAX_QUESTION_TASKS_PER_RUN, PARSE_RATE_MAX, PARSE_RATE_WINDOW_MS, REJECT_REASON_MIN } from "@/lib/uploader/constants";
-import { decision, editDiff } from "@/lib/uploader/decisions";
+import { decision, editDiff, stable } from "@/lib/uploader/decisions";
 import {
   applyDescriptionPlan,
   cleanLearnOptions,
   descriptionChanges,
   descriptionPlan,
+  descriptionVerdict,
   editKindsOf,
+  eventDescriptionChange,
+  eventFieldsFor,
   isEmptyPlan,
   keepHandDescriptions,
+  learnShowRows,
+  notCarriedEdits,
   patchDescriptions,
+  placeChange,
+  placeVerdict,
+  rebaseEventFields,
   rebaseTickets,
   sameVenue,
+  showsReached,
   ticketsOf,
   withBuiltCount,
   type DescriptionPlan,
   type EditKind,
+  type EventDescriptionChange,
+  type PlaceChange,
+  type ShowVerdict,
 } from "@/lib/uploader/edit-changes";
 import { addAgentInstruction } from "@/lib/actions/ai-factory-actions";
 import {
@@ -224,6 +238,7 @@ import type {
   DescriptionTemplateView,
   FamilyTemplateResult,
   LearnPreview,
+  LearnPrompt,
   LearnResult,
   LocationCreateResult,
   LocationProposeResult,
@@ -2069,10 +2084,9 @@ type DescriptionPass = { eventIds: number[]; tickets: number; reached: number; t
  * The description plan over the run's other built shows (`applyDescriptionPlan`: only a ticket whose description is
  * still that show's baseline - never one a person typed there; a `set` at the same venue only): the event's tickets,
  * then the item's payload follows (the descriptions only, so the show's own hand edits stay visible). `total` = the
- * shows the plan changes, `cut` = those the time budget left for a second "החל"; `dry` = count, write nothing (the
- * preview). null = the events could not be read.
+ * shows the plan changes, `cut` = those the time budget left for a second "החל". null = the events could not be read.
  */
-async function descriptionPass(source: BuiltItem, others: BuiltItem[], plan: DescriptionPlan, started: number, dry: boolean): Promise<DescriptionPass | null> {
+async function descriptionPass(source: BuiltItem, others: BuiltItem[], plan: DescriptionPlan, started: number): Promise<DescriptionPass | null> {
   const rows = await readEventTickets(others.map((i) => i.event_id));
   if (rows === null) return null;
   const pass: DescriptionPass = { eventIds: [], tickets: 0, reached: 0, total: 0, cut: 0, live: false, failed: 0 };
@@ -2083,11 +2097,6 @@ async function descriptionPass(source: BuiltItem, others: BuiltItem[], plan: Des
     const applied = applyDescriptionPlan(row.tickets_and_rates, baseline, plan, sameVenue(source.show, other.show));
     if (applied.changed === 0 && applied.adopted === 0) continue;
     if (applied.changed > 0) pass.total += 1;
-    if (dry) {
-      if (applied.changed > 0) pass.reached += 1;
-      pass.tickets += applied.changed;
-      continue;
-    }
     // past the budget the show is left for a second "החל" (it still matches the plan then)
     if (Date.now() - started > REWRITE_BUDGET_MS) {
       pass.cut += 1;
@@ -2110,12 +2119,107 @@ async function descriptionPass(source: BuiltItem, others: BuiltItem[], plan: Des
   return pass;
 }
 
+/** The event's own kinds a learn can carry: its description, and its place unless the flight city moved (then `notCarriedEdits` names it). */
+function ownKindsOf(base: LearnBase): { description: EventDescriptionChange | null; place: PlaceChange | null } {
+  const place = placeChange(base.item.payload, base.row);
+  return { description: eventDescriptionChange(base.item.payload, base.row), place: place && !place.flightChanged ? place : null };
+}
+
+type FieldsPass = { eventIds: number[]; reached: number; total: number; cut: number; live: boolean; failed: number; carried: { description: number; place: number } };
+
 /**
- * "למדו והחילו" - what the dialog lists before it applies (Alon round 3): the HALL kind (zones, new ones, dropped
- * categories, descriptions, the hall's excluded sections after it, how many other shows of the hall it rewrites;
- * `{ ok: false }` when it cannot be learned - no template, the drawing unreadable), the DESCRIPTIONS kind (the plan,
- * and how many tickets on how many other shows it changes), and how many other built shows the run has. A kind with
- * no change since the item's baseline is null.
+ * The event's own kinds over the run's other built shows (second-edit round; the verdicts decide - same hall, same
+ * start, untouched): the event's columns, then the item's payload follows, also where a person already typed the same.
+ * `total` = the shows it writes to, `cut` = those the time budget left for a second "החל", `carried` = per kind, the shows that
+ * read the new value now or are about to - a kind that reached none stays pending on the source. null = the events could not be read.
+ */
+async function eventFieldsPass(source: BuiltItem, others: BuiltItem[], description: EventDescriptionChange | null, place: PlaceChange | null, started: number): Promise<FieldsPass | null> {
+  const rows = await readEventTickets(others.map((i) => i.event_id));
+  if (rows === null) return null;
+  const pass: FieldsPass = { eventIds: [], reached: 0, total: 0, cut: 0, live: false, failed: 0, carried: { description: 0, place: 0 } };
+  const carries = (verdict: ShowVerdict | null): boolean => verdict !== null && (verdict.applies || verdict.reason === "already");
+  for (const other of others) {
+    const row = rows.get(other.event_id);
+    if (!row || !other.payload) continue;
+    const view = { show: other.show, payload: other.payload, row };
+    const descriptionIs = description ? descriptionVerdict(description, source.show, view) : null;
+    const placeIs = place ? placeVerdict(place, source.show, view) : null;
+    if (carries(descriptionIs)) pass.carried.description += 1;
+    if (carries(placeIs)) pass.carried.place += 1;
+    const planned = eventFieldsFor(description, place, descriptionIs, placeIs, other.payload);
+    const writes = Object.keys(planned.event).length > 0;
+    const baseline = other.payload;
+    const follows = Object.entries(planned.payload).some(([key, value]) => stable(baseline[key]) !== stable(value));
+    if (!writes && !follows) continue;
+    if (writes) pass.total += 1;
+    if (Date.now() - started > REWRITE_BUDGET_MS) {
+      pass.cut += 1;
+      continue;
+    }
+    if (writes) {
+      if (!(await writeEventFields(other.event_id, planned.event, row))) {
+        pass.failed += 1;
+        continue;
+      }
+      pass.reached += 1;
+      pass.eventIds.push(other.event_id);
+      if (!row.is_hidden) pass.live = true;
+    }
+    const written = await transitionItem(other.id, REWRITTEN_STATUSES, { payload: { ...baseline, ...planned.payload } });
+    if (written === "db_error") pass.failed += 1;
+  }
+  return pass;
+}
+
+/**
+ * The editor asks this after a save (second-edit round, Alon: "לוודא שתמיד אחרי עריכה יקפוץ השאלות"): is this event a built
+ * show of an uploader run, with a change some other show would really get? `others` = how many shows would. Never throws and
+ * never fails the save: a non-admin (the board is admin-only), an event the uploader did not build, nothing that reaches anyone
+ * or a failed read = null.
+ */
+export async function learnPromptForEvent(eventId: number): Promise<LearnPrompt | null> {
+  try {
+    await requireAdmin();
+    if (!Number.isInteger(eventId) || eventId <= 0) return null;
+    const item = await readBuiltItemOfEvent(eventId);
+    if (!item) return null;
+    const [rows, items] = await Promise.all([readEditRows([eventId]), readRunItems(item.run_id)]);
+    const row = rows?.get(eventId);
+    if (!row || !items) return null;
+    const kinds = editKindsOf(item.payload, row);
+    if (kinds.length === 0) return null;
+    const others = items.filter((i): i is BuiltItem => i.id !== item.id && isRewritable(i));
+    const otherRows = await readEventTickets(others.map((i) => i.event_id));
+    if (!otherRows) return null;
+    const drawing = drawingUrlOf(item);
+    const current = ticketsOf(row.tickets_and_rates);
+    const place = placeChange(item.payload, row);
+    const reached = showsReached(
+      learnShowRows({
+        source: { show: item.show, payload: item.payload, row },
+        others: others.flatMap((other) => {
+          const otherRow = otherRows.get(other.event_id);
+          return otherRow ? [{ itemId: other.id, eventId: other.event_id, show: other.show, payload: other.payload, row: otherRow }] : [];
+        }),
+        venueSiblings: kinds.includes("venue") && drawing ? new Set(others.filter((i) => drawingUrlOf(i) === drawing).map((i) => i.id)) : null,
+        plan: descriptionPlan(descriptionChanges(ticketsOf(item.payload?.tickets_and_rates), current), current),
+        description: eventDescriptionChange(item.payload, row),
+        place: place && !place.flightChanged ? place : null,
+      }),
+    );
+    return reached > 0 ? { runId: item.run_id, itemId: item.id, others: reached, kinds } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * "למדו והחילו" - what the dialog lists before it applies (Alon round 3; second-edit round): the HALL kind (zones, new ones,
+ * dropped categories, descriptions, the hall's excluded sections after it, how many other shows of the hall it rewrites;
+ * `{ ok: false }` when it cannot be learned - no template, the drawing unreadable), the DESCRIPTIONS kind (the plan, and how
+ * many tickets on how many other shows it changes), the event's own DESCRIPTION and PLACE, every other built show with a
+ * verdict per kind, and what changed here that nothing carries. A kind with no change since the item's baseline is null.
+ * Opens at any moment: nothing to carry is an answer, not a refusal.
  */
 export async function learnPreview(itemId: string): Promise<LearnPreview> {
   await requireAdmin();
@@ -2123,18 +2227,43 @@ export async function learnPreview(itemId: string): Promise<LearnPreview> {
   const base = await readLearnBase(itemId);
   if ("kind" in base) return { ok: false, kind: base.kind };
   let venue: Extract<LearnPreview, { ok: true }>["venue"] = null;
+  let venueSiblings: Set<string> | null = null;
   if (isFixedByHand(base.item, base.row)) {
     const ctx = await readHallContext(base);
-    venue = "kind" in ctx ? { ok: false, kind: ctx.kind, ...(ctx.message ? { message: ctx.message } : {}) } : { ok: true, learned: ctx.update.learned, siblings: ctx.siblings.length };
+    if ("kind" in ctx) {
+      venue = { ok: false, kind: ctx.kind, ...(ctx.message ? { message: ctx.message } : {}) };
+    } else {
+      venue = { ok: true, learned: ctx.update.learned, siblings: ctx.siblings.length };
+      venueSiblings = new Set(ctx.siblings.map((i) => i.id));
+    }
   }
   const plan = descriptionPlanOf(base);
-  let descriptions: Extract<LearnPreview, { ok: true }>["descriptions"] = null;
-  if (!isEmptyPlan(plan)) {
-    const reach = await descriptionPass(base.item, base.others, plan, Date.now(), true);
-    if (reach === null) return fail("db_error");
-    descriptions = { plan, events: reach.total, tickets: reach.tickets };
-  }
-  return { ok: true, venue, descriptions, others: base.others.length };
+  const { description, place } = ownKindsOf(base);
+  const [rows, editRows] = await Promise.all([readEventTickets(base.others.map((i) => i.event_id)), readEditRows([base.item.event_id])]);
+  if (rows === null) return fail("db_error");
+  const shows = learnShowRows({
+    source: { show: base.item.show, payload: base.item.payload, row: base.row },
+    others: base.others.flatMap((other) => {
+      const row = rows.get(other.event_id);
+      return row ? [{ itemId: other.id, eventId: other.event_id, show: other.show, payload: other.payload, row }] : [];
+    }),
+    venueSiblings,
+    plan,
+    description,
+    place,
+  });
+  const reach = (kind: EditKind) => shows.filter((show) => show.verdicts[kind]?.applies === true).length;
+  return {
+    ok: true,
+    venue,
+    descriptions: isEmptyPlan(plan) ? null : { plan, events: reach("descriptions"), tickets: shows.reduce((sum, show) => sum + (show.verdicts.descriptions?.count ?? 0), 0) },
+    eventDescription: description ? { ...description, events: reach("event_description") } : null,
+    place: place ? { fields: place.fields, from: place.from, to: place.to, events: reach("place") } : null,
+    shows,
+    // the full row names dates and prices too; a failed read leaves the tickets' and the place's own (never the dialog closed)
+    notCarried: notCarriedEdits(base.item.payload, editRows?.get(base.item.event_id) ?? base.row),
+    others: base.others.length,
+  };
 }
 
 type TaughtChange = { category: string; field: string; from: null; to: string | boolean };
@@ -2170,9 +2299,11 @@ function taughtChanges(before: VenueTemplateRow, update: LearnContext["update"],
  *     `uploader.classified` with `source: "event"` and a `uploader.classify_changed` row per thing it taught.
  *  2. DESCRIPTIONS (`descriptions`, default on): the ticket descriptions the edit cleared or set, on the run's other
  *     shows (`descriptionPass`), audited `uploader.learned_descriptions`.
- *  3. The source item's payload is REBASED over the kinds applied (`rebaseTickets`, note 2a): the next edit is seen
- *     again, an unticked kind stays pending.
- *  4. `note` (optional, 3-500 chars): a taught rule of the tour uploader (`addAgentInstruction`) - it rides on the
+ *  3. EVENT DESCRIPTION and PLACE (`eventDescription` / `place`, default on, second-edit round): the event's own fields, on
+ *     the other shows the verdicts allow (`eventFieldsPass`), audited `uploader.learned_fields`.
+ *  4. The source item's payload is REBASED over the kinds applied (`rebaseTickets`, `rebaseEventFields`, note 2a): the next
+ *     edit is seen again, an unticked kind stays pending.
+ *  5. `note` (optional, 3-500 chars): a taught rule of the tour uploader (`addAgentInstruction`) - it rides on the
  *     agent's later calls and changes no event by itself. A note alone is allowed.
  * Nothing to apply and no note = `nothing_to_learn`. `venue` in the answer is `classifyVenue`'s shape (`unsure` is
  * always 0 - an event teaches no "for review" rows); `descriptions` counts what the pass wrote.
@@ -2188,7 +2319,10 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
   const plan = descriptionPlanOf(base);
   const doVenue = options.venue && isFixedByHand(base.item, base.row);
   const doDescriptions = options.descriptions && !isEmptyPlan(plan);
-  if (!doVenue && !doDescriptions && options.note === null) return fail("nothing_to_learn");
+  const ownKinds = ownKindsOf(base);
+  const eventDescription = options.eventDescription ? ownKinds.description : null;
+  const place = options.place ? ownKinds.place : null;
+  if (!doVenue && !doDescriptions && !eventDescription && !place && options.note === null) return fail("nothing_to_learn");
 
   // 1. The hall: the template, then each other show of the hall (its event, then its item).
   let hall: { ctx: LearnContext; rewrite: Rewrite; total: number; zones: number } | null = null;
@@ -2209,7 +2343,7 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
   if (doDescriptions) {
     const items = hall ? await readRunItems(base.run.id) : null;
     const others = hall ? (items ?? []).filter((i): i is BuiltItem => i.id !== base.item.id && isRewritable(i)) : base.others;
-    descriptions = (hall && items === null ? null : await descriptionPass(base.item, others, plan, started, false)) ?? {
+    descriptions = (hall && items === null ? null : await descriptionPass(base.item, others, plan, started)) ?? {
       eventIds: [],
       tickets: 0,
       reached: 0,
@@ -2220,14 +2354,32 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
     };
   }
 
-  // 3. The source's item: its payload rebased over the kinds that went through CLEANLY - a kind cut by the time budget
-  //    or with a failed write stays pending, so "החל" again finishes it (both passes are idempotent; review 3) - and the
+  // 3. The event's own description and place - over the shows read again when an earlier part moved their payloads.
+  let fields: FieldsPass | null = null;
+  if (eventDescription || place) {
+    const items = hall || descriptions ? await readRunItems(base.run.id) : null;
+    const others = hall || descriptions ? (items ?? []).filter((i): i is BuiltItem => i.id !== base.item.id && isRewritable(i)) : base.others;
+    fields = ((hall || descriptions) && items === null ? null : await eventFieldsPass(base.item, others, eventDescription, place, started)) ?? {
+      eventIds: [],
+      reached: 0,
+      total: 0,
+      cut: 0,
+      live: false,
+      failed: 1,
+      carried: { description: 0, place: 0 },
+    };
+  }
+
+  // 4. The source's item: its payload rebased over the kinds that went through CLEANLY - a kind cut by the time budget
+  //    or with a failed write stays pending, so "החל" again finishes it (every pass is idempotent; review 3) - and the
   //    hall's warnings and decision with it. A failed write here only leaves the edit pending (logged).
-  if (doVenue || doDescriptions) {
+  if (doVenue || doDescriptions || fields) {
     const own = base.row.tickets_and_rates;
     const payload = base.item.payload;
     const venueClean = hall !== null && hall.rewrite.reached === hall.total && hall.rewrite.itemsFailed === 0;
     const descriptionsClean = descriptions !== null && descriptions.cut === 0 && descriptions.failed === 0;
+    // a kind that reached no show stays pending too: applying it must not read as if it went somewhere
+    const fieldsClean = fields !== null && fields.cut === 0 && fields.failed === 0;
     const marked = await transitionItem(base.item.id, REWRITTEN_STATUSES, {
       ...(doVenue
         ? {
@@ -2248,6 +2400,7 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
               // The source's excluded sections are now the hall's: stamped as its baseline, so a later "un-exclude" on the
               // hall reads them as the hall's (and lifts them here too) - not as one excluded on this show alone (B2).
               ...(doVenue ? { tx_excluded_sections: base.row.tx_excluded_sections } : {}),
+              ...(fieldsClean && fields ? rebaseEventFields(payload, base.row, { description: eventDescription !== null && fields.carried.description > 0, place: place !== null && fields.carried.place > 0 }) : {}),
             },
           }
         : {}),
@@ -2255,14 +2408,14 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
     if (marked === "db_error") console.error(`uploader-actions: item ${base.item.id} was not rebased after its learn - its edit stays pending`);
   }
 
-  // 4. The note for the agent.
+  // 5. The note for the agent.
   let note: "saved" | "failed" | null = null;
   if (options.note !== null) {
     const added = await addAgentInstruction("tour-uploader", options.note);
     note = added.ok ? "saved" : "failed";
   }
 
-  // 5. The record and the lessons.
+  // 6. The record and the lessons.
   if (hall) {
     const { ctx, rewrite } = hall;
     const { learned } = ctx.update;
@@ -2312,11 +2465,31 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
       },
     });
   }
+  if (fields) {
+    await logAudit({
+      action: "uploader.learned_fields",
+      entityType: "uploader_run",
+      entityId: base.run.id,
+      metadata: {
+        agent: AGENT,
+        run_id: base.run.id,
+        item_id: base.item.id,
+        event_id: base.item.event_id,
+        description: eventDescription,
+        place: place?.fields ?? [],
+        event_ids: fields.eventIds,
+        reached: fields.reached,
+        total: fields.total,
+        cut: fields.cut,
+        failed: fields.failed,
+      },
+    });
+  }
 
-  // 6. The site.
+  // 7. The site.
   await refreshAfterRewrite({
-    eventIds: [...(hall?.rewrite.eventIds ?? []), ...(descriptions?.eventIds ?? [])],
-    live: (hall?.rewrite.live ?? false) || (descriptions?.live ?? false),
+    eventIds: [...(hall?.rewrite.eventIds ?? []), ...(descriptions?.eventIds ?? []), ...(fields?.eventIds ?? [])],
+    live: (hall?.rewrite.live ?? false) || (descriptions?.live ?? false) || (fields?.live ?? false),
   });
   return {
     ok: true,
@@ -2324,6 +2497,7 @@ export async function learnFromEvent(itemId: string, opts?: unknown): Promise<Le
     descriptions: descriptions
       ? { events: descriptions.eventIds.length, tickets: descriptions.tickets, cut: descriptions.cut, failed: descriptions.failed }
       : null,
+    fields: fields ? { events: fields.eventIds.length, cut: fields.cut, failed: fields.failed } : null,
     note,
   };
 }

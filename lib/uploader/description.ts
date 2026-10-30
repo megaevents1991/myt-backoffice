@@ -206,3 +206,17 @@ export function templateEdit(
   const same = current.ok ? current.template === clean.template : stored === clean.template;
   return same ? { kind: "unchanged" } : { kind: "change", template: clean.template };
 }
+
+/**
+ * Is this event's description a person's (a template rewrite leaves it, counted as `editedByHand`)? Typed in the editor:
+ * neither empty nor the uploader's own (`payload.description`, which follows every rewrite). Or carried by "למדו והחילו":
+ * the payload then equals it, so the flag says so (`description_by_hand`, second-edit round) - or a later classification or
+ * names confirm would silently overwrite it. Empty is nobody's: a rewrite may fill it.
+ */
+export function descriptionIsAPersons(payload: Record<string, unknown> | null | undefined, current: string): boolean {
+  const now = current.trim();
+  if (now === "" || !payload) return false;
+  if (payload.description_by_hand === true) return true;
+  const written = typeof payload.description === "string" ? payload.description.trim() : null;
+  return written !== null && now !== written;
+}

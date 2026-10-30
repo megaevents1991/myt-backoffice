@@ -454,11 +454,11 @@ export function planPreview(found: {
  * The `events` columns `editDiff` compares (EDIT_WHITELIST; `tickets_count` is read off
  * `tickets_and_rates`), plus the id - one explicit select for the board's "נערך" tag and approve -
  * plus `tx_excluded_sections`, which the board's "fixed by hand" reads (`isFixedByHand`, final fix
- * wave B4: an editor save that only excluded map sections unlocks learn step 2). The selftest checks
- * it names every whitelisted field.
+ * wave B4: an editor save that only excluded map sections unlocks learn step 2) and `lodging_note`,
+ * which the learn's `place` kind carries (edit-changes.ts). The selftest checks it names every whitelisted field.
  */
 export const EDIT_EVENT_COLUMNS =
-  "id,name,name_english,date,def_date_depart,def_date_return,base_flight_price,base_hotel_price,event_additional_markup,ticket_only_markup,package_mode,location,event_location,lodging_mode,lodging_default,split_default_nights,tickets_and_rates,map_image_url,tx_excluded_sections" as const;
+  "id,name,name_english,description,date,def_date_depart,def_date_return,base_flight_price,base_hotel_price,event_additional_markup,ticket_only_markup,package_mode,location,event_location,lodging_mode,lodging_default,lodging_note,split_default_nights,tickets_and_rates,map_image_url,tx_excluded_sections" as const;
 
 // ---- what staff changed on the plan card ----------------------------------------------------------
 

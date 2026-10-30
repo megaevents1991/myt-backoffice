@@ -5,7 +5,7 @@
  */
 import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
-import type { DescriptionPlan, EditKind } from "@/lib/uploader/edit-changes";
+import type { DescriptionPlan, EditKind, LearnShowRow, NotCarried, PlaceField } from "@/lib/uploader/edit-changes";
 import type { LocationInput } from "@/lib/uploader/location";
 import type { PageTaskRef } from "@/lib/uploader/run-panel";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
@@ -93,8 +93,8 @@ export type RunBoard = {
   subjectRowId: number | null;
   /**
    * item id -> the kinds of change a person made in the editor since the item's baseline (Alon round 3, note 2b):
-   * `venue` (= `fixedByHand`) and / or `descriptions` (a ticket description cleared or set). The card's learn step 1
-   * reads "✓" when any is there. Absent / empty = nothing to learn.
+   * `venue` (= `fixedByHand`), `descriptions` (a ticket description cleared or set), `event_description`, `place`. The
+   * card's learn step 1 reads "✓" when any is there. Absent / empty = nothing to carry (the button still opens the dialog).
    */
   editKinds: Record<string, EditKind[]>;
   /** The `uploader_page` tasks already opened, not cancelled (Alon round 3, note 1): a panel row they cover leaves. [] when the read failed. */
@@ -161,7 +161,9 @@ export type ProposeResult =
  * `learnPreview` (Alon round 3): the HALL kind - what the venue template learns and how many other shows of the hall
  * it rewrites, `{ ok: false }` when it cannot be learned (no template, the drawing unreadable), null = no hall change;
  * the DESCRIPTIONS kind - the plan and how many tickets on how many other shows it changes, null = none; `others` =
- * the run's other built shows.
+ * the run's other built shows. Second-edit round: `eventDescription` / `place` = the event's own kinds and how many shows
+ * they reach (null = no change), `shows` = every other show with a verdict per kind (who gets what, and why not),
+ * `notCarried` = what changed here that no kind carries.
  */
 export type LearnPreview =
   | {
@@ -171,20 +173,29 @@ export type LearnPreview =
         | { ok: false; kind: string; message?: string }
         | null;
       descriptions: { plan: DescriptionPlan; events: number; tickets: number } | null;
+      eventDescription: { from: string; to: string; events: number } | null;
+      place: { fields: PlaceField[]; from: string | null; to: string | null; events: number } | null;
+      shows: LearnShowRow[];
+      notCarried: NotCarried[];
       others: number;
     }
   | { ok: false; kind: string };
 
+/** `learnPromptForEvent`: what the editor's toast asks after a save - this event's item and run, how many other built shows it can reach, and what changed. */
+export type LearnPrompt = { runId: string; itemId: string; others: number; kinds: EditKind[] };
+
 /**
  * `learnFromEvent` (Alon round 3): `venue` = the hall part's answer (`classifyVenue`'s shape; null = not applied),
  * `descriptions` = what the descriptions pass wrote (`cut` = shows the time budget left - a second "החל" finishes them;
- * `failed` = writes that did not land), `note` = the note for the AI (null = none sent).
+ * `failed` = writes that did not land), `fields` = what the event's own kinds wrote (same counts), `note` = the note for
+ * the AI (null = none sent).
  */
 export type LearnResult =
   | {
       ok: true;
       venue: ClassifyResult | null;
       descriptions: { events: number; tickets: number; cut: number; failed: number } | null;
+      fields: { events: number; cut: number; failed: number } | null;
       note: "saved" | "failed" | null;
     }
   | { ok: false; kind: string; message?: string };

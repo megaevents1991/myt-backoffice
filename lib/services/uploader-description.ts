@@ -4,8 +4,9 @@
  * `league` tags' Hebrew names, and rewrites the description of a run's built events.
  *
  * A rewrite touches an event only while its description is still the one the uploader wrote (the item's
- * `payload.description`, which follows every rewrite) - one a person typed in the editor stays theirs and
- * is counted as `editedByHand`. A fill that prints nothing never blanks an event.
+ * `payload.description`, which follows every rewrite) - one a person typed in the editor, or carried to other
+ * shows with "למדו והחילו" (`description_by_hand`), stays theirs and is counted as `editedByHand`. A fill that
+ * prints nothing never blanks an event.
  *
  * `{אולם}` prints the hall's Hebrew name (`venue_maps.name_he`, round 2 D3): the build reads it with the
  * template it already has, a rewrite reads it once per drawing (`hallNames`).
@@ -20,7 +21,7 @@ import { normalizeName } from "@/lib/on-tour";
 import { AGENT, logDb, nowIso, readVenueTemplate, transitionItem } from "@/lib/services/uploader-store";
 import { supabase } from "@/lib/supabase-server";
 import { decision } from "@/lib/uploader/decisions";
-import { cleanTemplate, descriptionValues, fillDescription, templateKey, type DescriptionValues, type TemplateFamily } from "@/lib/uploader/description";
+import { cleanTemplate, descriptionIsAPersons, descriptionValues, fillDescription, templateKey, type DescriptionValues, type TemplateFamily } from "@/lib/uploader/description";
 import { withSupplierSpellings } from "@/lib/uploader/names";
 import type { UploaderItem } from "@/types/uploader.types";
 
@@ -241,9 +242,8 @@ export async function rewriteRunDescriptions(input: {
     const row = rows.get(item.event_id);
     if (!row) continue;
     const current = (row.description ?? "").trim();
-    const written = typeof item.payload?.description === "string" ? item.payload.description.trim() : null;
-    // a description that is neither empty nor the uploader's own was typed by a person: theirs
-    if (current !== "" && written !== null && current !== written) {
+    // typed by a person, or carried by "למדו והחילו": theirs
+    if (descriptionIsAPersons(item.payload, current)) {
       out.editedByHand += 1;
       continue;
     }
@@ -267,7 +267,8 @@ export async function rewriteRunDescriptions(input: {
     if (english.length > 0) out.english += 1;
     if (item.status === "approved" || row.is_hidden !== true) out.live = true;
     const moved = await transitionItem(item.id, REWRITTEN, {
-      payload: item.payload ? { ...item.payload, description: text } : item.payload,
+      // a person emptied a carried text and the template filled it: it is the uploader's own again
+      payload: item.payload ? { ...item.payload, description: text, ...(item.payload.description_by_hand ? { description_by_hand: false } : {}) } : item.payload,
       decisions: descriptionDecisions(item.decisions, english),
     });
     if (moved === "db_error") out.failed += 1;

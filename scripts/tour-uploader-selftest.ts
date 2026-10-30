@@ -77,7 +77,7 @@ import {
 } from "@/lib/uploader/tickets";
 import { DECISION_TEXT, decision, EDIT_WHITELIST, editDiff } from "@/lib/uploader/decisions";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
-import { cleanTemplate, DESCRIPTION_MAX, DESCRIPTION_TEMPLATE_MAX, DESCRIPTION_TOKENS, descriptionValues, familyOf, fillDescription, leagueHebrew, previewValues, templateEdit, templateKey, usesCompetition } from "@/lib/uploader/description";
+import { cleanTemplate, DESCRIPTION_MAX, DESCRIPTION_TEMPLATE_MAX, DESCRIPTION_TOKENS, descriptionIsAPersons, descriptionValues, familyOf, fillDescription, leagueHebrew, previewValues, templateEdit, templateKey, usesCompetition } from "@/lib/uploader/description";
 import {
   cleanClubName,
   cleanTeamRows,
@@ -133,13 +133,24 @@ import {
   cleanLearnOptions,
   descriptionChanges,
   descriptionPlan,
+  descriptionVerdict,
   editKindsOf,
+  editTouchesLearnFields,
+  eventDescriptionChange,
+  eventFieldsFor,
   isEmptyPlan,
   keepHandDescriptions,
   LEARN_NOTE_MAX,
+  learnShowRows,
+  notCarriedEdits,
   patchDescriptions,
+  placeChange,
+  placeVerdict,
+  rebaseEventFields,
   rebaseTickets,
   sameVenue,
+  showsReached,
+  ticketVerdict,
   withBuiltCount,
 } from "@/lib/uploader/edit-changes";
 import { cardWarnings, coveredBy, handedOffCodes, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows, subjectRowId, taskSteps, type PageTaskRef, type PanelRow } from "@/lib/uploader/run-panel";
@@ -1816,6 +1827,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     [
       "name",
       "name_english",
+      "description",
       "date",
       "def_date_depart",
       "def_date_return",
@@ -1843,7 +1855,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
     location: { name: "London", city_iata: "LON", latitude: 51.5, longitude: -0.12 },
     tickets_and_rates: Array.from({ length: 12 }, (_, i) => ({ id: `t${i}` })),
   };
-  same(editDiff(built, { ...built, description: "staff text", is_hidden: false, id: 5 }), [], "fields outside the whitelist are not edits");
+  same(editDiff(built, { ...built, is_hidden: false, id: 5 }), [], "fields outside the whitelist are not edits");
   same(
     editDiff(built, { ...built, tickets_and_rates: built.tickets_and_rates.slice(0, 11) }),
     [{ field: "tickets_count", from: 12, to: 11 }],
@@ -2643,7 +2655,7 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   // EDIT_EVENT_COLUMNS covers the edit diff.
   same(
     R.EDIT_EVENT_COLUMNS.split(",").sort(),
-    ["id", "tickets_and_rates", "map_image_url", "tx_excluded_sections", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
+    ["id", "tickets_and_rates", "map_image_url", "tx_excluded_sections", "lodging_note", ...EDIT_WHITELIST.filter((f) => f !== "tickets_count")].sort(),
     "EDIT_EVENT_COLUMNS: every whitelisted field (tickets_count read off tickets_and_rates), plus the id, the map the classification rewrites and the excluded sections the board's fixed-by-hand reads (B4)",
   );
 
@@ -7089,13 +7101,15 @@ async function supplierSvgFetchChecks(): Promise<void> {
     ({ venue, city, suppliers: { tixstock: map === null ? null : { event_id: "1", name: "x", ticket_count: 1, venue_map_url: map }, livetickets: null } }) as unknown as ShowIdentity;
   check(sameVenue(show("Stadio Olimpico", "Rome"), show("stadio  olimpico", "ROME")), "sameVenue: the same venue in the same city (normalized)");
   check(!sameVenue(show("Stadio Olimpico", "Rome"), show("Stadio Olimpico", "Turin")), "sameVenue: another city is another venue");
-  check(sameVenue(show("A", "Rome", "https://m/x.svg"), show("B", "Roma", "https://m/x.svg")), "sameVenue: the same TixStock drawing is the same venue whatever the names");
+  check(!sameVenue(show("A", "Berlin", "https://m/General%20Admission.svg"), show("B", "Paris", "https://m/General%20Admission.svg")), "sameVenue: a shared drawing alone is no hall (General Admission.svg serves 244 venues - review finding 1)");
+  check(sameVenue(show("Stadio Olimpico", "Rome", "https://m/x.svg"), show("Stadio Olimpico", "Roma", "https://m/x.svg")), "sameVenue: one venue, one drawing, two spellings of the city");
+  check(!sameVenue(show("Arena", "Berlin"), show("Arena", "Paris")), "sameVenue: one name in two cities, no drawing");
   check(!sameVenue(show(null, "Rome"), show(null, "Rome")), "sameVenue: no drawing and no venue name = no known venue");
 
   // -- cleanLearnOptions ----------------------------------------------------------------------------------
-  same(cleanLearnOptions(undefined), { venue: true, descriptions: true, note: null }, "cleanLearnOptions: nothing sent = both kinds, no note");
-  same(cleanLearnOptions({ venue: false, note: "  בלאציו בלי תיאורים באנגלית  " }), { venue: false, descriptions: true, note: "בלאציו בלי תיאורים באנגלית" }, "cleanLearnOptions: trimmed note, absent flag = on");
-  same(cleanLearnOptions({ note: "   " }), { venue: true, descriptions: true, note: null }, "cleanLearnOptions: a blank note is none");
+  same(cleanLearnOptions(undefined), { venue: true, descriptions: true, eventDescription: true, place: true, note: null }, "cleanLearnOptions: nothing sent = every kind, no note");
+  same(cleanLearnOptions({ venue: false, note: "  בלאציו בלי תיאורים באנגלית  " }), { venue: false, descriptions: true, eventDescription: true, place: true, note: "בלאציו בלי תיאורים באנגלית" }, "cleanLearnOptions: trimmed note, absent flag = on");
+  same(cleanLearnOptions({ note: "   " }), { venue: true, descriptions: true, eventDescription: true, place: true, note: null }, "cleanLearnOptions: a blank note is none");
   for (const bad of [[], "x", { venue: "yes" }, { note: 5 }, { note: "ab" }, { note: "x".repeat(LEARN_NOTE_MAX + 1) }]) {
     same(cleanLearnOptions(bad), null, `cleanLearnOptions: refused (${JSON.stringify(bad).slice(0, 30)})`);
   }
@@ -7142,6 +7156,164 @@ async function supplierSvgFetchChecks(): Promise<void> {
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
 // A named async function + a call at the bottom (not top-level `await`): this file runs under plain
 // `npx tsx`, whose cjs output rejects top-level await.
+// ---- The second-edit round (30.10): event description + place as learn kinds, a reason per show, a typed description is an edit ----
+{
+  const kneb = { name_english: "Oasis", city: "Stevenage", venue: "Knebworth Park", date: "2027-09-11", suppliers: { tixstock: { event_id: "1", name: "x", ticket_count: 1, venue_map_url: "https://m/kneb.svg" }, livetickets: null } } as unknown as ShowIdentity;
+  const wembley = { name_english: "Oasis", city: "London", venue: "Wembley", date: "2027-07-01", suppliers: { tixstock: { event_id: "2", name: "y", ticket_count: 1, venue_map_url: "https://m/wem.svg" }, livetickets: null } } as unknown as ShowIdentity;
+  const london = { name: "לונדון, בריטניה", latitude: 51.5, longitude: -0.1, city_iata: "LON" };
+  const OLD = "הרכיבו את החבילה שלכם ללונדון.";
+  const NEW = "הרכיבו את החבילה שלכם לנבוורת'.";
+
+  // -- eventDescriptionChange ------------------------------------------------------------------------------
+  same(eventDescriptionChange({ description: OLD }, { description: NEW }), { from: OLD, to: NEW }, "eventDescriptionChange: a typed description");
+  same(eventDescriptionChange({ description: OLD }, { description: `  ${OLD} ` }), null, "eventDescriptionChange: whitespace is no change");
+  same(eventDescriptionChange({ description: OLD }, { description: "" }), null, "eventDescriptionChange: a cleared description is not carried");
+  same(eventDescriptionChange({}, { description: NEW }), null, "eventDescriptionChange: a payload with none = nothing to compare");
+  same(eventDescriptionChange({ description: OLD }, {}), null, "eventDescriptionChange: a row read without it = nothing to compare");
+  same(eventDescriptionChange(null, { description: NEW }), null, "eventDescriptionChange: no payload");
+
+  // -- placeChange -----------------------------------------------------------------------------------------
+  const renamed = { ...london, name: "נבוורת טיסה ללונדון . בריטניה" };
+  const rename = placeChange({ location: london }, { location: renamed, lodging_mode: "flight_city", lodging_default: "flight", split_default_nights: 2, event_location: null, lodging_note: null });
+  same(rename?.fields, ["location"], "placeChange: only the location name moved; a payload without the lodging columns reads as their defaults");
+  same(rename?.patch, { location: renamed }, "placeChange: the patch carries what changed, nothing else");
+  same(rename?.flightChanged, false, "placeChange: same IATA = the flights did not move");
+  same(placeChange({ location: { ...london, name: "x" } }, { location: { ...london, name: "x" } }), null, "placeChange: untouched");
+  same(placeChange({ location: { name: "x", city_iata: "LON", latitude: 1, longitude: 2 } }, { location: { longitude: 2, latitude: 1, city_iata: "LON", name: "x" } }), null, "placeChange: jsonb key order is no change");
+  same(placeChange({ location: london }, { location: { ...london, city_iata: "MAN" } })?.flightChanged, true, "placeChange: another IATA = another flight city");
+  const twoCity = placeChange({ location: london }, { location: london, event_location: { name: "נבוורת'", latitude: 51.9, longitude: -0.2 }, lodging_mode: "choice" });
+  same(twoCity?.fields, ["event_location", "lodging_mode"], "placeChange: a second city and its lodging mode");
+  same(placeChange({ location: london, lodging_note: "" }, { location: london, lodging_note: null }), null, "placeChange: an empty note is no note");
+  same(placeChange(null, { location: renamed }), null, "placeChange: no payload");
+
+  // -- editKindsOf with the new kinds ----------------------------------------------------------------------
+  same(editKindsOf({ tickets_and_rates: [], description: OLD, location: london }, { tickets_and_rates: [], description: NEW, location: london }), ["event_description"], "editKindsOf: an event description lights the learn (Alon's second edit)");
+  same(editKindsOf({ tickets_and_rates: [], description: OLD, location: london }, { tickets_and_rates: [], description: OLD, location: renamed }), ["place"], "editKindsOf: a location name lights the learn");
+  same(editKindsOf({ tickets_and_rates: [], description: OLD, location: london }, { tickets_and_rates: [], description: NEW, location: renamed }), ["event_description", "place"], "editKindsOf: both, in order (Alon's event 1303)");
+  same(editKindsOf({ tickets_and_rates: [], location: london }, { tickets_and_rates: [], location: { ...london, city_iata: "MAN" } }), [], "editKindsOf: a new flight city is not a kind - it is listed as not carried");
+
+  // -- the verdicts ---------------------------------------------------------------------------------------
+  const change = { from: OLD, to: NEW };
+  const other = (description: string, baseline: string, show: ShowIdentity = kneb) => ({ show, payload: { description: baseline }, row: { description } });
+  same(descriptionVerdict(change, kneb, other(OLD, OLD)), { applies: true, count: 1, reason: null }, "descriptionVerdict: same hall, same old text, untouched");
+  same(descriptionVerdict(change, kneb, other(OLD, OLD, wembley)), { applies: false, count: 0, reason: "other_hall" }, "descriptionVerdict: another hall, even with the same words");
+  same(descriptionVerdict(change, kneb, other("טקסט משלי", OLD)), { applies: false, count: 0, reason: "typed_by_hand" }, "descriptionVerdict: what a person typed there stays");
+  same(descriptionVerdict(change, kneb, other(NEW, OLD)), { applies: false, count: 0, reason: "already" }, "descriptionVerdict: he already typed the same text");
+  same(descriptionVerdict({ from: "משחק מול קליארי", to: "משחק מול קליארי!" }, kneb, other("משחק מול לצ'ה", "משחק מול לצ'ה")), { applies: false, count: 0, reason: "different" }, "descriptionVerdict: another show's own wording (Lazio) never gets this show's opponent");
+
+  const place = placeChange({ location: london }, { location: renamed }) as NonNullable<ReturnType<typeof placeChange>>;
+  const atHall = (location: unknown, baseline: unknown, show: ShowIdentity = kneb) => ({ show, payload: { location: baseline }, row: { location } });
+  same(placeVerdict(place, kneb, atHall(london, london)), { applies: true, count: 1, reason: null }, "placeVerdict: same hall, same start, untouched");
+  same(placeVerdict(place, kneb, atHall(london, london, wembley)), { applies: false, count: 0, reason: "other_hall" }, "placeVerdict: another hall");
+  same(placeVerdict(place, kneb, atHall({ ...london, name: "משלי" }, london)), { applies: false, count: 0, reason: "typed_by_hand" }, "placeVerdict: a location a person changed there stays");
+  same(placeVerdict(place, kneb, atHall(renamed, london)), { applies: false, count: 0, reason: "already" }, "placeVerdict: already the same");
+  same(placeVerdict(place, kneb, atHall({ ...london, city_iata: "LTN" }, { ...london, city_iata: "LTN" })), { applies: false, count: 0, reason: "different" }, "placeVerdict: flying to another city at the same hall");
+
+  const lt = (category: string, description = "", extra: Partial<EventTicket> = {}): EventTicket => ({ id: `lt-${category}`, category, price: 1, description, colorOnTheMap: "x", supplier: "livetickets", supplierCategory: category, ...extra });
+  const clearAll = { clearAll: ["livetickets" as const], clear: [], set: [] };
+  same(ticketVerdict([lt("A", "x"), lt("B", "y")], [lt("A", "x"), lt("B", "y")], clearAll, true), { applies: true, count: 2, reason: null }, "ticketVerdict: every ticket of the show");
+  same(ticketVerdict([lt("A", "x"), lt("B", "mine")], [lt("A", "x"), lt("B", "y")], clearAll, true), { applies: true, count: 1, reason: "typed_by_hand" }, "ticketVerdict: PARTLY - one ticket, the other was typed by hand, and it says so");
+  same(ticketVerdict([lt("A", "mine")], [lt("A", "x")], clearAll, true), { applies: false, count: 0, reason: "typed_by_hand" }, "ticketVerdict: only a typed ticket");
+  same(ticketVerdict([lt("A", "")], [lt("A", "")], clearAll, true), { applies: false, count: 0, reason: "already" }, "ticketVerdict: nothing left to clear");
+  same(ticketVerdict([], [], clearAll, true), { applies: false, count: 0, reason: "no_category" }, "ticketVerdict: the show sells no LiveTickets ticket");
+  const setPlan = { clearAll: [], clear: [], set: [{ supplier: "livetickets" as const, key: "a", category: "A", text: "new" }] };
+  same(ticketVerdict([lt("A", "x")], [lt("A", "x")], setPlan, false), { applies: false, count: 0, reason: "other_hall" }, "ticketVerdict: a written text stays at its hall");
+  same(ticketVerdict([lt("B", "x")], [lt("B", "x")], setPlan, true), { applies: false, count: 0, reason: "no_category" }, "ticketVerdict: this show has no such category");
+  const mixed = { clearAll: [], clear: [{ supplier: "livetickets" as const, key: "b", category: "B" }], set: setPlan.set };
+  same(ticketVerdict([lt("A", "x"), lt("B", "y")], [lt("A", "x"), lt("B", "y")], mixed, false), { applies: true, count: 1, reason: "other_hall" }, "ticketVerdict: the clear reaches another hall, the written text does not");
+
+  // -- learnShowRows: the Oasis run as it stands -----------------------------------------------------------
+  const rows = learnShowRows({
+    source: { show: kneb, payload: { description: OLD, location: london, tickets_and_rates: [] }, row: { description: NEW, location: london, tickets_and_rates: [] } },
+    others: [
+      { itemId: "i1308", eventId: 1308, ...other(OLD, OLD), },
+      { itemId: "i1303", eventId: 1303, ...other("לנבוורת.", OLD) },
+      { itemId: "i1305", eventId: 1305, ...other(NEW, OLD) },
+      { itemId: "iwem", eventId: 900, ...other(OLD, OLD, wembley) },
+    ],
+    venueSiblings: null,
+    plan: { clearAll: [], clear: [], set: [] },
+    description: change,
+    place: null,
+  });
+  same(rows.map((r) => [r.eventId, r.verdicts.event_description?.reason ?? "applies"]), [[1308, "applies"], [1303, "typed_by_hand"], [1305, "already"], [900, "other_hall"]], "learnShowRows: Alon's run - who gets the text and why not");
+  same(rows[0].date, "2027-09-11", "learnShowRows: a row names its show's date");
+  same(rows[0].city, "Stevenage", "learnShowRows: and its city");
+  same(Object.keys(rows[0].verdicts), ["event_description"], "learnShowRows: only the kinds that have a change");
+  const halled = learnShowRows({ source: { show: kneb, payload: {}, row: {} }, others: [{ itemId: "a", eventId: 1, show: kneb, payload: {}, row: {} }, { itemId: "b", eventId: 2, show: wembley, payload: {}, row: {} }], venueSiblings: new Set(["a"]), plan: { clearAll: [], clear: [], set: [] }, description: null, place: null });
+  same(halled.map((r) => r.verdicts.venue), [{ applies: true, count: 1, reason: null }, { applies: false, count: 0, reason: "other_hall" }], "learnShowRows: the hall kind reaches the hall's shows");
+
+  // -- eventFieldsFor: what one show gets written ------------------------------------------------------------
+  const applied = eventFieldsFor(change, place, { applies: true, count: 1, reason: null }, { applies: true, count: 1, reason: null }, { description: OLD });
+  same(applied.event, { description: NEW, location: renamed }, "eventFieldsFor: both kinds on the event");
+  same(applied.payload, { description: NEW, description_by_hand: true, location: renamed }, "eventFieldsFor: the baseline follows, the text stays a person's");
+  const adopted = eventFieldsFor(change, null, { applies: false, count: 0, reason: "already" }, null, { description: OLD });
+  same(adopted.event, {}, "eventFieldsFor: already typed = nothing to write");
+  same(adopted.payload, { description: NEW, description_by_hand: true }, "eventFieldsFor: ... but the baseline follows, so that card stops reading as edited");
+  const left = eventFieldsFor(change, null, { applies: false, count: 0, reason: "typed_by_hand" }, null, { description: OLD });
+  same([left.event, left.payload], [{}, {}], "eventFieldsFor: a typed text is left entirely alone");
+
+  // -- the rebase: a learn consumes it, the next edit is seen again ------------------------------------------
+  const base = { tickets_and_rates: [], description: OLD, location: london };
+  const edited = { tickets_and_rates: [], description: NEW, location: renamed };
+  const rebased: Record<string, unknown> = { ...base, ...rebaseEventFields(base, edited, { description: true, place: true }) };
+  same(editKindsOf(rebased, edited), [], "rebaseEventFields: both consumed");
+  same(rebased.description_by_hand, true, "rebaseEventFields: the source's text stays a person's");
+  same(editKindsOf(rebased, { ...edited, description: `${NEW} שוב` }), ["event_description"], "rebaseEventFields: a SECOND edit of the description is seen again");
+  const onlyDesc = { ...base, ...rebaseEventFields(base, edited, { description: true, place: false }) };
+  same(editKindsOf(onlyDesc, edited), ["place"], "rebaseEventFields: an unticked kind stays pending");
+  same(rebaseEventFields(base, edited, { description: false, place: false }), {}, "rebaseEventFields: nothing applied");
+
+  // -- notCarriedEdits ---------------------------------------------------------------------------------------
+  same(notCarriedEdits({ date: "2027-01-01", base_hotel_price: 100, location: london, description: OLD, tickets_and_rates: [] }, { date: "2027-01-02", base_hotel_price: 120, location: renamed, description: NEW, tickets_and_rates: [] }), ["date", "base_hotel_price"], "notCarriedEdits: what the kinds carry is not listed");
+  same(notCarriedEdits({ location: london, tickets_and_rates: [] }, { location: { ...london, city_iata: "MAN" }, tickets_and_rates: [] }), ["flight_city"], "notCarriedEdits: a new flight city");
+  same(notCarriedEdits({ description: OLD, tickets_and_rates: [] }, { description: "", tickets_and_rates: [] }), ["description_cleared"], "notCarriedEdits: a cleared description");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A", "", { zoneId: "z1" })] }, { tickets_and_rates: [lt("A", "", { zoneId: "z2" })] }), ["livetickets_zone"], "notCarriedEdits: a LiveTickets zone");
+  same(notCarriedEdits({ tickets_and_rates: [{ ...lt("A"), category: "A", supplierCategory: "A" }] }, { tickets_and_rates: [{ ...lt("A"), category: "שם אחר", supplierCategory: "A" }] }), ["ticket_label"], "notCarriedEdits: a ticket renamed");
+  const tx = (description: string): EventTicket => ({ id: "t", category: "Cat 1", price: 1, description, colorOnTheMap: "x", supplier: "tixstock" });
+  same(notCarriedEdits({ tickets_and_rates: [tx("old")] }, { tickets_and_rates: [tx("")] }), ["tixstock_description_cleared"], "notCarriedEdits: a TixStock description cleared");
+  same(notCarriedEdits({ tickets_and_rates: [tx("old")] }, { tickets_and_rates: [tx("old")] }), [], "notCarriedEdits: untouched");
+  same(notCarriedEdits(null, { date: "x" }), [], "notCarriedEdits: no payload");
+
+  // -- the options --------------------------------------------------------------------------------------------
+  same(cleanLearnOptions({ eventDescription: false }), { venue: true, descriptions: true, eventDescription: false, place: true, note: null }, "cleanLearnOptions: the new kinds, on unless sent off");
+  same(cleanLearnOptions({ place: "no" }), null, "cleanLearnOptions: a kind that is not a boolean is refused");
+
+  // -- the review's findings -----------------------------------------------------------------------------------
+  same(placeChange({ location: london }, { location: { ...london, city_iata: "" } })?.flightChanged, true, "placeChange: a flight city that went empty is a change (main searches flights by it)");
+  same(placeChange({ location: { ...london, city_iata: "" } }, { location: { ...london, name: "מדריד", city_iata: "MAD" } })?.flightChanged, true, "placeChange: a ticket-only show given a flight city is a change");
+  same(editKindsOf({ tickets_and_rates: [], location: london }, { tickets_and_rates: [], location: { ...london, city_iata: "" } }), [], "editKindsOf: neither is a kind");
+  same(notCarriedEdits({ location: london, tickets_and_rates: [] }, { location: { ...london, city_iata: "" }, tickets_and_rates: [] }), ["flight_city"], "notCarriedEdits: the dialog names it");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A"), lt("B")] }, { tickets_and_rates: [lt("A")] }), ["livetickets_tickets"], "notCarriedEdits: a LiveTickets ticket removed goes nowhere and says so");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A")] }, { tickets_and_rates: [lt("A"), lt("B")] }), ["livetickets_tickets"], "notCarriedEdits: and one added");
+  // a learn does not erase the edit: the approve still records what a person changed from the build
+  same(editDiff(rebased, edited).map((d) => d.field), ["description", "location"], "rebaseEventFields: the approve still sees the edit (built_fields, like built_tickets_count)");
+  const twice: Record<string, unknown> = { ...rebased, description: `${NEW} שוב`, ...rebaseEventFields(rebased, { ...edited, description: `${NEW} שוב` }, { description: true, place: false }) };
+  same(editDiff(twice, { ...edited, description: `${NEW} שוב` }).map((d) => [d.field, d.from]).filter(([f]) => f === "description"), [["description", OLD]], "rebaseEventFields: a second learn keeps the first text the build wrote");
+  same(editDiff({ description: OLD }, { description: `${OLD}\n` }), [], "editDiff: a trailing newline is no edit, as the kinds read it");
+  // an `already` on text no person typed: nothing follows, the show keeps following the template
+  same(eventFieldsFor(change, null, { applies: false, count: 0, reason: "already" }, null, { description: NEW }).payload, {}, "eventFieldsFor: the baseline already reads it - no flag on text nobody typed");
+  // the toast counts who gets something, not every show of the run
+  same(showsReached([{ itemId: "a", eventId: 1, date: "", city: "", venue: null, verdicts: { event_description: { applies: false, count: 0, reason: "different" } } }, { itemId: "b", eventId: 2, date: "", city: "", venue: null, verdicts: { place: { applies: true, count: 1, reason: null } } }]), 1, "showsReached: only a show a kind applies to");
+  // the toast asks only when THIS save touched something a learn carries
+  const saved = { description: OLD, location: london, tickets_and_rates: [], base_hotel_price: 10 };
+  check(!editTouchesLearnFields(JSON.stringify(saved), { ...saved, base_hotel_price: 20 }), "editTouchesLearnFields: an unrelated save does not ask again");
+  check(editTouchesLearnFields(JSON.stringify(saved), { ...saved, description: NEW }), "editTouchesLearnFields: the description");
+  check(editTouchesLearnFields(JSON.stringify(saved), { ...saved, location: renamed }), "editTouchesLearnFields: the location");
+  check(editTouchesLearnFields(JSON.stringify(saved), { ...saved, tickets_and_rates: [lt("A")] }), "editTouchesLearnFields: the tickets");
+  check(editTouchesLearnFields(null, saved), "editTouchesLearnFields: no baseline to compare = ask");
+  check(editTouchesLearnFields("{not json", saved), "editTouchesLearnFields: an unreadable baseline = ask");
+
+  // -- a typed description is an edit, and a template rewrite leaves it ------------------------------------------
+  same(editDiff({ description: OLD }, { description: NEW }).map((d) => d.field), ["description"], "editDiff: a typed description is an edit (Alon's 1305-1307 read edited: false)");
+  same(editDiff({ description: OLD }, { description: OLD }), [], "editDiff: the uploader's own text is none");
+  check(descriptionIsAPersons({ description: OLD }, NEW), "descriptionIsAPersons: typed after the build");
+  check(!descriptionIsAPersons({ description: OLD }, OLD), "descriptionIsAPersons: still the uploader's");
+  check(!descriptionIsAPersons({ description: OLD }, ""), "descriptionIsAPersons: empty is nobody's - a rewrite may fill it");
+  check(!descriptionIsAPersons(null, NEW), "descriptionIsAPersons: nothing to compare");
+  check(descriptionIsAPersons({ description: NEW, description_by_hand: true }, NEW), "descriptionIsAPersons: carried by a learn, equal to its baseline, still a person's - a classify must not overwrite it");
+}
+
 async function planTokenChecks(): Promise<void> {
   const KEY = "synthetic-signing-key";
   const brief = "יצא טור של אריק קלפטון באירופה";
