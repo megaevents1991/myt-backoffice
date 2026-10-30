@@ -3478,6 +3478,8 @@ export type Database = {
           updated_at: string | null
           utm: Json
           wa_seen_at: string | null
+          waitlist_since: string | null
+          date_opened: Json | null
         }
         Insert: {
           customer_id?: string | null
@@ -3517,6 +3519,8 @@ export type Database = {
           updated_at?: string | null
           utm?: Json
           wa_seen_at?: string | null
+          waitlist_since?: string | null
+          date_opened?: Json | null
         }
         Update: {
           customer_id?: string | null
@@ -3556,6 +3560,8 @@ export type Database = {
           updated_at?: string | null
           utm?: Json
           wa_seen_at?: string | null
+          waitlist_since?: string | null
+          date_opened?: Json | null
         }
         Relationships: [
           {
@@ -5957,6 +5963,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      departure_open_watch: {
+        Row: {
+          company_id: string
+          departure_id: string
+          open_seen_at: string
+        }
+        Insert: {
+          company_id: string
+          departure_id: string
+          open_seen_at?: string
+        }
+        Update: {
+          company_id?: string
+          departure_id?: string
+          open_seen_at?: string
+        }
+        Relationships: []
       }
       departure_sales_entries: {
         Row: {

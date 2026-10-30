@@ -17,6 +17,7 @@ import type { BookingRow } from "@/components/tours/bookings/shared";
 import type { ToursReservationRow } from "@/components/tours/reservations/types";
 import type { CancellationRule } from "@/lib/tours/cancellation";
 import { canSendText, type WaMessageType } from "@/lib/whatsapp/rules";
+import type { DateOpenedNote } from "@/lib/tours/waitlist-dates";
 
 // ---------------------------------------------------------------- TYPE
 export const CASE_TYPES = ["reservation", "lead", "potential"] as const;
@@ -106,6 +107,7 @@ export const SYSTEM_STATUS_KEYS = [
   "offer_sent",
   "future",
   "waitlist",
+  "date_opened",
   "pending_payment",
   "deposit_paid",
   "paid",
@@ -140,6 +142,8 @@ export const DEFAULT_STATUSES: CaseStatus[] = [
   st("future", "ליד עתידי", "cyan"),
   // a waiting-list / "tell me when it opens" form: its own card, off TODAY and LEADS, on WAITING LIST (Alon 29.10)
   st("waitlist", "רשימת המתנה", "amber"),
+  // a date opened on the tour the card waited for: moved by the hourly check, on TODAY on its follow-up day (Alon 30.10)
+  st("date_opened", "נפתח תאריך", "rose"),
   st("pending_payment", "ממתין לתשלום", "orange"),
   // counts as paid: the seats are held
   st("deposit_paid", "שולם מקדמה", "teal"),
@@ -382,6 +386,8 @@ const UNROUTED_KINDS = new Set(["booking", "advisor", "manual", "newsletter"]);
 const WAITING_LIST_KINDS = new Set(["waitlist", "notify"]);
 /** The status a waiting list waits in - off TODAY and LEADS, on the board's WAITING LIST tab (Alon 29.10). */
 export const WAITLIST_STATUS = "waitlist";
+/** A date opened on the tour the card waited for (lib/tours/waitlist-dates.ts). */
+export const DATE_OPENED_STATUS = "date_opened";
 /**
  * A waiting-list card IS its status: a waiting-list form opens one, a rep may move any card there. Once a rep moves it on
  * it is a deal like any other (Dor 28.10).
@@ -440,7 +446,7 @@ export function routeInquiry(
 export function statusOnReturn(status: string, statuses: readonly CaseStatus[], formKind?: string): string {
   if (!statusOf("returned", statuses)) return status;
   if (formKind && WAITING_LIST_KINDS.has(formKind)) return status;
-  return status === "no_answer" || status === "offer_sent" || status === "future" || status === WAITLIST_STATUS ? "returned" : status;
+  return status === "no_answer" || status === "offer_sent" || status === "future" || status === WAITLIST_STATUS || status === DATE_OPENED_STATUS ? "returned" : status;
 }
 
 /**
@@ -793,6 +799,8 @@ export interface CaseRow {
   relatedCaseNo: number | null;
   /** The booking link prepared on the card (leads.offer) - the card's outside shortcut says where it stands. */
   offer?: CaseOffer | null;
+  /** What happened when the card's date opened (leads.date_opened); null when it never did. */
+  dateOpened?: DateOpenedNote | null;
 }
 
 export const caseName = (row: Pick<CaseRow, "firstName" | "lastName">): string =>

@@ -33,6 +33,7 @@ import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
 import { readPaymentLinks } from "@/lib/tours/payment-link-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
+import { parseDateOpened } from "@/lib/tours/waitlist-dates";
 import { countUnseen, relinkCardCustomer, relinkCaseMessages, relinkCustomerMessages } from "@/lib/services/whatsapp-db";
 import { threadOf } from "@/lib/services/whatsapp-thread";
 import { ROOM_COMPOSITIONS, roomPrice, toPriceMatrix } from "@/lib/tours/pricing";
@@ -133,13 +134,14 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at, wa_seen_at";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at, wa_seen_at, date_opened";
 
-/** The same without wa_seen_at (20261021172647), without notes_at (20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
-const CASE_COLUMNS_NO_WA = CASE_COLUMNS.replace(", wa_seen_at", "");
+/** The same without date_opened (20261030182000), without wa_seen_at (20261021172647), without notes_at (20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
+const CASE_COLUMNS_NO_DATE_OPENED = CASE_COLUMNS.replace(", date_opened", "");
+const CASE_COLUMNS_NO_WA = CASE_COLUMNS_NO_DATE_OPENED.replace(", wa_seen_at", "");
 const CASE_COLUMNS_NO_NOTES_AT = CASE_COLUMNS_NO_WA.replace(", notes_at", "");
 const LEGACY_CASE_COLUMNS = CASE_COLUMNS_NO_NOTES_AT.replace(", customer_id, to_file, season", "");
-const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_WA, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
+const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_DATE_OPENED, CASE_COLUMNS_NO_WA, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
 /** Reads with the full column list, then without each column set a missing migration would lack. */
 async function readCaseColumns<T extends { error: { code?: string; message?: string } | null | undefined }>(read: (columns: string) => PromiseLike<T>): Promise<T> {
   let answer = await read(CASE_COLUMN_SETS[0]);
@@ -192,6 +194,7 @@ type CaseRecord = Pick<
   | "season"
   | "notes_at"
   | "wa_seen_at"
+  | "date_opened"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 type CustomerRecord = Database["public"]["Tables"]["customers"]["Row"];
@@ -485,6 +488,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     closeReason: r.close_reason ?? null,
     relatedCaseNo: r.related_lead_id ? (x.related.get(r.related_lead_id) ?? null) : null,
     offer: parseOffer(r.offer),
+    dateOpened: parseDateOpened(r.date_opened),
   };
 }
 

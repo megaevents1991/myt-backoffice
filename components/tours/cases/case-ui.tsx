@@ -32,6 +32,7 @@ import {
   cardStage,
   checkCloseReason,
   checkFuture,
+  DATE_OPENED_STATUS,
   customerLabel,
   daysLate,
   needsCloseReason,
@@ -48,6 +49,7 @@ import {
   type KnownFrom,
   type TodayReason,
 } from "@/lib/tours/cases";
+import { OPTED_OUT_WHY, dateOpenedMessage } from "@/lib/tours/waitlist-dates";
 import { EMPTY, fmtDate, todayIso } from "@/lib/tours/format";
 
 /** Value of the rep picker for "nobody". */
@@ -138,6 +140,28 @@ export function BulkAssignSelect({ reps, disabled, onAssign }: { reps: readonly 
 }
 
 /** What a deal is for: the tour, then its date or season. */
+/**
+ * What happened when the card's date opened (Alon 30.10): the date and whether the WhatsApp went out. When it did not,
+ * the reason, and while the card still waits for its call the same message ready for the rep's own WhatsApp - never for
+ * a customer who opted out: in coexistence the rep's app IS the number they opted out of.
+ */
+export function DateOpenedLine({ card }: { card: CaseRow }) {
+  const note = card.dateOpened;
+  if (!note) return null;
+  const sent = note.whatsapp === "sent";
+  return (
+    <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-xs font-medium text-rose-700 dark:text-rose-300">
+      <span>
+        Date opened{note.code ? ` · ${note.code}` : ""} · {sent ? `WhatsApp sent ${fmtDate(note.at.slice(0, 10))}` : note.whatsapp === "pending" ? "WhatsApp not confirmed" : "WhatsApp not sent"}
+      </span>
+      {!sent && note.why && <span className="font-normal text-muted-foreground">({note.why})</span>}
+      {!sent && note.why !== OPTED_OUT_WHY && card.status === DATE_OPENED_STATUS && (
+        <WhatsAppButton iconOnly phone={card.phone} message={dateOpenedMessage(card.firstName, note.tourName, note.url)} />
+      )}
+    </div>
+  );
+}
+
 export function CardWhat({ card, children }: { card: CaseRow; children?: ReactNode }) {
   return (
     <div className="min-w-0">
@@ -164,6 +188,7 @@ export function CardWhat({ card, children }: { card: CaseRow; children?: ReactNo
           💬 {card.waUnseen}
         </span>
       )}
+      {card.status === DATE_OPENED_STATUS && <DateOpenedLine card={card} />}
       {children}
     </div>
   );

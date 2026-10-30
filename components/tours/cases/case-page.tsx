@@ -64,6 +64,7 @@ import {
   seatGap,
   sourceLabel,
   statusOf,
+  WAITLIST_STATUS,
   todayReason,
   travelerGroups,
   type CaseChange,
@@ -72,7 +73,7 @@ import {
   type CaseSource,
   type CaseType,
 } from "@/lib/tours/cases";
-import { FollowUpInput, PhaseTag, RepSelect, StatusSelect, TodayBadge, TYPE_WASH, TypeBadge, WhatsAppButton, type FuturePick } from "@/components/tours/cases/case-ui";
+import { DateOpenedLine, FollowUpInput, PhaseTag, RepSelect, StatusSelect, TodayBadge, TYPE_WASH, TypeBadge, WhatsAppButton, type FuturePick } from "@/components/tours/cases/case-ui";
 import { BookingCard, SeatsChip } from "@/components/tours/cases/booking-card";
 import { BalanceChip } from "@/components/tours/cases/order-money";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
@@ -399,6 +400,8 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
   // the card's pieces - laid out whole on its own page, and Alon's way inside the customer page (20.10)
   const customerWrote = (
     <>
+            {/* a card back on the list has a new wait: what happened on the last one no longer says anything */}
+            {row.status !== WAITLIST_STATUS && <DateOpenedLine card={row} />}
             {row.message && (
               <p dir="auto" className="mt-3 whitespace-pre-wrap break-words rounded-md border bg-muted/30 px-3 py-2 text-sm">
                 <span className="text-xs text-muted-foreground">The customer wrote: </span>
@@ -907,12 +910,12 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
           Confirm → <span dir="rtl">{statusOf("paid", statuses)?.label ?? "Paid"}</span>
         </Button>
       )}
-      {["new", "no_answer", "returned", "offer_sent", "future", "waitlist"].includes(row.status) && (
+      {["new", "no_answer", "returned", "offer_sent", "future", "waitlist", "date_opened"].includes(row.status) && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ status: "no_answer", followUpDate: tomorrowOf(today) })}>
           No answer · call tomorrow
         </Button>
       )}
-      {["no_answer", "offer_sent", "future", "waitlist"].includes(row.status) && statusOf("returned", statuses) && (
+      {["no_answer", "offer_sent", "future", "waitlist", "date_opened"].includes(row.status) && statusOf("returned", statuses) && (
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ status: "returned", followUpDate: today })}>
           The customer came back
         </Button>

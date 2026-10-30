@@ -540,7 +540,7 @@ export function BoardScreen() {
                 <>
                   <WhatsAppButton iconOnly phone={card.phone} message={`היי ${card.firstName ?? ""}`.trim()} />
                   <MailButton iconOnly email={card.email} />
-                  {["new", "no_answer", "returned", "offer_sent", "future", "waitlist"].includes(card.status) && (
+                  {["new", "no_answer", "returned", "offer_sent", "future", "waitlist", "date_opened"].includes(card.status) && (
                     <Button
                       size="sm"
                       variant="outline"

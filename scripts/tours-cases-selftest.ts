@@ -252,7 +252,7 @@ assert.ok(reordered.ok && reordered.statuses[0].key === S.at(-1)?.key, "the orde
 // Nir's list (19.10) + Waiting list after "future" (Alon 29.10): on; the old ones off but kept
 assert.deepEqual(
   S.filter((s) => s.isActive).map((s) => s.key),
-  ["new", "no_answer", "returned", "offer_sent", "future", "waitlist", "pending_payment", "deposit_paid", "paid", "not_relevant", "cancelled", "spam"],
+  ["new", "no_answer", "returned", "offer_sent", "future", "waitlist", "date_opened", "pending_payment", "deposit_paid", "paid", "not_relevant", "cancelled", "spam"],
 );
 assert.deepEqual(S.filter((s) => !s.isActive).map((s) => s.key), ["in_progress", "follow_up", "done", "payment_failed", "payment_review"]);
 assert.ok(!validateStatuses(drafts(S).map((s) => (s.key === "returned" ? { ...s, isActive: false } : s)), S).ok, "a status the code reads stays on");
@@ -593,6 +593,22 @@ assert.equal(statusOnReturn("waitlist", S), "returned", "an inquiry on a waiting
 assert.equal(statusOnReturn("waitlist", S, "waitlist"), "waitlist", "another waiting-list form keeps it waiting");
 assert.equal(statusOnReturn("waitlist", S, "notify"), "waitlist");
 assert.equal(statusOnReturn("no_answer", S, "waitlist"), "no_answer", "a waiting-list form never says the customer came back");
+// a date opened on the card (Alon 30.10): the customer answering by a form came back; another waiting-list form did not
+assert.equal(statusOnReturn("date_opened", S), "returned");
+assert.equal(statusOnReturn("date_opened", S, "lead"), "returned");
+assert.equal(statusOnReturn("date_opened", S, "waitlist"), "date_opened");
+assert.ok(
+  DEFAULT_STATUSES.some((s) => s.key === "date_opened" && s.isSystem && !s.isClosed && s.isActive),
+  "a date-opened card is open, and system: code moves it",
+);
+// it reaches TODAY on its follow-up day and not before (Alon: "טסקט למחרת"), and sits on LEADS, not WAITING LIST
+{
+  const facts = { status: "date_opened", toFile: false, paymentAnswer: null, confirmationPending: false, waUnseen: 0 };
+  assert.equal(todayReason({ ...facts, followUpDate: TODAY }, S, TODAY), "today");
+  assert.equal(todayReason({ ...facts, followUpDate: "2026-12-31" }, S, TODAY), null, "not before its day");
+  assert.equal(todayReason({ ...facts, followUpDate: "2020-01-01" }, S, TODAY), "late");
+  assert.equal(isWaitingListCard({ status: "date_opened" }), false);
+}
 
 // the card's step: lead -> offer -> order -> paid
 assert.equal(cardStage("new", false, S), 0);
