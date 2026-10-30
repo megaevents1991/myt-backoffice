@@ -1883,6 +1883,12 @@ NOT a kind - the description template owns it (a code clear would be refilled by
 **Not built:** an AI that turns a free sentence into an operation (Dor chose code-only); the event description as a
 learn kind.
 
+**No-location choice, four values (30.10, Dor: "גם אופציה של בניית לוקיישן חדש / החלטה בזמן אמת"; no migration).**
+`rules.without_location` = `ask` (NEW default, "החלטה בזמן אמת" - nothing marked) / `create` ("בניית לוקיישן חדש" - marks
+"צור מיקום" in `create_location` AND `pick_location`) / `ticket_only` / `skip` (type `WithoutLocation`). Every show with no
+location is still asked (D2) - the value only adds "(לפי הבריף)" to one option; a stored "skip" / "ticket_only" plan reads as
+before. The parse tool's enum, the house rules, the plan card's dropdown + hint and the board chip follow.
+
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,
 light, diff, competitor, both normalized prices, both durations, the uncertainty) taken BEFORE its own

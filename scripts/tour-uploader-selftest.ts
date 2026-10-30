@@ -274,12 +274,12 @@ same(PRICED_PARTY, 2, "the priced party is the TixStock sync's own constant (lib
     {
       subject: { kind: "artist", name_he: null, name_en: "" },
       scope: { date_from: null, date_to: null, home_only: true, round: null, exclude_cities: [], include_cities: [] },
-      rules: { with_location: "package", without_location: "skip", livetickets_non_instant: true },
+      rules: { with_location: "package", without_location: "ask", livetickets_non_instant: true },
       markups: { ticket_only: null, additional: null },
       suppliers: ["tixstock", "livetickets"],
       notes: [],
     },
-    "emptyPlan: artist, skip without a location, LiveTickets non-instant brought, nulls, both suppliers",
+    "emptyPlan: artist, ask (decide in real time) without a location, LiveTickets non-instant brought, nulls, both suppliers",
   );
   e.notes.push("x");
   e.scope.exclude_cities.push("y");
@@ -510,11 +510,17 @@ for (const empty of ["", "   ", null, undefined, 7]) {
   (input.rules as { without_location: unknown }).without_location = "hotel_only";
   const bad = parsePlanInput(input);
   problemFor(bad, "rules.without_location", "an unknown without_location");
-  same(bad.plan.rules.without_location, "skip", "a bad without_location falls back to skip");
+  same(bad.plan.rules.without_location, "ask", "a bad without_location falls back to ask (30.10)");
   (input.rules as { without_location: unknown }).without_location = undefined;
   const missing = parsePlanInput(input);
   check(missing.ok, "a missing without_location is the default, not a problem");
-  same(missing.plan.rules.without_location, "skip", "missing without_location = skip");
+  same(missing.plan.rules.without_location, "ask", "missing without_location = ask - decide in real time (30.10)");
+  for (const v of ["ask", "create"] as const) {
+    input.rules.without_location = v;
+    const r = parsePlanInput(input);
+    check(r.ok && r.plan.rules.without_location === v, `${v} is valid (30.10)`);
+  }
+  same(emptyPlan().rules.without_location, "ask", "the empty plan recommends nothing - ask (30.10)");
   (input.rules as { with_location: unknown }).with_location = "ticket_only";
   const forced = parsePlanInput(input);
   check(forced.ok, "with_location is not the model's to choose - no problem");
@@ -5403,6 +5409,22 @@ async function supplierSvgFetchChecks(): Promise<void> {
     [{ key: "create", label: "צור מיקום חדש" }, { key: "skip", label: "דלג על ההופעה" }],
     "pick_location: 'צור מיקום חדש' before skip",
   );
+
+  // -- 30.10 (Dor): "decide in real time" and "build a new location" -----------------------------------
+  const roigAsk = decidePlace(input4({ show: roigShow, withoutLocation: "ask" }));
+  same(keysOf(roigAsk), ["create", "two_city:50", "ticket_only", "skip"], "create_location under 'ask': every option, the same order");
+  check(!(labelsOf(roigAsk) ?? []).some((l) => l.includes("לפי הבריף")), "create_location under 'ask': nothing marked as the brief's");
+  const roigCreate = decidePlace(input4({ show: roigShow, withoutLocation: "create" }));
+  same(keysOf(roigCreate), ["create", "two_city:50", "ticket_only", "skip"], "create_location under 'create': create stays first");
+  same(labelsOf(roigCreate)?.[0], "צור מיקום ל-Valencia (לפי הבריף)", "create_location under 'create': 'צור מיקום' marked as the brief's");
+  same((labelsOf(roigCreate) ?? []).filter((l) => l.includes("לפי הבריף")).length, 1, "create_location under 'create': only create is marked");
+  const pickOptions = (w: PlaceInput["withoutLocation"]) => {
+    const r = decidePlace(input4({ show: { ...liveOnly4, city: "Valencia" }, withoutLocation: w }));
+    return r.kind === "ask" ? r.question.options.slice(-2).map((o) => o.label) : null;
+  };
+  same(pickOptions("create"), ["צור מיקום חדש (לפי הבריף)", "דלג על ההופעה"], "pick_location under 'create': create marked");
+  same(pickOptions("skip"), ["צור מיקום חדש", "דלג על ההופעה (לפי הבריף)"], "pick_location under 'skip': skip marked");
+  same(pickOptions("ask"), ["צור מיקום חדש", "דלג על ההופעה"], "pick_location under 'ask': nothing marked");
 
   // -- answers on create_location (4.3) ---------------------------------------------------------------
   const answer4 = (key: string): PlaceInput => input4({ show: roigShow, answer: { key, text: null } });

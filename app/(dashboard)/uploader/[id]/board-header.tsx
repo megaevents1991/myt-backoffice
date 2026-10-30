@@ -6,7 +6,7 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight, FileText } from "lucid
 import { Button } from "@/components/ui/button";
 import type { RunBoard } from "@/lib/uploader/action-types";
 import { cn } from "@/lib/utils";
-import type { RunStatus } from "@/types/uploader.types";
+import type { RunStatus, WithoutLocation } from "@/types/uploader.types";
 import { SUBJECT_KIND_HE } from "../copy";
 import { BTN_DESCRIPTION, FILTER_HE, filterCount, FILTERS, showDate, stampHe, SUBJECT_WARNING_CHIP, type BoardCounts, type Filter } from "./board-words";
 
@@ -39,6 +39,14 @@ const RUN_STATUS_STYLE: Record<RunStatus, string> = {
 };
 
 type StepState = "done" | "now" | "ask" | "todo";
+
+/** The plan's recommended answer for a show with no location, as the chip prints it. */
+const WITHOUT_LOCATION_REC: Record<WithoutLocation, string> = {
+  ask: " (החלטה בזמן אמת)",
+  create: " (המלצה: בניית לוקיישן)",
+  ticket_only: " (המלצה: כרטיס בלבד)",
+  skip: " (המלצה: דילוג)",
+};
 
 function Steps({ counts, status }: { counts: BoardCounts; status: RunStatus }) {
   const pending = counts.found + counts.building;
@@ -154,7 +162,7 @@ function PlanChips({ board, counts }: { board: RunBoard; counts: BoardCounts }) 
       <Chip>
         כרטיס בלבד <Money v={plan.markups.ticket_only} /> · אדישנל <Money v={plan.markups.additional} />
       </Chip>
-      <Chip>בלי לוקיישן: שואלים (המלצה: {plan.rules.without_location === "ticket_only" ? "כרטיס בלבד" : "דילוג"})</Chip>
+      <Chip>בלי לוקיישן: שואלים על כל הופעה{WITHOUT_LOCATION_REC[plan.rules.without_location]}</Chip>
       {(date_from || date_to) && (
         <Chip>
           {date_from && (

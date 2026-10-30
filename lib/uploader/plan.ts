@@ -12,23 +12,23 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { LIST_MAX, MARKUP_MAX, NAME_MAX, NOTE_MAX, OPEN_WINDOW_MONTHS, QUESTION_MAX, QUESTIONS_MAX, SHOW_WINDOW_DAYS, STEER_MAX, STEER_MIN } from "@/lib/uploader/constants";
-import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
+import type { SubjectKind, UploaderPlan, WithoutLocation } from "@/types/uploader.types";
 
 const SUBJECT_KINDS = ["artist", "team", "competition"] as const satisfies readonly SubjectKind[];
-const WITHOUT_LOCATION = ["ticket_only", "skip"] as const;
+const WITHOUT_LOCATION = ["ask", "create", "ticket_only", "skip"] as const satisfies readonly WithoutLocation[];
 const SUPPLIERS = ["tixstock", "livetickets"] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The plan before the brief says anything: an artist, no window, packages where a location
- * exists and no event where none does, no markups chosen. A fresh object on every call -
+ * exists and a question for every show where none does (no answer recommended), no markups chosen. A fresh object on every call -
  * callers push into its arrays.
  */
 export function emptyPlan(): UploaderPlan {
   return {
     subject: { kind: "artist", name_he: null, name_en: "" },
     scope: { date_from: null, date_to: null, home_only: true, round: null, exclude_cities: [], include_cities: [] },
-    rules: { with_location: "package", without_location: "skip", livetickets_non_instant: true },
+    rules: { with_location: "package", without_location: "ask", livetickets_non_instant: true },
     markups: { ticket_only: null, additional: null },
     suppliers: ["tixstock", "livetickets"],
     notes: [],
@@ -110,7 +110,7 @@ export const PLAN_TOOL_SCHEMA: Anthropic.Tool["input_schema"] = {
         without_location: {
           type: "string",
           enum: [...WITHOUT_LOCATION],
-          description: "What the brief recommends for a show with no location - the person is asked about every such show either way (create a location / two-city / ticket only / skip). ticket_only = sell the ticket alone; skip = do not build the show. skip unless the brief asks for ticket-only.",
+          description: "What the brief recommends for a show with no location - the person is asked about every such show either way (create a location / two-city / ticket only / skip). ask = no recommendation, decide show by show; create = build a new location for the city; ticket_only = sell the ticket alone; skip = do not build the show. ask unless the brief recommends one of the others.",
         },
         livetickets_non_instant: {
           type: "boolean",

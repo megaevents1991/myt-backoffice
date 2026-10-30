@@ -6,6 +6,9 @@
 
 export type SubjectKind = "artist" | "team" | "competition";
 
+/** The plan's recommendation for a show with no location (30.10: `ask` = decide in real time, `create` = build a new location). */
+export type WithoutLocation = "ask" | "create" | "ticket_only" | "skip";
+
 /** What staff confirmed to build: who, which shows, how to treat them, how to price them. */
 export type UploaderPlan = {
   subject: { kind: SubjectKind; name_he: string | null; name_en: string };
@@ -21,8 +24,10 @@ export type UploaderPlan = {
    * `livetickets_non_instant` (Alon round 2, D1): bring a LiveTickets category that is blocked ONLY for not
    * confirming instantly, marked `nonInstant` on the ticket. A plan stored before the field existed has none -
    * read it through `planNonInstant` (lib/uploader/plan.ts), never directly: absent = true.
+   * `without_location` only marks the recommended answer of the board's question (every show with no location
+   * is asked): `ask` (30.10, the default) marks none, `create` marks "create a location".
    */
-  rules: { with_location: "package"; without_location: "ticket_only" | "skip"; livetickets_non_instant: boolean };
+  rules: { with_location: "package"; without_location: WithoutLocation; livetickets_non_instant: boolean };
   markups: { ticket_only: number | null; additional: number | null };
   suppliers: ["tixstock", "livetickets"];
   notes: string[];

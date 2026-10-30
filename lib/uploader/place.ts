@@ -31,7 +31,8 @@
  *   6. an earlier run's `create_location` answer (`prior_answer`, applied as step 2 applies it), else
  *      ASK `create_location` (D2 - never a silent ticket-only or skip): create a location / two-city
  *      through the nearest location within FAR_VENUE_KM / ticket only / skip; the plan's
- *      `without_location` rule only marks its option "(לפי הבריף)" and puts it first of the two.
+ *      `without_location` rule only marks its option "(לפי הבריף)" (`ask` marks none, `create` the
+ *      create option; skip / ticket only also goes first of the two).
  *
  * `itemLocation` always holds the nearest location when one exists within FAR_VENUE_KM (`far` =
  * beyond NEAR) - on a ticket-only item it is the default flight city of the two-city rebuild.
@@ -44,7 +45,7 @@ import { FAR_VENUE_KM, NEAR_LOCATION_KM } from "@/lib/uploader/constants";
 import { decision } from "@/lib/uploader/decisions";
 import { questionKey } from "@/lib/uploader/shows";
 import type { Event } from "@/types/app.types";
-import type { Decision, QuestionKind, ShowIdentity, UploaderItem, UploaderQuestion } from "@/types/uploader.types";
+import type { Decision, QuestionKind, ShowIdentity, UploaderItem, UploaderQuestion, WithoutLocation } from "@/types/uploader.types";
 
 export type LodgingFields = Partial<
   Pick<Event, "event_location" | "lodging_mode" | "lodging_default" | "lodging_note" | "split_default_nights">
@@ -75,7 +76,7 @@ export interface PlaceInput {
   subject_en: string;
   /** Every `locations` row. */
   rows: LocationRow[];
-  withoutLocation: "ticket_only" | "skip";
+  withoutLocation: WithoutLocation;
   /** The far-venue offer was clicked: fly to this row. */
   twoCity: { flightCityId: number } | null;
   /** The item's own answered `pick_location` / `create_location`. */
@@ -263,12 +264,22 @@ function lodgingLabel(mode: string | null | undefined): string {
   }
 }
 
+/** The brief's recommended option says so. */
+const BY_THE_BRIEF = " (לפי הבריף)";
+
 /**
  * The `pick_location` question: every location with an IATA (Munich / Krakow listed twice are
- * listed once) + skip, free text allowed. The text names LiveTickets only when it is the one
- * supplier that sells the show.
+ * listed once) + create + skip, free text allowed - the plan's `create` / `skip` rule marks its option
+ * "(לפי הבריף)" (no ticket only here: a ticket-only event needs the venue's coordinates). The text names
+ * LiveTickets only when it is the one supplier that sells the show.
  */
-export function pickLocationQuestion(show: ShowIdentity, subject_en: string, rows: LocationRow[], now: Date): UploaderQuestion {
+export function pickLocationQuestion(
+  show: ShowIdentity,
+  subject_en: string,
+  rows: LocationRow[],
+  withoutLocation: WithoutLocation,
+  now: Date,
+): UploaderQuestion {
   const seen = new Set<string>();
   const options: UploaderQuestion["options"] = [];
   for (const r of flyable(rows)) {
@@ -286,22 +297,24 @@ export function pickLocationQuestion(show: ShowIdentity, subject_en: string, row
     kind: "pick_location",
     key: questionKey(show, subject_en),
     text,
-    options: [...options, { key: "create", label: "צור מיקום חדש" }, { key: "skip", label: "דלג על ההופעה" }],
+    options: [
+      ...options,
+      { key: "create", label: `צור מיקום חדש${withoutLocation === "create" ? BY_THE_BRIEF : ""}` },
+      { key: "skip", label: `דלג על ההופעה${withoutLocation === "skip" ? BY_THE_BRIEF : ""}` },
+    ],
     free_text: true,
     asked_at: now.toISOString(),
     task_id: null,
   };
 }
 
-/** The brief's own option among ticket_only / skip says so. */
-const BY_THE_BRIEF = " (לפי הבריף)";
-
 /**
  * The `create_location` question (Alon round 2, spec 4.1): a show with coordinates and no location
  * within NEAR_LOCATION_KM. Options, in order: create a location for the city (its form answers with
  * the new id), a two-city package through `far` (the nearest flyable location within FAR_VENUE_KM;
- * none = no such option), then ticket only / skip - the plan's `without_location` rule first of the
- * two and marked "(לפי הבריף)". Closed (no free text): an existing location farther away is the
+ * none = no such option), then ticket only / skip. The plan's `without_location` rule marks its option
+ * "(לפי הבריף)" - `create` the create option, `ticket_only` / `skip` theirs (that one first of the two),
+ * `ask` (decide in real time) none. Closed (no free text): an existing location farther away is the
  * two-city option, a new one is `create`. `rows` = the `locations` table, as `pickLocationQuestion`
  * takes it (the two-city offer is already resolved from it into `far`).
  */
@@ -322,7 +335,7 @@ export function createLocationQuestion(
     key: questionKey(show, subject_en),
     text: `אין לנו מיקום ל-${city}${venue ? ` (${venue})` : ""}. מה לעשות?`,
     options: [
-      { key: "create", label: `צור מיקום ל-${city}` },
+      { key: "create", label: `צור מיקום ל-${city}${withoutLocation === "create" ? BY_THE_BRIEF : ""}` },
       ...(far ? [{ key: `two_city:${far.id}`, label: `חבילה דרך ${far.city} (${far.km} ק"מ) עם פיצול מלון` }] : []),
       ...(withoutLocation === "skip" ? [skip, ticketOnly] : [ticketOnly, skip]),
     ],
@@ -383,7 +396,7 @@ export function decidePlace(input: PlaceInput): PlaceResult {
   const ask = (): PlaceResult =>
     coords
       ? { kind: "ask", question: createLocationQuestion(show, input.subject_en, rows, input.withoutLocation, farVenueOf(farOf(coords)), input.now), decisions: [] }
-      : { kind: "ask", question: pickLocationQuestion(show, input.subject_en, rows, input.now), decisions: [] };
+      : { kind: "ask", question: pickLocationQuestion(show, input.subject_en, rows, input.withoutLocation, input.now), decisions: [] };
   const skip = (decisions: Decision[]): PlaceResult => ({ kind: "skip", reason: "skipped_by_answer", itemLocation: null, farVenue: null, decisions });
   const package_ = (row: LocationRow, decisions: Decision[]): PlaceResult => ({
     kind: "placed",

@@ -24,7 +24,7 @@ import { MARKUP_MAX, SHOW_WINDOW_DAYS } from "@/lib/uploader/constants";
 import { familyOf } from "@/lib/uploader/description";
 import { parsePlanInput, planNonInstant } from "@/lib/uploader/plan";
 import { cn } from "@/lib/utils";
-import type { SubjectKind, UploaderPlan } from "@/types/uploader.types";
+import type { SubjectKind, UploaderPlan, WithoutLocation } from "@/types/uploader.types";
 import { actionErrorText, AGENT_OFF_LINE, SUBJECT_KIND_HE } from "./copy";
 import { AiQuestions, DescriptionTemplateEditor, SteerBox, useFamilyTemplate, type TemplateDrafts } from "./plan-assist";
 
@@ -60,10 +60,15 @@ export type PlanSeed = {
 
 const SUBJECT_KINDS: SubjectKind[] = ["artist", "team", "competition"];
 
-const WITHOUT_LOCATION_HE: Record<UploaderPlan["rules"]["without_location"], string> = {
+/** In the dropdown's order. Every show with no location is asked on the board - this marks the recommended answer. */
+const WITHOUT_LOCATION_HE: Record<WithoutLocation, string> = {
+  ask: "החלטה בזמן אמת",
+  create: "בניית לוקיישן חדש",
   ticket_only: "כרטיס בלבד",
   skip: "לדלג",
 };
+const WITHOUT_LOCATION_OPTIONS = Object.keys(WITHOUT_LOCATION_HE) as WithoutLocation[];
+const isWithoutLocation = (v: string): v is WithoutLocation => v in WITHOUT_LOCATION_HE;
 
 /** Same name and value as the server's (lib/uploader/run-rules.ts) - kept local so the client never imports run-rules. */
 const EMPTY_PREVIEW: PlanPreview = { shows: 0, questions: 0, existing: 0, cities: [] };
@@ -455,20 +460,27 @@ export function PlanCard({
             <span className="text-muted-foreground">הופעה עם לוקיישן</span>
             <span className="font-medium">חבילה - טיסה, מלון וכרטיס</span>
           </div>
-          <Field label="המלצה להופעה בלי לוקיישן" htmlFor="plan-without">
+          <Field
+            label="הופעה בלי לוקיישן"
+            htmlFor="plan-without"
+            hint="הלוח שואל על כל הופעה כזו. הבחירה כאן מסמנת את התשובה המומלצת; בניית לוקיישן פותחת טופס שה-AI ממלא ואתם מאשרים."
+          >
             <Select
               dir="rtl"
               value={plan.rules.without_location}
               onValueChange={(v) => {
-                if (v === "ticket_only" || v === "skip") setPlan((p) => ({ ...p, rules: { ...p.rules, without_location: v } }));
+                if (isWithoutLocation(v)) setPlan((p) => ({ ...p, rules: { ...p.rules, without_location: v } }));
               }}
             >
               <SelectTrigger id="plan-without">
                 <SelectValue>{WITHOUT_LOCATION_HE[plan.rules.without_location]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ticket_only">{WITHOUT_LOCATION_HE.ticket_only}</SelectItem>
-                <SelectItem value="skip">{WITHOUT_LOCATION_HE.skip}</SelectItem>
+                {WITHOUT_LOCATION_OPTIONS.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {WITHOUT_LOCATION_HE[v]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>
