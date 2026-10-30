@@ -31,6 +31,7 @@ import {
   LINK_STATE_LABELS,
   dayMonth,
   defaultLinkAmount,
+  customerOrderNumber,
   firstNameOf,
   isLiveLink,
   linkBlockedBy,
@@ -284,7 +285,7 @@ function SendLink({ booking, link, onSent, compact }: { booking: BookingRow; lin
   const message = payLinkMessage({ firstName: firstNameOf(booking.customerName), kind: link.kind, amount: link.amount, currency: link.currency, ref: booking.ref, url, expiresAt: link.expiresAt });
   const wa = whatsappAppLink(booking.customerPhone, message);
   const mail = booking.customerEmail
-    ? `mailto:${encodeURIComponent(booking.customerEmail)}?subject=${encodeURIComponent(`תשלום להזמנה ${booking.ref}`)}&body=${encodeURIComponent(message)}`
+    ? `mailto:${encodeURIComponent(booking.customerEmail)}?subject=${encodeURIComponent(`תשלום להזמנה ${customerOrderNumber(booking.ref)}`)}&body=${encodeURIComponent(message)}`
     : null;
   const copy = () => void run(async () => {
     await navigator.clipboard.writeText(url);

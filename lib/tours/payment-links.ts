@@ -146,10 +146,13 @@ export function moneyText(amount: number, currency: string): string {
   return sym ? `${sym}${n}` : `${n} ${currency}`;
 }
 
+/** The number a customer reads: T10049 is 10049 to them (Alon 30.10; mega-family's mails and pages say the same). */
+export const customerOrderNumber = (ref: string): string => ref.replace(/^T(?=\d)/, "");
+
 /** The message that goes with a link (WhatsApp / e-mail). */
 export function payLinkMessage(args: { firstName: string | null | undefined; kind: LinkKind; amount: number; currency: string; ref: string; url: string; expiresAt: string }): string {
   const hello = args.firstName?.trim() ? `היי ${args.firstName.trim()},` : "היי,";
-  return `${hello} מצרפים קישור ל${LINK_KIND_HE[args.kind]} של הזמנה ${args.ref} (${moneyText(args.amount, args.currency)}). התשלום בכרטיס אשראי בדף המאובטח של חברת הסליקה: ${args.url}\nהקישור בתוקף עד ${dayMonth(args.expiresAt)}.`;
+  return `${hello} מצרפים קישור ל${LINK_KIND_HE[args.kind]} של הזמנה ${customerOrderNumber(args.ref)} (${moneyText(args.amount, args.currency)}). התשלום בכרטיס אשראי בדף המאובטח של חברת הסליקה: ${args.url}\nהקישור בתוקף עד ${dayMonth(args.expiresAt)}.`;
 }
 
 /** The first word of a name, for "היי דנה". */

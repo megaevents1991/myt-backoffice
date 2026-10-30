@@ -85,7 +85,7 @@ assert.equal(firstNameOf("  Dana Levi "), "Dana");
 assert.equal(firstNameOf(""), null);
 const msg = payLinkMessage({ firstName: "דנה", kind: "deposit", amount: 400, currency: "USD", ref: "T1001", url: "https://x/pay/t/", expiresAt: "2026-11-04T10:00:00Z" });
 assert.match(msg, /^היי דנה,/);
-assert.match(msg, /מקדמה של הזמנה T1001 \(\$400\)/);
+assert.match(msg, /מקדמה של הזמנה 1001 \(\$400\)/);
 assert.match(msg, /https:\/\/x\/pay\/t\//);
 assert.match(msg, /בתוקף עד 04\.11/);
 assert.match(payLinkMessage({ firstName: null, kind: "balance", amount: 1, currency: "USD", ref: "T1", url: "u", expiresAt: "2026-11-04T10:00:00Z" }), /^היי, מצרפים קישור ליתרת תשלום/);

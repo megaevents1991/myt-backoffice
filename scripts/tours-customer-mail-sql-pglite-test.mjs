@@ -1,6 +1,6 @@
 // scripts/tours-customer-mail-sql-pglite-test.mjs - `node scripts/tours-customer-mail-sql-pglite-test.mjs`
 //
-// The SQL test of migration 20261030180000_tours_booking_customer_mail.sql, on an in-process Postgres (PGlite): stub
+// The SQL test of migrations 20261030180000_tours_booking_customer_mail.sql and 20261030201500_tours_customer_mail_cancellation_rules.sql, on an in-process Postgres (PGlite): stub
 // tables with the columns the mail functions touch, the real tours.booking_key_ok's rule, then the migration, then the
 // scenarios through tours.site_booking - the key, another company's order, a mail that is not true of the order, the
 // claim (a second call mails nothing, a release frees it, a failed page then a paid one each get their own), a payment
@@ -16,7 +16,7 @@ import { pathToFileURL } from "node:url";
 const pglitePath = process.env.PGLITE_PATH;
 const { PGlite } = await import(pglitePath ? pathToFileURL(`${pglitePath.replace(/[\\/]$/, "")}/dist/index.js`).href : "@electric-sql/pglite");
 
-const MIGRATION = `${process.cwd()}/supabase/migrations/20261030180000_tours_booking_customer_mail.sql`;
+const MIGRATIONS = ["20261030180000_tours_booking_customer_mail.sql", "20261030201500_tours_customer_mail_cancellation_rules.sql"].map((f) => `${process.cwd()}/supabase/migrations/${f}`);
 const KEY = "k".repeat(40);
 const A = "00000000-0000-0000-0000-00000000000a";
 const B = "00000000-0000-0000-0000-00000000000b";
@@ -33,13 +33,14 @@ await db.exec(`
   create table tours.bookings (id uuid primary key default gen_random_uuid(), company_id uuid, ref text unique, departure_id uuid, kind text, status text,
     price_basis text default 'server', currency text default 'USD', rooms jsonb default '[]', passengers jsonb default '[]', adults int default 0, children int default 0,
     discount numeric default 0, total numeric default 0, customer_name text, customer_email text, total_ils numeric, payments int, cg_card_last4 text, is_deleted date, created_at timestamptz not null default now());
+  create table tours.cancellation_rules (id uuid primary key default gen_random_uuid(), company_id uuid, package_id uuid, component text, until_days_before int, fee_kind text, fee_value numeric, position int not null default 0);
   create table public.leads (id uuid primary key default gen_random_uuid(), company_id uuid, kind text, email text, created_at timestamptz not null default now());
   create table tours.payment_links (id uuid primary key default gen_random_uuid(), company_id uuid, booking_id uuid, kind text, amount numeric, currency text, amount_ils numeric,
     payments smallint default 1, status text default 'open', cg_uniqueids text[] default '{}', cg_card_last4 text);
   create function tours.booking_key_ok(p_company uuid, p_key text) returns boolean language sql stable as $$
     select coalesce(length(p_key) >= 32 and encode(sha256(convert_to(p_key, 'UTF8')), 'hex') = (select payment_config->>'site_key_sha256' from public.companies where id = p_company), false) $$;
 `);
-await db.exec(readFileSync(MIGRATION, "utf8"));
+for (const migration of MIGRATIONS) await db.exec(readFileSync(migration, "utf8"));
 
 const pkg = (await db.query(`insert into tours.packages (company_id, slug, name, hero_image, data) values ('${A}', 'rome', 'רומא משפחתי', '/media/rome.jpg', '{"path":"/package/rome/"}') returning id`)).rows[0].id;
 const dep = (await db.query(`insert into tours.departures (company_id, package_id, code, start_date, end_date) values ('${A}', '${pkg}', 'ROM1221', '2026-12-21', '2026-12-27') returning id`)).rows[0].id;
@@ -122,6 +123,16 @@ check("the entry point still answers other actions", await call("nope", {}), { o
 
 const mails = (await db.query(`select customer_mails from tours.bookings where ref='T4'`)).rows[0].customer_mails;
 console.log("T4 slots:", Object.keys(mails).map((k) => k.split(":")[0]).sort().join(", "));
+
+// the tour's fee rules travel with the answer, in the staff's order
+await add("T10", "request", "new", "rules@example.com");
+check("a tour without rules: an empty list", { rules: (await call("customer_mail", { key: KEY, mail: "request", ref: "T10" })).cancellation_rules }, { rules: [] });
+await db.query(`insert into tours.cancellation_rules (company_id, package_id, component, until_days_before, fee_kind, fee_value, position)
+  values ('${A}', '${pkg}', 'flight', null, 'percent', 100, 2), ('${A}', '${pkg}', 'flight', 30, 'per_pax', 200, 1)`);
+await db.query(`insert into tours.cancellation_rules (company_id, package_id, component, until_days_before, fee_kind, fee_value, position)
+  select '${B}', gen_random_uuid(), 'hotel', 1, 'per_order', 9, 0`);
+await add("T11", "request", "new", "rules@example.com");
+check("a tour's rules, only its own", { rules: (await call("customer_mail", { key: KEY, mail: "request", ref: "T11" })).cancellation_rules }, { rules: [{ fee_kind: "per_pax", component: "flight", fee_value: 200, until_days_before: 30 }, { fee_kind: "percent", component: "flight", fee_value: 100, until_days_before: null }] });
 
 // an address a mail server would read as someone else than the one counted
 await add("T20", "request", "new", "x<victim@example.com>");
