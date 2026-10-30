@@ -24,6 +24,8 @@ const ACCOUNT: WaAccount = {
   messagingLimit: null,
   historyRequestedAt: null,
   historySyncedAt: null,
+  contactsRequestedAt: null,
+  contactsSyncedAt: null,
   connectedAt: "2026-10-20T00:00:00.000Z",
   isActive: true,
 };
@@ -41,6 +43,8 @@ function makeDeps() {
     now: () => "2026-10-21T10:00:00.000Z",
     accountByPhoneId: async (id) => (id === "111" ? ACCOUNT : null),
     accountByWabaId: async () => null,
+    saveContacts: async () => {},
+    removeContacts: async () => {},
     patchAccount: async () => {},
     insertMessage: async (row) => {
       stored.push(row.waMessageId);

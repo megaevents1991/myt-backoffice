@@ -22,6 +22,8 @@ import {
   setCustomerFields,
   updateStatus,
   upsertTemplate,
+  saveContacts,
+  removeContacts,
 } from "@/lib/services/whatsapp-db";
 
 export function realInboundDeps(): InboundDeps {
@@ -58,6 +60,8 @@ export function realInboundDeps(): InboundDeps {
       return answer.ok ? { ok: true } : { ok: false, error: answer.error };
     },
     upsertTemplate,
+    saveContacts,
+    removeContacts,
     log: {
       info: (message) => console.info(message),
       warn: (message) => console.warn(`[whatsapp] ${message}`),

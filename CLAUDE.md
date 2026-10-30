@@ -118,7 +118,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > guard; `lib/services/whatsapp-webhook.ts` -> `whatsapp-inbound.ts` with its deps injected, selftests
 > `whatsapp-webhook` / `whatsapp-inbound`) stores every message in `wa_messages` (idempotent on `wa_message_id`), the
 > echoes of what reps write from the app (`smb_message_echoes`) and the 6-month history too (each history chunk stamps
-> `wa_accounts.history_synced_at`; a batch's ids are pre-checked once, so a re-delivery costs no read); a customer
+> `wa_accounts.history_synced_at`; a batch's ids are pre-checked once, so a re-delivery costs no read) and the number's phone book (`requestContactsSync` at signup + every later change, field `smb_app_state_sync` -> `wa_contacts`, migration `20261030192000`; one write a batch, stored only: no customer and no card comes of a contact, a removed contact is deleted, and no contact's details reach the logs); a customer
 > message after 24 h of silence - measured against LIVE inbound messages only, never a history row - or one whose
 > conversation never got its case inserts a `whatsapp` lead that `leads_fill` joins to the customer's newest open card
 > (FULL-number phone match, `public.whatsapp_phone`) or opens a case - never "to file". The thread sits on the case and

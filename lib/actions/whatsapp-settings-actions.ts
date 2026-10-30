@@ -104,25 +104,35 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
       messagingLimit: null,
       historyRequestedAt: null,
       historySyncedAt: null,
+      contactsRequestedAt: null,
+      contactsSyncedAt: null,
       isActive: true,
     });
 
-    let warning: string | undefined;
+    const problems: string[] = [];
+    // one shot each, within 24 h of the signup; the contacts do not hang on the history choice
+    const contacts = await metaProvider.requestContactsSync({ token, phoneId: input.phoneNumberId });
+    let contactsRequestedAt: string | null = account.contactsRequestedAt;
+    if (contacts.ok) {
+      contactsRequestedAt = new Date().toISOString();
+      await patchAccount(account.id, { contactsRequestedAt });
+    } else problems.push(`The number is connected, but the contacts sync was not requested: ${contacts.error}`);
     let historyRequestedAt: string | null = account.historyRequestedAt;
     if (input.sharedHistory) {
       const history = await metaProvider.requestHistorySync({ token, phoneId: input.phoneNumberId });
       if (history.ok) {
         historyRequestedAt = new Date().toISOString();
         await patchAccount(account.id, { historyRequestedAt });
-      } else warning = `The number is connected, but the history sync was not requested: ${history.error}`;
+      } else problems.push(`The number is connected, but the history sync was not requested: ${history.error}`);
     }
+    const warning = problems.length ? problems.join(" ") : undefined;
     await logAudit({
       action: "whatsapp.connected",
       entityType: "wa_account",
       entityId: account.id,
       metadata: { ...companyAudit(company), waba_id: input.wabaId, phone_number_id: input.phoneNumberId, mode, shared_history: input.sharedHistory },
     });
-    return actionOk({ ...account, historyRequestedAt }, warning);
+    return actionOk({ ...account, historyRequestedAt, contactsRequestedAt }, warning);
   } catch (e) {
     return actionFail(e, SCOPE, "The WhatsApp signup did not finish");
   }

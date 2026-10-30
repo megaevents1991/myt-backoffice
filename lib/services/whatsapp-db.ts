@@ -48,6 +48,8 @@ export interface WaAccount {
   messagingLimit: string | null;
   historyRequestedAt: string | null;
   historySyncedAt: string | null;
+  contactsRequestedAt: string | null;
+  contactsSyncedAt: string | null;
   connectedAt: string;
   isActive: boolean;
 }
@@ -137,11 +139,13 @@ type AccountRow = {
   messaging_limit: string | null;
   history_requested_at: string | null;
   history_synced_at: string | null;
+  contacts_requested_at: string | null;
+  contacts_synced_at: string | null;
   connected_at: string;
   is_active: boolean;
 };
 const ACCOUNT_COLUMNS =
-  "id, company_id, waba_id, phone_number_id, display_phone, verified_name, mode, provider, quality_rating, messaging_limit, history_requested_at, history_synced_at, connected_at, is_active";
+  "id, company_id, waba_id, phone_number_id, display_phone, verified_name, mode, provider, quality_rating, messaging_limit, history_requested_at, history_synced_at, contacts_requested_at, contacts_synced_at, connected_at, is_active";
 const toAccount = (r: AccountRow): WaAccount => ({
   id: r.id,
   companyId: r.company_id,
@@ -155,6 +159,8 @@ const toAccount = (r: AccountRow): WaAccount => ({
   messagingLimit: r.messaging_limit,
   historyRequestedAt: r.history_requested_at,
   historySyncedAt: r.history_synced_at,
+  contactsRequestedAt: r.contacts_requested_at,
+  contactsSyncedAt: r.contacts_synced_at,
   connectedAt: r.connected_at,
   isActive: r.is_active,
 });
@@ -201,6 +207,8 @@ export async function upsertAccount(input: Omit<WaAccount, "id" | "connectedAt">
         messaging_limit: input.messagingLimit,
         history_requested_at: input.historyRequestedAt,
         history_synced_at: input.historySyncedAt,
+        contacts_requested_at: input.contactsRequestedAt,
+        contacts_synced_at: input.contactsSyncedAt,
         is_active: input.isActive,
         updated_at: new Date().toISOString(),
       },
@@ -214,16 +222,60 @@ export async function upsertAccount(input: Omit<WaAccount, "id" | "connectedAt">
 
 export async function patchAccount(
   id: string,
-  patch: Partial<Pick<WaAccount, "qualityRating" | "messagingLimit" | "historyRequestedAt" | "historySyncedAt" | "isActive">>,
+  patch: Partial<Pick<WaAccount, "qualityRating" | "messagingLimit" | "historyRequestedAt" | "historySyncedAt" | "contactsRequestedAt" | "contactsSyncedAt" | "isActive">>,
 ): Promise<void> {
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.qualityRating !== undefined) row.quality_rating = patch.qualityRating;
   if (patch.messagingLimit !== undefined) row.messaging_limit = patch.messagingLimit;
   if (patch.historyRequestedAt !== undefined) row.history_requested_at = patch.historyRequestedAt;
   if (patch.historySyncedAt !== undefined) row.history_synced_at = patch.historySyncedAt;
+  if (patch.contactsRequestedAt !== undefined) row.contacts_requested_at = patch.contactsRequestedAt;
+  if (patch.contactsSyncedAt !== undefined) row.contacts_synced_at = patch.contactsSyncedAt;
   if (patch.isActive !== undefined) row.is_active = patch.isActive;
   const { error } = await db.from("wa_accounts").update(row).eq("id", id);
   if (error) throw new Error(`wa_accounts: ${error.message}`);
+}
+
+// ---------------------------------------------------------------- the number's phone book
+
+export type WaContactRow = { phone: string; phoneKey: string; fullName: string | null; firstName: string | null; contactAt: string | null };
+/** Rows per upsert: a phone book can run to thousands. */
+const CONTACT_CHUNK = 500;
+const CONTACT_NAME_MAX = 200;
+
+/** Stored as they stand on the phone, nothing else follows from it: no customer and no card comes of a contact. */
+export async function saveContacts(companyId: string, rows: readonly WaContactRow[]): Promise<void> {
+  const syncedAt = new Date().toISOString();
+  for (let i = 0; i < rows.length; i += CONTACT_CHUNK) {
+    const part = rows.slice(i, i + CONTACT_CHUNK).map((r) => ({
+      company_id: companyId,
+      phone: r.phone,
+      phone_key: r.phoneKey,
+      full_name: r.fullName?.slice(0, CONTACT_NAME_MAX) ?? null,
+      first_name: r.firstName?.slice(0, CONTACT_NAME_MAX) ?? null,
+      contact_at: r.contactAt,
+      synced_at: syncedAt,
+    }));
+    const { error } = await db.from("wa_contacts").upsert(part, { onConflict: "company_id,phone" });
+    if (error) {
+      if (missingTable(error)) {
+        warnOnce("wa_contacts", "wa_contacts is missing (migration not applied) - contacts not stored");
+        return;
+      }
+      throw new Error(`wa_contacts: ${error.message}`);
+    }
+  }
+}
+
+/** A contact the business removed from the phone leaves here too: it is their phone book, not our record. */
+export async function removeContacts(companyId: string, phones: readonly string[]): Promise<void> {
+  for (let i = 0; i < phones.length; i += IN_CHUNK) {
+    const { error } = await db.from("wa_contacts").delete().eq("company_id", companyId).in("phone", phones.slice(i, i + IN_CHUNK));
+    if (error) {
+      if (missingTable(error)) return;
+      throw new Error(`wa_contacts: ${error.message}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- messages

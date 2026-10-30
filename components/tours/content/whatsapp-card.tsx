@@ -232,6 +232,16 @@ export function WhatsappCard({ initial }: { initial: WhatsappSettings }) {
               </dd>
             </div>
             <div>
+              <dt className="text-muted-foreground">Contacts</dt>
+              <dd dir="auto">
+                {account.contactsSyncedAt
+                  ? `synced ${fmtInstant(account.contactsSyncedAt)}`
+                  : account.contactsRequestedAt
+                    ? "אנשי הקשר טרם סונכרנו - יש 24 שעות"
+                    : "not requested"}
+              </dd>
+            </div>
+            <div>
               <dt className="text-muted-foreground">Connected</dt>
               <dd dir="ltr">{fmtInstant(account.connectedAt)}</dd>
             </div>

@@ -14,13 +14,13 @@
  */
 import { OPT_OUT_REPLY, isOptOut, shouldOpenInquiry, standInText, type WaEvent } from "@/lib/whatsapp/rules";
 import { phoneKey, whatsappPhone } from "@/lib/tours/cases";
-import type { WaAccount, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaLeadResult, WaMessageInsert, WaTemplate } from "@/lib/services/whatsapp-db";
+import type { WaAccount, WaContactRow, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaLeadResult, WaMessageInsert, WaTemplate } from "@/lib/services/whatsapp-db";
 
 export interface InboundDeps {
   now(): string;
   accountByPhoneId(phoneNumberId: string): Promise<WaAccount | null>;
   accountByWabaId(wabaId: string): Promise<WaAccount | null>;
-  patchAccount(id: string, patch: { qualityRating?: string | null; messagingLimit?: string | null; historySyncedAt?: string }): Promise<void>;
+  patchAccount(id: string, patch: { qualityRating?: string | null; messagingLimit?: string | null; historySyncedAt?: string; contactsSyncedAt?: string }): Promise<void>;
   /** Which of these Meta ids are stored already - read once per batch, so a re-delivered batch costs no further read. */
   knownMessageIds(waMessageIds: string[]): Promise<Set<string>>;
   insertMessage(row: WaMessageInsert): Promise<{ inserted: boolean; id: string | null }>;
@@ -38,6 +38,8 @@ export interface InboundDeps {
   /** A free-text service message inside the window (the opt-out confirmation). */
   sendServiceText(account: WaAccount, to: string, text: string): Promise<{ ok: boolean; error?: string }>;
   upsertTemplate(companyId: string, t: Omit<WaTemplate, "syncedAt">): Promise<void>;
+  saveContacts(companyId: string, rows: readonly WaContactRow[]): Promise<void>;
+  removeContacts(companyId: string, phones: readonly string[]): Promise<void>;
   log: { warn(message: string): void; error(message: string): void; info?(message: string): void };
 }
 
@@ -47,6 +49,7 @@ export interface InboundSummary {
   inquiries: number;
   optOuts: number;
   statuses: number;
+  contacts: number;
   errors: string[];
 }
 
@@ -207,9 +210,46 @@ async function handleAccount(ev: Extract<WaEvent, { kind: "account" }>, deps: In
   if (Object.keys(patch).length) await deps.patchAccount(account.id, patch);
 }
 
+/**
+ * The phone book of a number on the app: one write per batch, because a sync can carry thousands and the webhook has 30
+ * seconds. The last word per number wins, written two ways it is one number. It touches no customer and opens no card, and
+ * a failure names no contact: this is a private phone book, so it stays out of the logs.
+ */
+async function handleContacts(events: Extract<WaEvent, { kind: "contact" }>[], deps: InboundDeps, out: InboundSummary): Promise<void> {
+  for (const phoneNumberId of new Set(events.map((ev) => ev.phoneNumberId))) {
+    const batch = events.filter((ev) => ev.phoneNumberId === phoneNumberId);
+    try {
+      const account = await deps.accountByPhoneId(phoneNumberId);
+      if (!account) {
+        out.skipped += batch.length;
+        continue;
+      }
+      const last = new Map<string, Extract<WaEvent, { kind: "contact" }>>();
+      for (const ev of batch) {
+        const phone = whatsappPhone(ev.phone);
+        if (phone) last.set(phone, ev);
+        else out.skipped += 1;
+      }
+      const entries = [...last.entries()];
+      const saves: WaContactRow[] = entries
+        .filter(([, ev]) => ev.action === "add")
+        .map(([phone, ev]) => ({ phone, phoneKey: phoneKey(phone), fullName: ev.fullName, firstName: ev.firstName, contactAt: ev.at }));
+      const removes = entries.filter(([, ev]) => ev.action === "remove").map(([phone]) => phone);
+      if (saves.length) await deps.saveContacts(account.companyId, saves);
+      if (removes.length) await deps.removeContacts(account.companyId, removes);
+      out.contacts += saves.length + removes.length;
+      await deps.patchAccount(account.id, { contactsSyncedAt: deps.now() });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      deps.log.error(`contacts of ${phoneNumberId}: ${message}`);
+      out.errors.push(`contact: ${message}`);
+    }
+  }
+}
+
 /** Every event of one webhook batch, each on its own: a failure is counted and named, never thrown. */
 export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps): Promise<InboundSummary> {
-  const out: InboundSummary = { stored: 0, skipped: 0, inquiries: 0, optOuts: 0, statuses: 0, errors: [] };
+  const out: InboundSummary = { stored: 0, skipped: 0, inquiries: 0, optOuts: 0, statuses: 0, contacts: 0, errors: [] };
   const ids = events.flatMap((ev) => (ev.kind === "message" ? [ev.waMessageId] : []));
   let known = new Set<string>();
   if (ids.length > 0) {
@@ -236,5 +276,7 @@ export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps):
       out.errors.push(`${ev.kind}: ${message}`);
     }
   }
+  const contacts = events.filter((ev): ev is Extract<WaEvent, { kind: "contact" }> => ev.kind === "contact");
+  if (contacts.length) await handleContacts(contacts, deps, out);
   return out;
 }

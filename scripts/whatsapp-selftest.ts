@@ -101,6 +101,38 @@ const FIXTURE_MESSAGES = {
     },
   ],
 };
+// the contacts of a number that stays on the app (field smb_app_state_sync): the sync, and every later change
+{
+  const contacts = parseWebhook({
+    entry: [
+      {
+        id: "222",
+        changes: [
+          {
+            field: "smb_app_state_sync",
+            value: {
+              messaging_product: "whatsapp",
+              metadata: { display_phone_number: "972542272554", phone_number_id: "111" },
+              state_sync: [
+                { type: "contact", contact: { full_name: "דנה לוי", first_name: "דנה", phone_number: "972541112222" }, action: "add", metadata: { timestamp: "1730000000" } },
+                { type: "contact", contact: { phone_number: "972523334444" }, action: "remove", metadata: { timestamp: "1730000001" } },
+                { type: "contact", contact: { full_name: "no phone" }, action: "add" },
+                { type: "contact", contact: { phone_number: "972500000000" }, action: "archive" },
+                { type: "label", contact: { phone_number: "972500000001" }, action: "add" },
+                "junk",
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(contacts, [
+    { kind: "contact", phoneNumberId: "111", phone: "972541112222", fullName: "דנה לוי", firstName: "דנה", action: "add", at: "2024-10-27T03:33:20.000Z" },
+    { kind: "contact", phoneNumberId: "111", phone: "972523334444", fullName: null, firstName: null, action: "remove", at: "2024-10-27T03:33:21.000Z" },
+  ]);
+}
+
 const events = parseWebhook(FIXTURE_MESSAGES);
 assert.equal(events.length, 4);
 assert.deepEqual(events[0], {
@@ -346,6 +378,12 @@ async function main(): Promise<void> {
       { name: "page2", language: "he", category: "UTILITY", status: "PENDING", body: "x", paramCount: 0 },
     ]);
     assert.equal(calls.length, 2, "paging.next is followed");
+  }
+  {
+    const [p, calls] = provider({ "/111/smb_app_data": { status: 200, body: { messaging_product: "whatsapp", request_id: "req-2" } } });
+    assert.deepEqual(await p.requestContactsSync(CFG), { ok: true, messageId: "req-2" });
+    assert.deepEqual(calls[0].body, { messaging_product: "whatsapp", sync_type: "smb_app_state_sync" }, "the contacts have their own one-shot request");
+    assert.equal(calls[0].url, "https://graph.facebook.com/v26.0/111/smb_app_data");
   }
   {
     const [p, calls] = provider({ "/111/smb_app_data": { status: 200, body: { messaging_product: "whatsapp", request_id: "req-1" } }, "/222/subscribed_apps": { status: 200, body: { success: true } } });

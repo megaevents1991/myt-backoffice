@@ -114,6 +114,16 @@ export type WaEvent =
       direction: "in" | "out";
     }
   | { kind: "status"; phoneNumberId: string; waMessageId: string; status: "sent" | "delivered" | "read" | "failed"; at: string; error: string | null }
+  | {
+      /** A contact of the number's phone book (field smb_app_state_sync): the sync after onboarding, then every change. */
+      kind: "contact";
+      phoneNumberId: string;
+      phone: string;
+      fullName: string | null;
+      firstName: string | null;
+      action: "add" | "remove";
+      at: string | null;
+    }
   | { kind: "template"; wabaId: string; name: string; language: string; status: string; reason: string | null }
   | { kind: "account"; wabaId: string; field: string; payload: unknown };
 
@@ -210,7 +220,8 @@ function statusError(raw: Dict): string | null {
 /**
  * Meta's webhook body -> flat events. Never throws: anything that is not the shape it knows is skipped.
  * Fields: `messages` (inbound + statuses), `smb_message_echoes` (a rep wrote from the app), `history`
- * (the coexistence sync), `message_template_status_update`, `account_update`, `phone_number_quality_update`.
+ * (the coexistence sync), `smb_app_state_sync` (the phone book), `message_template_status_update`, `account_update`,
+ * `phone_number_quality_update`.
  */
 export function parseWebhook(body: unknown): WaEvent[] {
   const out: WaEvent[] = [];
@@ -279,6 +290,16 @@ export function parseWebhook(body: unknown): WaEvent[] {
               if (ev) out.push(ev);
             }
           }
+        }
+      } else if (field === "smb_app_state_sync") {
+        for (const itemRaw of arr(value.state_sync)) {
+          const item = obj(itemRaw);
+          const contact = obj(item?.contact);
+          const phone = str(contact?.phone_number);
+          const action = str(item?.action);
+          if (!item || str(item.type) !== "contact" || !phone || (action !== "add" && action !== "remove")) continue;
+          const stamp = obj(item.metadata)?.timestamp;
+          out.push({ kind: "contact", phoneNumberId, phone, fullName: str(contact?.full_name), firstName: str(contact?.first_name), action, at: stamp === undefined || stamp === null ? null : tsToIso(stamp) });
         }
       } else if (field === "message_template_status_update") {
         const name = str(value.message_template_name);

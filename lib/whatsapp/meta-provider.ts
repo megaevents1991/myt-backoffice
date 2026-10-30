@@ -47,6 +47,8 @@ export interface WaProvider {
   listTemplates(token: string, wabaId: string): Promise<TemplateSummary[]>;
   /** Coexistence: ask Meta to replay the number's history through the `history` webhook field. */
   requestHistorySync(cfg: Config): Promise<SendResult>;
+  /** Coexistence: ask Meta to send the number's phone book through the `smb_app_state_sync` webhook field. One shot, within 24 h. */
+  requestContactsSync(cfg: Config): Promise<SendResult>;
   /** Our app receives the WABA's webhooks from now on. */
   subscribeApp(token: string, wabaId: string): Promise<SendResult>;
   phoneInfo(token: string, phoneId: string): Promise<PhoneInfo | null>;
@@ -268,6 +270,8 @@ export function createMetaProvider(fetchImpl: typeof fetch = fetch, opts: { time
     },
 
     requestHistorySync: (cfg) => post(cfg, "smb_app_data", { messaging_product: "whatsapp", sync_type: "history" }, "history sync request"),
+
+    requestContactsSync: (cfg) => post(cfg, "smb_app_data", { messaging_product: "whatsapp", sync_type: "smb_app_state_sync" }, "contacts sync request"),
 
     async subscribeApp(token, wabaId) {
       try {

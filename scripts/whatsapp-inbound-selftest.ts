@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { OPT_OUT_REPLY, type WaEvent } from "../lib/whatsapp/rules";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { whatsappPhone } from "../lib/tours/cases";
-import type { WaAccount, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaMessageInsert } from "../lib/services/whatsapp-db";
+import type { WaAccount, WaContactRow, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaMessageInsert } from "../lib/services/whatsapp-db";
 
 const ACCOUNT: WaAccount = {
   id: "acc-1",
@@ -21,13 +21,18 @@ const ACCOUNT: WaAccount = {
   messagingLimit: null,
   historyRequestedAt: null,
   historySyncedAt: null,
+  contactsRequestedAt: null,
+  contactsSyncedAt: null,
   connectedAt: "2026-10-20T00:00:00.000Z",
   isActive: true,
 };
 
 type Stored = WaMessageInsert & { id: string };
 
-function makeDeps(opts: { customers?: WaCustomerLite[]; openCardId?: string | null; insertFails?: boolean } = {}) {
+function makeDeps(opts: { customers?: WaCustomerLite[]; openCardId?: string | null; insertFails?: boolean; contactsFail?: boolean } = {}) {
+  const contactSaves: { companyId: string; rows: WaContactRow[] }[] = [];
+  const contactRemovals: { companyId: string; phones: string[] }[] = [];
+  const accountPatches: { id: string; patch: Record<string, unknown> }[] = [];
   const messages: Stored[] = [];
   const leads: (WaLeadInsert & { id: string; joinedIntoId: string | null; customerId: string | null })[] = [];
   const customerPatches: { id: string; patch: WaCustomerPatch }[] = [];
@@ -42,7 +47,16 @@ function makeDeps(opts: { customers?: WaCustomerLite[]; openCardId?: string | nu
     now: () => "2026-10-21T10:00:00.000Z",
     accountByPhoneId: async (id) => (id === "111" ? ACCOUNT : null),
     accountByWabaId: async (id) => (id === "222" ? ACCOUNT : null),
-    patchAccount: async () => {},
+    patchAccount: async (id, patch) => {
+      accountPatches.push({ id, patch });
+    },
+    saveContacts: async (companyId, rows) => {
+      if (opts.contactsFail) throw new Error("wa_contacts: down");
+      contactSaves.push({ companyId, rows: [...rows] });
+    },
+    removeContacts: async (companyId, phones) => {
+      contactRemovals.push({ companyId, phones: [...phones] });
+    },
     insertMessage: async (row) => {
       if (opts.insertFails) {
         warnings.push("wa_messages missing");
@@ -101,7 +115,7 @@ function makeDeps(opts: { customers?: WaCustomerLite[]; openCardId?: string | nu
     },
     log: { warn: (m) => warnings.push(m), error: (m) => warnings.push(`error: ${m}`) },
   };
-  return { deps, messages, leads, customerPatches, sent, attached, statusUpdates, templates, linked, warnings };
+  return { deps, messages, leads, customerPatches, sent, attached, statusUpdates, templates, linked, warnings, contactSaves, contactRemovals, accountPatches };
 }
 
 const inbound = (id: string, at: string, text: string | null, extra: Partial<Extract<WaEvent, { kind: "message" }>> = {}): WaEvent => ({
@@ -346,6 +360,47 @@ async function main(): Promise<void> {
     const second = await handleWebhookEvents([inbound("m2", "2026-10-21T10:00:00Z", "עוד שאלה")], deps);
     assert.equal(second.inquiries, 1, "the previous inbound carries no case - the conversation is caseless, open it now");
     assert.equal(messages.find((m) => m.waMessageId === "m2")?.caseId, leads[0].id);
+  }
+  // the phone book of a number on the app: stored, one write a batch, never a customer or a card
+  {
+    const contact = (phone: string, action: "add" | "remove", at: string | null, name: string | null = null): WaEvent => ({ kind: "contact", phoneNumberId: "111", phone, fullName: name, firstName: name, action, at });
+    const made = makeDeps();
+    const out = await handleWebhookEvents(
+      [
+        contact("972541112222", "add", "2026-10-21T09:00:00.000Z", "שם ישן"),
+        contact("972541112222", "add", "2026-10-21T09:05:00.000Z", "שם חדש"),
+        contact("0523334444", "add", null, "דנה"),
+        contact("972500000001", "remove", "2026-10-21T09:06:00.000Z"),
+        contact("972541119999", "add", "2026-10-21T09:07:00.000Z", "נוסף"),
+        contact("972541119999", "remove", "2026-10-21T09:08:00.000Z"),
+        contact("12", "add", null, "לא מספר"),
+      ],
+      made.deps,
+    );
+    assert.equal(made.contactSaves.length, 1, "one write for the batch, or a big phone book outlasts the webhook");
+    assert.deepEqual(made.contactSaves[0].rows, [
+      { phone: "972541112222", phoneKey: "541112222", fullName: "שם חדש", firstName: "שם חדש", contactAt: "2026-10-21T09:05:00.000Z" },
+      { phone: "972523334444", phoneKey: "523334444", fullName: "דנה", firstName: "דנה", contactAt: null },
+    ], "the last word per number, and the same number written two ways is one");
+    assert.deepEqual(made.contactRemovals, [{ companyId: "co-1", phones: ["972500000001", "972541119999"] }]);
+    assert.equal(out.contacts, 4);
+    assert.equal(out.skipped, 1, "not a phone number");
+    assert.deepEqual(made.accountPatches, [{ id: "acc-1", patch: { contactsSyncedAt: "2026-10-21T10:00:00.000Z" } }]);
+    assert.equal(made.leads.length, 0, "a contact opens no card");
+    assert.equal(made.messages.length, 0);
+    assert.equal(made.customerPatches.length, 0, "and writes on no customer");
+
+    const unknown = makeDeps();
+    const skipped = await handleWebhookEvents([{ ...contact("972541112222", "add", null, "דנה"), phoneNumberId: "999" } as WaEvent], unknown.deps);
+    assert.equal(skipped.skipped, 1, "a number we do not know");
+    assert.equal(unknown.contactSaves.length, 0);
+
+    // a failed write is named with no contact's details, and the rest of the batch still runs
+    const broken = makeDeps({ contactsFail: true });
+    const failed = await handleWebhookEvents([contact("972541112222", "add", null, "דנה"), { kind: "history", phoneNumberId: "111", phase: 0, chunkOrder: 1, progress: 100 }], broken.deps);
+    assert.deepEqual(failed.errors, ["contact: wa_contacts: down"]);
+    assert.ok(broken.accountPatches.some((p) => "historySyncedAt" in p.patch), "the history chunk still landed");
+    assert.ok(!broken.accountPatches.some((p) => "contactsSyncedAt" in p.patch), "a failed write does not say synced");
   }
 console.log("whatsapp-inbound-selftest ok");
 }
