@@ -25,6 +25,7 @@ import {
   WAITLIST_TEMPLATE_DEFAULT,
   WAITLIST_TEMPLATE_LANGUAGE,
   approvedTemplateBlock,
+  customerNumbersOf,
   hasOtherOpenCard,
   isKnownContact,
   isMorningTick,
@@ -124,7 +125,7 @@ async function customerFacts(company: Company, rows: readonly CardRow[], today: 
     ...chunk(customerIds, IN_CHUNK).map(async (part) => {
       const { data, error } = await supabaseTyped.from("customers").select("id, wa_consent, phones, wa_last_in_at").in("id", part);
       if (error) throw new Error(`customers: ${error.message}`);
-      for (const c of data ?? []) customers.set(c.id, { consent: c.wa_consent, numbers: (c.phones ?? []).map(whatsappPhone).filter((n): n is string => !!n), lastInAt: c.wa_last_in_at });
+      for (const c of data ?? []) customers.set(c.id, { consent: c.wa_consent, numbers: customerNumbersOf(c.phones), lastInAt: c.wa_last_in_at });
     }),
     // by number, deleted rows too: a merge leaves the opt-out on the merged row, a move carries the phone to another customer
     ...chunk(keys, IN_CHUNK).map(async (part) => {
@@ -161,7 +162,7 @@ async function customerFacts(company: Company, rows: readonly CardRow[], today: 
     const customer = r.customer_id ? customers.get(r.customer_id) : undefined;
     return {
       consent: optedOut.has(phoneKey(r.phone)) ? "opted_out" : (customer?.consent ?? null),
-      customerNumbers: customer?.numbers.length ? customer.numbers : null,
+      customerNumbers: customer ? customer.numbers : null,
       otherCardOnTour: r.customer_id ? hasOtherOpenCard({ id: r.id, packageId: r.package_id }, others.get(r.customer_id) ?? [], statuses, today) : false,
       knownContact: isKnownContact(customer?.consent ?? null, customer?.lastInAt ?? null),
     };

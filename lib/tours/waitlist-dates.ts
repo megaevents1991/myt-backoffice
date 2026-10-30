@@ -120,7 +120,7 @@ export interface WaitingCard {
   customerId: string | null;
   /** customers.wa_consent, or opted_out when ANY customer of this number opted out (a merge or a move can hide it). */
   consent: string | null;
-  /** The customer's stored phones as whole numbers (972...); null = nothing stored to compare with. */
+  /** customerNumbersOf the card's customer; null = a card with no customer row. Empty blocks: nothing proves the phone is theirs. */
   customerNumbers: string[] | null;
   /** The customer has an open or paid card on this tour besides the waiting one. */
   otherCardOnTour: boolean;
@@ -129,6 +129,11 @@ export interface WaitingCard {
   /** isKnownContact: we spoke to this number, so the day's cap on new numbers does not apply. */
   knownContact: boolean;
   linkToken: string | null;
+}
+
+/** A customer's stored phones as whole numbers (972...). One that does not parse is dropped, so it never vouches for a card. */
+export function customerNumbersOf(phones: readonly string[] | null | undefined): string[] {
+  return (phones ?? []).map((phone) => whatsappPhone(phone)).filter((number): number is string => !!number);
 }
 
 /** A number that confirmed or wrote to us on WhatsApp. A box ticked on a public form proves nothing: anyone can type a phone. */

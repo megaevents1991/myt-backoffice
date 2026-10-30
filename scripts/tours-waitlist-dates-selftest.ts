@@ -8,6 +8,7 @@ import {
   FIRST_CONTACT_MAX_PER_DAY,
   MAX_CARDS_PER_TICK,
   OPEN_SETTLE_MS,
+  customerNumbersOf,
   dateOpenedMessage,
   dateOpenedParams,
   hasOtherOpenCard,
@@ -159,6 +160,11 @@ assert.equal(whatsappBlock({ ...blockFacts, customerNumbers: null }), null, "a c
 // the customer is found by the last 9 digits, but the message goes to the whole number
 assert.match(whatsappBlock({ ...blockFacts, phone: "+1 541 111 2222" }) ?? "", /no longer/, "same last 9 digits, another country: not this customer's phone");
 assert.equal(whatsappBlock({ ...blockFacts, phone: "+972 54-111-2222" }), null, "the same number written another way");
+// a customer whose stored phones cannot be compared: nothing proves the card's phone is theirs, so no message goes out
+assert.deepEqual(customerNumbersOf(["054-111-2222", "12", "+972 52-333-4444"]), ["972541112222", "972523334444"]);
+assert.deepEqual(customerNumbersOf(null), []);
+assert.match(whatsappBlock({ ...blockFacts, customerNumbers: customerNumbersOf(["12"]) }) ?? "", /no longer/, "a stored phone that does not parse");
+assert.match(whatsappBlock({ ...blockFacts, customerNumbers: customerNumbersOf([]) }) ?? "", /no longer/, "a customer with no stored phone");
 assert.match(whatsappBlock({ ...blockFacts, otherCardOnTour: true }) ?? "", /another card/, "a customer already dealing on this tour is not told what they waited for");
 assert.equal(whatsappBlock({ ...blockFacts, consent: "opted_out", otherCardOnTour: true }), OPTED_OUT_WHY, "an opt-out names itself first: the rep's button goes by it");
 assert.match(whatsappBlock({ ...blockFacts, burstHeld: true }) ?? "", /burst/, "a card that came in a flood of forms: a rep checks it first");
