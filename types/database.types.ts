@@ -3480,6 +3480,7 @@ export type Database = {
           wa_seen_at: string | null
           waitlist_since: string | null
           date_opened: Json | null
+          no_auto_message: boolean
         }
         Insert: {
           customer_id?: string | null
@@ -3521,6 +3522,7 @@ export type Database = {
           wa_seen_at?: string | null
           waitlist_since?: string | null
           date_opened?: Json | null
+          no_auto_message?: boolean
         }
         Update: {
           customer_id?: string | null
@@ -3562,6 +3564,7 @@ export type Database = {
           wa_seen_at?: string | null
           waitlist_since?: string | null
           date_opened?: Json | null
+          no_auto_message?: boolean
         }
         Relationships: [
           {

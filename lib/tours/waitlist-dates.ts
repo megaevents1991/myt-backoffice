@@ -27,6 +27,11 @@ export { DATE_OPENED_STATUS };
 export const OPEN_SETTLE_MS = 50 * 60 * 1000;
 /** A ceiling per company per hour, counted in the database: a wrong publish, or a second run of the cron, cannot reach more. */
 export const MAX_CARDS_PER_TICK = 30;
+/**
+ * Messages a day (a rolling 24 hours, per company) to numbers we never spoke to (Dor 30.10). The form is public, so a
+ * number on the list may be one somebody else typed: past this the card still moves and a rep calls.
+ */
+export const FIRST_CONTACT_MAX_PER_DAY = 20;
 /** The approved WhatsApp template (Hebrew; {{1}} first name, {{2}} tour, {{3}} link). */
 export const WAITLIST_TEMPLATE_DEFAULT = "waitlist_date_open";
 export const WAITLIST_TEMPLATE_LANGUAGE = "he";
@@ -119,7 +124,16 @@ export interface WaitingCard {
   customerPhoneKeys: string[] | null;
   /** The customer has an open or paid card on this tour besides the waiting one. */
   otherCardOnTour: boolean;
+  /** leads.no_auto_message: it came in a burst of waiting-list forms (leads_fill), so a rep looks at it first. */
+  burstHeld: boolean;
+  /** isKnownContact: we spoke to this number, so the day's cap on new numbers does not apply. */
+  knownContact: boolean;
   linkToken: string | null;
+}
+
+/** A number that confirmed or wrote to us on WhatsApp. A box ticked on a public form proves nothing: anyone can type a phone. */
+export function isKnownContact(consent: string | null, lastInAt: string | null): boolean {
+  return consent === "opted_in" || consent === "customer" || !!lastInAt;
 }
 
 /** Another card of this customer on this tour that is still alive (the board's own rule: not closed, not a trip gone). */
@@ -170,14 +184,16 @@ export function isMorningTick(now: Date): boolean {
 
 export const OPTED_OUT_WHY = "The customer opted out of WhatsApp.";
 const ALREADY_TOLD_WHY = "The customer was already told through another card.";
+const NEW_NUMBERS_CAP_WHY = "Today's limit of messages to new numbers was reached.";
 
 /** Why this customer gets no message (Dor 30.10: everyone on the list but who opted out), or null. Shown on the card. */
-export function whatsappBlock(card: Pick<WaitingCard, "consent" | "phone" | "customerPhoneKeys" | "otherCardOnTour">): string | null {
+export function whatsappBlock(card: Pick<WaitingCard, "consent" | "phone" | "customerPhoneKeys" | "otherCardOnTour" | "burstHeld">): string | null {
   if (card.consent === "opted_out") return OPTED_OUT_WHY;
   if (!whatsappPhone(card.phone)) return "The card has no valid phone number.";
   // a card keeps the phone it came with: a rep who corrected the customer's phone leaves the typo here, and it is a stranger's
   if (card.customerPhoneKeys && !card.customerPhoneKeys.includes(phoneKey(card.phone))) return "The card's phone is no longer the customer's.";
   if (card.otherCardOnTour) return "The customer has another card on this tour.";
+  if (card.burstHeld) return "It came in a burst of waiting-list forms: check the customer first.";
   return null;
 }
 
@@ -226,6 +242,8 @@ export interface DateOpenedNote {
   at: string;
   whatsapp: DateOpenedSend;
   why: string | null;
+  /** The message went to a number we never spoke to: what the day's cap counts. */
+  firstContact?: boolean;
 }
 
 export function parseDateOpened(value: unknown): DateOpenedNote | null {
@@ -245,6 +263,7 @@ export function parseDateOpened(value: unknown): DateOpenedNote | null {
     at,
     whatsapp: SEND_STATES.includes(o.whatsapp as string) ? (o.whatsapp as DateOpenedSend) : "pending",
     why: text(o.why),
+    ...(o.firstContact === true ? { firstContact: true } : {}),
   };
 }
 
@@ -265,6 +284,8 @@ export interface TickDeps {
   hasStatus(): Promise<boolean>;
   /** Cards this company moved in the last hour, whoever ran the check. A failed read throws: nothing moves on a guess. */
   movedLastHour(): Promise<number>;
+  /** Messages sent to new numbers in the last 24 hours. A failed read holds new numbers back, never a known one. */
+  firstContactsLastDay(): Promise<number>;
   /** Why the company cannot send at all (no number, no token, switched off), or null. Read once a tick; a failure is a reason. */
   senderProblem(): Promise<string | null>;
   templateProblem(): Promise<string | null>;
@@ -356,6 +377,17 @@ export async function runWaitlistTick(deps: TickDeps, opts: TickOptions): Promis
   const template = sender ? null : await problemOf(deps.templateProblem);
   // one number, one tour, one message: two cards of a customer both reach a rep
   const told = new Set<string>();
+  let newNumbersLeft = 0;
+  let newNumbersWhy = NEW_NUMBERS_CAP_WHY;
+  if (!sender && !template) {
+    try {
+      newNumbersLeft = FIRST_CONTACT_MAX_PER_DAY - (await deps.firstContactsLastDay());
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "failed";
+      newNumbersWhy = `Could not count today's messages to new numbers: ${message}`;
+      result.errors.push(newNumbersWhy);
+    }
+  }
   for (let i = 0; i < turn.length; i += 1) {
     if (Date.now() >= opts.deadline) {
       result.remaining += turn.length - i;
@@ -369,14 +401,17 @@ export async function runWaitlistTick(deps: TickDeps, opts: TickOptions): Promis
       if (!(await deps.claim(card, { token, followUpDate, note }))) continue;
       result.moved += 1;
       const toldKey = `${phoneKey(card.phone)}|${date.packageId}`;
-      const held = sender ?? template ?? whatsappBlock(card) ?? (told.has(toldKey) ? ALREADY_TOLD_WHY : null);
+      const held = sender ?? template ?? whatsappBlock(card) ?? (told.has(toldKey) ? ALREADY_TOLD_WHY : !card.knownContact && newNumbersLeft <= 0 ? newNumbersWhy : null);
       let final: DateOpenedNote = { ...note, whatsapp: "skipped", why: held };
       if (!held) {
         try {
           const answer = await deps.send(card, dateOpenedParams(card.firstName, date.tourName, url));
           // a failed send told nobody: the customer's other card may still try
           if (answer.ok) told.add(toldKey);
-          final = answer.ok ? { ...note, whatsapp: "sent", why: null } : { ...note, whatsapp: "failed", why: answer.error };
+          if (answer.ok && !card.knownContact) newNumbersLeft -= 1;
+          final = answer.ok
+            ? { ...note, whatsapp: "sent", why: null, ...(card.knownContact ? {} : { firstContact: true }) }
+            : { ...note, whatsapp: "failed", why: answer.error };
         } catch (e) {
           final = { ...note, whatsapp: "failed", why: e instanceof Error ? e.message : "The send failed." };
         }

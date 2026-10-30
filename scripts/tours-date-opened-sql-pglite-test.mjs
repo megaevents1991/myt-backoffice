@@ -9,7 +9,9 @@
 //      opening a waiting-list card (through leads_fill) gets it too;
 //   C. public.leads_fill - a form that lands on a 'date_opened' card turns it "returned"; a waiting-list form does not;
 //   D. which date a waiting list names - the date of its form, never the page's product_id (the page keeps naming the
-//      last date tapped), a second form for another date widens the card to the tour, and the backfill.
+//      last date tapped), a second form for another date widens the card to the tour, and the backfill;
+//   E. migration 20261030183500 - past 20 waiting-list forms an hour a company's new card is kept but marked
+//      no_auto_message, other companies and other kinds are not, and a rep moving a card onto the list clears the mark.
 // TS twin: statusOnReturn (scripts/tours-cases-selftest.ts); the rules that read these columns are
 // scripts/tours-waitlist-dates-selftest.ts.
 //
@@ -23,6 +25,7 @@ const pglitePath = process.env.PGLITE_PATH;
 const { PGlite } = await import(pglitePath ? pathToFileURL(`${pglitePath.replace(/[\\/]$/, "")}/dist/index.js`).href : "@electric-sql/pglite");
 
 const MIGRATION = readFileSync(`${process.cwd()}/supabase/migrations/20261030182000_tours_waitlist_date_opened.sql`, "utf8");
+const BURST = readFileSync(`${process.cwd()}/supabase/migrations/20261030183500_tours_waitlist_form_burst.sql`, "utf8");
 
 const STUBS = `
 create schema tours; create role anon; create role authenticated; create role service_role;
@@ -206,5 +209,41 @@ const TOUR = "00000000-0000-0000-0000-0000000000a1";
   assert.equal(await dep3(right), dateA);
   assert.equal(await dep3(lead), dateA, "a card a rep moved there keeps what it has");
   console.log("B + C + D. trigger + leads_fill + dates: ok");
+}
+
+// ---------------------------------------------------------------- E. a burst of waiting-list forms
+{
+  const db = new PGlite();
+  await db.exec(STUBS);
+  await db.exec(`insert into public.companies values ('${C}', '{tours}'), ('${A}', '{tours}');`);
+  await db.exec(MIGRATION);
+  await db.exec(BURST);
+  await db.exec(BURST); // a re-run changes nothing
+  await db.exec(`create trigger leads_fill before insert on public.leads for each row execute function public.leads_fill();`);
+  for (const k of ["new", "returned", "waitlist", "date_opened"]) await db.query(`insert into public.lead_statuses (company_id, key, label) values ($1, $2, $2)`, [C, k]);
+  const form = async (kind, i, company = C) =>
+    (await db.query(
+      `insert into public.leads (company_id, kind, phone, package_id, name, message) values ($1, $2, $3, $4, 'Dana Levi', 'form') returning id, status, is_deleted, no_auto_message`,
+      [company, kind, `05200${String(10000 + i)}`, TOUR],
+    )).rows[0];
+  for (let i = 0; i < 20; i += 1) {
+    const r = await form(i % 2 ? "waitlist" : "notify", i);
+    assert.equal(r.no_auto_message, false, `form ${i + 1} of the hour is ordinary`);
+  }
+  const over = await form("waitlist", 21);
+  assert.equal(over.status, "waitlist", "the 21st is kept: a real customer is never lost");
+  assert.equal(over.is_deleted, null);
+  assert.equal(over.no_auto_message, true, "and marked");
+  assert.equal((await form("lead", 22)).no_auto_message, false, "another kind of form is no part of it");
+  assert.equal((await form("waitlist", 23, A)).no_auto_message, false, "another company has its own count");
+  // the hour passes
+  await db.exec(`update public.leads set created_at = now() - interval '2 hours'`);
+  assert.equal((await form("waitlist", 24)).no_auto_message, false, "the count is per hour");
+  // a rep who puts a marked card back on the list has looked at it
+  await db.query(`update public.leads set status = 'no_answer' where id = $1`, [over.id]);
+  assert.equal((await db.query(`select no_auto_message from public.leads where id = $1`, [over.id])).rows[0].no_auto_message, true, "moving on keeps the record");
+  await db.query(`update public.leads set status = 'waitlist' where id = $1`, [over.id]);
+  assert.equal((await db.query(`select no_auto_message from public.leads where id = $1`, [over.id])).rows[0].no_auto_message, false, "a rep's move clears it");
+  console.log("E. burst of forms: ok");
 }
 console.log("tours-date-opened SQL test: ok");

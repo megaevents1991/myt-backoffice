@@ -26,6 +26,7 @@ import {
   WAITLIST_TEMPLATE_LANGUAGE,
   approvedTemplateBlock,
   hasOtherOpenCard,
+  isKnownContact,
   isMorningTick,
   runWaitlistTick,
   siteDateOf,
@@ -46,6 +47,7 @@ const IN_CHUNK = 100;
 const DATES_MAX = 5_000;
 const CARDS_MAX = 5_000;
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 const chunk = <T,>(rows: readonly T[], size: number): T[][] => {
   const out: T[][] = [];
@@ -107,11 +109,12 @@ type CardRow = {
   phone: string | null;
   customer_id: string | null;
   link_token: string | null;
+  no_auto_message: boolean | null;
 };
 
 /** What the block rules read about the customers behind these cards. A failed read throws: never send past an opt-out. */
 async function customerFacts(company: Company, rows: readonly CardRow[], today: string) {
-  const customers = new Map<string, { consent: string; phoneKeys: string[] }>();
+  const customers = new Map<string, { consent: string; phoneKeys: string[]; lastInAt: string | null }>();
   const optedOut = new Set<string>();
   const others = new Map<string, (RouteCard & { customerId: string })[]>();
   const customerIds = [...new Set(rows.map((r) => r.customer_id).filter((id): id is string => !!id))];
@@ -119,9 +122,9 @@ async function customerFacts(company: Company, rows: readonly CardRow[], today: 
 
   await Promise.all([
     ...chunk(customerIds, IN_CHUNK).map(async (part) => {
-      const { data, error } = await supabaseTyped.from("customers").select("id, wa_consent, phone_keys").in("id", part);
+      const { data, error } = await supabaseTyped.from("customers").select("id, wa_consent, phone_keys, wa_last_in_at").in("id", part);
       if (error) throw new Error(`customers: ${error.message}`);
-      for (const c of data ?? []) customers.set(c.id, { consent: c.wa_consent, phoneKeys: c.phone_keys ?? [] });
+      for (const c of data ?? []) customers.set(c.id, { consent: c.wa_consent, phoneKeys: c.phone_keys ?? [], lastInAt: c.wa_last_in_at });
     }),
     // by number, deleted rows too: a merge leaves the opt-out on the merged row, a move carries the phone to another customer
     ...chunk(keys, IN_CHUNK).map(async (part) => {
@@ -160,6 +163,7 @@ async function customerFacts(company: Company, rows: readonly CardRow[], today: 
       consent: optedOut.has(phoneKey(r.phone)) ? "opted_out" : (customer?.consent ?? null),
       customerPhoneKeys: customer?.phoneKeys ?? null,
       otherCardOnTour: r.customer_id ? hasOtherOpenCard({ id: r.id, packageId: r.package_id }, others.get(r.customer_id) ?? [], statuses, today) : false,
+      knownContact: isKnownContact(customer?.consent ?? null, customer?.lastInAt ?? null),
     };
   };
 }
@@ -170,7 +174,7 @@ async function readWaitingCards(company: Company, today: string): Promise<Waitin
     () =>
       supabaseTyped
         .from("leads")
-        .select("id, case_no, package_id, departure_id, waitlist_since, first_name, name, phone, customer_id, link_token")
+        .select("id, case_no, package_id, departure_id, waitlist_since, first_name, name, phone, customer_id, link_token, no_auto_message")
         .eq("company_id", company.id)
         .eq("status", WAITLIST_STATUS)
         .not("to_file", "is", true)
@@ -193,6 +197,7 @@ async function readWaitingCards(company: Company, today: string): Promise<Waitin
     phone: r.phone,
     customerId: r.customer_id,
     linkToken: r.link_token,
+    burstHeld: !!r.no_auto_message,
     ...facts(r),
   }));
 }
@@ -225,6 +230,17 @@ function depsFor(company: Company, now: Date, today: string): TickDeps {
         .select("id", { count: "exact", head: true })
         .eq("company_id", company.id)
         .gte("date_opened->>at", new Date(now.getTime() - HOUR_MS).toISOString());
+      if (error) throw new Error(`leads: ${error.message}`);
+      return count ?? 0;
+    },
+    firstContactsLastDay: async () => {
+      const { count, error } = await supabaseTyped
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", company.id)
+        .eq("date_opened->>firstContact", "true")
+        .eq("date_opened->>whatsapp", "sent")
+        .gte("date_opened->>at", new Date(now.getTime() - DAY_MS).toISOString());
       if (error) throw new Error(`leads: ${error.message}`);
       return count ?? 0;
     },
