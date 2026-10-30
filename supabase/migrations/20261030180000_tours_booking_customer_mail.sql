@@ -14,10 +14,13 @@
 -- CreditGuard return address) never mail twice, and answers what to print. `customer_mail_release` frees the slot
 -- when the mail server refused. Both need the site's key, like the payment actions: the answer holds names.
 --
--- A request and the cancellation form are public: they can name any address, and these mails leave from the address
--- Mega Events sends from. So the caps live here, where every server instance and every sender counts the same rows:
--- per mailbox and per company, per hour (`customer_mail` of a request, `cancellation_mail_ok`). Over a cap only the
--- mail stays out; the order or the request is already in. A card order or a payment link needs a real charge, no cap.
+-- Anyone can make the site mail an address they typed, and these mails leave from the address Mega Events sends from:
+-- a request and the cancellation form are public, and a card checkout that fails needs no money at all. So the caps
+-- live here, where every server instance and every sender counts the same rows: per mailbox and per company, per hour
+-- of when the mail went out, not of when the order was made (or checkouts stocked up for an hour would all count zero).
+-- `request`, `failed` and `review` share one count, taken under a lock so a burst cannot pass it together; the
+-- cancellation form has `cancellation_mail_ok`. Over a cap only the mail stays out; the order or the request is
+-- already in. Only `paid` and `link_paid` go uncounted: the database saw exactly the amount of that very deal.
 --
 -- site_booking is copied from 20261028140806; only the three mail actions are new. An older site deploy never calls
 -- them and a newer site on an older database gets `error: action` and sends nothing to the customer, so the order of
@@ -26,6 +29,18 @@
 alter table tours.bookings add column if not exists customer_mails jsonb not null default '{}'::jsonb;
 comment on column tours.bookings.customer_mails is
   'The site''s automatic mails to the customer: { request | paid | review | failed | link:<id> : when }. Not the rep''s "Confirmation sent" (confirmation_sent_at).';
+
+-- One mailbox under its many spellings, for counting only: mailboxKey in mega-family lib/customer-mail.ts, change both together.
+create or replace function tours.mailbox_key(p_email text)
+returns text
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select regexp_replace(regexp_replace(split_part(e, '@', 1), '[+].*$', ''), '[.]', '', 'g')
+         || '@' || regexp_replace(split_part(e, '@', 2), '^googlemail[.]com$', 'gmail.com')
+    from (select lower(btrim(coalesce(p_email, ''))) as e) x
+$$;
 
 create or replace function tours.booking_customer_mail(p_company uuid, p_args jsonb)
 returns jsonb
@@ -40,6 +55,8 @@ declare
   v_mail text := coalesce(p_args->>'mail', '');
   v_slot text;
   v_claimed uuid;
+  v_same bigint;
+  v_all bigint;
 begin
   if not tours.booking_key_ok(p_company, p_args->>'key') then
     return jsonb_build_object('ok', false, 'error', 'forbidden');
@@ -81,15 +98,19 @@ begin
   if coalesce(b.customer_email, '') !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}$' then
     return jsonb_build_object('ok', true, 'skip', 'no_email');
   end if;
-  -- customer_email is stored in lower case (booking_create)
-  if v_mail = 'request' and (
-       (select count(*) from tours.bookings o
-         where o.company_id = p_company and o.customer_email = b.customer_email
-           and o.created_at > now() - interval '1 hour' and o.customer_mails ? 'request') >= 5
-       or (select count(*) from tours.bookings o
-            where o.company_id = p_company
-              and o.created_at > now() - interval '1 hour' and o.customer_mails ? 'request') >= 60) then
-    return jsonb_build_object('ok', true, 'skip', 'limit');
+  -- the lock ends with this call: the count and the claim below are one step for the whole company
+  if v_mail in ('request', 'failed', 'review') then
+    perform pg_advisory_xact_lock(hashtextextended('tours.customer_mail:' || p_company::text, 0));
+    select count(*) filter (where tours.mailbox_key(o.customer_email) = tours.mailbox_key(b.customer_email)), count(*)
+      into v_same, v_all
+      from tours.bookings o
+     where o.company_id = p_company
+       and greatest((o.customer_mails->>'request')::timestamptz,
+                    (o.customer_mails->>'failed')::timestamptz,
+                    (o.customer_mails->>'review')::timestamptz) > now() - interval '1 hour';
+    if v_same >= 5 or v_all >= 60 then
+      return jsonb_build_object('ok', true, 'skip', 'limit');
+    end if;
   end if;
 
   update tours.bookings
@@ -143,7 +164,7 @@ end
 $$;
 
 -- The cancellation form has no order to claim a slot on: its requests are leads, stored before the site asks, so the
--- count includes the one being answered.
+-- count includes the one being answered and needs no lock - of a burst, the request stored fourth always counts four.
 create or replace function tours.booking_cancellation_mail_ok(p_company uuid, p_args jsonb)
 returns jsonb
 language plpgsql
@@ -160,7 +181,7 @@ begin
   end if;
   return jsonb_build_object('ok', true, 'allowed',
     (select count(*) from public.leads l
-      where l.company_id = p_company and l.kind = 'cancellation' and lower(l.email) = v_email
+      where l.company_id = p_company and l.kind = 'cancellation' and tours.mailbox_key(l.email) = tours.mailbox_key(v_email)
         and l.created_at > now() - interval '1 hour') <= 3
     and (select count(*) from public.leads l
           where l.company_id = p_company and l.kind = 'cancellation'
@@ -196,6 +217,7 @@ begin
   end case;
 end
 $$;
+revoke all on function tours.mailbox_key(text) from public;
 revoke all on function tours.booking_customer_mail(uuid, jsonb) from public;
 revoke all on function tours.booking_customer_mail_release(uuid, jsonb) from public;
 revoke all on function tours.booking_cancellation_mail_ok(uuid, jsonb) from public;
