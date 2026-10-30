@@ -254,6 +254,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > rules `lib/tours/payment-links.ts` (selftest `scripts/tours-payment-links-selftest.ts`); SQL on PGlite
 > `scripts/tours-payment-links-sql-pglite-test.mjs`. Not built: a link on a card with no order row, tokens / J5, API refunds, invoices.
 >
+> **The site mails the customer of an order by itself (30.10.2026, Dor; migration `20261030180000_tours_booking_customer_mail.sql`).** The
+> mails live in mega-family (`lib/customer-mail.ts`, `lib/server/customer-mail.ts`); here is the data: two actions on `tours.site_booking`
+> behind the site key. `customer_mail` checks the mail is true of the order (`request` = a request, `paid` / `review` / `failed` = a card
+> order in that status, `link_paid` = a paid link), claims its slot in `tours.bookings.customer_mails` (`{ slot: when }`, a link's slot is
+> `link:<id>`) and answers what to print - names alone, never a birth date. `customer_mail_release` frees a slot the mail server refused.
+> "Confirmation sent" stays the rep's: these mails say the order is in, not that it is confirmed. The order's card prints them (`siteMailsOf`
+> in `components/tours/bookings/shared.ts`). SQL on PGlite: `scripts/tours-customer-mail-sql-pglite-test.mjs`.
+>
 > **✅ Homepage layout board (`/homepage`, 2026-09-16).** Spec
 > `docs/superpowers/specs/2026-09-16-homepage-layout-design.md`. One dummy of
 > main's homepage where staff drag SECTIONS into order / hide them and pin the

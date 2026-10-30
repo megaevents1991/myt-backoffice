@@ -24,6 +24,7 @@ import {
   BOOKING_STATUS_LABELS,
   STAFF_STATUSES,
   bookingStatusLabel,
+  siteMailsOf,
   type BookingChange,
   type BookingRow,
   type BookingStatus,
@@ -104,6 +105,7 @@ export function BookingCard({
   const money = (value: number | null | undefined) => fmtPrice(value ?? null, booking.currency);
   const estimate = booking.priceBasis === "estimate";
   const otherCustomer = !sameCustomer({ name: booking.customerName, phone: booking.customerPhone }, { name: caseName, phone: casePhone });
+  const siteMails = siteMailsOf(booking.customerMails);
 
   const giftOn = (gifts?.length ?? 0) > 0 || booking.giftPassengers.length > 0;
   const toggleGift = (i: number) =>
@@ -139,6 +141,12 @@ export function BookingCard({
           />
         </div>
       </div>
+
+      {siteMails.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Mailed to the customer by the site: {siteMails.map((mail) => `${mail.label} (${fmtInstant(mail.at)})`).join(" · ")}
+        </p>
+      )}
 
       {otherCustomer && (
         <Notice tone="warning">

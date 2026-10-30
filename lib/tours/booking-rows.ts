@@ -53,6 +53,7 @@ export function bookingRowOf(b: TourBooking, dep: DepartureBits | undefined): Bo
     salesEntryId: b.sales_entry_id,
     receiptNo: b.receipt_no,
     confirmationSentAt: b.confirmation_sent_at,
+    customerMails: asRecord(b.customer_mails) as Record<string, string>,
     staffNote: b.staff_note,
     giftPassengers: (b.gift_passengers ?? []).filter((i) => Number.isInteger(i) && i >= 0),
     paymentLog: [],

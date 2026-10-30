@@ -98,6 +98,8 @@ export interface BookingRow {
   salesEntryId: string | null;
   receiptNo: string | null;
   confirmationSentAt: string | null;
+  /** The site's automatic mails to the customer (tours.bookings.customer_mails), { slot: when }. Not "Confirmation sent". */
+  customerMails: Record<string, string>;
   staffNote: string | null;
   /** The passengers (0-based, in `passengers` order) the departure's gift went to - the rep marks them (Alon 20.10). */
   giftPassengers: number[];
@@ -105,6 +107,20 @@ export interface BookingRow {
   paymentLog: OrderPayment[];
   /** The order's card payment links (tours.payment_links), newest first - filled with the payments, else empty. */
   paymentLinks: PaymentLinkView[];
+}
+
+const SITE_MAIL_LABELS: Record<string, string> = {
+  request: "Order received",
+  paid: "Payment received",
+  review: "Payment being checked",
+  failed: "Payment failed",
+};
+
+/** What the site already told the customer by mail, oldest first: the rep sees it before calling. */
+export function siteMailsOf(mails: Record<string, string>): { label: string; at: string }[] {
+  return Object.entries(mails)
+    .map(([slot, at]) => ({ label: slot.startsWith("link:") ? "Payment link paid" : (SITE_MAIL_LABELS[slot] ?? slot), at }))
+    .sort((a, b) => a.at.localeCompare(b.at));
 }
 
 export interface BookingChange {
