@@ -4,7 +4,8 @@
 // tables with the columns the mail functions touch, the real tours.booking_key_ok's rule, then the migration, then the
 // scenarios through tours.site_booking - the key, another company's order, a mail that is not true of the order, the
 // claim (a second call mails nothing, a release frees it, a failed page then a paid one each get their own), a payment
-// link's own slot, and a birth date never in the answer.
+// link's own slot, a birth date never in the answer, an address a mail server would read differently, and the caps of
+// the public forms (per mailbox, per company, an hour's window).
 //
 // Needs @electric-sql/pglite: `npm i --no-save @electric-sql/pglite` in the repo, or point PGLITE_PATH at an
 // install elsewhere (the package directory). No network, no prod.
@@ -31,7 +32,8 @@ await db.exec(`
   create table tours.departures (id uuid primary key default gen_random_uuid(), company_id uuid, package_id uuid, code text, start_date date, end_date date);
   create table tours.bookings (id uuid primary key default gen_random_uuid(), company_id uuid, ref text unique, departure_id uuid, kind text, status text,
     price_basis text default 'server', currency text default 'USD', rooms jsonb default '[]', passengers jsonb default '[]', adults int default 0, children int default 0,
-    discount numeric default 0, total numeric default 0, customer_name text, customer_email text, total_ils numeric, payments int, cg_card_last4 text, is_deleted date);
+    discount numeric default 0, total numeric default 0, customer_name text, customer_email text, total_ils numeric, payments int, cg_card_last4 text, is_deleted date, created_at timestamptz not null default now());
+  create table public.leads (id uuid primary key default gen_random_uuid(), company_id uuid, kind text, email text, created_at timestamptz not null default now());
   create table tours.payment_links (id uuid primary key default gen_random_uuid(), company_id uuid, booking_id uuid, kind text, amount numeric, currency text, amount_ils numeric,
     payments smallint default 1, status text default 'open', cg_uniqueids text[] default '{}', cg_card_last4 text);
   create function tours.booking_key_ok(p_company uuid, p_key text) returns boolean language sql stable as $$
@@ -120,5 +122,55 @@ check("the entry point still answers other actions", await call("nope", {}), { o
 
 const mails = (await db.query(`select customer_mails from tours.bookings where ref='T4'`)).rows[0].customer_mails;
 console.log("T4 slots:", Object.keys(mails).map((k) => k.split(":")[0]).sort().join(", "));
+
+// an address a mail server would read as someone else than the one counted
+await add("T20", "request", "new", "x<victim@example.com>");
+await add("T21", "request", "new", "a,b@example.com");
+check("a display name: skip", await call("customer_mail", { key: KEY, mail: "request", ref: "T20" }), { ok: true, skip: "no_email" });
+check("a list: skip", await call("customer_mail", { key: KEY, mail: "request", ref: "T21" }), { ok: true, skip: "no_email" });
+
+// a request: 5 an hour to a mailbox
+for (let i = 0; i < 5; i++) {
+  await add(`T3${i}`, "request", "new", "cap@example.com");
+  check(`mailbox cap: mail ${i + 1} goes`, await call("customer_mail", { key: KEY, mail: "request", ref: `T3${i}` }), { ok: true, slot: "request" });
+}
+await add("T35", "request", "new", "cap@example.com");
+check("mailbox cap: the 6th stays out", await call("customer_mail", { key: KEY, mail: "request", ref: "T35" }), { ok: true, skip: "limit" });
+check("over the cap claims nothing", (await db.query(`select customer_mails from tours.bookings where ref='T35'`)).rows[0], { customer_mails: {} });
+await add("T36", "request", "new", "other-mailbox@example.com");
+check("another mailbox still goes", await call("customer_mail", { key: KEY, mail: "request", ref: "T36" }), { ok: true, slot: "request" });
+await add("T37", "request", "new", "cap@example.com", B);
+check("another company's count is its own", await call("customer_mail", { key: KEY, mail: "request", ref: "T37" }, B), { ok: true, slot: "request" });
+await db.query(`update tours.bookings set created_at = now() - interval '61 minutes' where ref = 'T30'`);
+check("the hour passes", await call("customer_mail", { key: KEY, mail: "request", ref: "T35" }), { ok: true, slot: "request" });
+await add("T38", "card", "paid", "cap@example.com");
+await db.query(`update tours.bookings set created_at = now() where ref = 'T30'`);
+check("a paid card order has no cap", await call("customer_mail", { key: KEY, mail: "paid", ref: "T38" }), { ok: true, slot: "paid" });
+
+// a request: 60 an hour in the company, whatever the addresses
+await db.query(`insert into tours.bookings (company_id, ref, departure_id, kind, status, customer_email, customer_mails)
+  select '${A}', 'T5' || g, '${dep}', 'request', 'new', 'many' || g || '@example.com', '{"request":"2026-10-30"}' from generate_series(1, 60) g`);
+await add("T400", "request", "new", "fresh@example.com");
+check("company cap: rotating addresses stop too", await call("customer_mail", { key: KEY, mail: "request", ref: "T400" }), { ok: true, skip: "limit" });
+
+// the cancellation form: 3 an hour to a mailbox, 30 in the company; the lead being answered is already stored
+const lead = (email, company = A) => db.query(`insert into public.leads (company_id, kind, email) values ($1, 'cancellation', $2)`, [company, email]);
+check("cancellation: the key", await call("cancellation_mail_ok", { email: "c@example.com" }), { ok: false, error: "forbidden" });
+check("cancellation: not a plain address", await call("cancellation_mail_ok", { key: KEY, email: "x<c@example.com>" }), { ok: true, allowed: false });
+for (let i = 1; i <= 3; i++) {
+  await lead("c@example.com");
+  check(`cancellation: request ${i} may mail`, await call("cancellation_mail_ok", { key: KEY, email: "C@Example.com" }), { ok: true, allowed: true });
+}
+await lead("c@example.com");
+check("cancellation: the 4th may not", await call("cancellation_mail_ok", { key: KEY, email: "c@example.com" }), { ok: true, allowed: false });
+await db.query(`insert into public.leads (company_id, kind, email) values ('${A}', 'contact', 'd@example.com'), ('${B}', 'cancellation', 'd@example.com')`);
+await lead("d@example.com");
+check("cancellation: another form or company does not count", await call("cancellation_mail_ok", { key: KEY, email: "d@example.com" }), { ok: true, allowed: true });
+await db.query(`update public.leads set created_at = now() - interval '61 minutes' where email = 'c@example.com'`);
+check("cancellation: the hour passes", await call("cancellation_mail_ok", { key: KEY, email: "c@example.com" }), { ok: true, allowed: true });
+await db.query(`insert into public.leads (company_id, kind, email) select '${A}', 'cancellation', 'x' || g || '@example.com' from generate_series(1, 30) g`);
+await lead("e@example.com");
+check("cancellation: company cap", await call("cancellation_mail_ok", { key: KEY, email: "e@example.com" }), { ok: true, allowed: false });
+
 console.log(failures ? `\n${failures} FAILED` : "\nall passed");
 process.exit(failures ? 1 : 0);

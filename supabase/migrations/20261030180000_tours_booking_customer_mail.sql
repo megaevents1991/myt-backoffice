@@ -14,9 +14,14 @@
 -- CreditGuard return address) never mail twice, and answers what to print. `customer_mail_release` frees the slot
 -- when the mail server refused. Both need the site's key, like the payment actions: the answer holds names.
 --
--- site_booking is copied from 20261028140806; only the two customer_mail actions are new. An older site deploy never
--- calls them and a newer site on an older database gets `error: action` and sends nothing, so the order of the two
--- deploys does not matter.
+-- A request and the cancellation form are public: they can name any address, and these mails leave from the address
+-- Mega Events sends from. So the caps live here, where every server instance and every sender counts the same rows:
+-- per mailbox and per company, per hour (`customer_mail` of a request, `cancellation_mail_ok`). Over a cap only the
+-- mail stays out; the order or the request is already in. A card order or a payment link needs a real charge, no cap.
+--
+-- site_booking is copied from 20261028140806; only the three mail actions are new. An older site deploy never calls
+-- them and a newer site on an older database gets `error: action` and sends nothing to the customer, so the order of
+-- the two deploys does not matter.
 
 alter table tours.bookings add column if not exists customer_mails jsonb not null default '{}'::jsonb;
 comment on column tours.bookings.customer_mails is
@@ -72,8 +77,19 @@ begin
      and not (case v_mail when 'request' then b.kind = 'request' else b.kind = 'card' and b.status = v_mail end) then
     return jsonb_build_object('ok', false, 'error', 'state');
   end if;
-  if coalesce(b.customer_email, '') !~ '^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$' then
+  -- one plain address: isMailAddress in mega-family lib/customer-mail.ts, change both together
+  if coalesce(b.customer_email, '') !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}$' then
     return jsonb_build_object('ok', true, 'skip', 'no_email');
+  end if;
+  -- customer_email is stored in lower case (booking_create)
+  if v_mail = 'request' and (
+       (select count(*) from tours.bookings o
+         where o.company_id = p_company and o.customer_email = b.customer_email
+           and o.created_at > now() - interval '1 hour' and o.customer_mails ? 'request') >= 5
+       or (select count(*) from tours.bookings o
+            where o.company_id = p_company
+              and o.created_at > now() - interval '1 hour' and o.customer_mails ? 'request') >= 60) then
+    return jsonb_build_object('ok', true, 'skip', 'limit');
   end if;
 
   update tours.bookings
@@ -126,8 +142,34 @@ begin
 end
 $$;
 
+-- The cancellation form has no order to claim a slot on: its requests are leads, stored before the site asks, so the
+-- count includes the one being answered.
+create or replace function tours.booking_cancellation_mail_ok(p_company uuid, p_args jsonb)
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_email text := lower(btrim(coalesce(p_args->>'email', '')));
+begin
+  if not tours.booking_key_ok(p_company, p_args->>'key') then
+    return jsonb_build_object('ok', false, 'error', 'forbidden');
+  end if;
+  if v_email !~ '^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$' then
+    return jsonb_build_object('ok', true, 'allowed', false);
+  end if;
+  return jsonb_build_object('ok', true, 'allowed',
+    (select count(*) from public.leads l
+      where l.company_id = p_company and l.kind = 'cancellation' and lower(l.email) = v_email
+        and l.created_at > now() - interval '1 hour') <= 3
+    and (select count(*) from public.leads l
+          where l.company_id = p_company and l.kind = 'cancellation'
+            and l.created_at > now() - interval '1 hour') <= 30);
+end
+$$;
+
 -- ---------------------------------------------------------------- the one entry point
--- Copied from 20261028140806; only the two customer_mail actions are new.
+-- Copied from 20261028140806; only the three mail actions are new.
 create or replace function tours.site_booking(p_company uuid, p_action text, p_args jsonb)
 returns jsonb
 language plpgsql
@@ -149,11 +191,13 @@ begin
     when 'finish_link_payment' then return tours.link_finish_payment(p_company, p_args);
     when 'customer_mail' then return tours.booking_customer_mail(p_company, p_args);
     when 'customer_mail_release' then return tours.booking_customer_mail_release(p_company, p_args);
+    when 'cancellation_mail_ok' then return tours.booking_cancellation_mail_ok(p_company, p_args);
     else return jsonb_build_object('ok', false, 'error', 'action');
   end case;
 end
 $$;
 revoke all on function tours.booking_customer_mail(uuid, jsonb) from public;
 revoke all on function tours.booking_customer_mail_release(uuid, jsonb) from public;
+revoke all on function tours.booking_cancellation_mail_ok(uuid, jsonb) from public;
 revoke all on function tours.site_booking(uuid, text, jsonb) from public;
 grant execute on function tours.site_booking(uuid, text, jsonb) to service_role;
