@@ -120,8 +120,8 @@ export interface WaitingCard {
   customerId: string | null;
   /** customers.wa_consent, or opted_out when ANY customer of this number opted out (a merge or a move can hide it). */
   consent: string | null;
-  /** customers.phone_keys of the card's customer; null = a card with no customer row. */
-  customerPhoneKeys: string[] | null;
+  /** The customer's stored phones as whole numbers (972...); null = nothing stored to compare with. */
+  customerNumbers: string[] | null;
   /** The customer has an open or paid card on this tour besides the waiting one. */
   otherCardOnTour: boolean;
   /** leads.no_auto_message: it came in a burst of waiting-list forms (leads_fill), so a rep looks at it first. */
@@ -187,11 +187,13 @@ const ALREADY_TOLD_WHY = "The customer was already told through another card.";
 const NEW_NUMBERS_CAP_WHY = "Today's limit of messages to new numbers was reached.";
 
 /** Why this customer gets no message (Dor 30.10: everyone on the list but who opted out), or null. Shown on the card. */
-export function whatsappBlock(card: Pick<WaitingCard, "consent" | "phone" | "customerPhoneKeys" | "otherCardOnTour" | "burstHeld">): string | null {
+export function whatsappBlock(card: Pick<WaitingCard, "consent" | "phone" | "customerNumbers" | "otherCardOnTour" | "burstHeld">): string | null {
   if (card.consent === "opted_out") return OPTED_OUT_WHY;
-  if (!whatsappPhone(card.phone)) return "The card has no valid phone number.";
-  // a card keeps the phone it came with: a rep who corrected the customer's phone leaves the typo here, and it is a stranger's
-  if (card.customerPhoneKeys && !card.customerPhoneKeys.includes(phoneKey(card.phone))) return "The card's phone is no longer the customer's.";
+  const number = whatsappPhone(card.phone);
+  if (!number) return "The card has no valid phone number.";
+  // a card keeps the phone it came with: a rep who corrected the customer's phone leaves the typo here, and it is a
+  // stranger's. The whole number: a form joins a customer by the last 9 digits, so another country's number can land here
+  if (card.customerNumbers && !card.customerNumbers.includes(number)) return "The card's phone is no longer the customer's.";
   if (card.otherCardOnTour) return "The customer has another card on this tour.";
   if (card.burstHeld) return "It came in a burst of waiting-list forms: check the customer first.";
   return null;

@@ -95,7 +95,7 @@ const waiting = (over: Partial<WaitingCard> = {}): WaitingCard => ({
   phone: "054-111-2222",
   customerId: "cust-1",
   consent: "form",
-  customerPhoneKeys: ["541112222"],
+  customerNumbers: ["972541112222"],
   otherCardOnTour: false,
   burstHeld: false,
   knownContact: false,
@@ -148,14 +148,17 @@ assert.equal(isMorningTick(new Date("2026-11-02T08:35:00Z")), false);
 assert.equal(isMorningTick(new Date("2026-11-07T07:35:00Z")), false, "not on Shabbat");
 
 // ---------------------------------------------------------------- what may stop the WhatsApp
-const blockFacts = { consent: "form", phone: "054-111-2222", customerPhoneKeys: ["541112222"], otherCardOnTour: false, burstHeld: false };
+const blockFacts = { consent: "form", phone: "054-111-2222", customerNumbers: ["972541112222"], otherCardOnTour: false, burstHeld: false };
 assert.equal(whatsappBlock(blockFacts), null);
 assert.equal(whatsappBlock({ ...blockFacts, consent: "none" }), null, "everyone on the list (Dor 30.10)");
 assert.equal(whatsappBlock({ ...blockFacts, consent: "opted_out" }), OPTED_OUT_WHY);
 assert.match(whatsappBlock({ ...blockFacts, phone: "12" }) ?? "", /phone/);
 assert.match(whatsappBlock({ ...blockFacts, phone: null }) ?? "", /phone/);
-assert.match(whatsappBlock({ ...blockFacts, customerPhoneKeys: ["529999999"] }) ?? "", /no longer/, "a rep corrected the customer's phone: the card keeps the typo, a stranger would get it");
-assert.equal(whatsappBlock({ ...blockFacts, customerPhoneKeys: null }), null, "a card with no customer row has nothing to compare");
+assert.match(whatsappBlock({ ...blockFacts, customerNumbers: ["972529999999"] }) ?? "", /no longer/, "a rep corrected the customer's phone: the card keeps the typo, a stranger would get it");
+assert.equal(whatsappBlock({ ...blockFacts, customerNumbers: null }), null, "a card with no customer row has nothing to compare");
+// the customer is found by the last 9 digits, but the message goes to the whole number
+assert.match(whatsappBlock({ ...blockFacts, phone: "+1 541 111 2222" }) ?? "", /no longer/, "same last 9 digits, another country: not this customer's phone");
+assert.equal(whatsappBlock({ ...blockFacts, phone: "+972 54-111-2222" }), null, "the same number written another way");
 assert.match(whatsappBlock({ ...blockFacts, otherCardOnTour: true }) ?? "", /another card/, "a customer already dealing on this tour is not told what they waited for");
 assert.equal(whatsappBlock({ ...blockFacts, consent: "opted_out", otherCardOnTour: true }), OPTED_OUT_WHY, "an opt-out names itself first: the rep's button goes by it");
 assert.match(whatsappBlock({ ...blockFacts, burstHeld: true }) ?? "", /burst/, "a card that came in a flood of forms: a rep checks it first");
@@ -357,7 +360,7 @@ const run = async () => {
   }
   {
     // first in line first; everyone waiting is told; past the ceiling the rest are next tick's
-    const many = Array.from({ length: MAX_CARDS_PER_TICK + 3 }, (_, i) => waiting({ id: `c${i}`, caseNo: 2000 + i, phone: `05${String(10000000 + i)}`, customerPhoneKeys: null, waitlistSince: `2026-10-${String(28 - (i % 28)).padStart(2, "0")}T08:00:00Z` }));
+    const many = Array.from({ length: MAX_CARDS_PER_TICK + 3 }, (_, i) => waiting({ id: `c${i}`, caseNo: 2000 + i, phone: `05${String(10000000 + i)}`, customerNumbers: null, waitlistSince: `2026-10-${String(28 - (i % 28)).padStart(2, "0")}T08:00:00Z` }));
     const { deps, log } = fakes({}, many);
     const r = await runWaitlistTick(deps, OPTS);
     assert.equal(log.claims.length, MAX_CARDS_PER_TICK);
@@ -427,7 +430,7 @@ const run = async () => {
     // two cards of one phone on one tour: one message; both cards reach a rep
     const a = waiting({ id: "a", waitlistSince: "2026-10-01T08:00:00Z" });
     const b = waiting({ id: "b", waitlistSince: "2026-10-02T08:00:00Z" });
-    const c = waiting({ id: "c", waitlistSince: "2026-10-03T08:00:00Z", phone: "052-333-4444", customerPhoneKeys: ["523334444"] });
+    const c = waiting({ id: "c", waitlistSince: "2026-10-03T08:00:00Z", phone: "052-333-4444", customerNumbers: ["972523334444"] });
     const { deps, log } = fakes({}, [a, b, c]);
     const r = await runWaitlistTick(deps, OPTS);
     assert.equal(r.moved, 3);
@@ -438,7 +441,7 @@ const run = async () => {
   {
     // the day's cap on numbers we never spoke to: past it the cards still move and a rep calls; a known number still goes
     const phones = ["052-000-0001", "052-000-0002", "052-000-0003", "052-000-0004"];
-    const card = (id: string, i: number, over: Partial<WaitingCard> = {}) => waiting({ id, phone: phones[i], customerPhoneKeys: null, waitlistSince: `2026-10-0${i + 1}T08:00:00Z`, ...over });
+    const card = (id: string, i: number, over: Partial<WaitingCard> = {}) => waiting({ id, phone: phones[i], customerNumbers: null, waitlistSince: `2026-10-0${i + 1}T08:00:00Z`, ...over });
     const notes: { id: string; whatsapp: string; firstContact: boolean; why: string | null }[] = [];
     const { deps, log } = fakes(
       {
@@ -456,8 +459,8 @@ const run = async () => {
   {
     // a failed send reached nobody, so it does not use up the day's cap
     let calls = 0;
-    const a = waiting({ id: "a", phone: "052-000-0001", customerPhoneKeys: null, waitlistSince: "2026-10-01T08:00:00Z" });
-    const b = waiting({ id: "b", phone: "052-000-0002", customerPhoneKeys: null, waitlistSince: "2026-10-02T08:00:00Z" });
+    const a = waiting({ id: "a", phone: "052-000-0001", customerNumbers: null, waitlistSince: "2026-10-01T08:00:00Z" });
+    const b = waiting({ id: "b", phone: "052-000-0002", customerNumbers: null, waitlistSince: "2026-10-02T08:00:00Z" });
     const { deps, log } = fakes(
       {
         firstContactsLastDay: async () => FIRST_CONTACT_MAX_PER_DAY - 1,
@@ -475,8 +478,8 @@ const run = async () => {
   }
   {
     // the count cannot be read: a new number waits for a rep, a known one still goes, and the problem is reported
-    const a = waiting({ id: "a", phone: "052-000-0001", customerPhoneKeys: null, waitlistSince: "2026-10-01T08:00:00Z" });
-    const known = waiting({ id: "known", phone: "052-000-0002", customerPhoneKeys: null, knownContact: true, waitlistSince: "2026-10-02T08:00:00Z" });
+    const a = waiting({ id: "a", phone: "052-000-0001", customerNumbers: null, waitlistSince: "2026-10-01T08:00:00Z" });
+    const known = waiting({ id: "known", phone: "052-000-0002", customerNumbers: null, knownContact: true, waitlistSince: "2026-10-02T08:00:00Z" });
     const { deps, log } = fakes({ firstContactsLastDay: async () => { throw new Error("leads down"); } }, [a, known]);
     const r = await runWaitlistTick(deps, OPTS);
     assert.equal(r.moved, 2);
@@ -498,7 +501,7 @@ const run = async () => {
     const ra = await runWaitlistTick(a.deps, OPTS);
     assert.equal(a.log.claims.length, 0);
     assert.equal(ra.remaining, 1);
-    const many = [waiting({ id: "x" }), waiting({ id: "y", phone: "052-333-4444", customerPhoneKeys: ["523334444"] })];
+    const many = [waiting({ id: "x" }), waiting({ id: "y", phone: "052-333-4444", customerNumbers: ["972523334444"] })];
     const b = fakes({ movedLastHour: async () => MAX_CARDS_PER_TICK - 1 }, many);
     const rb = await runWaitlistTick(b.deps, OPTS);
     assert.equal(b.log.claims.length, 1);
