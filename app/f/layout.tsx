@@ -1,4 +1,4 @@
-import { Heebo } from "next/font/google";
+import localFont from "next/font/local";
 
 /**
  * Public form pages get their own type.
@@ -8,10 +8,17 @@ import { Heebo } from "next/font/google";
  * personality mid-form. Weight does the expressive work: 900 for display
  * against 400 for body.
  */
-const heebo = Heebo({
-  subsets: ["latin", "hebrew"],
-  weight: ["400", "500", "700", "800", "900"],
+const heebo = localFont({
+  src: [
+    { path: "../fonts/heebo.woff2", weight: "400" },
+    { path: "../fonts/heebo.woff2", weight: "500" },
+    { path: "../fonts/heebo.woff2", weight: "700" },
+    { path: "../fonts/heebo.woff2", weight: "800" },
+    { path: "../fonts/heebo.woff2", weight: "900" },
+  ],
   display: "swap",
+  adjustFontFallback: false,
+  fallback: ["Heebo Fallback"],
 });
 
 export default function PublicFormLayout({

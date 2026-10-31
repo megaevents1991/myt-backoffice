@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Arial sized to each bundled face, for letters the face lacks (Cyrillic, ş) and for the swap.
+ * Set by hand with the values next/font/google used: next/font/local would measure the variable
+ * file's default instance, which is Assistant's ExtraLight and Rubik's Light. See app/fonts/README.md.
+ */
+@font-face {
+  font-family: "Assistant Fallback";
+  src: local("Arial");
+  ascent-override: 109.94%;
+  descent-override: 30.9%;
+  line-gap-override: 0%;
+  size-adjust: 92.87%;
+}
+@font-face {
+  font-family: "Rubik Fallback";
+  src: local("Arial");
+  ascent-override: 89.06%;
+  descent-override: 23.81%;
+  line-gap-override: 0%;
+  size-adjust: 104.98%;
+}
+@font-face {
+  font-family: "Heebo Fallback";
+  src: local("Arial");
+  ascent-override: 104.9%;
+  descent-override: 42.14%;
+  line-gap-override: 0%;
+  size-adjust: 99.89%;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

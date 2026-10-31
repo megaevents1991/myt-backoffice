@@ -1270,6 +1270,8 @@ Required in `.env.local`:
 
 Built on **shadcn/ui** (Radix UI + Tailwind). Component config in `components.json`. All shadcn components live in `components/ui/`. Custom shared components (Sidebar, etc.) are in `components/`.
 
+**Fonts are bundled (2026-10-31):** Assistant + Rubik (root layout) and Heebo (`/f`) load through `next/font/local` from `app/fonts/`. **Never `next/font/google`:** it fetches at build time, and Google's occasional `/l/font?kit=` answer fails the build ("Cannot read properties of null (reading '1')", 2 of 8 builds that day). `app/fonts/README.md` says why the files are built as they are (one file per family, Google's code points, no kerning across Hebrew and the space, hand-set fallback faces in `app/globals.css`); `scripts/build-bundled-fonts.py` rebuilds them.
+
 ### Event Creation Flow
 
 Events have a `type` field (`sports_event`, `music_event`, `sports_event_dynamic`, `sports_live_event_dynamic`, `music_live_event_dynamic`, `tx_event`). When creating events from external providers (P1, LiveTickets), prices are converted to USD with markups and rounded to nearest $10 minus $1 (e.g. $129, $199).
