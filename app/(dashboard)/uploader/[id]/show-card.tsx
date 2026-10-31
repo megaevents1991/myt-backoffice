@@ -250,7 +250,7 @@ export type ShowCardProps = {
   art: SubjectArt;
   subjectNameEn: string;
   edited: boolean;
-  /** `RunBoard.editKinds[item.id]` is not empty: a person changed something in the editor a learn can carry (the hall's tickets, a ticket description, the event's description or place) since its last learn - learn step 1 reads "✓". */
+  /** `RunBoard.editKinds[item.id]` is not empty: a person changed something in the editor a learn can carry (the hall's tickets, a ticket description, a LiveTickets zone or deleted category, the event's description or place) since its last learn - learn step 1 reads "✓". */
   fixedByHand: boolean;
   /** Other ready / approved shows of the run with an event - what "למדו והחילו" may carry an edit to (Alon round 3); above 0 the card shows the two learn steps. */
   learnTargets: number;

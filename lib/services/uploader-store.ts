@@ -954,6 +954,18 @@ export async function writeVenueNameHe(id: string, nameHe: string | null): Promi
  * failed (logged).
  */
 export async function writeDroppedCategories(id: string, dropped: string[], kept: string[], sections?: string[]): Promise<boolean> {
+  return mergeDroppedCategories(id, { tixstock: dropped, tixstock_kept: kept, ...(sections !== undefined ? { tixstock_sections: sections } : {}) });
+}
+
+/**
+ * `venue_maps.dropped_categories.livetickets` replaced: the LiveTickets categories a person deleted at this hall (a learn's
+ * `live_tickets` kind), which the next build leaves out. Any other key stays. false = the read or the write failed (logged).
+ */
+export async function writeLiveTicketsDropped(id: string, keys: string[]): Promise<boolean> {
+  return mergeDroppedCategories(id, { livetickets: keys });
+}
+
+async function mergeDroppedCategories(id: string, patch: Record<string, unknown>): Promise<boolean> {
   const read = (await db.from("venue_maps").select("dropped_categories").eq("id", id).maybeSingle()) as DbResult<{ dropped_categories: Json } | null>;
   if (read.error) {
     logDb(`venue map ${id} dropped categories read`, read.error);
@@ -961,11 +973,9 @@ export async function writeDroppedCategories(id: string, dropped: string[], kept
   }
   const stored = read.data?.dropped_categories;
   const current: Record<string, unknown> = typeof stored === "object" && stored !== null && !Array.isArray(stored) ? { ...stored } : {};
-  const next: Record<string, unknown> = { ...current, tixstock: dropped, tixstock_kept: kept };
-  if (sections !== undefined) next.tixstock_sections = sections;
   const { error } = (await db
     .from("venue_maps")
-    .update({ dropped_categories: next, updated_at: nowIso() })
+    .update({ dropped_categories: { ...current, ...patch }, updated_at: nowIso() })
     .eq("id", id)) as DbResult<null>;
   if (error) {
     logDb(`venue map ${id} dropped categories write`, error);
@@ -1111,11 +1121,11 @@ export async function writeEventClassification(eventId: number, tickets: EventTi
 }
 
 /**
- * An event's tickets after "learn from this event" carried a ticket description over (Alon round 3, note 2b) -
- * `tickets_and_rates` only, never through `updateEvent`, only while the event is not deleted. Audited as an `update`
- * of the event. false = the write failed or the event is gone (logged).
+ * An event's tickets after "learn from this event" carried something over (a ticket description - Alon round 3, note 2b; a
+ * LiveTickets zone or a deleted category) - `tickets_and_rates` only, never through `updateEvent`, only while the event is not
+ * deleted. Audited as an `update` of the event with `changes` and `via`. false = the write failed or the event is gone (logged).
  */
-export async function writeEventTickets(eventId: number, tickets: EventTicket[], changed: number): Promise<boolean> {
+export async function writeEventTickets(eventId: number, tickets: EventTicket[], changes: Record<string, number>, via: string): Promise<boolean> {
   const { data, error } = (await db
     .from("events")
     .update({ tickets_and_rates: tickets })
@@ -1134,8 +1144,8 @@ export async function writeEventTickets(eventId: number, tickets: EventTicket[],
     action: "update",
     entityType: "event",
     entityId: eventId,
-    changes: { ticket_descriptions: changed },
-    metadata: { agent: AGENT, via: "uploader.learn_descriptions" },
+    changes,
+    metadata: { agent: AGENT, via },
   });
   return true;
 }

@@ -1891,7 +1891,7 @@ of the run, one category cleared = that category run-wide, one category SET = th
 (`sameVenue`: same drawing, else same venue + city); `applyDescriptionPlan` touches a ticket only while its description
 still equals that show's baseline (one already at the target by hand is `adopted` - no write, the baseline follows),
 and the show's payload follows the descriptions only (`patchDescriptions`). **`rewriteVenueItems` (classify AND learn)
-keeps a hand-typed LiveTickets description out of a show's new baseline (`keepHandDescriptions`)** - else the next
+keeps a hand-typed LiveTickets description out of a show's new baseline (`keepHandLiveTickets`, zones and deleted categories too since 31.10)** - else the next
 description pass would overwrite it. `learnPreview` = `{ venue (ok / why not / null), descriptions ({ plan, events,
 tickets } / null), others }`; `learnFromEvent(itemId, { venue, descriptions, note })` - the hall part as before
 (`readHallContext`, template + `rewriteVenueItems`), then `descriptionPass` over the shows read again, then the source
@@ -1926,13 +1926,23 @@ the show's payload follows also where a person already typed the same (`already`
 `descriptionIsAPersons` makes `rewriteRunDescriptions` leave it (`editedByHand`) - without it a later classify or names confirm would overwrite it silently, because the baseline
 now equals it. **(4) A reason per show:** `learnShowRows` -> `LearnPreview.shows`, a verdict per kind (`ShowVerdict`: `applies`, `count`, `reason` = `other_hall` /
 `typed_by_hand` / `different` / `already` / `no_category`; a `reason` beside `applies` = partly), `ShowList` in `learn-confirm.tsx`; `notCarriedEdits` names what no kind carries (dates,
-prices, a ticket renamed, a LiveTickets zone, a TixStock description cleared, a blank description, a new flight city). **(5) A typed description is an edit:** `description` joins
+prices, a ticket renamed, a LiveTickets zone cleared or ticket added, a TixStock description cleared, a blank description, a new flight city). **(5) A typed description is an edit:** `description` joins
 `EDIT_WHITELIST` and `EDIT_EVENT_COLUMNS` (with `lodging_note`) - the "נערך" tag, the approve flag, the `uploader.edited` lesson. Rules checked read-only on the live Oasis and Lazio
 rows. **The review before the commit:** `sameVenue` now needs the same venue name plus the same drawing or city (a shared drawing alone is no hall - "General Admission.svg"
 serves 244 venues; this also tightens the round-3 ticket `set`); `flightChanged` compares through an empty IATA; a learn keeps `payload.built_fields` so `editDiff` still sees the edit
 (as `built_tickets_count`); the toast counts `showsReached` (none = no toast) and asks only when this save touched a carried field (`editTouchesLearnFields`); a kind no show would take stays
 unticked and pending. Known and left: a stale editor tab saving old values over a carried text reads as a new edit (whole-form `updateEvent` saves are older than this round). Not built: forcing a
 skipped show (a person types it there); carrying a dates / price / ticket-label edit.
+
+**LiveTickets zones and deleted categories in the learn (31.10, Fulham - Newcastle, event 1228; no migration).** The card read "נערך" (10 tickets -> 8) while the dialog said it found nothing: the edit was two
+LiveTickets categories deleted and two zoned, and both were listed as "not carried" (ruling R17 kept LiveTickets zoning on each event's board). New kind `live_tickets` (`liveTicketsPlan`,
+`applyLiveTicketsPlan`, `liveTicketsVerdict`, `liveTicketsReach` in `lib/uploader/edit-changes.ts`, selftest section "Fulham - Newcastle"): a zone set or moved reaches the shows at the same hall on the same map (a zone id means
+nothing on another drawing - Craven Cottage has two), a deleted category reaches the same hall; a ticket touched only while its zone and description are still that show's baseline, each fixture keeps its price, a show that would
+be left with no ticket is not written (`all_removed`), and a person's own change is adopted or left. Not carried: a category added (another fixture has its own price and supplier id), a zone cleared. `liveTicketsPass` writes `tickets_and_rates` only,
+the show's payload follows, audited `uploader.learned_live_tickets`. **The hall remembers** (`rememberLiveTickets`): the zones in `supplier_categories.livetickets`, the deleted categories in `venue_maps.dropped_categories.livetickets` (`DroppedCategories.live`,
+no key when none; `liveDroppedAfter`), which `applyClassification` leaves out on the next BUILD - a classification of shows already built never passes it, so it does not take a LiveTickets ticket away. A category comes back only when a person zones it at the hall (`liveDroppedWithoutMapped`, inside `rememberSupplierCategories`, so the editor's board does it too) - an event that merely still sells it does not. `learnFromEvent`'s `liveTickets` flag is the one kind that is off when absent: it deletes tickets, so only the dialog that listed them turns it on. A hall rewrite keeps what a person did to a show's LiveTickets tickets out of that show's baseline (`keepHandLiveTickets`: description, zone, a deleted category), or the LiveTickets pass right after it would overwrite a zone the dialog promised to leave. The dialog names a LiveTickets
+ticket a show keeps with no zone (`LearnShowRow.unzoned`, Man City's "Away"), because on the site a zoned ticket competes per zone (main `lib/supplier-offers.ts`). `rebaseTickets` takes the three kinds apart: a deletion or zone not applied stays in the baseline and stays pending.
+Checked read-only on the live Fulham rows: 14 of 15 shows, 56 tickets.
 
 **What the price-light agent learns from (`price_light.*` audit actions, newest 10 in 120 days).**
 Every decision on `/price-light` now stamps a `LightDecisionSnapshot` into its audit metadata (scope,

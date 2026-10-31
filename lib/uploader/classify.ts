@@ -81,9 +81,11 @@ export type TemplateLike = { zones: VenueZone[]; supplier_categories: SupplierCa
 
 /**
  * `venue_maps.dropped_categories` as keys: what the venue never sells, and the rule-drops a person kept; `sections` =
- * the map sections excluded for every show of the hall (`tixstock_sections`, round 2 Task 10 - section ids, not keys).
+ * the map sections excluded for every show of the hall (`tixstock_sections`, round 2 Task 10 - section ids, not keys);
+ * `live` = the LiveTickets categories a person deleted at this hall (`livetickets`, written by a learn), which only the next
+ * BUILD leaves out - a classification of shows already built does not take them away. No such key when none.
  */
-export type DroppedCategories = { dropped: string[]; kept: string[]; sections: string[] };
+export type DroppedCategories = { dropped: string[]; kept: string[]; sections: string[]; live?: string[] };
 
 /** What the model (or the rule) says about one category. `description_he` is never the model's (D4): "" in a proposal, the stored zone's in a row the template already holds. */
 export type ProposedRow = {
@@ -181,6 +183,7 @@ export function parseVenueHeInput(raw: unknown): { ok: true; value: string | nul
 const ticketCategory = (ticket: EventTicket): string => ticket.supplierCategory || ticket.category;
 const ticketKey = (ticket: EventTicket): string => normalizeSupplierCategory(ticketCategory(ticket));
 const isTixStock = (ticket: EventTicket): boolean => ticketSupplier(ticket, "tx_event") === "tixstock";
+const isLiveTickets = (ticket: EventTicket): boolean => ticketSupplier(ticket, "tx_event") === "livetickets";
 
 const tixstockMap = (template: TemplateLike | null): Record<string, string> =>
   template?.supplier_categories?.tixstock ?? {};
@@ -275,11 +278,15 @@ const sectionList = (value: unknown): string[] =>
     ? unique(value.map(sectionIdOf).filter((id): id is string => id !== null)).slice(0, EXCLUDED_SECTIONS_MAX)
     : [];
 
-/** `venue_maps.dropped_categories` (`{ tixstock, tixstock_kept, tixstock_sections }`) - keys, and the section ids as they are; anything unreadable is empty. */
+/** `venue_maps.dropped_categories` (`{ tixstock, tixstock_kept, tixstock_sections, livetickets }`) - keys, and the section ids as they are; anything unreadable is empty. */
 export function parseDroppedCategories(value: unknown): DroppedCategories {
   if (!isObject(value)) return { dropped: [], kept: [], sections: [] };
-  return { dropped: keyList(value.tixstock), kept: keyList(value.tixstock_kept), sections: sectionList(value.tixstock_sections) };
+  const live = keyList(value.livetickets);
+  return { dropped: keyList(value.tixstock), kept: keyList(value.tixstock_kept), sections: sectionList(value.tixstock_sections), ...(live.length > 0 ? { live } : {}) };
 }
+
+/** The hall's deleted LiveTickets categories against its mapping: one a person zoned at this hall sells here again, so the next build brings it. */
+export const liveDroppedWithoutMapped = (list: readonly string[], mapping: Record<string, string>): string[] => list.filter((key) => !mapping[key]);
 
 /**
  * The confirm's `excludedSections` (round 2, Task 10), checked: `undefined` (not sent) leaves the stored list alone; a
@@ -840,10 +847,10 @@ function inStepWithTemplate(ticket: EventTicket, zones: Map<string, VenueZone>, 
  * brought in step with the template (`inStepWithTemplate`, ruling R21; `previous` = the template before this
  * write - the confirm and the learn pass it, the build passes `null`); the rest go through `zoneFromTemplate`
  * (the zone's description lands on an empty one only). `dropped` = the category of each removed key;
- * `unzoned` = the category of every TIXSTOCK ticket left without a zone. A LiveTickets ticket is never
- * touched nor listed: a classification writes the TixStock template only, and zoning LiveTickets is the
- * editor's board (ruling R17) - listing it would keep the show's `unzoned_review` (and the panel's venue row)
- * for ever. `tx_excluded_sections` = what the event's excluded map sections become (`hallExcludedSections` over
+ * `unzoned` = the category of every TIXSTOCK ticket left without a zone. A LiveTickets ticket is not listed: a
+ * classification writes the TixStock template only, and zoning LiveTickets is the editor's board and the learn's
+ * `live_tickets` kind (ruling R17) - listing it would keep the show's `unzoned_review` (and the panel's venue row)
+ * for ever. It leaves only when `dropped.live` names it, which the build's template read does. `tx_excluded_sections` = what the event's excluded map sections become (`hallExcludedSections` over
  * `sections` = the event's list now and the part of it that came from the hall - the confirm and the learn pass them;
  * the build passes none, so a new event gets exactly the hall's `dropped.sections`).
  */
@@ -856,6 +863,7 @@ export function applyClassification(
 ): { tickets: EventTicket[]; dropped: string[]; unzoned: string[]; tx_excluded_sections: string[] } {
   const listed = new Set(dropped.dropped);
   const kept = new Set(dropped.kept);
+  const liveListed = new Set(dropped.live ?? []);
   const zonesById = new Map(template.zones.map((zone) => [zone.id, zone]));
   const previousById = new Map((previous?.zones ?? []).map((zone) => [zone.id, zone]));
 
@@ -864,6 +872,10 @@ export function applyClassification(
   for (const ticket of tickets) {
     const key = ticketKey(ticket);
     if (isTixStock(ticket) && key && !kept.has(key) && (listed.has(key) || dropRule(key).drop)) {
+      if (!removed.has(key)) removed.set(key, ticket.category);
+      continue;
+    }
+    if (isLiveTickets(ticket) && key && liveListed.has(key)) {
       if (!removed.has(key)) removed.set(key, ticket.category);
       continue;
     }

@@ -64,3 +64,9 @@ says "0 shows". (7) `description_by_hand` no longer lands on an `already` nobody
 "שרטוט אחר". (11) The toast title has no Latin text.
 Left, known: (4) a stale editor tab saving old values over a carried text reads as a new edit, and the dialog offers it (whole-form saves through `updateEvent`
 are older than this round, and the dialog shows the text before anyone applies it); (12) a save in another tab while the dialog is open means "החל" carries the newer text.
+
+## Addendum 31.10: LiveTickets zones and deleted categories (Fulham - Newcastle, event 1228)
+
+The round left these under "not carried". Event 1228 showed the cost: the card read "edited" (10 tickets -> 8), the dialog said it found nothing, and the second press did
+nothing either. They are the kind `live_tickets` now: a zone set or moved reaches the same hall on the same map, a deleted category the same hall; the hall remembers the deleted
+categories for the next build (`dropped_categories.livetickets`). A category added and a zone cleared stay "not carried". See "LiveTickets zones and deleted categories" in CLAUDE.md.

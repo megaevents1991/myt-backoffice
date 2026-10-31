@@ -10,6 +10,8 @@
  *  - `descriptions`: a LiveTickets ticket description cleared or set, per category key. TixStock descriptions are NOT
  *    in it: they follow the hall template (`inStepWithTemplate` refills an empty one from the zone), so a code clear
  *    would not stick - they belong to the hall kind and the editor's zones board (review finding 4).
+ *  - `live_tickets`: a LiveTickets ticket given a zone or moved to another, and a LiveTickets category deleted - to the shows at the
+ *    same hall (a zone: on the same map too; a zone id means nothing on another drawing). What a person changed on a show stays theirs.
  *  - `event_description`: the event's own description - to a show at the same hall whose text still reads what the source's
  *    read before the edit. Same hall + same old text is what keeps a football run safe: Lazio's texts each name another opponent.
  *  - `place`: the location and lodging columns that changed - same hall, same start. A new flight city is not carried: it
@@ -33,7 +35,7 @@ export const DESCRIBED_SUPPLIERS = ["livetickets"] as const;
 export type DescribedSupplier = (typeof DESCRIBED_SUPPLIERS)[number];
 
 /** The kinds of change the learn dialog lists. */
-export type EditKind = "venue" | "descriptions" | "event_description" | "place";
+export type EditKind = "venue" | "descriptions" | "live_tickets" | "event_description" | "place";
 
 /** One category's description on the edited event against its baseline. `category` = the name as the ticket prints it. */
 export type DescriptionChange = { supplier: DescribedSupplier; key: string; category: string; from: string; to: string };
@@ -55,6 +57,16 @@ const categoryOf = (ticket: EventTicket): string => (ticket.supplierCategory || 
 const keyOf = (ticket: EventTicket): string => normalizeSupplierCategory(categoryOf(ticket));
 const descriptionOf = (ticket: EventTicket): string => (typeof ticket.description === "string" ? ticket.description.trim() : "");
 const slotOf = (supplier: DescribedSupplier, key: string): string => `${supplier}|${key}`;
+const zoneIdOf = (ticket: EventTicket): string => (typeof ticket.zoneId === "string" ? ticket.zoneId.trim() : "");
+/** The ticket with another ticket's zone and label - or none, when that one has none. */
+const withZoneOf = (ticket: EventTicket, from: EventTicket): EventTicket => {
+  const out: EventTicket = { ...ticket };
+  delete out.zoneId;
+  delete out.zoneLabel;
+  if (from.zoneId) out.zoneId = from.zoneId;
+  if (from.zoneLabel) out.zoneLabel = from.zoneLabel;
+  return out;
+};
 
 /** A stored ticket list (a payload's or a row's) as tickets; anything unreadable is none. */
 export function ticketsOf(raw: unknown): EventTicket[] {
@@ -78,8 +90,9 @@ function bySlot(tickets: EventTicket[]): Map<string, EventTicket> {
 
 /**
  * The kinds of change on an event against its item's baseline (the board's `editKinds`): `venue` = `isFixedByHand`,
- * `descriptions` = a ticket description differs, `event_description` / `place` = the event's own (a new flight city is
- * none - `notCarriedEdits` names it). Nothing to compare (no payload, no row) = none.
+ * `descriptions` = a ticket description differs, `live_tickets` = a LiveTickets zone set or moved, or a category deleted,
+ * `event_description` / `place` = the event's own (a new flight city is none - `notCarriedEdits` names it). Nothing to compare
+ * (no payload, no row) = none.
  */
 export function editKindsOf(
   payload: Record<string, unknown> | null,
@@ -89,6 +102,7 @@ export function editKindsOf(
   const kinds: EditKind[] = [];
   if (isFixedByHand({ payload }, row)) kinds.push("venue");
   if (descriptionChanges(ticketsOf(payload.tickets_and_rates), ticketsOf(row.tickets_and_rates)).length > 0) kinds.push("descriptions");
+  if (!isEmptyLiveTicketsPlan(liveTicketsPlan(ticketsOf(payload.tickets_and_rates), ticketsOf(row.tickets_and_rates)))) kinds.push("live_tickets");
   if (eventDescriptionChange(payload, row)) kinds.push("event_description");
   const place = placeChange(payload, row);
   if (place && !place.flightChanged) kinds.push("place");
@@ -177,23 +191,33 @@ export function applyDescriptionPlan(
 }
 
 /**
- * The tickets a code rewrite stores as a show's new baseline (the hall's `rewriteVenueItems` - review finding 1),
- * keeping every LiveTickets description a person typed: where the row's description differed from the old baseline
- * BEFORE the rewrite and the rewrite left it as it was, the baseline keeps its old text - so a later learn never takes
- * the hand-typed text for the show's own (and overwrites it), and the show's own edit stays visible.
+ * The tickets a code rewrite stores as a show's new baseline (the hall's `rewriteVenueItems` - review finding 1), keeping out what a
+ * person did to its LiveTickets tickets: where the row's description or zone differed from the old baseline BEFORE the rewrite and the
+ * rewrite left it as it was, the baseline keeps its old value, and a category they deleted stays in it. So a later learn never takes a
+ * person's work for the show's own and overwrites it, and the show's own edit stays visible.
  */
-export function keepHandDescriptions(written: EventTicket[], rowBefore: EventTicket[], oldBaseline: EventTicket[]): EventTicket[] {
+export function keepHandLiveTickets(written: EventTicket[], rowBefore: EventTicket[], oldBaseline: EventTicket[]): EventTicket[] {
   const before = bySlot(rowBefore);
   const old = bySlot(oldBaseline);
   const keep = new Map<string, string>();
+  const zones = new Map<string, EventTicket>();
   for (const [slot, ticket] of bySlot(written)) {
     const was = before.get(slot);
     const base = old.get(slot);
     if (!was || !base) continue;
     const typed = descriptionOf(was);
     if (typed !== descriptionOf(base) && descriptionOf(ticket) === typed) keep.set(slot, descriptionOf(base));
+    if (zoneIdOf(was) !== zoneIdOf(base) && zoneIdOf(ticket) === zoneIdOf(was)) zones.set(slot, base);
   }
-  return patchDescriptions(written, keep);
+  const isLive = (t: EventTicket): boolean => supplierOf(t) !== null && keyOf(t) !== "";
+  const slotIn = (t: EventTicket): string => slotOf(supplierOf(t) as DescribedSupplier, keyOf(t));
+  const deleted = oldBaseline.filter((t) => isLive(t) && !before.has(slotIn(t)));
+  if (keep.size === 0 && zones.size === 0 && deleted.length === 0) return written;
+  const kept = patchDescriptions(written, keep).map((t) => {
+    const base = isLive(t) ? zones.get(slotIn(t)) : undefined;
+    return base ? withZoneOf(t, base) : t;
+  });
+  return [...kept, ...deleted];
 }
 
 /** The tickets with the description of every slot in `bySlot` replaced (a sibling's payload following its event). */
@@ -210,26 +234,33 @@ export function patchDescriptions(tickets: EventTicket[], texts: Map<string, str
 
 /**
  * The source item's payload tickets after a learn (note 2a): the kinds it applied cleanly are accepted as the new
- * baseline, an unticked or cut-off kind stays pending. Both = the event's tickets as they are; venue alone = the
- * event's tickets with every LiveTickets ticket the payload knows as the payload had it (its description not
- * consumed); descriptions alone = the payload's tickets with every changed LiveTickets description taken from the
- * event; neither = the payload's.
+ * baseline, an unticked or cut-off kind stays pending. `venue` = the event's TixStock tickets, else the payload's; `descriptions`
+ * = each LiveTickets ticket's description from the event; `liveTickets` = their zones and the set of categories (one deleted leaves
+ * the baseline, one added here joins it). What is not accepted reads as the payload had it, so it still shows as an edit - a
+ * deleted category too. All three = the event's tickets as they are.
  */
-export function rebaseTickets(payload: EventTicket[], row: EventTicket[], kinds: { venue: boolean; descriptions: boolean }): EventTicket[] {
-  if (kinds.venue && kinds.descriptions) return row;
-  if (kinds.venue) {
-    const old = bySlot(payload);
-    return row.map((t) => {
-      const supplier = supplierOf(t);
-      if (isTixStock(t) || supplier === null) return t;
-      return old.get(slotOf(supplier, keyOf(t))) ?? t;
-    });
+export function rebaseTickets(payload: EventTicket[], row: EventTicket[], kinds: { venue: boolean; descriptions: boolean; liveTickets: boolean }): EventTicket[] {
+  if (kinds.venue && kinds.descriptions && kinds.liveTickets) return row;
+  if (!kinds.venue && !kinds.descriptions && !kinds.liveTickets) return payload;
+  const isLive = (t: EventTicket): boolean => supplierOf(t) !== null && keyOf(t) !== "";
+  const slot = (t: EventTicket): string => slotOf(supplierOf(t) as DescribedSupplier, keyOf(t));
+  const was = bySlot(payload);
+  const now = bySlot(row);
+  /** One LiveTickets ticket both sides know: the payload's, with what a clean kind accepted from the event. */
+  const merged = (old: EventTicket, is: EventTicket): EventTicket => {
+    const out = kinds.liveTickets ? withZoneOf(old, is) : { ...old };
+    if (kinds.descriptions) out.description = is.description;
+    return out;
+  };
+  const live: EventTicket[] = [];
+  for (const t of row.filter(isLive)) {
+    const old = was.get(slot(t));
+    if (old) live.push(merged(old, t));
+    else if (kinds.venue || kinds.liveTickets) live.push(t);
   }
-  if (kinds.descriptions) {
-    const texts = new Map(descriptionChanges(payload, row).map((c) => [slotOf(c.supplier, c.key), c.to]));
-    return patchDescriptions(payload, texts);
-  }
-  return payload;
+  // a deleted category the kind did not take stays in the baseline, so it still reads as an edit
+  if (!kinds.liveTickets) live.push(...payload.filter((t) => isLive(t) && !now.has(slot(t))));
+  return [...(kinds.venue ? row : payload).filter((t) => !isLive(t)), ...live];
 }
 
 /**
@@ -261,23 +292,25 @@ export const LEARN_NOTE_MIN = 3;
 export const LEARN_NOTE_MAX = 500;
 
 /**
- * `learnFromEvent`'s options from the client: one boolean per kind (absent = on), `note` trimmed - empty or absent =
+ * `learnFromEvent`'s options from the client: one boolean per kind (absent = on, but `liveTickets`, which deletes tickets: absent = off), `note` trimmed - empty or absent =
  * none, else LEARN_NOTE_MIN..LEARN_NOTE_MAX characters. null = not that shape (refused before any read).
  */
-export function cleanLearnOptions(raw: unknown): { venue: boolean; descriptions: boolean; eventDescription: boolean; place: boolean; note: string | null } | null {
-  if (raw === undefined || raw === null) return { venue: true, descriptions: true, eventDescription: true, place: true, note: null };
+export function cleanLearnOptions(raw: unknown): { venue: boolean; descriptions: boolean; liveTickets: boolean; eventDescription: boolean; place: boolean; note: string | null } | null {
+  if (raw === undefined || raw === null) return { venue: true, descriptions: true, liveTickets: false, eventDescription: true, place: true, note: null };
   if (typeof raw !== "object" || Array.isArray(raw)) return null;
   const o = raw as Record<string, unknown>;
   const flag = (v: unknown): boolean | null => (v === undefined ? true : typeof v === "boolean" ? v : null);
   const venue = flag(o.venue);
   const descriptions = flag(o.descriptions);
+  // It deletes tickets, so only the dialog that listed them turns it on: a tab opened before this kind existed sends nothing.
+  const liveTickets = o.liveTickets === undefined ? false : flag(o.liveTickets);
   const eventDescription = flag(o.eventDescription);
   const place = flag(o.place);
-  if (venue === null || descriptions === null || eventDescription === null || place === null) return null;
+  if (venue === null || descriptions === null || liveTickets === null || eventDescription === null || place === null) return null;
   if (o.note !== undefined && o.note !== null && typeof o.note !== "string") return null;
   const note = typeof o.note === "string" ? o.note.trim() : "";
   if (note !== "" && (note.length < LEARN_NOTE_MIN || note.length > LEARN_NOTE_MAX)) return null;
-  return { venue, descriptions, eventDescription, place, note: note === "" ? null : note };
+  return { venue, descriptions, liveTickets, eventDescription, place, note: note === "" ? null : note };
 }
 
 // ---- the second-edit round: the event's own fields, and a verdict per show ------------------------------------
@@ -349,9 +382,10 @@ export function placeChange(payload: Loose | null, row: Loose | null): PlaceChan
 /**
  * Why a kind does not reach a show (or reaches it only partly): `other_hall` = not at the source's hall; `typed_by_hand` = a
  * person wrote something else there (it stays theirs); `different` = the show started from another text or place, so the
- * source's new one would not fit it; `already` = it already reads that; `no_category` = the show sells no such ticket.
+ * source's new one would not fit it; `already` = it already reads that; `no_category` = the show sells no such ticket;
+ * `all_removed` = it would be left with no ticket at all.
  */
-export type SkipReason = "other_hall" | "typed_by_hand" | "different" | "already" | "no_category";
+export type SkipReason = "other_hall" | "typed_by_hand" | "different" | "already" | "no_category" | "all_removed";
 /** One kind on one show: `applies` + how many things it writes; a `reason` beside `applies` = only part of it reaches the show. */
 export type ShowVerdict = { applies: boolean; count: number; reason: SkipReason | null };
 
@@ -395,7 +429,155 @@ export function ticketVerdict(row: EventTicket[], baseline: EventTicket[], plan:
   return skip(setElsewhere ? "other_hall" : "already");
 }
 
-/** One other built show in the learn dialog: who it is, and a verdict for each kind that has a change. */
+/**
+ * What an edit asks of the other shows' LiveTickets tickets: `zones` = a category given a zone or moved to another, `removed` = a
+ * category deleted. A category added here is not in it - another fixture has its own price and supplier id - and neither is a zone
+ * cleared (`notCarriedEdits` names both).
+ */
+export type LiveTicketsPlan = {
+  zones: { key: string; category: string; zoneId: string; zoneLabel: string }[];
+  removed: { key: string; category: string }[];
+};
+
+export function liveTicketsPlan(baseline: EventTicket[], current: EventTicket[]): LiveTicketsPlan {
+  const was = bySlot(baseline);
+  const now = bySlot(current);
+  const plan: LiveTicketsPlan = { zones: [], removed: [] };
+  for (const [slot, ticket] of now) {
+    const old = was.get(slot);
+    const zoneId = zoneIdOf(ticket);
+    if (old && zoneId !== "" && zoneId !== zoneIdOf(old)) plan.zones.push({ key: keyOf(ticket), category: categoryOf(ticket), zoneId, zoneLabel: (ticket.zoneLabel ?? "").trim() });
+  }
+  for (const [slot, ticket] of was) {
+    if (!now.has(slot)) plan.removed.push({ key: keyOf(ticket), category: categoryOf(ticket) });
+  }
+  return plan;
+}
+
+export const isEmptyLiveTicketsPlan = (plan: LiveTicketsPlan): boolean => plan.zones.length === 0 && plan.removed.length === 0;
+
+/** A show as `liveTicketsReach` reads it: who it is, and the map its event draws. */
+type ReachShow = { show: ShowIdentity; row: Loose };
+
+/**
+ * How far a LiveTickets edit reaches another show: `hall` = `sameVenue` (a category's name means one stand in one hall - "Category 1"
+ * elsewhere is another stand), so a deletion holds; `map` = on the same drawing too (the supplier's, or the map on the two events), so a
+ * zone id means the same place. One hall can have two drawings: Craven Cottage has two, with different zone ids.
+ */
+export function liveTicketsReach(source: ReachShow, other: ReachShow): { hall: boolean; map: boolean } {
+  if (!sameVenue(source.show, other.show)) return { hall: false, map: false };
+  const drawing = source.show.suppliers.tixstock?.venue_map_url?.trim() ?? "";
+  const map = textOf(source.row.map_image_url);
+  return {
+    hall: true,
+    map: (drawing !== "" && drawing === (other.show.suppliers.tixstock?.venue_map_url?.trim() ?? "")) || (map !== "" && map === textOf(other.row.map_image_url)),
+  };
+}
+
+/**
+ * The plan on another show's tickets. `tickets` = what its event becomes, `baseline` = what its payload becomes (the deleted categories
+ * gone, the zones set), so the show does not read as edited by a person. A ticket is touched only while a person has not changed it there
+ * (zone and description still its baseline's) and never one its baseline does not know. `typed` = left alone for that; `adopted` = a person
+ * already brought it to the plan's state: nothing written, only the baseline follows. Prices stay this fixture's. `emptied` = the deletions
+ * would leave the show with no ticket at all, so nothing changes.
+ */
+export function applyLiveTicketsPlan(
+  row: EventTicket[],
+  baseline: EventTicket[],
+  plan: LiveTicketsPlan,
+  where: { hall: boolean; map: boolean },
+): { tickets: EventTicket[]; baseline: EventTicket[]; zoned: number; removed: number; adopted: number; typed: number; emptied: boolean } {
+  const nothing = { tickets: row, baseline, zoned: 0, removed: 0, adopted: 0, typed: 0, emptied: false };
+  if (!where.hall) return nothing;
+  const base = bySlot(baseline);
+  const present = bySlot(row);
+  const gone = new Set(plan.removed.map((r) => slotOf("livetickets", r.key)));
+  const zones = new Map(where.map ? plan.zones.map((z) => [slotOf("livetickets", z.key), z]) : []);
+  const leaves = new Set<string>();
+  const takes = new Map<string, LiveTicketsPlan["zones"][number]>();
+  let zoned = 0;
+  let removed = 0;
+  let adopted = 0;
+  let typed = 0;
+  const tickets = row.flatMap((t): EventTicket[] => {
+    const supplier = supplierOf(t);
+    const key = keyOf(t);
+    const slot = supplier && key !== "" ? slotOf(supplier, key) : null;
+    const old = slot === null ? undefined : base.get(slot);
+    if (slot === null || !old) return [t];
+    const zone = zoneIdOf(t);
+    if (gone.has(slot)) {
+      if (zone !== zoneIdOf(old) || descriptionOf(t) !== descriptionOf(old)) {
+        typed += 1;
+        return [t];
+      }
+      removed += 1;
+      leaves.add(slot);
+      return [];
+    }
+    const target = zones.get(slot);
+    if (!target) return [t];
+    if (zone === target.zoneId) {
+      if (zoneIdOf(old) !== target.zoneId) {
+        adopted += 1;
+        takes.set(slot, target);
+      }
+      return [t];
+    }
+    if (zone !== zoneIdOf(old)) {
+      typed += 1;
+      return [t];
+    }
+    zoned += 1;
+    takes.set(slot, target);
+    return [{ ...t, supplierCategory: categoryOf(t), zoneId: target.zoneId, zoneLabel: target.zoneLabel }];
+  });
+  // a category a person already deleted there: only the baseline follows
+  for (const slot of gone) {
+    if (base.has(slot) && !present.has(slot)) {
+      adopted += 1;
+      leaves.add(slot);
+    }
+  }
+  if (tickets.length === 0) return { ...nothing, emptied: true };
+  const followed = baseline.flatMap((t): EventTicket[] => {
+    const supplier = supplierOf(t);
+    const slot = supplier && keyOf(t) !== "" ? slotOf(supplier, keyOf(t)) : null;
+    if (slot === null) return [t];
+    if (leaves.has(slot)) return [];
+    const target = takes.get(slot);
+    return target ? [{ ...t, supplierCategory: categoryOf(t), zoneId: target.zoneId, zoneLabel: target.zoneLabel }] : [t];
+  });
+  return { tickets, baseline: followed, zoned, removed, adopted, typed, emptied: false };
+}
+
+/** The LiveTickets plan on one show: how many tickets it changes, and why the rest do not change. */
+export function liveTicketsVerdict(row: EventTicket[], baseline: EventTicket[], plan: LiveTicketsPlan, where: { hall: boolean; map: boolean }): ShowVerdict {
+  if (!where.hall) return skip("other_hall");
+  const applied = applyLiveTicketsPlan(row, baseline, plan, where);
+  if (applied.emptied) return skip("all_removed");
+  const base = bySlot(baseline);
+  // a zone this show would take on its own map: on another drawing the plan's zones do not reach it
+  const zonesOffMap = !where.map && plan.zones.some((z) => base.has(slotOf("livetickets", z.key)));
+  const count = applied.zoned + applied.removed;
+  if (count > 0) return { applies: true, count, reason: applied.typed > 0 ? "typed_by_hand" : zonesOffMap ? "other_hall" : null };
+  if (applied.typed > 0) return skip("typed_by_hand");
+  if (zonesOffMap) return skip("other_hall");
+  const holds = [...plan.zones, ...plan.removed].some((p) => base.has(slotOf("livetickets", p.key)));
+  return skip(holds || applied.adopted > 0 ? "already" : "no_category");
+}
+
+/**
+ * What the hall never sells of LiveTickets after a learn (`venue_maps.dropped_categories.livetickets`): the deleted categories join the
+ * list, one zoned in this edit leaves it. An event that merely still sells a category does not bring it back - another run may have built it
+ * before the hall learned; a person zoning it does (`liveDroppedWithoutMapped`, on the editor's board too).
+ */
+export function liveDroppedAfter(existing: readonly string[], plan: LiveTicketsPlan): string[] {
+  const zoned = new Set(plan.zones.map((z) => z.key));
+  return [...new Set([...existing, ...plan.removed.map((r) => r.key)])].filter((key) => !zoned.has(key));
+}
+
+/** One other built show in the learn dialog: who it is, a verdict for each kind that has a change, and what it keeps with no zone. */
 export type LearnShowRow = {
   itemId: string;
   eventId: number;
@@ -403,6 +585,8 @@ export type LearnShowRow = {
   city: string;
   venue: string | null;
   verdicts: Partial<Record<EditKind, ShowVerdict>>;
+  /** The LiveTickets tickets this show keeps with no zone after the plan (only when the plan gives zones and reaches it): Man City's "Away". */
+  unzoned: string[];
 };
 
 /** The dialog's per-show list. `venueSiblings` = the items the hall kind rewrites; null = no hall change to carry. */
@@ -414,19 +598,32 @@ export function learnShowRows(input: {
   others: (LearnShow & { itemId: string; eventId: number })[];
   venueSiblings: Set<string> | null;
   plan: DescriptionPlan;
+  livePlan: LiveTicketsPlan;
   description: EventDescriptionChange | null;
   place: PlaceChange | null;
 }): LearnShowRow[] {
-  const { source, plan, description, place, venueSiblings } = input;
+  const { source, plan, livePlan, description, place, venueSiblings } = input;
   return input.others.map((other) => {
     const verdicts: LearnShowRow["verdicts"] = {};
     if (venueSiblings) verdicts.venue = venueSiblings.has(other.itemId) ? APPLIES : skip("other_hall");
     if (!isEmptyPlan(plan)) {
       verdicts.descriptions = ticketVerdict(ticketsOf(other.row.tickets_and_rates), ticketsOf(other.payload?.tickets_and_rates), plan, sameVenue(source.show, other.show));
     }
+    let unzoned: string[] = [];
+    if (!isEmptyLiveTicketsPlan(livePlan)) {
+      const row = ticketsOf(other.row.tickets_and_rates);
+      const baseline = ticketsOf(other.payload?.tickets_and_rates);
+      const where = liveTicketsReach(source, other);
+      verdicts.live_tickets = liveTicketsVerdict(row, baseline, livePlan, where);
+      if (where.map && livePlan.zones.length > 0) {
+        unzoned = applyLiveTicketsPlan(row, baseline, livePlan, where)
+          .tickets.filter((t) => supplierOf(t) !== null && zoneIdOf(t) === "")
+          .map(categoryOf);
+      }
+    }
     if (description) verdicts.event_description = descriptionVerdict(description, source.show, other);
     if (place) verdicts.place = placeVerdict(place, source.show, other);
-    return { itemId: other.itemId, eventId: other.eventId, date: other.show.date, city: other.show.city, venue: other.show.venue, verdicts };
+    return { itemId: other.itemId, eventId: other.eventId, date: other.show.date, city: other.show.city, venue: other.show.venue, verdicts, unzoned };
   });
 }
 
@@ -509,9 +706,9 @@ export function notCarriedEdits(payload: Loose | null, row: Loose | null): NotCa
     return old ? [{ t, old }] : [];
   });
   if (pairs.some(({ t, old }) => t.category.trim() !== old.category.trim())) out.push("ticket_label");
-  if (pairs.some(({ t, old }) => supplierOf(t) !== null && (t.zoneId || "") !== (old.zoneId || ""))) out.push("livetickets_zone");
-  const liveKeys = (list: EventTicket[]): string[] => list.filter((t) => supplierOf(t) !== null).map(key).sort();
-  if (stable(liveKeys(ticketsOf(payload.tickets_and_rates))) !== stable(liveKeys(now))) out.push("livetickets_tickets");
+  // a zone set or moved and a category deleted are the `live_tickets` kind; a zone cleared and a ticket added go nowhere
+  if (pairs.some(({ t, old }) => supplierOf(t) !== null && zoneIdOf(t) === "" && zoneIdOf(old) !== "")) out.push("livetickets_zone");
+  if (now.some((t) => supplierOf(t) !== null && !was.has(key(t)))) out.push("livetickets_tickets");
   if (pairs.some(({ t, old }) => isTixStock(t) && descriptionOf(old) !== "" && descriptionOf(t) === "")) out.push("tixstock_description_cleared");
   return out;
 }

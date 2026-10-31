@@ -4,6 +4,7 @@ import { requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { normalizeSupplierCategory, SUPPLIERS } from "@/lib/suppliers";
+import { liveDroppedWithoutMapped, parseDroppedCategories } from "@/lib/uploader/classify";
 import {
   cleanZoneDescription,
   isValidZoneId,
@@ -353,7 +354,8 @@ export async function saveVenueZones(
 /**
  * Remember how this venue's supplier categories map to our zones - the
  * template the next event at the stadium is pre-filled from. Merges into what
- * is already known; a category mapped to "" is forgotten.
+ * is already known; a category mapped to "" is forgotten. A LiveTickets category a
+ * person zones here leaves the hall's deleted list, so the next build brings it again.
  */
 export async function rememberSupplierCategories(
   id: string,
@@ -367,7 +369,7 @@ export async function rememberSupplierCategories(
 
   const { data: row, error } = await db
     .from("venue_maps")
-    .select("zones,supplier_categories")
+    .select("zones,supplier_categories,dropped_categories")
     .eq("id", id)
     .single();
   if (error || !row) return fail("Venue map not found");
@@ -383,9 +385,16 @@ export async function rememberSupplierCategories(
   }
   all[supplier] = forSupplier;
 
+  const deleted = supplier === "livetickets" ? parseDroppedCategories(row.dropped_categories).live ?? [] : [];
+  const stillDeleted = liveDroppedWithoutMapped(deleted, forSupplier);
+
   const { error: updateError } = await db
     .from("venue_maps")
-    .update({ supplier_categories: all, updated_at: new Date().toISOString() })
+    .update({
+      supplier_categories: all,
+      ...(stillDeleted.length < deleted.length ? { dropped_categories: { ...(row.dropped_categories as Record<string, unknown>), livetickets: stillDeleted } } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id);
   if (updateError) {
     console.error(

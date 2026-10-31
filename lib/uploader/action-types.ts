@@ -5,7 +5,7 @@
  */
 import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
-import type { DescriptionPlan, EditKind, LearnShowRow, NotCarried, PlaceField } from "@/lib/uploader/edit-changes";
+import type { DescriptionPlan, EditKind, LearnShowRow, LiveTicketsPlan, NotCarried, PlaceField } from "@/lib/uploader/edit-changes";
 import type { LocationInput } from "@/lib/uploader/location";
 import type { PageTaskRef } from "@/lib/uploader/run-panel";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
@@ -93,7 +93,7 @@ export type RunBoard = {
   subjectRowId: number | null;
   /**
    * item id -> the kinds of change a person made in the editor since the item's baseline (Alon round 3, note 2b):
-   * `venue` (= `fixedByHand`), `descriptions` (a ticket description cleared or set), `event_description`, `place`. The
+   * `venue` (= `fixedByHand`), `descriptions` (a ticket description cleared or set), `live_tickets` (a LiveTickets zone set or moved, a category deleted), `event_description`, `place`. The
    * card's learn step 1 reads "✓" when any is there. Absent / empty = nothing to carry (the button still opens the dialog).
    */
   editKinds: Record<string, EditKind[]>;
@@ -173,6 +173,8 @@ export type LearnPreview =
         | { ok: false; kind: string; message?: string }
         | null;
       descriptions: { plan: DescriptionPlan; events: number; tickets: number } | null;
+      /** `remembers` = the show has a hall template, so a later run starts from this too. */
+      liveTickets: { plan: LiveTicketsPlan; events: number; tickets: number; remembers: boolean } | null;
       eventDescription: { from: string; to: string; events: number } | null;
       place: { fields: PlaceField[]; from: string | null; to: string | null; events: number } | null;
       shows: LearnShowRow[];
@@ -187,14 +189,16 @@ export type LearnPrompt = { runId: string; itemId: string; others: number; kinds
 /**
  * `learnFromEvent` (Alon round 3): `venue` = the hall part's answer (`classifyVenue`'s shape; null = not applied),
  * `descriptions` = what the descriptions pass wrote (`cut` = shows the time budget left - a second "החל" finishes them;
- * `failed` = writes that did not land), `fields` = what the event's own kinds wrote (same counts), `note` = the note for
- * the AI (null = none sent).
+ * `failed` = writes that did not land), `liveTickets` = what the LiveTickets pass wrote (`remembered` = what the hall template
+ * took: "none" = the show has no template), `fields` = what the event's own kinds wrote (same counts), `note` = the note for the AI
+ * (null = none sent).
  */
 export type LearnResult =
   | {
       ok: true;
       venue: ClassifyResult | null;
       descriptions: { events: number; tickets: number; cut: number; failed: number } | null;
+      liveTickets: { events: number; zoned: number; removed: number; cut: number; failed: number; remembered: "saved" | "none" | "failed" } | null;
       fields: { events: number; cut: number; failed: number } | null;
       note: "saved" | "failed" | null;
     }

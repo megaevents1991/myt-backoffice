@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { learnFromEvent, learnPreview } from "@/lib/actions/uploader-actions";
 import type { LearnPreview } from "@/lib/uploader/action-types";
-import { LEARN_NOTE_MAX, LEARN_NOTE_MIN, type DescriptionPlan, type EditKind, type LearnShowRow, type ShowVerdict } from "@/lib/uploader/edit-changes";
+import { LEARN_NOTE_MAX, LEARN_NOTE_MIN, type DescriptionPlan, type EditKind, type LearnShowRow, type LiveTicketsPlan, type ShowVerdict } from "@/lib/uploader/edit-changes";
 import { actionErrorText } from "../copy";
 import {
   BTN_CANCEL,
@@ -31,6 +31,8 @@ import {
   LEARN_FIELDS_PARTIAL,
   LEARN_KIND_DESCRIPTIONS,
   LEARN_KIND_DESCRIPTIONS_HINT,
+  LEARN_KIND_LIVE_TICKETS,
+  LEARN_KIND_LIVE_TICKETS_HINT,
   LEARN_KIND_EVENT_DESCRIPTION,
   LEARN_KIND_EVENT_DESCRIPTION_HINT,
   LEARN_KIND_PLACE,
@@ -38,6 +40,15 @@ import {
   LEARN_KIND_SHORT,
   LEARN_KIND_VENUE,
   LEARN_KIND_VENUE_HINT,
+  LEARN_LIVE_COUNTS,
+  LEARN_LIVE_DONE,
+  LEARN_LIVE_NOT_REMEMBERED,
+  LEARN_LIVE_PARTIAL,
+  LEARN_LIVE_REACH,
+  LEARN_LIVE_REMEMBERED,
+  LEARN_LIVE_REMEMBERS,
+  LEARN_LIVE_REMOVED,
+  LEARN_LIVE_ZONE,
   LEARN_MORE,
   LEARN_NOT_CARRIED,
   LEARN_NOT_CARRIED_TITLE,
@@ -58,6 +69,7 @@ import {
   LEARN_SKIP_TEXT,
   LEARN_TEMPLATE_HINT,
   LEARN_TITLE,
+  LEARN_UNZONED,
   LEARN_VENUE_PART_FAILED,
   LEARN_VENUE_UNAVAILABLE,
   LEARN_ZONES,
@@ -74,6 +86,8 @@ import { rtl } from "./use-run-board";
 //    הופעות" - the venue template learns it and the hall's other shows are rewritten;
 //  - the LiveTickets TICKET DESCRIPTIONS cleared or set ("כל התיאורים של LiveTickets נמחקו") - carried to the run's other
 //    shows (TixStock descriptions follow the hall template - the first kind);
+//  - the LiveTickets ZONES and DELETED CATEGORIES - carried to the shows at the same hall (a zone: on the same map too), and the
+//    hall keeps them for the next run;
 //  - the EVENT'S DESCRIPTION and its PLACE - carried to the shows at the same hall that started from the same text / place.
 // Under them every other show with what it gets and why not (Alon: "לחלק החיל ולחלק לא"), then what changed here that nothing
 // carries. Plus an optional note for the AI (a taught rule - it changes no event). "החל" (`learnFromEvent`) applies the ticked
@@ -111,13 +125,29 @@ function planLines(plan: DescriptionPlan): ReactNode[] {
   ];
 }
 
-const KIND_ORDER: EditKind[] = ["venue", "descriptions", "event_description", "place"];
+/** The LiveTickets plan as lines: each category given a zone, then each one deleted. */
+function livePlanLines(plan: LiveTicketsPlan): ReactNode[] {
+  return [
+    ...plan.zones.map((z) => (
+      <span key={`zone-${z.key}`}>
+        <bdi dir="ltr">{z.category}</bdi>: {LEARN_LIVE_ZONE(z.zoneLabel || z.zoneId)}
+      </span>
+    )),
+    ...plan.removed.map((r) => (
+      <span key={`removed-${r.key}`}>
+        <bdi dir="ltr">{r.category}</bdi>: {LEARN_LIVE_REMOVED}
+      </span>
+    )),
+  ];
+}
+
+const KIND_ORDER: EditKind[] = ["venue", "descriptions", "live_tickets", "event_description", "place"];
 
 /** One kind on one show: "✓ כרטיסים (2)", "✓ כרטיסים (1) · נכתב שם ידנית - נשאר", "— תיאור: אולם אחר". */
 function verdictText(kind: EditKind, verdict: ShowVerdict): string {
   const name = LEARN_KIND_SHORT[kind];
   if (!verdict.applies) return `— ${name}: ${verdict.reason ? LEARN_SKIP_TEXT(kind, verdict.reason) : ""}`;
-  const count = kind === "descriptions" ? ` (${verdict.count})` : "";
+  const count = kind === "descriptions" || kind === "live_tickets" ? ` (${verdict.count})` : "";
   return `✓ ${name}${count}${verdict.reason ? ` · ${LEARN_SKIP_TEXT(kind, verdict.reason)}` : ""}`;
 }
 
@@ -147,6 +177,11 @@ function ShowList({ shows, active }: { shows: LearnShowRow[]; active: Set<EditKi
                 );
               })}
             </ul>
+            {active.has("live_tickets") && show.verdicts.live_tickets?.applies === true && show.unzoned.length > 0 && (
+              <p className="text-warning">
+                {LEARN_UNZONED} <bdi dir="ltr">{show.unzoned.join(", ")}</bdi>
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -172,6 +207,7 @@ export function LearnConfirm({
   const [saving, setSaving] = useState(false);
   const [venueOn, setVenueOn] = useState(true);
   const [descriptionsOn, setDescriptionsOn] = useState(true);
+  const [liveTicketsOn, setLiveTicketsOn] = useState(true);
   const [eventDescriptionOn, setEventDescriptionOn] = useState(true);
   const [placeOn, setPlaceOn] = useState(true);
   const [note, setNote] = useState("");
@@ -191,6 +227,7 @@ export function LearnConfirm({
       setPhase({ kind: "loading" });
       setVenueOn(true);
       setDescriptionsOn(true);
+      setLiveTicketsOn(true);
       setEventDescriptionOn(true);
       setPlaceOn(true);
       setNote("");
@@ -223,24 +260,29 @@ export function LearnConfirm({
   const descriptions = data?.descriptions ?? null;
   const applyVenue = venueOn && venue?.ok === true;
   const applyDescriptions = descriptionsOn && descriptions !== null;
+  const liveTickets = data?.liveTickets ?? null;
   const eventDescription = data?.eventDescription ?? null;
   const place = data?.place ?? null;
   // A kind no show would take stays unticked and pending: applying it would read as if it went somewhere. Its reasons still show.
   const someShowTakes = (kind: EditKind): boolean => (data?.shows ?? []).some((show) => show.verdicts[kind]?.applies === true || show.verdicts[kind]?.reason === "already");
   const eventDescriptionFits = someShowTakes("event_description");
   const placeFits = someShowTakes("place");
+  // no other show holds it, but the hall keeps a deleted category for the next run: that still goes somewhere
+  const liveTicketsFits = someShowTakes("live_tickets") || (liveTickets?.remembers === true && liveTickets.plan.removed.length > 0);
+  const applyLiveTickets = liveTicketsOn && liveTickets !== null && liveTicketsFits;
   const applyEventDescription = eventDescriptionOn && eventDescription !== null && eventDescriptionFits;
   const applyPlace = placeOn && place !== null && placeFits;
   const shown = new Set<EditKind>([
     ...(applyVenue ? (["venue"] as const) : []),
     ...(applyDescriptions ? (["descriptions"] as const) : []),
+    ...(liveTicketsOn && liveTickets !== null ? (["live_tickets"] as const) : []),
     ...(eventDescriptionOn && eventDescription !== null ? (["event_description"] as const) : []),
     ...(placeOn && place !== null ? (["place"] as const) : []),
   ]);
   const anotherWording = eventDescription !== null && (data?.shows ?? []).some((show) => show.verdicts.event_description?.reason === "different");
   const trimmed = note.trim();
   const noteOk = trimmed === "" || (trimmed.length >= LEARN_NOTE_MIN && trimmed.length <= LEARN_NOTE_MAX);
-  const canApply = data !== null && noteOk && (applyVenue || applyDescriptions || applyEventDescription || applyPlace || trimmed !== "");
+  const canApply = data !== null && noteOk && (applyVenue || applyDescriptions || applyLiveTickets || applyEventDescription || applyPlace || trimmed !== "");
 
   async function apply() {
     if (!canApply || target === null || saving) return;
@@ -249,6 +291,7 @@ export function LearnConfirm({
       const r = await learnFromEvent(target, {
         venue: applyVenue,
         descriptions: applyDescriptions,
+        liveTickets: applyLiveTickets,
         eventDescription: applyEventDescription,
         place: applyPlace,
         note: trimmed === "" ? null : trimmed,
@@ -286,6 +329,16 @@ export function LearnConfirm({
         if (r.descriptions.cut > 0) lines.push(LEARN_DESC_PARTIAL(r.descriptions.cut));
         if (r.descriptions.failed > 0) lines.push(LEARN_DESC_FAILED(r.descriptions.failed));
       }
+      if (r.liveTickets) {
+        if (r.liveTickets.events > 0) {
+          titles.push(LEARN_LIVE_DONE(r.liveTickets.events));
+          lines.push(LEARN_LIVE_COUNTS(r.liveTickets.zoned, r.liveTickets.removed));
+        }
+        if (r.liveTickets.remembered === "saved") lines.push(LEARN_LIVE_REMEMBERED);
+        if (r.liveTickets.remembered === "failed") lines.push(LEARN_LIVE_NOT_REMEMBERED);
+        if (r.liveTickets.cut > 0) lines.push(LEARN_LIVE_PARTIAL(r.liveTickets.cut));
+        if (r.liveTickets.failed > 0) lines.push(LEARN_DESC_FAILED(r.liveTickets.failed));
+      }
       if (r.fields) {
         if (r.fields.events > 0) titles.push(LEARN_FIELDS_DONE(r.fields.events, applyEventDescription, applyPlace));
         if (r.fields.cut > 0) lines.push(LEARN_FIELDS_PARTIAL(r.fields.cut));
@@ -293,11 +346,12 @@ export function LearnConfirm({
       }
       if (r.note === "saved") lines.push(LEARN_NOTE_SAVED);
       if (r.note === "failed") lines.push(LEARN_NOTE_FAILED);
-      const anyFailed = (r.fields?.failed ?? 0) > 0 || (r.descriptions?.failed ?? 0) > 0;
+      const liveTicketsFailed = (r.liveTickets?.failed ?? 0) > 0 || r.liveTickets?.remembered === "failed";
+      const anyFailed = (r.fields?.failed ?? 0) > 0 || (r.descriptions?.failed ?? 0) > 0 || liveTicketsFailed;
       toast({
         title: titles.length > 0 ? titles.join(" · ") : anyFailed ? LEARN_FAILED : LEARN_SAVED_NOTHING,
         description: lines.length > 0 ? rtl(lines.map((line) => <p key={line}>{line}</p>)) : undefined,
-        ...(r.note === "failed" || (r.descriptions?.failed ?? 0) > 0 || (r.fields?.failed ?? 0) > 0 || (r.venue !== null && !r.venue.ok) ? { variant: "destructive" as const } : {}),
+        ...(r.note === "failed" || anyFailed || (r.venue !== null && !r.venue.ok) ? { variant: "destructive" as const } : {}),
       });
       await onDone();
     } catch {
@@ -308,6 +362,7 @@ export function LearnConfirm({
   }
 
   const lines = descriptions ? planLines(descriptions.plan) : [];
+  const liveLines = liveTickets ? livePlanLines(liveTickets.plan) : [];
 
   return (
     <Dialog
@@ -329,7 +384,7 @@ export function LearnConfirm({
           </p>
         ) : (
           <div className="space-y-3">
-            {venue === null && descriptions === null && eventDescription === null && place === null && <p className="rounded-md border bg-muted/40 px-3 py-2.5 text-[13px]">{LEARN_NOTHING}</p>}
+            {venue === null && descriptions === null && liveTickets === null && eventDescription === null && place === null && <p className="rounded-md border bg-muted/40 px-3 py-2.5 text-[13px]">{LEARN_NOTHING}</p>}
 
             {venue !== null && (
               <div className="flex items-start gap-2.5 rounded-md border px-3 py-2.5">
@@ -398,6 +453,35 @@ export function LearnConfirm({
                   </ul>
                   <p className="font-medium">{LEARN_DESC_REACH(descriptions.tickets, descriptions.events)}</p>
                   <p className="text-xs text-muted-foreground">{LEARN_KIND_DESCRIPTIONS_HINT}</p>
+                </div>
+              </div>
+            )}
+
+            {liveTickets !== null && (
+              <div className="flex items-start gap-2.5 rounded-md border px-3 py-2.5">
+                <Checkbox
+                  id="learn-live-tickets"
+                  checked={applyLiveTickets}
+                  disabled={saving || !liveTicketsFits}
+                  onCheckedChange={(v) => setLiveTicketsOn(v === true)}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1 space-y-1 text-[13px] leading-relaxed">
+                  <Label htmlFor="learn-live-tickets" className="flex items-center gap-1.5 font-semibold">
+                    <Ticket aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {LEARN_KIND_LIVE_TICKETS}
+                  </Label>
+                  <ul className="space-y-0.5">
+                    {liveLines.slice(0, PLAN_LINES_MAX).map((line, i) => (
+                      <li key={i} className="break-words">
+                        {line}
+                      </li>
+                    ))}
+                    {liveLines.length > PLAN_LINES_MAX && <li className="text-muted-foreground">{LEARN_MORE(liveLines.length - PLAN_LINES_MAX)}</li>}
+                  </ul>
+                  <p className="font-medium">{LEARN_LIVE_REACH(liveTickets.tickets, liveTickets.events)}</p>
+                  {liveTickets.remembers && liveTickets.plan.removed.length > 0 && <p className="text-xs">{LEARN_LIVE_REMEMBERS}</p>}
+                  <p className="text-xs text-muted-foreground">{LEARN_KIND_LIVE_TICKETS_HINT}</p>
                 </div>
               </div>
             )}

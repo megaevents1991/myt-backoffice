@@ -109,6 +109,7 @@ import {
   isAppliedState,
   isFixedByHand,
   parseClassification,
+  liveDroppedWithoutMapped,
   parseDroppedCategories,
   parseExcludedSectionsInput,
   parseVenueHeInput,
@@ -139,9 +140,15 @@ import {
   eventDescriptionChange,
   eventFieldsFor,
   isEmptyPlan,
-  keepHandDescriptions,
+  keepHandLiveTickets,
   LEARN_NOTE_MAX,
+  applyLiveTicketsPlan,
+  isEmptyLiveTicketsPlan,
   learnShowRows,
+  liveDroppedAfter,
+  liveTicketsPlan,
+  liveTicketsReach,
+  liveTicketsVerdict,
   notCarriedEdits,
   patchDescriptions,
   placeChange,
@@ -7051,22 +7058,22 @@ async function supplierSvgFetchChecks(): Promise<void> {
     "applyDescriptionPlan: a description already cleared by hand is adopted (no write, the baseline follows); one typed to other text stays the person's",
   );
 
-  // -- keepHandDescriptions: a hall rewrite keeps a hand-typed LiveTickets description out of the baseline (finding 1) --
+  // -- keepHandLiveTickets: a hall rewrite keeps a hand-typed LiveTickets description out of the baseline (finding 1) --
   const oldBase = [tix("Cat 1"), lt("Curva Sud", "Home end."), lt("Distinti", "Corner.")];
   const rowBefore = [tix("Cat 1"), lt("Curva Sud", "יציע הבית"), lt("Distinti", "Corner.")];
   const written = [tix("Cat 1", { zoneId: "z-1" }), lt("Curva Sud", "יציע הבית"), lt("Distinti", "Corner.")];
-  const kept = keepHandDescriptions(written, rowBefore, oldBase);
-  same(kept.map((t) => t.description), ["", "Home end.", "Corner."], "keepHandDescriptions: the hand-typed text is not taken into the baseline");
-  same(kept[0].zoneId, "z-1", "keepHandDescriptions: everything the rewrite wrote stays");
+  const kept = keepHandLiveTickets(written, rowBefore, oldBase);
+  same(kept.map((t) => t.description), ["", "Home end.", "Corner."], "keepHandLiveTickets: the hand-typed text is not taken into the baseline");
+  same(kept[0].zoneId, "z-1", "keepHandLiveTickets: everything the rewrite wrote stays");
   same(
     applyDescriptionPlan(rowBefore, kept, allPlan, false).tickets.map((t) => t.description),
     ["", "יציע הבית", ""],
-    "keepHandDescriptions: so the next description pass never overwrites the hand-typed text",
+    "keepHandLiveTickets: so the next description pass never overwrites the hand-typed text",
   );
   same(
     editKindsOf({ tickets_and_rates: kept }, { tickets_and_rates: written }),
     ["descriptions"],
-    "keepHandDescriptions: and the show's own edit stays visible on its card",
+    "keepHandLiveTickets: and the show's own edit stays visible on its card",
   );
 
   // -- withBuiltCount: a learn's rebase keeps the approve-time lesson of a deleted category (finding 2) --------
@@ -7086,15 +7093,15 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(editKindsOf({ tickets_and_rates: payloadTickets }, { tickets_and_rates: edited }), ["venue", "descriptions"], "editKindsOf: a zone and a cleared description = both kinds");
   same(editKindsOf({ tickets_and_rates: payloadTickets }, { tickets_and_rates: payloadTickets }), [], "editKindsOf: untouched = none");
   same(editKindsOf(null, { tickets_and_rates: edited }), [], "editKindsOf: no payload = nothing to compare");
-  const both = rebaseTickets(payloadTickets, edited, { venue: true, descriptions: true });
+  const both = rebaseTickets(payloadTickets, edited, { venue: true, descriptions: true, liveTickets: true });
   same(editKindsOf({ tickets_and_rates: both }, { tickets_and_rates: edited }), [], "rebaseTickets (both): the item stops counting right after the learn");
   const secondEdit = [tix("Cat 1", { zoneId: "z-2" }), tix("Cat 2"), lt("Tribuna Monte Mario", "")];
   same(editKindsOf({ tickets_and_rates: both }, { tickets_and_rates: secondEdit }), ["venue"], "rebaseTickets: a SECOND edit of the same event is seen again (Alon: 'didn't notice I edited again')");
-  const venueOnly = rebaseTickets(payloadTickets, edited, { venue: true, descriptions: false });
+  const venueOnly = rebaseTickets(payloadTickets, edited, { venue: true, descriptions: false, liveTickets: true });
   same(editKindsOf({ tickets_and_rates: venueOnly }, { tickets_and_rates: edited }), ["descriptions"], "rebaseTickets (venue only): the unticked descriptions stay pending");
-  const descOnly = rebaseTickets(payloadTickets, edited, { venue: false, descriptions: true });
+  const descOnly = rebaseTickets(payloadTickets, edited, { venue: false, descriptions: true, liveTickets: true });
   same(editKindsOf({ tickets_and_rates: descOnly }, { tickets_and_rates: edited }), ["venue"], "rebaseTickets (descriptions only): the unticked hall stays pending");
-  same(rebaseTickets(payloadTickets, edited, { venue: false, descriptions: false }), payloadTickets, "rebaseTickets: nothing applied = the payload as it was");
+  same(rebaseTickets(payloadTickets, edited, { venue: false, descriptions: false, liveTickets: false }), payloadTickets, "rebaseTickets: nothing applied = the payload as it was");
 
   // -- sameVenue ------------------------------------------------------------------------------------------
   const show = (venue: string | null, city: string, map: string | null = null): ShowIdentity =>
@@ -7107,9 +7114,9 @@ async function supplierSvgFetchChecks(): Promise<void> {
   check(!sameVenue(show(null, "Rome"), show(null, "Rome")), "sameVenue: no drawing and no venue name = no known venue");
 
   // -- cleanLearnOptions ----------------------------------------------------------------------------------
-  same(cleanLearnOptions(undefined), { venue: true, descriptions: true, eventDescription: true, place: true, note: null }, "cleanLearnOptions: nothing sent = every kind, no note");
-  same(cleanLearnOptions({ venue: false, note: "  בלאציו בלי תיאורים באנגלית  " }), { venue: false, descriptions: true, eventDescription: true, place: true, note: "בלאציו בלי תיאורים באנגלית" }, "cleanLearnOptions: trimmed note, absent flag = on");
-  same(cleanLearnOptions({ note: "   " }), { venue: true, descriptions: true, eventDescription: true, place: true, note: null }, "cleanLearnOptions: a blank note is none");
+  same(cleanLearnOptions(undefined), { venue: true, descriptions: true, liveTickets: false, eventDescription: true, place: true, note: null }, "cleanLearnOptions: nothing sent = every kind, no note");
+  same(cleanLearnOptions({ venue: false, note: "  בלאציו בלי תיאורים באנגלית  " }), { venue: false, descriptions: true, liveTickets: false, eventDescription: true, place: true, note: "בלאציו בלי תיאורים באנגלית" }, "cleanLearnOptions: trimmed note, absent flag = on");
+  same(cleanLearnOptions({ note: "   " }), { venue: true, descriptions: true, liveTickets: false, eventDescription: true, place: true, note: null }, "cleanLearnOptions: a blank note is none");
   for (const bad of [[], "x", { venue: "yes" }, { note: 5 }, { note: "ab" }, { note: "x".repeat(LEARN_NOTE_MAX + 1) }]) {
     same(cleanLearnOptions(bad), null, `cleanLearnOptions: refused (${JSON.stringify(bad).slice(0, 30)})`);
   }
@@ -7233,6 +7240,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
     ],
     venueSiblings: null,
     plan: { clearAll: [], clear: [], set: [] },
+    livePlan: { zones: [], removed: [] },
     description: change,
     place: null,
   });
@@ -7240,7 +7248,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(rows[0].date, "2027-09-11", "learnShowRows: a row names its show's date");
   same(rows[0].city, "Stevenage", "learnShowRows: and its city");
   same(Object.keys(rows[0].verdicts), ["event_description"], "learnShowRows: only the kinds that have a change");
-  const halled = learnShowRows({ source: { show: kneb, payload: {}, row: {} }, others: [{ itemId: "a", eventId: 1, show: kneb, payload: {}, row: {} }, { itemId: "b", eventId: 2, show: wembley, payload: {}, row: {} }], venueSiblings: new Set(["a"]), plan: { clearAll: [], clear: [], set: [] }, description: null, place: null });
+  const halled = learnShowRows({ source: { show: kneb, payload: {}, row: {} }, others: [{ itemId: "a", eventId: 1, show: kneb, payload: {}, row: {} }, { itemId: "b", eventId: 2, show: wembley, payload: {}, row: {} }], venueSiblings: new Set(["a"]), plan: { clearAll: [], clear: [], set: [] }, livePlan: { zones: [], removed: [] }, description: null, place: null });
   same(halled.map((r) => r.verdicts.venue), [{ applies: true, count: 1, reason: null }, { applies: false, count: 0, reason: "other_hall" }], "learnShowRows: the hall kind reaches the hall's shows");
 
   // -- eventFieldsFor: what one show gets written ------------------------------------------------------------
@@ -7268,7 +7276,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(notCarriedEdits({ date: "2027-01-01", base_hotel_price: 100, location: london, description: OLD, tickets_and_rates: [] }, { date: "2027-01-02", base_hotel_price: 120, location: renamed, description: NEW, tickets_and_rates: [] }), ["date", "base_hotel_price"], "notCarriedEdits: what the kinds carry is not listed");
   same(notCarriedEdits({ location: london, tickets_and_rates: [] }, { location: { ...london, city_iata: "MAN" }, tickets_and_rates: [] }), ["flight_city"], "notCarriedEdits: a new flight city");
   same(notCarriedEdits({ description: OLD, tickets_and_rates: [] }, { description: "", tickets_and_rates: [] }), ["description_cleared"], "notCarriedEdits: a cleared description");
-  same(notCarriedEdits({ tickets_and_rates: [lt("A", "", { zoneId: "z1" })] }, { tickets_and_rates: [lt("A", "", { zoneId: "z2" })] }), ["livetickets_zone"], "notCarriedEdits: a LiveTickets zone");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A", "", { zoneId: "z1" })] }, { tickets_and_rates: [lt("A", "", { zoneId: "z2" })] }), [], "notCarriedEdits: a LiveTickets zone moved is carried now");
   same(notCarriedEdits({ tickets_and_rates: [{ ...lt("A"), category: "A", supplierCategory: "A" }] }, { tickets_and_rates: [{ ...lt("A"), category: "שם אחר", supplierCategory: "A" }] }), ["ticket_label"], "notCarriedEdits: a ticket renamed");
   const tx = (description: string): EventTicket => ({ id: "t", category: "Cat 1", price: 1, description, colorOnTheMap: "x", supplier: "tixstock" });
   same(notCarriedEdits({ tickets_and_rates: [tx("old")] }, { tickets_and_rates: [tx("")] }), ["tixstock_description_cleared"], "notCarriedEdits: a TixStock description cleared");
@@ -7276,7 +7284,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(notCarriedEdits(null, { date: "x" }), [], "notCarriedEdits: no payload");
 
   // -- the options --------------------------------------------------------------------------------------------
-  same(cleanLearnOptions({ eventDescription: false }), { venue: true, descriptions: true, eventDescription: false, place: true, note: null }, "cleanLearnOptions: the new kinds, on unless sent off");
+  same(cleanLearnOptions({ eventDescription: false }), { venue: true, descriptions: true, liveTickets: false, eventDescription: false, place: true, note: null }, "cleanLearnOptions: the new kinds, on unless sent off");
   same(cleanLearnOptions({ place: "no" }), null, "cleanLearnOptions: a kind that is not a boolean is refused");
 
   // -- the review's findings -----------------------------------------------------------------------------------
@@ -7284,8 +7292,8 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(placeChange({ location: { ...london, city_iata: "" } }, { location: { ...london, name: "מדריד", city_iata: "MAD" } })?.flightChanged, true, "placeChange: a ticket-only show given a flight city is a change");
   same(editKindsOf({ tickets_and_rates: [], location: london }, { tickets_and_rates: [], location: { ...london, city_iata: "" } }), [], "editKindsOf: neither is a kind");
   same(notCarriedEdits({ location: london, tickets_and_rates: [] }, { location: { ...london, city_iata: "" }, tickets_and_rates: [] }), ["flight_city"], "notCarriedEdits: the dialog names it");
-  same(notCarriedEdits({ tickets_and_rates: [lt("A"), lt("B")] }, { tickets_and_rates: [lt("A")] }), ["livetickets_tickets"], "notCarriedEdits: a LiveTickets ticket removed goes nowhere and says so");
-  same(notCarriedEdits({ tickets_and_rates: [lt("A")] }, { tickets_and_rates: [lt("A"), lt("B")] }), ["livetickets_tickets"], "notCarriedEdits: and one added");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A"), lt("B")] }, { tickets_and_rates: [lt("A")] }), [], "notCarriedEdits: a LiveTickets ticket removed is carried now");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A")] }, { tickets_and_rates: [lt("A"), lt("B")] }), ["livetickets_tickets"], "notCarriedEdits: one added goes nowhere and says so");
   // a learn does not erase the edit: the approve still records what a person changed from the build
   same(editDiff(rebased, edited).map((d) => d.field), ["description", "location"], "rebaseEventFields: the approve still sees the edit (built_fields, like built_tickets_count)");
   const twice: Record<string, unknown> = { ...rebased, description: `${NEW} שוב`, ...rebaseEventFields(rebased, { ...edited, description: `${NEW} שוב` }, { description: true, place: false }) };
@@ -7294,7 +7302,7 @@ async function supplierSvgFetchChecks(): Promise<void> {
   // an `already` on text no person typed: nothing follows, the show keeps following the template
   same(eventFieldsFor(change, null, { applies: false, count: 0, reason: "already" }, null, { description: NEW }).payload, {}, "eventFieldsFor: the baseline already reads it - no flag on text nobody typed");
   // the toast counts who gets something, not every show of the run
-  same(showsReached([{ itemId: "a", eventId: 1, date: "", city: "", venue: null, verdicts: { event_description: { applies: false, count: 0, reason: "different" } } }, { itemId: "b", eventId: 2, date: "", city: "", venue: null, verdicts: { place: { applies: true, count: 1, reason: null } } }]), 1, "showsReached: only a show a kind applies to");
+  same(showsReached([{ itemId: "a", eventId: 1, date: "", city: "", venue: null, verdicts: { event_description: { applies: false, count: 0, reason: "different" } }, unzoned: [] }, { itemId: "b", eventId: 2, date: "", city: "", venue: null, verdicts: { place: { applies: true, count: 1, reason: null } }, unzoned: [] }]), 1, "showsReached: only a show a kind applies to");
   // the toast asks only when THIS save touched something a learn carries
   const saved = { description: OLD, location: london, tickets_and_rates: [], base_hotel_price: 10 };
   check(!editTouchesLearnFields(JSON.stringify(saved), { ...saved, base_hotel_price: 20 }), "editTouchesLearnFields: an unrelated save does not ask again");
@@ -7312,6 +7320,174 @@ async function supplierSvgFetchChecks(): Promise<void> {
   check(!descriptionIsAPersons({ description: OLD }, ""), "descriptionIsAPersons: empty is nobody's - a rewrite may fill it");
   check(!descriptionIsAPersons(null, NEW), "descriptionIsAPersons: nothing to compare");
   check(descriptionIsAPersons({ description: NEW, description_by_hand: true }, NEW), "descriptionIsAPersons: carried by a learn, equal to its baseline, still a person's - a classify must not overwrite it");
+}
+
+// ---- Fulham - Newcastle (31.10): LiveTickets zones and deleted categories are a learn kind ------------------------
+// Event 1228: the card read "נערך" (10 tickets -> 8) while the dialog said it found nothing to learn - the edit was two LiveTickets
+// categories deleted and two zoned, which no kind carried.
+{
+  const zoned = (zoneId: string, zoneLabel: string): Partial<EventTicket> => ({ zoneId, zoneLabel });
+  const tx = (category: string, zoneId: string, price = 200): EventTicket => ({ id: `tx-${category}`, category, supplierCategory: category, price, description: "", colorOnTheMap: "rgb(5, 32, 60)", supplier: "tixstock", zoneId, zoneLabel: zoneId });
+  const lt = (category: string, description = "", extra: Partial<EventTicket> = {}): EventTicket => ({ id: `lt-${category}`, category, supplierCategory: category, price: 300, description, colorOnTheMap: "rgb(5, 32, 60)", supplier: "livetickets", ...extra });
+  const UPPER = zoned("longside-upper-tier", "לאורך המגרש למעלה");
+  const BEHIND = zoned("shortside-lower-tier", "מאחורי השער למטה");
+  const DUGOUT = "ישיבה בסקטור R03-R06";
+  const built = [tx("Longside Lower Tier", "longside-lower-tier"), lt("Category 2", "מאחורי השער"), lt("Category 1", "לאורך המגרש"), lt("Matchday Plus", "מושבים מרופדים"), lt("The Dugout", DUGOUT)];
+  const edited = [tx("Longside Lower Tier", "longside-lower-tier", 231), lt("Category 2", "מאחורי השער", BEHIND), lt("Category 1", "לאורך המגרש", UPPER)];
+  const plan = liveTicketsPlan(built, edited);
+
+  // -- the plan and the kind ---------------------------------------------------------------------------------
+  same(
+    plan,
+    {
+      zones: [
+        { key: "category 2", category: "Category 2", zoneId: "shortside-lower-tier", zoneLabel: "מאחורי השער למטה" },
+        { key: "category 1", category: "Category 1", zoneId: "longside-upper-tier", zoneLabel: "לאורך המגרש למעלה" },
+      ],
+      removed: [
+        { key: "matchday plus", category: "Matchday Plus" },
+        { key: "the dugout", category: "The Dugout" },
+      ],
+    },
+    "liveTicketsPlan: event 1228 - two LiveTickets categories zoned, two deleted",
+  );
+  same(editKindsOf({ tickets_and_rates: built }, { tickets_and_rates: edited }), ["live_tickets"], "editKindsOf: the edit that read 'nothing to learn' is a kind now");
+  check(isEmptyLiveTicketsPlan(liveTicketsPlan(built, built)), "liveTicketsPlan: untouched = empty");
+  check(isEmptyLiveTicketsPlan(liveTicketsPlan(built, built.map((t) => ({ ...t, price: t.price + 7 })))), "liveTicketsPlan: a price move is no edit");
+  check(isEmptyLiveTicketsPlan(liveTicketsPlan([tx("A", "z1"), tx("B", "z2")], [tx("A", "z3")])), "liveTicketsPlan: a TixStock edit belongs to the hall kind");
+  check(isEmptyLiveTicketsPlan(liveTicketsPlan(built, [...built, lt("New", "typed", UPPER)])), "liveTicketsPlan: a category added here is not carried - another fixture has its own price and id");
+  same(liveTicketsPlan([lt("A", "", UPPER)], [lt("A", "", BEHIND)]).zones.map((z) => z.zoneId), ["shortside-lower-tier"], "liveTicketsPlan: a zone moved is carried");
+  check(isEmptyLiveTicketsPlan(liveTicketsPlan([lt("A", "", UPPER)], [lt("A")])), "liveTicketsPlan: a zone cleared is not carried");
+
+  // -- the plan on another show -------------------------------------------------------------------------------
+  const HERE = { hall: true, map: true };
+  const other = [tx("Longside Lower Tier", "longside-lower-tier"), lt("Category 2", "מאחורי השער", { price: 177 }), lt("Category 1", "לאורך המגרש", { price: 196 }), lt("Matchday Plus", "מושבים מרופדים"), lt("The Dugout", DUGOUT)];
+  const onOther = applyLiveTicketsPlan(other, other, plan, HERE);
+  same([onOther.zoned, onOther.removed, onOther.adopted, onOther.typed, onOther.emptied], [2, 2, 0, 0, false], "applyLiveTicketsPlan: Bournemouth gets both zones and loses both categories");
+  same(onOther.tickets.map((t) => t.category), ["Longside Lower Tier", "Category 2", "Category 1"], "applyLiveTicketsPlan: the deleted categories leave");
+  same(onOther.tickets[0], other[0], "applyLiveTicketsPlan: a TixStock ticket is not touched");
+  same([onOther.tickets[2].zoneId, onOther.tickets[2].zoneLabel, onOther.tickets[2].price, onOther.tickets[2].description], ["longside-upper-tier", "לאורך המגרש למעלה", 196, "לאורך המגרש"], "applyLiveTicketsPlan: a zone lands, this fixture's price and description stay");
+  same(editKindsOf({ tickets_and_rates: onOther.baseline }, { tickets_and_rates: onOther.tickets }), [], "applyLiveTicketsPlan: the baseline follows, so the show does not read as edited by hand");
+  same(editDiff({ tickets_and_rates: onOther.baseline }, { tickets_and_rates: onOther.tickets }), [], "applyLiveTicketsPlan: nor at approve");
+  same(liveTicketsVerdict(other, other, plan, HERE), { applies: true, count: 4, reason: null }, "liveTicketsVerdict: four tickets on that show");
+
+  const city = [...other, lt("Away", "עם אוהדי החוץ")];
+  same(applyLiveTicketsPlan(city, city, plan, HERE).tickets.filter((t) => !t.zoneId).map((t) => t.category), ["Away"], "applyLiveTicketsPlan: a category the source does not have stays as it is (Man City's Away)");
+
+  // what a person did on that show stays theirs
+  const typedZone = [other[0], lt("Category 2", "מאחורי השער", { zoneId: "longside-lower-tier", zoneLabel: "x" }), other[2], other[3], other[4]];
+  const handZone = applyLiveTicketsPlan(typedZone, other, plan, HERE);
+  same([handZone.tickets.find((t) => t.category === "Category 2")?.zoneId, handZone.zoned, handZone.typed], ["longside-lower-tier", 1, 1], "applyLiveTicketsPlan: a zone a person set there to something else stays");
+  same(liveTicketsVerdict(typedZone, other, plan, HERE), { applies: true, count: 3, reason: "typed_by_hand" }, "liveTicketsVerdict: partly, and it says why");
+  const typedText = [other[0], other[1], other[2], other[3], lt("The Dugout", "כתבו כאן משהו אחר")];
+  const handText = applyLiveTicketsPlan(typedText, other, plan, HERE);
+  same([handText.tickets.some((t) => t.category === "The Dugout"), handText.removed, handText.typed], [true, 1, 1], "applyLiveTicketsPlan: a category a person wrote into there is not deleted");
+  const addedThere = [...other.filter((t) => t.category !== "The Dugout"), lt("The Dugout", DUGOUT, { id: "added" })];
+  same(applyLiveTicketsPlan(addedThere, other.filter((t) => t.category !== "The Dugout"), plan, HERE).tickets.some((t) => t.id === "added"), true, "applyLiveTicketsPlan: a ticket the show's baseline does not know is never touched");
+  const handDone = [other[0], lt("Category 2", "מאחורי השער", BEHIND), lt("Category 1", "לאורך המגרש", UPPER)];
+  const done = applyLiveTicketsPlan(handDone, other, plan, HERE);
+  same([done.zoned, done.removed, done.adopted, done.typed], [0, 0, 4, 0], "applyLiveTicketsPlan: a show a person already arranged the same way is adopted, nothing written");
+  same(editKindsOf({ tickets_and_rates: done.baseline }, { tickets_and_rates: done.tickets }), [], "applyLiveTicketsPlan: and it stops reading as edited");
+  same(liveTicketsVerdict(handDone, other, plan, HERE), { applies: false, count: 0, reason: "already" }, "liveTicketsVerdict: already");
+  same(liveTicketsVerdict(handDone, handDone, plan, HERE), { applies: false, count: 0, reason: "already" }, "liveTicketsVerdict: and again once its baseline followed (a second החל)");
+
+  // where it reaches
+  const zoneless = applyLiveTicketsPlan(other, other, plan, { hall: true, map: false });
+  same([zoneless.zoned, zoneless.removed], [0, 2], "applyLiveTicketsPlan: another drawing of the hall - a zone id means nothing there, the deletion still holds");
+  same(liveTicketsVerdict(other, other, plan, { hall: true, map: false }), { applies: true, count: 2, reason: "other_hall" }, "liveTicketsVerdict: partly, and it says why");
+  same(applyLiveTicketsPlan(other, other, plan, { hall: false, map: false }).tickets, other, "applyLiveTicketsPlan: another hall - Category 1 there is another stand");
+  same(liveTicketsVerdict(other, other, plan, { hall: false, map: false }), { applies: false, count: 0, reason: "other_hall" }, "liveTicketsVerdict: other hall");
+  const palace = [tx("Longside Lower Tier", "longside-lower-tier")];
+  same(liveTicketsVerdict(palace, palace, plan, HERE), { applies: false, count: 0, reason: "no_category" }, "liveTicketsVerdict: a show that sells no such ticket (Crystal Palace)");
+  const onlyThose = [lt("Matchday Plus", "מושבים מרופדים"), lt("The Dugout", DUGOUT)];
+  const emptied = applyLiveTicketsPlan(onlyThose, onlyThose, plan, HERE);
+  same([emptied.tickets, emptied.removed, emptied.emptied], [onlyThose, 0, true], "applyLiveTicketsPlan: a show left with no ticket at all is not written (no tickets, no event)");
+  same(liveTicketsVerdict(onlyThose, onlyThose, plan, HERE), { applies: false, count: 0, reason: "all_removed" }, "liveTicketsVerdict: and it says why");
+
+  // -- liveTicketsReach ------------------------------------------------------------------------------------------
+  const hall = (venue: string, city: string, drawing: string | null): ShowIdentity =>
+    ({ venue, city, date: "2026-11-07", suppliers: { tixstock: drawing === null ? null : { event_id: "1", name: "x", ticket_count: 1, venue_map_url: drawing }, livetickets: null } }) as unknown as ShowIdentity;
+  const EPL = "https://m/Craven%20Cottage%20-%20EPL.svg";
+  const OURS = "https://s/venue-maps/d777/map.svg";
+  const reach = (a: ShowIdentity, aMap: string | null, b: ShowIdentity, bMap: string | null) => liveTicketsReach({ show: a, row: { map_image_url: aMap } }, { show: b, row: { map_image_url: bMap } });
+  same(reach(hall("Craven Cottage", "London", EPL), OURS, hall("Craven Cottage", "London", EPL), OURS), { hall: true, map: true }, "liveTicketsReach: same hall, same map");
+  same(reach(hall("Craven Cottage", "London", EPL), OURS, hall("Craven Cottage", "London", EPL), EPL), { hall: true, map: true }, "liveTicketsReach: the source adopted the drawing, the other is still on the supplier's - one drawing");
+  same(reach(hall("Craven Cottage", "London", EPL), OURS, hall("Craven Cottage", "London", "https://m/Craven.svg"), "https://s/venue-maps/8a0d/map.svg"), { hall: true, map: false }, "liveTicketsReach: Crystal Palace - same hall, another drawing, other zone ids");
+  same(reach(hall("Craven Cottage", "London", null), OURS, hall("Craven Cottage", "London", null), OURS), { hall: true, map: true }, "liveTicketsReach: no supplier drawing, the same map on the events");
+  same(reach(hall("Craven Cottage", "London", EPL), OURS, hall("Stamford Bridge", "London", EPL), OURS), { hall: false, map: false }, "liveTicketsReach: another hall");
+  same(reach(hall("Craven Cottage", "London", null), null, hall("Craven Cottage", "London", null), null), { hall: true, map: false }, "liveTicketsReach: no map at all is no shared map");
+
+  // -- a hall rewrite does not take what a person did to LiveTickets tickets on a show into its baseline (review) ---
+  const shown = [tx("Longside Lower Tier", "longside-lower-tier"), lt("Category 2", "מאחורי השער"), lt("Category 1", "לאורך המגרש"), lt("The Dugout", DUGOUT)];
+  const handRow = [shown[0], lt("Category 2", "מאחורי השער", { zoneId: "z9", zoneLabel: "ביד" }), shown[2]];
+  const absorbed = keepHandLiveTickets(handRow, handRow, shown);
+  same(absorbed.find((t) => t.category === "Category 2")?.zoneId, undefined, "keepHandLiveTickets: a zone set by hand stays out of the baseline");
+  check(absorbed.some((t) => t.category === "The Dugout"), "keepHandLiveTickets: a category deleted by hand stays in it");
+  same(editKindsOf({ tickets_and_rates: absorbed }, { tickets_and_rates: handRow }), ["live_tickets"], "keepHandLiveTickets: so the show's own edit stays visible on its card");
+  const movedZone = { zones: [{ key: "category 2", category: "Category 2", zoneId: "z4", zoneLabel: "אחר" }], removed: [] };
+  same(applyLiveTicketsPlan(handRow, absorbed, movedZone, HERE).tickets.find((t) => t.category === "Category 2")?.zoneId, "z9", "keepHandLiveTickets: and the LiveTickets pass after the hall pass leaves it, as the dialog promised");
+  same(liveTicketsVerdict(handRow, absorbed, movedZone, HERE).reason, "typed_by_hand", "keepHandLiveTickets: the verdict reads the same before and after the hall pass");
+  const fromTemplate = [shown[0], lt("Category 2", "מאחורי השער", { zoneId: "z4", zoneLabel: "אחר" }), shown[2], shown[3]];
+  same(keepHandLiveTickets(fromTemplate, shown, shown).find((t) => t.category === "Category 2")?.zoneId, "z4", "keepHandLiveTickets: a zone the rewrite itself gave is the baseline's");
+  same(keepHandLiveTickets(shown, shown, shown), shown, "keepHandLiveTickets: nothing by hand = what was written");
+
+  // -- the source's baseline after a learn -----------------------------------------------------------------------
+  const pending = (kinds: { venue: boolean; descriptions: boolean; liveTickets: boolean }) => editKindsOf({ tickets_and_rates: rebaseTickets(built, edited, kinds) }, { tickets_and_rates: edited });
+  same(rebaseTickets(built, edited, { venue: true, descriptions: true, liveTickets: true }), edited, "rebaseTickets: everything clean = the event as it is");
+  same(pending({ venue: false, descriptions: false, liveTickets: true }), [], "rebaseTickets: the LiveTickets kind applied - the second press of the button finds nothing");
+  same(pending({ venue: false, descriptions: false, liveTickets: false }), ["live_tickets"], "rebaseTickets: not applied = still pending");
+  same(pending({ venue: true, descriptions: true, liveTickets: false }), ["live_tickets"], "rebaseTickets: the other kinds applied, this one cut = still pending, the deleted categories too");
+  const zoneAndText = [tx("Longside Lower Tier", "moved"), lt("Category 2", "", BEHIND), lt("Category 1", "לאורך המגרש"), lt("Matchday Plus", "מושבים מרופדים"), lt("The Dugout", DUGOUT)];
+  same(editKindsOf({ tickets_and_rates: rebaseTickets(built, zoneAndText, { venue: false, descriptions: false, liveTickets: true }) }, { tickets_and_rates: zoneAndText }), ["venue", "descriptions"], "rebaseTickets: the LiveTickets kind alone takes the zone, not the hall's edit nor the description");
+  same(editKindsOf({ tickets_and_rates: rebaseTickets(built, zoneAndText, { venue: false, descriptions: true, liveTickets: false }) }, { tickets_and_rates: zoneAndText }), ["venue", "live_tickets"], "rebaseTickets: the descriptions alone leave the zone pending");
+  same(editKindsOf({ tickets_and_rates: rebaseTickets(built, zoneAndText, { venue: true, descriptions: false, liveTickets: false }) }, { tickets_and_rates: zoneAndText }), ["descriptions", "live_tickets"], "rebaseTickets: the hall alone leaves both LiveTickets kinds pending");
+  const deletedOnly = built.slice(0, 3);
+  same(editKindsOf({ tickets_and_rates: rebaseTickets(built, deletedOnly, { venue: true, descriptions: true, liveTickets: false }) }, { tickets_and_rates: deletedOnly }), ["live_tickets"], "rebaseTickets: a deletion the kind did not take stays pending, with nothing else to show for it");
+  same(editKindsOf({ tickets_and_rates: rebaseTickets(built, deletedOnly, { venue: false, descriptions: false, liveTickets: true }) }, { tickets_and_rates: deletedOnly }), [], "rebaseTickets: and leaves the baseline once it did");
+  const secondEdit = [edited[0], lt("Category 2", "מאחורי השער", UPPER), edited[2]];
+  same(editKindsOf({ tickets_and_rates: rebaseTickets(built, edited, { venue: true, descriptions: true, liveTickets: true }) }, { tickets_and_rates: secondEdit }), ["live_tickets"], "rebaseTickets: a SECOND edit is seen again");
+
+  // -- what the dialog says goes nowhere --------------------------------------------------------------------------
+  same(notCarriedEdits({ tickets_and_rates: built }, { tickets_and_rates: edited }), [], "notCarriedEdits: event 1228 - nothing is left out now");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A", "", UPPER)] }, { tickets_and_rates: [lt("A")] }), ["livetickets_zone"], "notCarriedEdits: a zone cleared");
+  same(notCarriedEdits({ tickets_and_rates: [lt("A")] }, { tickets_and_rates: [lt("A"), lt("B")] }), ["livetickets_tickets"], "notCarriedEdits: a ticket added");
+
+  // -- the dialog's per-show row ----------------------------------------------------------------------------------
+  const craven = hall("Craven Cottage", "London", EPL);
+  const source = { show: craven, payload: { tickets_and_rates: built }, row: { tickets_and_rates: edited, map_image_url: OURS } };
+  const showRow = (itemId: string, eventId: number, tickets: EventTicket[], show = craven, map = OURS) => ({ itemId, eventId, show, payload: { tickets_and_rates: tickets }, row: { tickets_and_rates: tickets, map_image_url: map } });
+  const rows = learnShowRows({
+    source,
+    others: [showRow("a", 1229, other), showRow("b", 1234, city), showRow("c", 1227, palace, hall("Craven Cottage", "London", "https://m/Craven.svg"), "https://s/venue-maps/8a0d/map.svg")],
+    venueSiblings: null,
+    plan: { clearAll: [], clear: [], set: [] },
+    livePlan: plan,
+    description: null,
+    place: null,
+  });
+  same(rows.map((r) => [r.eventId, r.verdicts.live_tickets?.applies, r.verdicts.live_tickets?.count, r.verdicts.live_tickets?.reason]), [[1229, true, 4, null], [1234, true, 4, null], [1227, false, 0, "no_category"]], "learnShowRows: who gets what, and why not (Crystal Palace sells no LiveTickets ticket)");
+  same(rows.map((r) => r.unzoned), [[], ["Away"], []], "learnShowRows: a LiveTickets ticket the show keeps with no zone is named (Man City's Away)");
+  same(showsReached(rows), 2, "showsReached: the toast promises the two that really change");
+
+  // -- the hall remembers ----------------------------------------------------------------------------------------
+  same(liveDroppedAfter(["old"], plan), ["old", "matchday plus", "the dugout"], "liveDroppedAfter: the deleted categories join what the hall never sells");
+  same(liveDroppedAfter(["category 1", "away"], plan), ["away", "matchday plus", "the dugout"], "liveDroppedAfter: a category zoned here sells here again; one another run's event merely still sells stays deleted");
+  same(liveDroppedWithoutMapped(["matchday plus", "away"], { "matchday plus": "z1" }), ["away"], "liveDroppedWithoutMapped: a person zoned it on the editor's board - that is how a category comes back");
+  same(parseDroppedCategories({ tixstock: [], tixstock_kept: [], livetickets: ["Matchday Plus", " the dugout", "", 5] }).live, ["matchday plus", "the dugout"], "parseDroppedCategories: the hall's LiveTickets list");
+  check(!("live" in parseDroppedCategories({ tixstock: [] })), "parseDroppedCategories: none = no key, an older reader sees what it saw");
+  const tpl = { zones: [{ id: "longside-upper-tier", label: "לאורך המגרש למעלה", sections: [] }], supplier_categories: { livetickets: { "category 1": "longside-upper-tier" } } };
+  const nextRun = applyClassification([tx("Matchday Plus", "longside-upper-tier"), lt("Category 1"), lt("Matchday Plus")], tpl, { dropped: [], kept: [], sections: [], live: ["matchday plus"] });
+  same(nextRun.tickets.map((t) => [t.supplier, t.category, t.zoneId ?? null]), [["tixstock", "Matchday Plus", "longside-upper-tier"], ["livetickets", "Category 1", "longside-upper-tier"]], "applyClassification: the next build leaves the hall's deleted LiveTickets category out, a TixStock one of that name stays");
+  same(nextRun.dropped, ["Matchday Plus"], "applyClassification: and names it");
+  same(applyClassification([lt("Matchday Plus")], tpl, { dropped: [], kept: [], sections: [] }).tickets.length, 1, "applyClassification: no list = LiveTickets tickets stay");
+
+  // -- options ----------------------------------------------------------------------------------------------------
+  same(cleanLearnOptions({ liveTickets: false })?.liveTickets, false, "cleanLearnOptions: the new kind, off when sent off");
+  same(cleanLearnOptions({ liveTickets: true })?.liveTickets, true, "cleanLearnOptions: on when the dialog that listed the tickets asks");
+  same(cleanLearnOptions({})?.liveTickets, false, "cleanLearnOptions: absent = off - it deletes tickets, and a tab opened before this kind existed never showed them");
+  same(cleanLearnOptions(undefined)?.liveTickets, false, "cleanLearnOptions: nothing sent = not this one either");
+  same(cleanLearnOptions({ liveTickets: "no" }), null, "cleanLearnOptions: a kind that is not a boolean is refused");
+  check(editTouchesLearnFields(JSON.stringify({ tickets_and_rates: built }), { tickets_and_rates: edited }), "editTouchesLearnFields: the save asks");
 }
 
 async function planTokenChecks(): Promise<void> {

@@ -503,11 +503,26 @@ export const LEARN_DESC_REACH = (tickets: number, events: number): string =>
     ? "בשאר ההופעות אין כרטיס שעדיין מחזיק את התיאור המקורי - אין מה לשנות"
     : `יחול על ${tickets === 1 ? "כרטיס אחד" : `${tickets} כרטיסים`} ב-${showsHe(events)}`;
 export const LEARN_MORE = (n: number): string => `ועוד ${n}`;
-export const LEARN_NOTHING = "לא מצאתי שינוי שאפשר להחיל מאז הלמידה האחרונה. נבדקים: תבנית האולם, תיאורי כרטיסי LiveTickets, תיאור האירוע, מיקום ולינה. אפשר לכתוב הערה ל-AI.";
+export const LEARN_NOTHING = "לא מצאתי שינוי שאפשר להחיל מאז הלמידה האחרונה. נבדקים: תבנית האולם, כרטיסי LiveTickets (אזורים, מחיקות ותיאורים), תיאור האירוע, מיקום ולינה. אפשר לכתוב הערה ל-AI.";
 export const LEARN_NOTE_LABEL = "הערה ל-AI (לא חובה)";
 export const LEARN_NOTE_HINT =
   "נשמרת כחוק קבוע של ה-AI Uploader ונקראת בכל ריצה הבאה (פענוח הבריף, סיווג, שמות, מיקום). היא לא משנה אירועים בעצמה - את זה עושים הסימונים למעלה.";
 export const LEARN_NOTE_PLACEHOLDER = "למשל: בלאציו לא מביאים את התיאורים באנגלית של LiveTickets";
+// Fulham - Newcastle (31.10): the card said "נערך", the dialog said it found nothing - a LiveTickets zone and a deleted category were no kind.
+export const LEARN_KIND_LIVE_TICKETS = "כרטיסי LiveTickets: אזורים ומחיקות";
+export const LEARN_KIND_LIVE_TICKETS_HINT = "רק להופעות באותו אולם; אזור - רק על אותה מפה. כרטיס שמישהו שינה בהופעה אחרת נשאר שלו, והמחיר של כל משחק לא משתנה.";
+export const LEARN_LIVE_ZONE = (label: string): string => `אזור: ${label}`;
+export const LEARN_LIVE_REMOVED = "נמחק";
+export const LEARN_LIVE_REMEMBERS = "האולם יזכור: הקטגוריות שנמחקו לא יחזרו בריצה הבאה.";
+export const LEARN_LIVE_REACH = (tickets: number, events: number): string =>
+  tickets === 0 ? "לא יחול על אף הופעה - הסיבות ברשימה למטה" : `יחול על ${tickets === 1 ? "כרטיס אחד" : `${tickets} כרטיסים`} ב-${showsHe(events)}`;
+export const LEARN_LIVE_DONE = (events: number): string => `כרטיסי LiveTickets עודכנו ב-${showsHe(events)}`;
+export const LEARN_LIVE_COUNTS = (zoned: number, removed: number): string =>
+  [zoned > 0 ? (zoned === 1 ? "כרטיס אחד קיבל אזור" : `${zoned} כרטיסים קיבלו אזור`) : "", removed > 0 ? (removed === 1 ? "כרטיס אחד נמחק" : `${removed} כרטיסים נמחקו`) : ""].filter(Boolean).join(" · ");
+export const LEARN_LIVE_REMEMBERED = "האולם יזכור את זה בריצה הבאה";
+export const LEARN_LIVE_NOT_REMEMBERED = "האולם לא שמר את זה - לחצו שוב על \"החל\"";
+export const LEARN_LIVE_PARTIAL = (left: number): string => `${notReached(left)} בכרטיסי LiveTickets - לחצו שוב על "${BTN_LEARN_CONFIRM}" כדי לסיים.`;
+export const LEARN_UNZONED = "נשאר בלי אזור:";
 export const LEARN_KIND_EVENT_DESCRIPTION = "תיאור האירוע";
 export const LEARN_KIND_EVENT_DESCRIPTION_HINT = "רק להופעות באותו אולם שהטקסט שלהן עדיין זהה למה שהיה כאן לפני העריכה. טקסט שמישהו כתב בהופעה אחרת נשאר שלו.";
 export const LEARN_TEMPLATE_HINT = 'בהופעות אחרות הטקסט שונה (למשל שם יריבה אחר). לשינוי בכולן - "תבנית תיאור" בראש הלוח.';
@@ -524,12 +539,12 @@ export const PLACE_FIELD_LABEL: Record<PlaceField, string> = {
 export const LEARN_REACH_EVENTS = (n: number): string => (n === 0 ? "לא יחול על אף הופעה - הסיבות ברשימה למטה" : `יחול על ${showsHe(n)}`);
 export const LEARN_SHOWS_TITLE = "מה יקרה בכל הופעה";
 /** A kind's short name in the per-show list. */
-export const LEARN_KIND_SHORT: Record<EditKind, string> = { venue: "אולם", descriptions: "כרטיסים", event_description: "תיאור", place: "מיקום" };
+export const LEARN_KIND_SHORT: Record<EditKind, string> = { venue: "אולם", descriptions: "תיאורי כרטיסים", live_tickets: "LiveTickets", event_description: "תיאור", place: "מיקום" };
 /** Why a kind does not reach a show. `different` reads by kind: a text or a place. */
 export const LEARN_SKIP_TEXT = (kind: EditKind, reason: SkipReason): string => {
   switch (reason) {
     case "other_hall":
-      return kind === "venue" ? "שרטוט אחר" : "אולם אחר";
+      return kind === "venue" ? "שרטוט אחר" : kind === "live_tickets" ? "מפה או אולם אחרים" : "אולם אחר";
     case "typed_by_hand":
       return "נכתב שם ידנית - נשאר";
     case "different":
@@ -538,6 +553,8 @@ export const LEARN_SKIP_TEXT = (kind: EditKind, reason: SkipReason): string => {
       return "כבר זהה";
     case "no_category":
       return "אין שם כרטיס כזה";
+    case "all_removed":
+      return "היה נשאר בלי כרטיסים - לא נמחק";
   }
 };
 export const LEARN_NOT_CARRIED_TITLE = "השתנה כאן ולא מוחל על הופעות אחרות:";
@@ -555,8 +572,8 @@ export const LEARN_NOT_CARRIED: Record<NotCarried, string> = {
   flight_city: "עיר הטיסה - משנה טיסות ומחירי בסיס, ולכן גם המיקום והלינה לא מוחלים",
   description_cleared: "תיאור שנמחק - לא מוחקים תיאור בכל ההופעות בבת אחת",
   ticket_label: "שם של כרטיס",
-  livetickets_zone: "אזור של כרטיס LiveTickets - נקבע בלוח האזורים של כל אירוע",
-  livetickets_tickets: "כרטיס LiveTickets שנוסף או נמחק",
+  livetickets_zone: "אזור שהוסר מכרטיס LiveTickets",
+  livetickets_tickets: "כרטיס LiveTickets שנוסף - לכל משחק מחיר ומזהה משלו",
   tixstock_description_cleared: "תיאור TixStock שנמחק - ההופעות האחרות מקבלות אותו מתבנית האולם",
 };
 export const LEARN_FIELDS_DONE = (events: number, description: boolean, place: boolean): string =>
