@@ -1,6 +1,11 @@
 "use server";
 
-import { requireCreditAccess, requireOfficeManager, requireStaff } from "@/lib/auth/guards";
+import {
+  requireCreditAccess,
+  requireOfficeManager,
+  requireStaff,
+  requireSuperadmin,
+} from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import {
@@ -11,6 +16,11 @@ import {
   round2,
   wasSettledAtCutoff,
 } from "@/lib/partner-commission";
+import {
+  canDeductCredit,
+  deductionCouponCode,
+  deductionProblem,
+} from "@/lib/partner-credit-deduction";
 import {
   getOfficeUsers,
   getReservationAttribution,
@@ -695,17 +705,20 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,30}[A-Z0-9]$/;
 const MIN_CONVERT_USD = 1;
 
-function generateCouponCode(trackingCode: string): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  const suffix = Array.from(
+function randomCodePart(length: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(
     bytes,
     (b) => CODE_ALPHABET[b % CODE_ALPHABET.length],
   ).join("");
+}
+
+function generateCouponCode(trackingCode: string): string {
   const prefix = trackingCode
     .replace(/[^A-Za-z0-9]/g, "")
     .slice(0, 6)
     .toUpperCase();
-  return `${prefix || "PARTNER"}-${suffix}`;
+  return `${prefix || "PARTNER"}-${randomCodePart(6)}`;
 }
 
 /** Normalise a partner-chosen name into a usable coupon code. */
@@ -737,6 +750,9 @@ export async function convertCreditToCoupon(
  * `created_by` retries the SAME code without it, so a conversion still works
  * before the migration lands - it just isn't attributable in the coupon list
  * yet.
+ *
+ * `spent` = born used up (a manual deduction): settleRedemptions then reads the
+ * ledger row as spent, not as a coupon still "available to use".
  */
 async function insertCoupon(
   firstCode: string,
@@ -744,6 +760,7 @@ async function insertCoupon(
   trackingCode: string,
   custom: boolean,
   createdBy: string | null,
+  spent = false,
 ): Promise<
   { ok: true; id: number; code: string } | { ok: false; error: string }
 > {
@@ -759,6 +776,7 @@ async function insertCoupon(
       partner_tracking_code: trackingCode,
     };
     if (includeCreatedBy && createdBy) payload.created_by = createdBy;
+    if (spent) payload.times_used = 1;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
@@ -943,4 +961,121 @@ async function convertFor(
   });
 
   return { ok: true, code: finalCode, amountUsd };
+}
+
+export type DeductResult =
+  | { ok: true; amountUsd: number; balanceUsd: number }
+  | { ok: false; error: string };
+
+/**
+ * A superadmin takes an influencer's credit down by hand, when it was used
+ * outside the site. A redemption row like any conversion, over a coupon that is
+ * switched off and used up, so nobody can spend it and the partner's page reads
+ * it as spent. Undo = delete the ledger row and the coupon.
+ */
+export async function deductPartnerCredit(
+  trackingCode: string,
+  amountUsd: number,
+): Promise<DeductResult> {
+  const session = await requireSuperadmin();
+  const failed: DeductResult = {
+    ok: false,
+    error: "לא הצלחנו להוריד מהצבירה. שום דבר לא השתנה.",
+  };
+
+  const { data: partnerData, error: partnerError } = await supabase
+    .from("partners")
+    .select("type,name_hebrew")
+    .eq("partner_tracking_code", trackingCode)
+    .maybeSingle();
+  if (partnerError) {
+    console.error("deductPartnerCredit partner:", JSON.stringify(partnerError));
+    return failed;
+  }
+  const partner = partnerData as {
+    type: string | null;
+    name_hebrew: string | null;
+  } | null;
+  if (!partner || !canDeductCredit(partner)) {
+    return { ok: false, error: "אפשר להוריד צבירה רק למשפיענים." };
+  }
+
+  let before: PartnerCredit;
+  try {
+    before = await loadCredit(trackingCode);
+  } catch (error) {
+    console.error("deductPartnerCredit balance:", error);
+    return failed;
+  }
+  const problem = deductionProblem(amountUsd, before.balanceUsd);
+  if (problem) return { ok: false, error: problem };
+  const amount = round2(amountUsd);
+
+  const coupon = await insertCoupon(
+    deductionCouponCode(trackingCode, amount, randomCodePart(4)),
+    amount,
+    trackingCode,
+    false,
+    session.sub,
+    true,
+  );
+  if (!coupon.ok) return failed;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ledgerData, error: ledgerError } = await (supabase as any)
+    .from("partner_credit_redemptions")
+    .insert({
+      partner_tracking_code: trackingCode,
+      amount_usd: amount,
+      coupon_id: coupon.id,
+      coupon_code: coupon.code,
+      created_by: session.sub,
+    })
+    .select("id")
+    .single();
+  if (ledgerError) {
+    console.error("deductPartnerCredit ledger:", JSON.stringify(ledgerError));
+    await supabase.from("coupons").delete().eq("id", coupon.id);
+    return failed;
+  }
+  const ledgerId = (ledgerData as { id: number }).id;
+
+  const backOut = async () => {
+    await supabase
+      .from("partner_credit_redemptions")
+      .delete()
+      .eq("id", ledgerId);
+    await supabase.from("coupons").delete().eq("id", coupon.id);
+  };
+
+  // The partner may have converted the same credit a moment ago. The balance was
+  // positive above, so any deficit now is that race: undo rather than overdraw.
+  let after: PartnerCredit;
+  try {
+    after = await loadCredit(trackingCode);
+  } catch (error) {
+    console.error("deductPartnerCredit post-check:", error);
+    await backOut();
+    return failed;
+  }
+  if (after.deficitUsd > 0) {
+    await backOut();
+    return { ok: false, error: "היתרה השתנתה הרגע. רעננו ונסו שוב." };
+  }
+
+  await logAudit({
+    action: "partner.credit_deducted",
+    entityType: "partner",
+    entityId: trackingCode,
+    metadata: {
+      amount_usd: amount,
+      coupon_id: coupon.id,
+      coupon_code: coupon.code,
+      ledger_id: ledgerId,
+      balance_before: before.balanceUsd,
+      balance_after: after.balanceUsd,
+    },
+  });
+
+  return { ok: true, amountUsd: amount, balanceUsd: after.balanceUsd };
 }

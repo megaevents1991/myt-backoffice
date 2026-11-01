@@ -1973,6 +1973,14 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Take credit off an influencer (superadmins)", "הורדה מהצבירה של משפיען (סופר-אדמין)"),
+        steps: [
+          t("In [Partners](/partners), the \"Partners list\" tab → the row's ⋯ → \"View performance\". Under \"Site credit\" click \"הורד מהצבירה\" - it shows only to a superadmin, on an influencer with a balance. Agents are not included: their credit is split per agent.", "ב[שותפים](/partners), לשונית \"Partners list\" ← ⋯ בשורה ← \"View performance\". מתחת ל-\"Site credit\" לוחצים \"הורד מהצבירה\" - מופיע רק לסופר-אדמין, אצל משפיען עם יתרה. סוכנים לא כלולים: הצבירה שלהם מחולקת לפי סוכן."),
+          t("Type the amount; the window shows the balance before and after, and refuses more than the balance. No reason is asked for.", "מקלידים סכום; החלון מראה את היתרה לפני ואחרי, ולא מאפשר יותר מהיתרה. לא צריך לכתוב סיבה."),
+          t("The influencer sees a used line under \"הקופונים שיצרתם מהצבירה\" in their portal, and its code in their coupon list. A wrong amount cannot be undone from the screen - ask Dor.", "המשפיען רואה בפורטל שורה מנוצלת תחת \"הקופונים שיצרתם מהצבירה\", ואת הקוד שלה ברשימת הקופונים. סכום שגוי אי אפשר לבטל מהמסך - פונים לדור."),
+        ],
+      },
+      {
         title: t("Give an influencer their coupon (admins)", "קופון למשפיען (מנהלים)"),
         steps: [
           t("Open the existing influencer's editor (\"Partners list\" → ⋯ → \"Edit\") - the coupon box doesn't appear while creating one.", "פותחים את העורך של משפיען קיים (\"Partners list\" ← ⋯ ← \"Edit\") - תיבת הקופון לא מופיעה בזמן היצירה."),

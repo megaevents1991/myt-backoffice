@@ -68,6 +68,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > portal's demand tab has the same period pills as the staff view
 > (`?tab=demand&range=`, default 30 days) and its top picks follow the range.
 >
+> **Manual credit deduction (2026-11-01, Dor: "instead of me, Alon can do it"):** a superadmin takes an
+> influencer's credit down from `/partners/[code]/view` ("הורד מהצבירה", amount only, no reason;
+> `deductPartnerCredit`, rules pure in `lib/partner-credit-deduction.ts`, selftest
+> `scripts/partner-credit-deduction-selftest.ts`). The balance has no column, so it is a
+> `partner_credit_redemptions` row over a coupon born switched off and used up (`-USED-` in the code): nobody
+> can spend it, the partner's page reads it "נוצל במלואו", it shows on their coupon list and adds 1 to their
+> coupon-uses count, and `settleRedemptions`' "consumed but no discount" warning is expected for it. Influencers
+> only - an office's credit is split per agent. No undo on screen: delete the ledger row and the coupon. Audited
+> `partner.credit_deducted`.
+>
 > **Portal history cut-off (2026-09-16):** `partners.portal_history_from`
 > (date, null = all) - set in the partner editor ("Portal History From") for a
 > partner starting fresh on a code that already has bookings (Aviran: code

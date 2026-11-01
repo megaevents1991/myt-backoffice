@@ -44,11 +44,13 @@ import {
 import { getPartnerCredit } from "@/lib/actions/partner-credit-actions";
 import { getUnbilledPaidReservations } from "@/lib/actions/partner-billing-actions";
 import { describeCommission } from "@/lib/partner-commission";
+import { MIN_DEDUCT_USD, canDeductCredit } from "@/lib/partner-credit-deduction";
 import { PARTNER_TYPE_LABELS, isCustomerRefundPartner } from "@/types/partner.types";
 import { ADMIN_ROLES, PARTNER_ROLES } from "@/types/auth.types";
 import { getSession } from "@/lib/auth/guards";
 import { EntryFunnelsGrid } from "../../entry-funnel-cards";
 import { CreateOfficeManagerButton } from "../../create-office-manager-dialog";
+import { DeductCreditButton } from "./deduct-credit-button";
 import { PendingCommissionPanel } from "./pending-commission-panel";
 import { PerformanceChart } from "./performance-chart";
 import { ReservationsTable } from "./reservations-table";
@@ -296,6 +298,15 @@ export default async function ViewPartnerPage({
                   : "Not on the credit agreement"
               }
             />
+            {isSuperadmin &&
+              canDeductCredit(partner) &&
+              credit.balanceUsd >= MIN_DEDUCT_USD && (
+                <DeductCreditButton
+                  trackingCode={partner.partner_tracking_code}
+                  partnerLabel={partner.name_hebrew || partner.email}
+                  balanceUsd={credit.balanceUsd}
+                />
+              )}
             <Detail
               label="Credit converted"
               value={
