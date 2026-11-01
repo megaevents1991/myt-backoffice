@@ -239,7 +239,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
         the world&apos;s color, and the header says the world&apos;s brand name instead of the logo. Set both on the world itself (Categories &amp; Tags &gt; the
         world). The other sections of the page can belong to some tiles only: open a section and tick tiles under &quot;Show for tiles&quot;.
       </Notice>
-      <Field label="Title of the tour grid">
+      <Field label="Title of the tour grid" hint='With the word "מבצע" the grid lists only the tours on sale, until the customer searches. Any other title lists every tour of the tile.'>
         <Input dir="auto" value={section.gridTitle} onChange={(e) => onChange({ ...section, gridTitle: e.target.value })} />
       </Field>
       <ItemList
@@ -349,7 +349,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                   The title above the tile&apos;s tours, and the link beside it that takes the customer to everything the tile stands for.
                 </p>
                 <Grid>
-                  <Field label="Title of the grid" hint='Empty = the "Title of the tour grid" at the top of this section. E.g. "חם עכשיו באיבנטס".'>
+                  <Field label="Title of the grid" hint='Empty = the "Title of the tour grid" at the top of this section. E.g. "חם עכשיו באיבנטס". With the word "מבצע" the grid lists only the tours on sale, until the customer searches.'>
                     <Input dir="auto" value={tab.gridTitle} onChange={(e) => patch({ gridTitle: e.target.value })} />
                   </Field>
                   <Field label={'Text of the "more" link'} hint='Empty = "לכל הטיולים".'>
