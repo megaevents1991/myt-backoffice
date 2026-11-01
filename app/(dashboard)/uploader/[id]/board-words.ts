@@ -366,7 +366,7 @@ export const BTN_CLOSE = "סגור";
 
 // The classification dialog (5.2).
 export const CLASSIFY_TITLE = (venue: string): string => `סיווג כרטיסים - ${venue}`;
-export const CLASSIFY_DESCRIPTION = "כותרת הזון היא כותרת הכרטיס באתר. קטגוריה שנפסלת יורדת מהאירועים.";
+export const CLASSIFY_DESCRIPTION = "כותרת הזון היא כותרת הכרטיס באתר. קטגוריות באותו שם הן זון אחד - באתר יופיע כרטיס אחד, הזול מביניהן. קטגוריה שנפסלת יורדת מהאירועים.";
 export const COL_CATEGORY = "קטגוריה (TixStock)";
 export const COL_LABEL = "שם הזון בעברית (כותרת הכרטיס באתר)";
 export const COL_DROP = "לפסול";

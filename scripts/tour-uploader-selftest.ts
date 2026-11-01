@@ -3433,6 +3433,65 @@ for (const garbage of [null, undefined, "plan", 42, true, [], [1, 2], () => 1]) 
   same(second.categoryToZone, { "cat 1": "cat-1", "cat 3": "cat-3" }, "templateFromRows: the second mapping holds the second rows only (the write merges)");
   same([second.dropped, second.kept], [["away fans section"], []], "templateFromRows: the venue's earlier drops survive a confirm that does not mention them");
 
+  // Rows named alike are ONE zone (01.11, event 1292): the zone's name is the card's title on the site, two zones with one name are two cards with one title.
+  const alike = templateFromRows(
+    [confirmed("Cat 1", { label_he: "מאחורי השער" }), confirmed("Cat 2", { label_he: "  מאחורי   השער " }), confirmed("Cat 3", { label_he: "קרן" })],
+    drawingForRows,
+    null,
+    NO_DROPS,
+  );
+  same(
+    alike.zones.map((z) => [z.id, z.label, z.sections]),
+    [["cat-1", "מאחורי השער", ["cat-1_a", "cat-1_b", "cat-2_a"]], ["cat-3", "קרן", ["cat-3_a"]]],
+    "templateFromRows: two rows named alike make one zone holding both categories' sections",
+  );
+  same(alike.categoryToZone, { "cat 1": "cat-1", "cat 2": "cat-1", "cat 3": "cat-3" }, "templateFromRows: both categories map to that one zone");
+
+  // A drawing adopted on this confirm comes with a zone per category until a person names two alike - a re-confirm over two zones merges the same way.
+  const twoZones = { zones: [{ id: "cat-1", label: "קטגוריה 1", sections: ["cat-1_a", "cat-1_b"] }, { id: "cat-2", label: "קטגוריה 2", sections: ["cat-2_a"] }] };
+  const renamed = templateFromRows(
+    [confirmed("Cat 1", { label_he: "מאחורי השער" }), confirmed("Cat 2", { label_he: "מאחורי השער" })],
+    drawingForRows,
+    { ...twoZones, supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2" } } },
+    NO_DROPS,
+  );
+  same(renamed.categoryToZone, { "cat 1": "cat-1", "cat 2": "cat-1" }, "templateFromRows: renaming a second row to the first's name moves it to that zone");
+  same(
+    renamed.zones.map((z) => [z.id, z.label, z.sections]),
+    [["cat-1", "מאחורי השער", ["cat-1_a", "cat-1_b", "cat-2_a"]], ["cat-2", "קטגוריה 2", ["cat-2_a"]]],
+    "templateFromRows: the zone it left stays as it was - an older event outside the run may still stand on it, and a section may sit in two zones",
+  );
+  same(
+    templateFromRows(
+      [confirmed("Cat 1", { label_he: "מאחורי השער" }), confirmed("Cat 2", { label_he: "מאחורי השער" })],
+      drawingForRows,
+      { ...twoZones, supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2" }, livetickets: { curva: "cat-2" } } },
+      NO_DROPS,
+    ).categoryToZone,
+    { "cat 1": "cat-2", "cat 2": "cat-2" },
+    "templateFromRows: rows named alike share the zone another supplier already sells in, or the suppliers would split into two cards",
+  );
+  same(
+    templateFromRows(
+      [confirmed("Cat 3", { label_he: "קטגוריה 2" })],
+      drawingForRows,
+      { ...twoZones, supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2" } } },
+      NO_DROPS,
+    ).categoryToZone,
+    { "cat 3": "cat-2" },
+    "templateFromRows: a new row named like a zone the hall already has joins it",
+  );
+  same(
+    templateFromRows(
+      [confirmed("Cat 1", { label_he: "קטגוריה 2" }), confirmed("Cat 2", { label_he: "קטגוריה 1" })],
+      drawingForRows,
+      { ...twoZones, supplier_categories: { tixstock: { "cat 1": "cat-1", "cat 2": "cat-2" } } },
+      NO_DROPS,
+    ).categoryToZone,
+    { "cat 1": "cat-1", "cat 2": "cat-2" },
+    "templateFromRows: two rows that swap names keep their zones - they are still two names",
+  );
+
   // A relabel on the second confirm wins; a stale mapping (zone gone) gets a fresh id.
   const relabel = templateFromRows(
     [confirmed("Cat 1", { label_he: "קטגוריה 1 - חדש" })],

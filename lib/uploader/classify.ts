@@ -522,10 +522,40 @@ export function readyToConfirm(rows: ConfirmedRow[], hasTemplate: boolean): bool
   return hasTemplate ? named || rows.some((row) => row.drop) : named;
 }
 
+const nameKey = (label: string): string => label.trim().replace(/\s+/g, " ").toLowerCase();
+
+/**
+ * Rows named alike are ONE zone (01.11, event 1292): the zone's name is the card's title on the site, so two
+ * zones with one name are two cards with one title, and the suppliers would not compete between them. Name ->
+ * the zone it holds: among the rows of that name the zone another supplier already sells in, else the first
+ * row's; a name no row's zone holds goes to the hall's zone of that name. A zone a row leaves stays on the list
+ * (a zone nothing maps is not touched): an older event outside the run may still stand on it, and a section may
+ * sit in two zones.
+ */
+function zonesByName(rows: ConfirmedRow[], existing: TemplateLike | null): Map<string, string> {
+  const current = tixstockMap(existing);
+  const others = new Set(otherSuppliersZoneIds(existing));
+  const byName = new Map<string, string>();
+  for (const row of rows) {
+    if (row.drop || row.unsure) continue;
+    const name = nameKey(row.label_he);
+    const zoneId = current[normalizeSupplierCategory(row.category)];
+    if (!name || !zoneId) continue;
+    const held = byName.get(name);
+    if (!held || (others.has(zoneId) && !others.has(held))) byName.set(name, zoneId);
+  }
+  for (const zone of existing?.zones ?? []) {
+    const name = nameKey(zone.label);
+    if (name && !byName.has(name)) byName.set(name, zone.id);
+  }
+  return byName;
+}
+
 /**
  * The final template after a confirm, merged over the existing one (a second confirm, or the template
  * `adoptVenueMap` just wrote, is the same call):
- *  - a confirmed row (not dropped, not unsure) gets a zone: the one its key already maps to, else a new id;
+ *  - a confirmed row (not dropped, not unsure) gets a zone: the one its name already holds (`zonesByName`), else
+ *    the one its key already maps to, else a new id;
  *    its label is the row's, its description the row's when it has one (the dialog sends none since round 2,
  *    D4 - the stored description stays); its sections are the drawing's for the key (several keys in
  *    one zone add up; an off-map key keeps the sections already painted on its zone, else none);
@@ -552,6 +582,7 @@ export function templateFromRows(
   const forget: string[] = [];
   const dropped: string[] = [];
   const kept: string[] = [];
+  const byName = zonesByName(rows, existing);
 
   for (const row of rows) {
     const key = normalizeSupplierCategory(row.category);
@@ -568,13 +599,18 @@ export function templateFromRows(
       continue;
     }
 
-    const known = categoryToZone[key] ?? current[key];
+    const name = nameKey(row.label_he);
+    const known = byName.get(name) ?? categoryToZone[key] ?? current[key];
     let zone = known ? zones.find((z) => z.id === known) : undefined;
     if (!zone) {
       zone = { id: newZoneId(key, zones), label: "", sections: [] };
       zones.push(zone);
     }
-    zone.label = cut(row.label_he, ZONE_LABEL_MAX) || zone.label || drawn.get(key)?.category || cut(row.category, ZONE_LABEL_MAX);
+    if (name) byName.set(name, zone.id);
+    // Rows that share a zone: the first one's spelling of the name stands.
+    if (!Object.values(categoryToZone).includes(zone.id)) {
+      zone.label = cut(row.label_he, ZONE_LABEL_MAX) || zone.label || drawn.get(key)?.category || cut(row.category, ZONE_LABEL_MAX);
+    }
     // The dialog has no description box (round 2, D4): an empty one clears nothing - what is stored stays.
     const description = cleanZoneDescription(row.description_he);
     if (description) zone.description = description;

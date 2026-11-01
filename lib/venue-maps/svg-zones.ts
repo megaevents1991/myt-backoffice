@@ -127,7 +127,8 @@ export const isUnsellableCategory = (normalized: string): boolean =>
 
 /**
  * Starting zones for a freshly adopted drawing: one zone per supplier category
- * the drawing is already sliced into, holding all of that category's sections.
+ * the drawing is already sliced into, holding all of that category's sections
+ * (one zone for categories `labelFor` names alike).
  * The operator only renames them; finer zones are added later, when a second
  * supplier slices the stand differently.
  *
@@ -152,8 +153,16 @@ export function zonesFromCategories(
       existing.sections.push(section);
       continue;
     }
+    const named = labelFor(key)?.trim().slice(0, ZONE_LABEL_MAX);
+    // Two categories a person named alike are one zone: the name is the card's title on the site (01.11, event 1292).
+    const sameName = named ? zones.find((z) => z.label === named) : undefined;
+    if (sameName) {
+      sameName.sections.push(section);
+      categoryToZone[key] = sameName.id;
+      continue;
+    }
     const label =
-      labelFor(key)?.trim().slice(0, ZONE_LABEL_MAX) ||
+      named ||
       category.replace(/-+/g, " ").replace(/\s+/g, " ").trim();
     const zone: VenueZone = {
       id: newZoneId(key, zones),

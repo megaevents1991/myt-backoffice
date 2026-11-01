@@ -155,6 +155,22 @@ assert.deepEqual(auto.categoryToZone, {
   "categoria 1": "categoria-1",
   "categoria 2 fondo": "categoria-2-fondo",
 });
+// two categories a person named alike are one zone (01.11, event 1292): the name is the card's title on the site
+const alikeSvg =
+  '<svg><g data-category="curva-nord"><g data-section="curva-nord_1"/><g data-section="curva-nord_2"/></g>' +
+  '<g data-category="curva-sud"><g data-section="curva-sud_1"/></g>' +
+  '<g data-category="tribuna"><g data-section="tribuna_1"/></g></svg>';
+const alike = zonesFromCategories(alikeSvg, (key) =>
+  key === "tribuna" ? undefined : "מאחורי השער",
+);
+assert.deepEqual(
+  alike.zones.map((z) => [z.id, z.label, z.sections]),
+  [
+    ["curva-nord", "מאחורי השער", ["curva-nord_1", "curva-nord_2", "curva-sud_1"]],
+    ["tribuna", "tribuna", ["tribuna_1"]],
+  ],
+);
+assert.deepEqual(alike.categoryToZone, { "curva nord": "curva-nord", "curva sud": "curva-nord", tribuna: "tribuna" });
 assert.equal(sectionCategory("upper-tier_a_12"), "upper-tier_a");
 assert.equal(sectionCategory("standing"), "standing");
 
