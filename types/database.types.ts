@@ -112,6 +112,8 @@ export type Database = {
           inbound_departure_airport: string | null
           inbound_departure_time: string | null
           inbound_flight_number: string | null
+          inbound_metadata_logo: string | null
+          inbound_metadata_name: string | null
           inbound_stop_airport: string | null
           inbound_stop_duration: string | null
           legs: string | null
@@ -2547,6 +2549,8 @@ export type Database = {
           inbound_departure_time: string
           inbound_duration: string
           inbound_flight_number: string
+          inbound_metadata_logo: string | null
+          inbound_metadata_name: string | null
           inbound_stop_airport: string | null
           inbound_stop_duration: string | null
           initial_quantity: number
@@ -2615,6 +2619,8 @@ export type Database = {
           inbound_departure_time: string
           inbound_duration: string
           inbound_flight_number: string
+          inbound_metadata_logo?: string | null
+          inbound_metadata_name?: string | null
           inbound_stop_airport?: string | null
           inbound_stop_duration?: string | null
           initial_quantity: number
@@ -2683,6 +2689,8 @@ export type Database = {
           inbound_departure_time?: string
           inbound_duration?: string
           inbound_flight_number?: string
+          inbound_metadata_logo?: string | null
+          inbound_metadata_name?: string | null
           inbound_stop_airport?: string | null
           inbound_stop_duration?: string | null
           initial_quantity?: number

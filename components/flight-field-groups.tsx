@@ -136,6 +136,7 @@ const TOURS_FIELDS: FlightField[] = [
   { key: "cost_child_price", label: "Child Price (CHD)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
   { key: "cost_tax", label: "Taxes (TAX)", group: TOURS_FIELD_GROUP, type: "amount", bulkEditable: true },
   { key: "inbound_airline_code", label: "Return Airline", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: true },
+  { key: "inbound_metadata_name", label: "Return Airline Name", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: false, readOnly: true },
   { key: "contract_id", label: "Contract", group: TOURS_FIELD_GROUP, type: "text", bulkEditable: false, readOnly: true },
   { key: "requested_at", label: "Requested (RQ)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },
   { key: "first_cancellation_date", label: "First Cancellation (CXX 1)", group: TOURS_FIELD_GROUP, type: "date", bulkEditable: true },

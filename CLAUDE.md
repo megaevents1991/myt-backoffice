@@ -1199,6 +1199,26 @@ Main's side mirrors the constant and no longer trusts such a landing (check-in =
 day). To find who saved one: `/audit-log`, entity `offline_flight` - the `changes` carry
 `outbound_arrival_time: {from, to}` and the actor.
 
+### Offline flights - a block flown back by another airline (2026-11-01)
+
+Lufthansa out, Swiss back. `flights.inbound_airline_code` existed since 01.10 with no box on a form, and `metadata_name` /
+`metadata_logo` are the OUTBOUND airline's, so the site printed Lufthansa beside a Swiss flight number. **Pure rules in
+`lib/flight-return-airline.ts`** (`scripts/flight-return-airline-selftest.ts`); migration
+`20261101144847_flights_return_airline_name.sql` adds `inbound_metadata_name` / `inbound_metadata_logo` and re-creates
+`departure_flights` (its column list is fixed, so `provision_company` is pasted again with that one change). Tours only:
+`pickFlightColumns` drops the three on a Mega Events write, and myt-main never reads them. Set only when the code differs from
+`airline_code` - blank, or the outbound airline typed again, stores nulls (`returnAirlineColumns`). **Forms:** `ReturnAirlineField`
+(`components/return-airline-field.tsx`) under "Inbound Flight" on new + edit and in step 1 of the series, shown for a tours company;
+"Look up" is the outbound's `/api/validate-airline`, the name stays typeable, and a code with no name is refused
+(`returnAirlineProblem` - except a code the row already holds, so an older row never stops an unrelated edit). **A name never
+outlives its code:** `withReturnAirlineNames` inside `pickFlightColumns` clears the name and logo on any write of the code alone (the
+sheet's "Back airline", a table cell, a bulk edit), then `fillReturnAirlineNames` (`lib/services/airline-names.ts`, in
+`updateOfflineFlight` / `bulkUpdateOfflineFlights`; one avcodes call per code per server instance) looks them up; a failed lookup saves the
+code alone and never fails the save. **Site:** mega-family `legAirline` in `lib/data/departures.mjs` prints the return airline's name and
+logo, else its code - never the outbound's (`scripts/flight-airline-selftest.mjs`); deploy order does not matter, an older view reads as
+the code alone. Not changed: the departure card prints the outbound name + "LH+LX"; the sheet's outbound "Airline" cell still writes the
+code alone and leaves `metadata_name` / `metadata_logo` as they were.
+
 ### Audit log - from the entity, readable (2026-10-12)
 
 "Who moved this flight's landing to July?" took opening `/audit-log` rows one by one: a row read

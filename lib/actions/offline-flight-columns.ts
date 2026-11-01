@@ -4,6 +4,10 @@ import {
 } from "@/types/offline-flight.types";
 import { BLOCK_STATUSES } from "@/types/tours.types";
 import { assertLegTimes } from "@/lib/flight-leg-times";
+import {
+  AIRLINE_CODE_PATTERN,
+  withReturnAirlineNames,
+} from "@/lib/flight-return-airline";
 
 // Every column a client is allowed to write. `id`, `consumed_quantity`,
 // `is_deleted` and `series_id` are deliberately absent: they are set by the
@@ -39,6 +43,7 @@ export type FlightWritableColumn = (typeof FLIGHT_WRITABLE_COLUMNS)[number];
 // dedicated action sets them, never a form payload.
 export const FLIGHT_TOURS_WRITABLE_COLUMNS = [
   "original_quantity", "cost_child_price", "cost_tax", "inbound_airline_code",
+  "inbound_metadata_name", "inbound_metadata_logo",
   "season_label", "requested_at", "first_cancellation_date", "names_deadline",
   "cancelled_at", "cancel_reason", "cancellation_fee",
 ] as const satisfies readonly (keyof OfflineFlight)[];
@@ -84,7 +89,7 @@ export function pickFlightColumns(
       out[key] = value;
     }
   }
-  return out;
+  return tours ? withReturnAirlineNames(out) : out;
 }
 
 /**
@@ -130,6 +135,13 @@ export function assertFlightValues(
     if (!allowed.includes(String(row.block_status))) {
       throw new Error(`block_status "${String(row.block_status)}" is not allowed here`);
     }
+  }
+  // A word typed in a bulk edit reads as this message, not a database error.
+  if (
+    row.inbound_airline_code != null &&
+    !AIRLINE_CODE_PATTERN.test(String(row.inbound_airline_code))
+  ) {
+    throw new Error("Return airline is one code of 2-3 letters or digits (e.g. LX)");
   }
   // A leg's landing must follow its takeoff within MAX_LEG_HOURS - the site
   // reads the hotel check-in from the outbound landing (lib/flight-leg-times.ts).

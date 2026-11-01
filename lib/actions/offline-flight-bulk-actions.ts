@@ -10,6 +10,7 @@ import {
 } from "@/lib/flights-scope";
 import { revalidatePath } from "next/cache";
 import { logAudit } from "@/lib/audit";
+import { fillReturnAirlineNames } from "@/lib/services/airline-names";
 import {
   pickFlightColumns,
   withoutLifecycleStatus,
@@ -58,7 +59,12 @@ export async function bulkUpdateOfflineFlights(
   const { company, session } = await requireCompany();
   assertIds(ids);
   const mode = { tours: sellsTours(company) };
-  const row = withoutLifecycleStatus(pickFlightColumns(patch, mode), mode);
+  // A bulk "Return Airline" writes the code alone. No outbound code to compare
+  // with here: on a row it equals, the name is that same airline's anyway.
+  const row = await fillReturnAirlineNames(
+    withoutLifecycleStatus(pickFlightColumns(patch, mode), mode),
+    "",
+  );
   // event_ids is set through bulkSetEventLink, which merges instead of replacing.
   delete row.event_ids;
   if (Object.keys(row).length === 0) throw new Error("Nothing to update");

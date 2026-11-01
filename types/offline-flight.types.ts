@@ -93,7 +93,9 @@ export interface OfflineFlight {
   original_quantity?: number | null; // seats first ordered; initial_quantity = seats held now
   cost_child_price?: number | null; // NUMERIC(10,2) - CHD fare (cost_price = ADT)
   cost_tax?: number | null; // NUMERIC(10,2)
-  inbound_airline_code?: string | null; // VARCHAR(3) - open-jaw flown back by another carrier
+  inbound_airline_code?: string | null; // VARCHAR(3) - flown back by another carrier (lib/flight-return-airline.ts)
+  inbound_metadata_name?: string | null; // the return carrier's name; metadata_name is the outbound one
+  inbound_metadata_logo?: string | null; // the return carrier's logo; metadata_logo is the outbound one
   contract_id?: string | null; // uuid -> flight_contracts
   season_label?: string | null; // pool label before the block is assigned to a departure
   requested_at?: string | null; // DATE

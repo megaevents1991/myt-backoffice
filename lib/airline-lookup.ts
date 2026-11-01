@@ -20,13 +20,17 @@ const INVISIBLE = /[ ​-‏‪-‮⁠-⁩﻿]/g;
 /** An IATA airline designator: two letters or digits ("LY", "W6", "7X"). */
 const IATA_AIRLINE = /^[A-Z0-9]{2}$/;
 
+/** A typed or pasted code: hidden marks dropped, trimmed, upper case. "" when there is none. */
+export function cleanAirlineCode(raw: unknown): string {
+  return typeof raw === "string" ? raw.replace(INVISIBLE, "").trim().toUpperCase() : "";
+}
+
 /**
- * The code as avcodes is asked for it: hidden marks dropped, trimmed, upper
- * case. Null when what is left is not a two-character designator.
+ * The code as avcodes is asked for it. Null when what is left is not a
+ * two-character designator.
  */
 export function normalizeAirlineCode(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const code = raw.replace(INVISIBLE, "").trim().toUpperCase();
+  const code = cleanAirlineCode(raw);
   return IATA_AIRLINE.test(code) ? code : null;
 }
 

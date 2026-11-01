@@ -38,6 +38,14 @@ import {
   toStopoverColumns,
 } from "@/lib/flight-stops";
 import { legTimesSuperRefine } from "@/lib/flight-leg-times";
+import { ReturnAirlineField } from "@/components/return-airline-field";
+import {
+  returnAirlineColumns,
+  returnAirlineOf,
+  returnAirlineProblem,
+  returnAirlineSchemaShape,
+  type ReturnAirline,
+} from "@/lib/flight-return-airline";
 import {
   Popover,
   PopoverContent,
@@ -179,6 +187,7 @@ const offlineFlightFormSchema = z.object({
   // by the `flights_derive_stops` trigger on save), so the count can never
   // disagree with the airports behind it.
   ...stopoverSchemaShape,
+  ...returnAirlineSchemaShape,
   airline_code: z
     .string()
     .regex(
@@ -299,6 +308,19 @@ export default function EditOfflineFlightPage({
   });
 
   const isDirty = form.formState.isDirty;
+  // What the row holds: an older row with a code and no name must not stop an unrelated edit.
+  const [storedReturnCode, setStoredReturnCode] = useState<string | null>(null);
+  const returnAirline = returnAirlineOf({
+    inbound_airline_code: form.watch("inbound_airline_code"),
+    inbound_metadata_name: form.watch("inbound_metadata_name"),
+    inbound_metadata_logo: form.watch("inbound_metadata_logo"),
+  });
+  const setReturnAirline = (next: ReturnAirline) => {
+    form.setValue("inbound_airline_code", next.code, { shouldDirty: true });
+    form.setValue("inbound_metadata_name", next.name, { shouldDirty: true });
+    form.setValue("inbound_metadata_logo", next.logo, { shouldDirty: true });
+    form.clearErrors("inbound_airline_code");
+  };
 
   useEffect(() => {
     if (!flightIdParam) return;
@@ -349,6 +371,7 @@ export default function EditOfflineFlightPage({
             return val;
           };
 
+          setStoredReturnCode(flight.inbound_airline_code ?? null);
           form.reset({
             ...restOfFlightData,
             duration: toIsoDuration(flight.duration),
@@ -461,6 +484,11 @@ export default function EditOfflineFlightPage({
       form.setError("price", { message: "Price must be a positive number." });
       return;
     }
+    const returnProblem = returnAirlineProblem(returnAirlineOf(values), values.airline_code, storedReturnCode);
+    if (returnProblem) {
+      form.setError("inbound_airline_code", { message: returnProblem });
+      return;
+    }
     // console.log for values can be removed or kept
     startTransition(async () => {
       try {
@@ -471,7 +499,11 @@ export default function EditOfflineFlightPage({
           inbound_has_stop: _inboundHasStop,
           ...columns
         } = values;
-        const dataToUpdate = { ...columns, ...toStopoverColumns(values) };
+        const dataToUpdate = {
+          ...columns,
+          ...toStopoverColumns(values),
+          ...returnAirlineColumns(returnAirlineOf(values), values.airline_code),
+        };
         await updateOfflineFlight(
           flightId, // Use the stored parsed number ID
           dataToUpdate as Partial<
@@ -704,6 +736,14 @@ export default function EditOfflineFlightPage({
           <h2 className="text-xl font-semibold border-b pb-2 mt-6">
             Inbound Flight
           </h2>
+          {isTours && (
+            <ReturnAirlineField
+              value={returnAirline}
+              onChange={setReturnAirline}
+              outboundCode={form.watch("airline_code") ?? ""}
+              error={form.formState.errors.inbound_airline_code?.message}
+            />
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={form.control}

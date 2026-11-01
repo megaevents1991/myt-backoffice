@@ -373,7 +373,7 @@ function pureChecks() {
     tours.fields.filter((f) => f.group === TOURS_FIELD_GROUP).map((f) => f.key).sort(),
     [
       "cancel_reason", "cancellation_fee", "cancelled_at", "contract_id", "cost_child_price", "cost_tax",
-      "first_cancellation_date", "inbound_airline_code", "names_deadline", "original_quantity", "requested_at",
+      "first_cancellation_date", "inbound_airline_code", "inbound_metadata_name", "names_deadline", "original_quantity", "requested_at",
       "reviewed_at", "season_label",
     ],
   );

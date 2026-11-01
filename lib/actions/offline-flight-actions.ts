@@ -21,6 +21,7 @@ import {
   assertFlightValues,
 } from "./offline-flight-columns";
 import { assertLegTimes } from "@/lib/flight-leg-times";
+import { fillReturnAirlineNames } from "@/lib/services/airline-names";
 import { pushFlightsToEvents } from "./offline-flight-event-sync";
 import { syncSubToursFromFlights } from "@/lib/tours/flight-sync";
 
@@ -190,8 +191,15 @@ export async function updateOfflineFlight(
   const newEventIds: number[] = flight.event_ids ?? oldEventIds;
   const addedEventIds = newEventIds.filter((eid) => !oldEventIds.includes(eid));
 
+  // A return airline written as a code alone (the sheet, a table cell) gets its
+  // name and logo here, against the outbound airline this row will have.
+  const row = await fillReturnAirlineNames(
+    patch,
+    patch.airline_code ?? current.airline_code,
+  );
+
   const { data, error } = await flightsOf(company)
-    .update(patch)
+    .update(row)
     .eq("id", id)
     .select();
 

@@ -29,6 +29,7 @@ import {
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import {
   createOfflineFlight,
+  getFlightCompanyMode,
   getRelevantEventsForFlight,
 } from "@/lib/actions/offline-flight-actions";
 import { OfflineFlight } from "@/types/offline-flight.types";
@@ -40,6 +41,14 @@ import {
 } from "@/lib/flight-stops";
 import { legTimesSuperRefine } from "@/lib/flight-leg-times";
 import { normalizeAirlineCode } from "@/lib/airline-lookup";
+import { ReturnAirlineField } from "@/components/return-airline-field";
+import {
+  returnAirlineColumns,
+  returnAirlineOf,
+  returnAirlineProblem,
+  returnAirlineSchemaShape,
+  type ReturnAirline,
+} from "@/lib/flight-return-airline";
 import {
   Popover,
   PopoverContent,
@@ -183,6 +192,7 @@ const offlineFlightFormSchema = z.object({
   // by the `flights_derive_stops` trigger on save), so the count can never
   // disagree with the airports behind it.
   ...stopoverSchemaShape,
+  ...returnAirlineSchemaShape,
   airline_code: z
     .string()
     .regex(
@@ -286,6 +296,13 @@ export default function NewOfflineFlightPage() {
     { id: number; name: string; date: string }[]
   >([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  // Mega Events rules until the server says the company sells tours.
+  const [isTours, setIsTours] = useState(false);
+  React.useEffect(() => {
+    getFlightCompanyMode()
+      .then((mode) => setIsTours(mode.tours))
+      .catch((error) => console.error("Failed to load the company mode:", error));
+  }, []);
 
   const form = useForm<OfflineFlightFormData>({
     resolver: zodResolver(offlineFlightFormSchema, {
@@ -300,6 +317,9 @@ export default function NewOfflineFlightPage() {
       inbound_has_stop: "0",
       inbound_stop_airport: "",
       inbound_stop_duration: "",
+      inbound_airline_code: "",
+      inbound_metadata_name: "",
+      inbound_metadata_logo: "",
       outbound_check_bags_included: false,
       outbound_cabin_bags_included: true,
       inbound_check_bags_included: false,
@@ -332,6 +352,17 @@ export default function NewOfflineFlightPage() {
   });
 
   const isDirty = form.formState.isDirty;
+  const returnAirline = returnAirlineOf({
+    inbound_airline_code: form.watch("inbound_airline_code"),
+    inbound_metadata_name: form.watch("inbound_metadata_name"),
+    inbound_metadata_logo: form.watch("inbound_metadata_logo"),
+  });
+  const setReturnAirline = (next: ReturnAirline) => {
+    form.setValue("inbound_airline_code", next.code, { shouldDirty: true });
+    form.setValue("inbound_metadata_name", next.name, { shouldDirty: true });
+    form.setValue("inbound_metadata_logo", next.logo, { shouldDirty: true });
+    form.clearErrors("inbound_airline_code");
+  };
 
   // Watch airline_code field to reset validation when it changes
   const airlineCodeValue = form.watch("airline_code");
@@ -474,6 +505,11 @@ export default function NewOfflineFlightPage() {
   };
 
   async function onSubmit(values: OfflineFlightFormData) {
+    const returnProblem = returnAirlineProblem(returnAirlineOf(values), values.airline_code);
+    if (returnProblem) {
+      form.setError("inbound_airline_code", { message: returnProblem });
+      return;
+    }
     startTransition(async () => {
       try {
         // `*_has_stop` drives the form only - the row carries the airports, and
@@ -486,7 +522,11 @@ export default function NewOfflineFlightPage() {
         const flightDataToSave: Omit<
           OfflineFlight,
           "id" | "consumed_quantity" | "is_deleted"
-        > = { ...columns, ...toStopoverColumns(values) };
+        > = {
+          ...columns,
+          ...toStopoverColumns(values),
+          ...returnAirlineColumns(returnAirlineOf(values), values.airline_code),
+        };
         await createOfflineFlight(flightDataToSave);
         toast.success("Offline flight created successfully!");
         router.push("/offline-flights");
@@ -718,6 +758,14 @@ export default function NewOfflineFlightPage() {
             <h2 className="text-xl font-semibold border-b pb-2 mt-6">
               Inbound Flight
             </h2>
+            {isTours && (
+              <ReturnAirlineField
+                value={returnAirline}
+                onChange={setReturnAirline}
+                outboundCode={form.watch("airline_code")}
+                error={form.formState.errors.inbound_airline_code?.message}
+              />
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField
                 control={form.control}

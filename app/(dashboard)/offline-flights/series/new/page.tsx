@@ -28,6 +28,13 @@ import {
 } from "@/lib/actions/offline-flight-actions";
 import { blockStatusOptions } from "@/components/flight-field-groups";
 import { toStopoverColumns } from "@/lib/flight-stops";
+import { ReturnAirlineField } from "@/components/return-airline-field";
+import {
+  NO_RETURN_AIRLINE,
+  returnAirlineColumns,
+  returnAirlineProblem,
+  type ReturnAirline,
+} from "@/lib/flight-return-airline";
 import {
   MAX_ORGANIZED_FLIGHTS,
   NO_ORGANIZED_SERIES,
@@ -51,6 +58,8 @@ type Template = {
   metadata_iata: string;
   metadata_name: string;
   metadata_logo: string;
+  /** Tours only: flown back by another airline (empty = the same one both ways). */
+  returnAirline: ReturnAirline;
   price: string;
   initial_quantity: string;
   outbound_departure_airport: string;
@@ -100,6 +109,7 @@ const EMPTY_TEMPLATE: Template = {
   metadata_iata: "",
   metadata_name: "",
   metadata_logo: "",
+  returnAirline: NO_RETURN_AIRLINE,
   price: "",
   initial_quantity: "",
   outbound_departure_airport: "TLV",
@@ -272,8 +282,10 @@ export default function NewOfflineFlightSeriesPage() {
     }
   };
 
+  const returnProblem = returnAirlineProblem(template.returnAirline, template.airline_code);
   const step1Valid =
     seriesName !== "" &&
+    !returnProblem &&
     !organizedIssue &&
     template.airline_code.trim() !== "" &&
     template.metadata_name.trim() !== "" &&
@@ -386,6 +398,7 @@ export default function NewOfflineFlightSeriesPage() {
           metadata_iata: template.metadata_iata || template.airline_code,
           metadata_name: template.metadata_name,
           metadata_logo: template.metadata_logo,
+          ...returnAirlineColumns(template.returnAirline, template.airline_code),
           event_ids: row.eventIds,
           supplier: template.supplier || null,
           cost_price: template.cost_price ? Number(template.cost_price) : null,
@@ -570,6 +583,17 @@ export default function NewOfflineFlightSeriesPage() {
                 </div>
               )}
             </div>
+
+            {isTours && (
+              <div className="md:col-span-3">
+                <ReturnAirlineField
+                  value={template.returnAirline}
+                  onChange={(next) => set("returnAirline", next)}
+                  outboundCode={template.airline_code}
+                  error={template.returnAirline.code ? returnProblem : null}
+                />
+              </div>
+            )}
 
             <div>
               <Label>Price per seat (USD)</Label>

@@ -1,38 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  AVCODES_SEARCH_URL,
-  avcodesSearchBody,
-  normalizeAirlineCode,
-  parseAvcodesResult,
-} from "@/lib/airline-lookup";
-
-// A plain POST of avcodes' search form - no browser (lib/airline-lookup.ts says why).
-const LOOKUP_TIMEOUT_MS = 10_000;
-const LOOKUP_ATTEMPTS = 2;
+import { normalizeAirlineCode, parseAvcodesResult } from "@/lib/airline-lookup";
+import { fetchAvcodes } from "@/lib/services/airline-names";
 
 const LOOKUP_DOWN = "The airline lookup (avcodes.co.uk) did not answer - try again in a minute";
-
-/** The result page's HTML; one more try on a network error or a 5xx. Throws when neither answered. */
-async function fetchAvcodes(code: string): Promise<string> {
-  let lastError: unknown = null;
-  for (let attempt = 1; attempt <= LOOKUP_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(AVCODES_SEARCH_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: avcodesSearchBody(code),
-        signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
-        cache: "no-store",
-      });
-      if (res.ok) return await res.text();
-      lastError = new Error(`avcodes answered HTTP ${res.status}`);
-      if (res.status < 500) break;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
 
 export async function POST(request: NextRequest) {
   try {
