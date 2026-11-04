@@ -481,13 +481,20 @@ function TermTilesForm({ section, onChange, options, siteUrl }: FormProps<"artis
           max={24}
           render={(item, patch) => (
             <div className="space-y-2">
-              <TermSelect kind={kind} value={item.slug} onChange={(slug) => patch({ slug })} options={options} ariaLabel={noun} />
+              {/* another artist drops the picture of the one before, or André Rieu's photo stays beside Sting (Liz, 04.11) */}
+              <TermSelect
+                kind={kind}
+                value={item.slug}
+                onChange={(slug) => patch(item.slug ? { slug, image: "" } : { slug })}
+                options={options}
+                ariaLabel={noun}
+              />
               <ImageUrlField
                 label="Tile picture"
                 value={item.image}
                 onChange={(image) => patch({ image })}
                 siteUrl={siteUrl}
-                hint={`Empty = the first hero image of the ${noun.toLowerCase()}.`}
+                hint={`Empty = the first hero image of the ${noun.toLowerCase()}; one with neither is left off the site. Choosing another ${noun.toLowerCase()} empties it.`}
               />
             </div>
           )}

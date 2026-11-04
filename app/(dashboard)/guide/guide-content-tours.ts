@@ -609,6 +609,14 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Swap the artist (or destination) of a tile", "להחליף אמן (או יעד) באריח"),
+        steps: [
+          t("Open the \"Artist tiles\" (or \"Destination tiles\") section and choose the new one in the tile's list. The picture of the one before empties itself.", "פותחים את הסקשן \"Artist tiles\" (או \"Destination tiles\") ובוחרים את החדש ברשימה של האריח. התמונה של הקודם מתרוקנת לבד."),
+          t("\"Upload\" a picture in \"Tile picture\", or leave it empty for the first hero image of the artist. An artist with neither is left off the site.", "מעלים תמונה ב-\"Tile picture\" עם \"Upload\", או משאירים ריק לתמונה הראשית של האמן. אמן בלי אף אחת מהן לא מופיע באתר."),
+          t("A tile left on \"Choose…\" locks \"Save\" for the whole page - the red line at the bottom names it. Choose an item or remove the tile, then \"Save\" and \"Revalidate Pages\".", "אריח שנשאר על \"Choose…\" נועל את \"Save\" לכל העמוד - השורה האדומה למטה אומרת איזה. בוחרים פריט או מוחקים את האריח, ואז \"Save\" ו-\"Revalidate Pages\"."),
+        ],
+      },
+      {
         title: t("Show Google reviews", "להציג ביקורות מגוגל"),
         steps: [
           t("Open the \"Reviews\" section and choose \"The company's Google reviews\" in \"Where the reviews come from\".", "פותחים את הסקשן \"Reviews\" ובוחרים \"The company's Google reviews\" ב-\"Where the reviews come from\"."),
