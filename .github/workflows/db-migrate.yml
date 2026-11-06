@@ -93,5 +93,8 @@ jobs:
       - name: List migrations
         run: supabase migration list --linked
 
+      # --linked: since the CLI's next major (2026-11-06) a bare `db push` targets a LOCAL stack and
+      # fails with "connect ECONNREFUSED 127.0.0.1:54322" - the run of 01.11 warned about it. The new
+      # CLI still accepts --linked (it calls it deprecated in favour of --remote, which v2 lacks).
       - name: Push migrations
-        run: supabase db push --include-all
+        run: supabase db push --include-all --linked
