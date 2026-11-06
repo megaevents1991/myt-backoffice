@@ -677,6 +677,18 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
       t("A tile without banners of its own still swaps the top banners: to the hero pictures of its world, or of its first 3 tours.", "כפתור בלי באנרים משלו עדיין מחליף את הבאנרים העליונים: לתמונות הראש של העולם שלו, או של 3 הטיולים הראשונים שלו."),
       t("A section ticked for some tiles under \"Show for tiles\" shows only while a customer has one of them chosen. If its tile is later removed, the site shows it to no one and the section says so.", "סקשן שסומן לכפתורים מסוימים תחת \"Show for tiles\" מופיע רק כל עוד הלקוח על אחד מהם. אם הכפתור שלו הוסר אחר כך, האתר לא מציג אותו לאף אחד והסקשן כותב את זה."),
       t("\"Reasons\" are drawn as cards with the icon on a round badge - on the home page and on every category page.", "\"Reasons\" מצוירות ככרטיסים עם האייקון על עיגול - בעמוד הבית ובכל עמוד קטגוריה."),
+      t(
+        "The number on each chip of \"The page as a tile shows it\" counts the sections a customer sees with that tile chosen. A world with no card of its own shows one less than its neighbours.",
+        "המספר על כל צ'יפ ב-\"The page as a tile shows it\" סופר את הסקשנים שלקוח רואה כשהכפתור הזה בחור. עולם בלי כרטיס משלו מראה אחד פחות מהשכנים שלו.",
+      ),
+      t(
+        "A Reasons copy made with \"Its own copy for\" shows its own reasons, not the world page's - change its text there. To go back to the world's reasons, remove the copy.",
+        "העתק של Reasons שנוצר עם \"Its own copy for\" מציג את הסיבות שלו, לא של עמוד העולם - משנים את הטקסט שלו שם. כדי לחזור לסיבות של העולם, מוחקים את ההעתק.",
+      ),
+      t(
+        "The artists from Mega Events are refreshed every six hours with Mega Events' packages; \"Sync now\" on [Mega Events Packages](/tours/events) refreshes them at once. Until the first refresh the slider shows the artists picked by hand.",
+        "האמנים ממגה איבנטס מתעדכנים כל שש שעות יחד עם החבילות של מגה איבנטס; \"Sync now\" ב[חבילות מגה איבנטס](/tours/events) מעדכן מיד. עד העדכון הראשון הסליידר מציג את האמנים שנבחרו ביד.",
+      ),
       t("The reviews typed or picked in the section stay as a fallback: the site shows them while Google has no review to show.", "הביקורות שהוקלדו או נבחרו בסקשן נשארות כגיבוי: האתר מציג אותן כל עוד אין ביקורת מגוגל להציג."),
       t("A review picked from a feedback form is a copy: nothing reaches the site until you pick it, and a later change of the answer itself does not change the site.", "ביקורת שנבחרה מטופס משוב היא העתק: שום דבר לא מגיע לאתר עד שבוחרים אותו, ושינוי מאוחר בתשובה עצמה לא משנה את האתר."),
       t("The feedback forms belong to Mega Events, so \"Pick from the feedback forms\" works for someone who also works there.", "טופסי המשוב שייכים למגה איבנטס, ולכן \"Pick from the feedback forms\" עובד למי שעובד גם שם."),
@@ -902,6 +914,21 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Write a world's reasons - they show on the home page too", "לכתוב את הסיבות של עולם - הן מופיעות גם בעמוד הבית"),
+        steps: [
+          t("Open the world under \"Worlds\" in [Categories & Tags](/tours/terms).", "פותחים את העולם תחת \"Worlds\" ב[קטגוריות ותגיות](/tours/terms)."),
+          t(
+            "In \"The page, top to bottom\" open its \"Reasons\" row; a world that has none: \"Add Section\" → \"Reasons\".",
+            "ב-\"The page, top to bottom\" פותחים את שורת ה-\"Reasons\" שלו; עולם שאין לו: \"Add Section\" ← \"Reasons\".",
+          ),
+          t("\"Add Reason\" for each one: a \"Title\", a \"Text\" and an \"Icon\". Four read best. Keep the row's switch on.", "\"Add Reason\" לכל סיבה: \"Title\", \"Text\" ו-\"Icon\". ארבע נראות הכי טוב. משאירים את המתג של השורה דולק."),
+          t(
+            "\"Save\", then \"Revalidate Pages\". From then on, while a customer has this world's tile chosen on the [home page](/tours/homepage), these reasons replace the home page's.",
+            "\"Save\", ואז \"Revalidate Pages\". מעכשיו, כל עוד לקוח בחר את הכפתור של העולם הזה ב[עמוד הבית](/tours/homepage), הסיבות האלה מחליפות את הסיבות של עמוד הבית.",
+          ),
+        ],
+      },
+      {
         title: t("Put a tour in a category", "לשייך טיול לקטגוריה"),
         steps: [
           t("Open the tour in [Tours](/tours/packages) → \"Categories & Tags\" tab → tick it → \"Save\".", "פותחים את הטיול ב[טיולים](/tours/packages) ← לשונית \"Categories & Tags\" ← מסמנים ← \"Save\"."),
@@ -912,6 +939,10 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
     points: [
       t("Nothing is built by hand: a world page, a tag page and a destination page list their tours by themselves, and a home page slider can follow any of them.", "שום דבר לא נבנה ידנית: עמוד עולם, עמוד תגית ועמוד יעד מציגים את הטיולים שלהם לבד, וסליידר בעמוד הבית יכול לעקוב אחרי כל אחד מהם."),
       t("A world with a brand name gets a tile in the \"Worlds\" section of the [home page](/tours/homepage). Its color paints its page, its sub-categories and the cards of its tours. It also gets a link in the worlds row of the footer and its name in the trail at the top of its tours' pages. While a customer has its tile chosen on the home page, or is on its page, the whole site wears its color and the header says its brand name.", "עולם עם שם מותג מקבל אריח בסקשן \"Worlds\" של [עמוד הבית](/tours/homepage). הצבע שלו צובע את העמוד שלו, את תת הקטגוריות ואת הכרטיסים של הטיולים שלו. הוא מקבל גם קישור בשורת העולמות בפוטר ואת השם שלו בשביל שבראש עמודי הטיולים שלו. כל עוד הלקוח על הכפתור שלו בעמוד הבית, או בעמוד שלו, כל האתר לובש את הצבע שלו וההדר כותב את שם המותג שלו."),
+      t(
+        "A world's first \"Hero images\" picture is also the picture at the top of the home page while its tile is chosen - unless the tile has its own \"Picture at the top\" (Homepage → Tour finder → the tile). A world with neither shows the pictures of its first tours.",
+        "התמונה הראשונה ב-\"Hero images\" של עולם היא גם התמונה בראש עמוד הבית כשהכפתור שלו בחור - אלא אם לכפתור יש \"Picture at the top\" משלו (עמוד הבית ← Tour finder ← הכפתור). עולם בלי אף אחת מהן מציג את התמונות של הטיולים הראשונים שלו.",
+      ),
       t("A slug can't change: the page's address on the site is made from it.", "את ה-slug אי אפשר לשנות: הכתובת של העמוד באתר נבנית ממנו."),
       t("The \"Description\" opens as plain text in the visual editor - also a description that came with the site, which used to open as HTML code. It shows on the page where the \"Description\" row is.", "ה-\"Description\" נפתח כטקסט רגיל בעורך הוויזואלי - גם תיאור שהגיע עם האתר, שעד עכשיו נפתח כקוד HTML. הוא מוצג בעמוד במקום שבו שורת \"Description\" נמצאת."),
       t("Until a page is saved from \"The page, top to bottom\", the site draws it as it came. From the first save, the site draws exactly what the list holds - a part removed from the list is gone from the page.", "עד שעמוד נשמר מ-\"The page, top to bottom\", האתר מציג אותו כפי שהגיע. מהשמירה הראשונה האתר מציג בדיוק את מה שברשימה - חלק שהוסר מהרשימה יורד מהעמוד."),
