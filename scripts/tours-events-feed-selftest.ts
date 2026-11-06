@@ -22,7 +22,10 @@ import {
   buildEventsFeed,
   buildEventsFeedInPages,
   buildEventsIndex,
+  buildFeedArtists,
   fallbackPool,
+  feedArtistOf,
+  storedFeedArtists,
   feedCandidateIds,
   feedCategory,
   feedCutoffDate,
@@ -501,6 +504,41 @@ async function testPagedRead(): Promise<void> {
     assert.ok(index.every((i) => (i.price === undefined) === !pricedIds.has(i.id)), indexContext);
     assert.ok(index.every((i, k) => k === 0 || Date.parse(index[k - 1].date) <= Date.parse(i.date)), indexContext);
   }
+}
+
+// ---- Mega Events' artists row on a company site (Liz, 06.11: Ariana Grande sells nothing any more)
+{
+  const row = (slug: string, extra: Partial<{ name: string; name_english: string; image_url: string | null; art_image_url: string | null }> = {}) => ({
+    slug,
+    name: extra.name ?? slug.toUpperCase(),
+    name_english: extra.name_english ?? slug,
+    image_url: "image_url" in extra ? (extra.image_url ?? null) : `https://cdn.example/${slug}.jpg`,
+    art_image_url: extra.art_image_url ?? null,
+  });
+  const artists = [row("adele"), row("ariana"), row("bruno"), row("coldplay"), row("muse", { image_url: null, art_image_url: "https://cdn.example/muse.png" }), row("noimage", { image_url: null })];
+  const selling = new Set(["adele", "bruno", "coldplay", "muse", "noimage"]);
+  const onSale = (a: { slug: string }) => selling.has(a.slug);
+  const slugs = (list: { slug: string }[]) => list.map((a) => a.slug);
+
+  assert.deepEqual(slugs(buildFeedArtists({ artists, pins: [], hidden: [], onSale })), ["adele", "bruno", "coldplay", "muse"], "on sale, with a picture, in the site's order");
+  assert.deepEqual(
+    slugs(buildFeedArtists({ artists, pins: [{ ref: "artist:coldplay", slot: 0 }], hidden: ["artist:bruno"], onSale })),
+    ["coldplay", "adele", "muse"],
+    "a pin holds its place, a hidden artist is gone",
+  );
+  assert.deepEqual(
+    slugs(buildFeedArtists({ artists, pins: [{ ref: "artist:ariana", slot: 0 }], hidden: [], onSale })),
+    ["adele", "bruno", "coldplay", "muse"],
+    "a pinned artist with nothing on sale is left out",
+  );
+  assert.equal(buildFeedArtists({ artists, pins: [], hidden: [], onSale, max: 2 }).length, 2, "capped");
+  const muse = feedArtistOf(artists[4]);
+  assert.equal(muse?.imageIsCutout, true, "no photo = the cut-out, marked");
+  assert.equal(feedArtistOf(artists[0])?.imageIsCutout, false);
+  assert.ok(feedArtistOf(artists[0])?.href.endsWith("/artists/adele"), "the artist's page on Mega Events");
+  assert.equal(feedArtistOf({ ...artists[0], image_url: "http://insecure/x.jpg" }), null, "only an https picture");
+  assert.equal(storedFeedArtists({ items: [] }), null, "a document written before has no artists");
+  assert.deepEqual(storedFeedArtists({ artists: [] }), []);
 }
 
 testPagedRead()

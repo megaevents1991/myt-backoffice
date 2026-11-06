@@ -11,7 +11,13 @@ import {
   FOOTER_TILE_MOBILE_LABELS,
   NO_TERM_EXTRAS,
   SITE_DOC_SCHEMAS,
+  copyForTile,
+  copyTargets,
   homeSchema,
+  homeSectionSchema,
+  moveInView,
+  newSection,
+  shownForTile,
   readFooterTiles,
   readPictureTileMode,
   readSiteDoc,
@@ -259,6 +265,7 @@ check("the reasons keep their icon as a site path and get the title the site wro
   type: "reasons",
   title: REASONS_TITLE,
   items: [{ icon: "/media/2026/08/calendar-date.png", title: "קצר ומדויק", text: "טיול קצר" }],
+  followWorld: true,
 });
 check("a slide becomes a banner; an empty slide is dropped and a '#' link is no link", tagExtras.afterLead[0].type === "banners" ? tagExtras.afterLead[0].items : null, [
   { title: "פריז", tag: "", subtitle: "5 ימים של קסם", points: [], cta: "לכל הטיולים", href: "/destinations/פריז/", newTab: false, image: "/media/2026/08/paris.jpg", overlayColor: "", buttonColor: "" },
@@ -318,6 +325,50 @@ check(
   Object.values(FOOTER_TILE_MOBILE_LABELS).map((label) => /computer/i.test(label) && /phone/i.test(label)),
   [false, true, true],
 );
+
+// ---- a page per tile (Liz, 06.11): each world its own card, slider and reasons
+{
+  const keys = ["all", "family", "organized"];
+  const hero = newSection("hero");
+  const reasons = { ...newSection("reasons"), id: "reasons" } as HomeSection;
+  const card = { ...newSection("banners"), id: "card", onlyTabs: ["family"] } as HomeSection;
+  const both = { ...newSection("artists"), id: "artists", onlyTabs: ["all", "family"] } as HomeSection;
+  const page = [hero, reasons, card, both];
+  check("the hero and an untied section show for every tile", [shownForTile(hero, "organized"), shownForTile(reasons, "organized")], [true, true]);
+  check("a tied section shows for its tiles only", [shownForTile(card, "family"), shownForTile(card, "organized")], [true, false]);
+  check("the hero and the finder are never copied for a tile", copyTargets(hero, keys), []);
+  check("a section that belongs to one tile alone is not copied for that same tile", copyTargets(card, keys), ["all", "organized"]);
+
+  const fromCard = copyForTile(page, "card", "organized", keys);
+  const copy = fromCard.sections.find((s) => s.id === fromCard.copyId);
+  check("the copy goes right under the section", fromCard.sections.map((s) => s.id).indexOf(fromCard.copyId ?? ""), 3);
+  check("the copy shows for its tile only", copy?.onlyTabs, ["organized"]);
+  check("a section that did not show there keeps its tiles", fromCard.sections.find((s) => s.id === "card")?.onlyTabs, ["family"]);
+  check("the copy is a copy - its own id, the same content", [copy?.id !== "card", copy?.type], [true, "banners"]);
+
+  const fromAlways = copyForTile(page, "reasons", "family", keys);
+  check("an untied section stops showing for the tile that got its copy", fromAlways.sections.find((s) => s.id === "reasons")?.onlyTabs, ["all", "organized"]);
+  const reasonsCopy = fromAlways.sections.find((s) => s.id === fromAlways.copyId);
+  check("a Reasons copy shows its own reasons, not the world page's", reasonsCopy?.type === "reasons" && reasonsCopy.followWorld, false);
+  const fromTwo = copyForTile(page, "artists", "family", keys);
+  check("a section of two tiles keeps the other one", fromTwo.sections.find((s) => s.id === "artists")?.onlyTabs, ["all"]);
+  check("a copy for an unknown tile changes nothing", copyForTile(page, "reasons", "nope", keys).copyId, null);
+  check("every section stays valid after a copy", fromAlways.sections.every((s) => homeSectionSchema.safeParse(s).success), true);
+
+  const family = (s: HomeSection) => shownForTile(s, "organized");
+  check("a move in one tile's view steps past the sections it hides", moveInView(page, "artists", -1, (s) => shownForTile(s, "family")).map((s) => s.id), [hero.id, reasons.id, "artists", "card"]);
+  check("a move steps over a section the view hides", moveInView(page, "artists", -1, (s) => shownForTile(s, "all")).map((s) => s.id), [hero.id, "artists", reasons.id, "card"]);
+  check("a move with no neighbour in the view changes nothing", moveInView(page, "reasons", 1, family).map((s) => s.id), page.map((s) => s.id));
+}
+
+// ---- reasons follow the world, artists from Mega Events: a document saved before either reads as before
+{
+  const old = homeSectionSchema.parse({ id: "r", visible: true, type: "reasons", title: "", items: [] });
+  check("reasons saved before the switch follow the world", old.type === "reasons" && old.followWorld, true);
+  const artists = homeSectionSchema.parse({ id: "a", visible: true, type: "artists", title: "", items: [], mode: "events" });
+  check("an artist slider can follow Mega Events", artists.type === "artists" && artists.mode, "events");
+  check("destinations cannot", homeSectionSchema.safeParse({ id: "d", visible: true, type: "destinations", title: "", items: [], mode: "events" }).success, false);
+}
 
 if (failed) {
   console.error(`\n${failed} FAILED`);

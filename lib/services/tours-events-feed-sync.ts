@@ -23,7 +23,9 @@ import {
   siteDeployHookOf,
 } from "@/lib/tours/company-kit";
 import { toRef, type RowPin, type RowRef, type ShowFlags } from "@/lib/homepage/merge";
+import { buildLiveEventCounter } from "@/lib/on-tour";
 import {
+  ARTISTS_ROW_KEY,
   EVENTS_FEED_KEY,
   EVENTS_FEED_PAGE,
   FEED_LIGHT_COLUMNS,
@@ -31,15 +33,19 @@ import {
   NEWEST_ROW_KEY,
   buildEventsFeedInPages,
   buildEventsIndex,
+  buildFeedArtists,
   feedCutoffDate,
   hotRowHidden,
   rowPins,
   sameFeedItems,
+  storedFeedArtists,
   storedFeedIndex,
   storedFeedItems,
+  type EventsFeedArtist,
   type EventsFeedDoc,
   type EventsFeedItem,
   type EventsFeedRowKey,
+  type FeedArtistRow,
   type FeedEventRow,
   type FeedLightRow,
 } from "@/lib/tours/events-feed";
@@ -193,6 +199,35 @@ async function readRowLayouts(): Promise<Record<EventsFeedRowKey, RowLayout>> {
   }
 }
 
+/**
+ * Mega Events' artists - active ones by name, the order its own artists row fills in (myt-main lib/artists.ts
+ * listAll) - and the pins and hidden cards of that row. A failed read = no artists this run (the stored
+ * ones stay: an empty list is never written over a full one, see below).
+ */
+async function readArtists(): Promise<{ artists: FeedArtistRow[]; pins: RowPin[]; hidden: RowRef[] } | null> {
+  try {
+    const [artists, section, items] = await Promise.all([
+      supabaseTyped
+        .from("artists")
+        .select("slug, name, name_english, image_url, art_image_url")
+        .eq("is_active", true)
+        .order("name")
+        .limit(2000)
+        .abortSignal(deadline()),
+      db.from("homepage_sections").select("config").eq("key", ARTISTS_ROW_KEY).abortSignal(deadline()).maybeSingle(),
+      db.from("homepage_items").select("section,kind,ref_id,position").eq("section", ARTISTS_ROW_KEY).abortSignal(deadline()),
+    ]);
+    if (artists.error) throw artists.error;
+    // the row's layout is optional, the way the site reads it: unreadable = nothing pinned or hidden
+    const pins = items.error ? [] : rowPins(items.data ?? [], ARTISTS_ROW_KEY);
+    const hidden = section.error ? [] : hotRowHidden(section.data?.config);
+    return { artists: (artists.data ?? []) as FeedArtistRow[], pins, hidden };
+  } catch (error) {
+    console.error("[toursEventsFeed] artists unreadable:", error);
+    return null;
+  }
+}
+
 /** The site's own rows: each row's automatic pool, and the card flags (its sold-out test). */
 type SitePools = { pools: Partial<Record<EventsFeedRowKey, RowRef[]>>; flags: ReadonlyMap<RowRef, ShowFlags> };
 
@@ -259,8 +294,8 @@ async function readFullEvents(ids: number[]): Promise<FeedEventRow[]> {
   return (data ?? []) as FeedEventRow[];
 }
 
-/** A company's stored list, index and search switch; null = no list worth comparing with. */
-type StoredFeed = { items: unknown[]; index: unknown[] | null; search: boolean } | null;
+/** A company's stored list, index, artists and search switch; null = no list worth comparing with. */
+type StoredFeed = { items: unknown[]; index: unknown[] | null; artists: unknown[] | null; search: boolean } | null;
 
 async function storedDoc(companyId: string): Promise<StoredFeed> {
   const { data, error } = await toursDb()
@@ -274,7 +309,7 @@ async function storedDoc(companyId: string): Promise<StoredFeed> {
   const items = data ? storedFeedItems(data.data) : null;
   if (!items) return null;
   const search = asObject(data?.data ?? null).search !== false;
-  return { items, index: storedFeedIndex(data?.data), search };
+  return { items, index: storedFeedIndex(data?.data), artists: storedFeedArtists(data?.data), search };
 }
 
 /** POSTs the company's deploy hook and records the attempt as its last publish (what the Publish button shows). */
@@ -316,16 +351,26 @@ export async function syncToursEventsFeed(now = new Date(), options: SyncEventsF
   const companies = await step("companies", () => feedCompanies(options.companyId), (list) => `${list.length} to feed`);
   if (companies.length === 0) return { source: "kept", items: 0, indexed: 0, companies: [] };
 
-  const [layouts, site, order, stored, controls] = await Promise.all([
+  const [layouts, site, order, stored, controls, artistRows] = await Promise.all([
     step("homepage layout", readRowLayouts, (l) => ROWS.map((row) => `${row}: ${l[row].pins.length} pins, ${l[row].hidden.length} hidden`).join("; ")),
     step("site rows", readSitePools, (r) => ("site" in r ? ROWS.map((row) => `${row}: ${r.site.pools[row]?.length ?? "-"}`).join(", ") : `unusable: ${r.error}`)),
     step("events order", () => readEventOrder(now), (rows) => `${rows.length} listed`),
     step("stored lists", () => Promise.all(companies.map((c) => storedDoc(c.id)))),
     step("controls", () => readControls(companies), (map) => `${map.size} saved`),
+    step("artists", readArtists, (r) => (r ? `${r.artists.length} active, ${r.pins.length} pins, ${r.hidden.length} hidden` : "unreadable")),
   ]);
   const siteRows = "site" in site ? site.site : null;
   const siteError = "error" in site ? site.error : undefined;
   const flags = siteRows?.flags ?? null;
+
+  // Mega Events' artists row, the same for every company: on sale = the site's own flag when it answered,
+  // else the catalog rule over the events just read (lib/on-tour.ts mirrors the site's)
+  const counter = buildLiveEventCounter(order.map((e) => ({ name_english: e.name_english ?? null, date: e.date, is_deleted: e.is_deleted ?? null })));
+  const onSale = (a: FeedArtistRow) => {
+    const flag = flags?.get(`artist:${a.slug}`);
+    return flag ? flag.available === true : counter(a.name_english) > 0;
+  };
+  const artists: EventsFeedArtist[] | null = artistRows ? buildFeedArtists({ ...artistRows, onSale }) : null;
 
   // Without the site's rows the order is rebuilt from the rows (fallbackPool / newestPool), which is
   // close but not card-for-card - so a list already stored is kept until the site answers again, and
@@ -390,11 +435,19 @@ export async function syncToursEventsFeed(now = new Date(), options: SyncEventsF
       const index = control.search
         ? buildEventsIndex({ events: order, now, flags, read, priced: items }).filter((e) => !control.hidden.includes(e.id))
         : [];
-      const doc: EventsFeedDoc = { updatedAt: now.toISOString(), source, items, index, search: control.search };
+      // the artists: this run's, else the stored ones (an unreadable or empty row never empties a full slider)
+      const keptArtists = (before?.artists ?? []) as EventsFeedArtist[];
+      const feedArtists = artists && (artists.length > 0 || keptArtists.length === 0) ? artists : keptArtists;
+      const doc: EventsFeedDoc = { updatedAt: now.toISOString(), source, items, index, search: control.search, artists: feedArtists };
 
-      // the index counts as a change too (a document without one - before 15.10.2026 - gets it now)
+      // the index and the artists count as a change too (a document without them gets them now)
       const same =
-        before !== null && sameFeedItems(before.items, items) && sameFeedItems(before.index, index) && before.search === control.search;
+        before !== null &&
+        sameFeedItems(before.items, items) &&
+        sameFeedItems(before.index, index) &&
+        before.artists !== null &&
+        sameFeedItems(before.artists, feedArtists) &&
+        before.search === control.search;
       if (same) {
         results.push({ slug: company.slug, changed: false, items: items.length, indexed: index.length, deploy: null });
         continue;

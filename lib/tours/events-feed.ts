@@ -130,7 +130,81 @@ export type EventsFeedDoc = {
   index: EventsIndexItem[];
   /** False = staff took Mega Events' events out of the site's search (the index is then empty on purpose). */
   search?: boolean;
+  /**
+   * The artists Mega Events sells now, as its own "artists" row orders them (buildFeedArtists) - for a company
+   * site's artist slider set to "From Mega Events" (Liz, 06.11). Missing on a document written before.
+   */
+  artists?: EventsFeedArtist[];
 };
+
+/** Mega Events' homepage row of artists ("אמנים מובילים"). */
+export const ARTISTS_ROW_KEY = "artists";
+/** How many artists a company site gets at most (its slider shows its own number of them). */
+export const FEED_ARTISTS_MAX = 24;
+
+/** One artist of Mega Events, as a company site's artist slider draws it. */
+export type EventsFeedArtist = {
+  slug: string;
+  /** The Hebrew name Mega Events prints. */
+  name: string;
+  /** Absolute https: the artist's photo, else the cut-out art (`imageIsCutout`). */
+  image: string;
+  /** A transparent cut-out, not a photo: the site draws it whole on a colour, never cropped. */
+  imageIsCutout: boolean;
+  /** The artist's page on mega-events.co.il (myt-main sends /artists/<slug> on to its /c/ page). */
+  href: string;
+};
+
+/** An artist row of Mega Events (public.artists), as the cron reads it - active ones, by name, the site's own order. */
+export type FeedArtistRow = {
+  slug: string;
+  name: string | null;
+  name_english: string | null;
+  image_url: string | null;
+  art_image_url: string | null;
+};
+
+const httpsOrNull = (url: string | null | undefined): string | null => (url && /^https:\/\//i.test(url.trim()) ? url.trim() : null);
+
+/** The card of one artist; null = nothing to draw it with (no name or no picture). */
+export function feedArtistOf(a: FeedArtistRow): EventsFeedArtist | null {
+  const name = (a.name ?? "").trim();
+  const photo = httpsOrNull(a.image_url);
+  const image = photo ?? httpsOrNull(a.art_image_url);
+  if (!name || !image || !a.slug) return null;
+  return { slug: a.slug, name, image, imageIsCutout: !photo, href: `${PUBLIC_SITE_URL}/artists/${encodeURIComponent(a.slug)}` };
+}
+
+/**
+ * Mega Events' artists row as a company site shows it: staff pins of the row hold their places, the
+ * artists on sale fill the rest in the site's order (myt-main lib/homepage/rows.ts: on sale first, by
+ * name), minus the ones staff hid - the same merge the site renders with. Only artists that sell now
+ * and have a picture: a company site has nothing to send a visitor to for the rest (Ariana Grande,
+ * 06.11). `onSale` = the site's own flag when it was read, else the catalog rule (lib/on-tour.ts).
+ */
+export function buildFeedArtists(input: {
+  artists: FeedArtistRow[];
+  pins: RowPin[];
+  hidden: RowRef[];
+  onSale: (artist: FeedArtistRow) => boolean;
+  max?: number;
+}): EventsFeedArtist[] {
+  const cards = new Map<RowRef, EventsFeedArtist>();
+  for (const a of input.artists) {
+    const card = input.onSale(a) ? feedArtistOf(a) : null;
+    if (card) cards.set(toRef("artist", a.slug), card);
+  }
+  const pool = input.artists.map((a) => toRef("artist", a.slug)).filter((ref) => cards.has(ref));
+  const sells = (ref: RowRef) => cards.has(ref);
+  const merged = mergeRow(pool, input.pins, { hidden: input.hidden, max: input.max ?? FEED_ARTISTS_MAX, showable: sells, pinnable: sells });
+  return merged.cards.map((c) => cards.get(c.ref)).filter((c): c is EventsFeedArtist => !!c);
+}
+
+/** The artists of a stored document; null = a document written before they existed. */
+export function storedFeedArtists(data: unknown): unknown[] | null {
+  const list = data && typeof data === "object" ? (data as { artists?: unknown }).artists : null;
+  return Array.isArray(list) ? list : null;
+}
 
 /** The event columns the builder reads (the cron selects exactly these). */
 export type FeedEventRow = SiteCardPriceEvent & {
@@ -149,6 +223,8 @@ export type FeedEventRow = SiteCardPriceEvent & {
   is_deleted?: string | null;
   /** When the event was uploaded - the order of "החדשים". */
   created_at?: string | null;
+  /** The English name the catalog matches artists and teams by (lib/on-tour.ts). */
+  name_english?: string | null;
 };
 
 /**
@@ -168,8 +244,8 @@ export const FEED_ORDER_COLUMNS = [
 ] as const;
 export type FeedOrderRow = Pick<FeedEventRow, (typeof FEED_ORDER_COLUMNS)[number]>;
 
-/** What the search index prints of every listed event, read in the same first pass. Still no tickets. */
-export const FEED_INDEX_COLUMNS = ["name", "location", "event_location", "card_image_url", "art_image_url"] as const;
+/** What the search index prints of every listed event (and the English name artists are matched by), read in the same first pass. Still no tickets. */
+export const FEED_INDEX_COLUMNS = ["name", "location", "event_location", "card_image_url", "art_image_url", "name_english"] as const;
 /** The cron's first read of every listed event: what orders the list + what the index prints. */
 export const FEED_LIGHT_COLUMNS = [...FEED_ORDER_COLUMNS, ...FEED_INDEX_COLUMNS] as const;
 export type FeedLightRow = Pick<FeedEventRow, (typeof FEED_LIGHT_COLUMNS)[number]>;

@@ -365,7 +365,21 @@ const tileFill = {
   term: slug.default(""),
   limit: z.number().int().min(1).max(24).default(6),
 };
-const artistsSection = z.object({ ...base, type: z.literal("artists"), title: text(160), items: termItems, ...tileFill });
+/**
+ * How an artist slider is filled: the artists staff pick, the artists of this site's tours, or the artists Mega Events
+ * sells right now - its own "artists" row of mega-events.co.il, card for card, with its pictures and links to its
+ * artist pages (Liz, 06.11: "שימשוך ממגה איבנטס"; the cron writes them into the events feed, lib/tours/events-feed.ts).
+ */
+export const ARTIST_FILL_MODES = ["manual", "auto", "events"] as const;
+export type ArtistFillMode = (typeof ARTIST_FILL_MODES)[number];
+const artistsSection = z.object({
+  ...base,
+  type: z.literal("artists"),
+  title: text(160),
+  items: termItems,
+  ...tileFill,
+  mode: z.enum(ARTIST_FILL_MODES).default("manual"),
+});
 const destinationsSection = z.object({ ...base, type: z.literal("destinations"), title: text(160), items: termItems, ...tileFill });
 
 /** How a banners section is drawn: a picture with a text box over it, or a coloured card. */
@@ -414,6 +428,12 @@ const reasonsSection = z.object({
   type: z.literal("reasons"),
   title: text(160),
   items: z.array(z.object({ icon: image, title: text(120), text: text(400) })).max(8),
+  /**
+   * The home page only: while a tile of a world is chosen, the reasons of that world's own page take this
+   * section's place, when the page has a Reasons part switched on with reasons in it - so each world gives its
+   * own reasons, written once (Liz, 06.11). A world without one shows these.
+   */
+  followWorld: z.boolean().default(true),
 });
 
 /** How many reviews one section holds, and how long one may be. */
@@ -754,6 +774,59 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
   home: { sections: [], footerTiles: DEFAULT_FOOTER_TILES },
 };
 
+// ---------------------------------------------------------------- a page per tile
+/**
+ * The sections every tile shares by nature: the banners at the top (they follow the tile anyway) and the Tour
+ * finder itself - never tied to a tile, never copied for one.
+ */
+export const SHOWN_FOR_EVERY_TILE: HomeSectionType[] = ["hero", "tours"];
+
+/** Whether a customer with this tile chosen sees the section (no tiles ticked = every tile). */
+export const shownForTile = (section: HomeSection, key: string): boolean =>
+  SHOWN_FOR_EVERY_TILE.includes(section.type) || !section.onlyTabs?.length || section.onlyTabs.includes(key);
+
+/**
+ * The tiles a section can be given its own copy for: every tile but the one it alone already belongs to
+ * (a copy there would only stand beside it).
+ */
+export function copyTargets(section: HomeSection, keys: string[]): string[] {
+  if (SHOWN_FOR_EVERY_TILE.includes(section.type) || keys.length < 2) return [];
+  const only = section.onlyTabs ?? [];
+  return keys.filter((key) => !(only.length === 1 && only[0] === key));
+}
+
+/**
+ * Gives one tile its own copy of a section (Liz, 06.11: each world its own card, its own reasons, its own slider):
+ * the copy goes right under it, shown for that tile only, and the section itself stops showing for that tile -
+ * a customer there sees the copy instead of both. `keys` = every tile of the Tour finder. Unknown id or tile = no change.
+ */
+export function copyForTile(sections: HomeSection[], id: string, key: string, keys: string[]): { sections: HomeSection[]; copyId: string | null } {
+  const index = sections.findIndex((s) => s.id === id);
+  const source = sections[index];
+  if (!source || !copyTargets(source, keys).includes(key)) return { sections, copyId: null };
+  // a Reasons copy is made to be changed for its tile: it shows its own reasons, not the world page's
+  const copy = { ...structuredClone(source), id: newId(source.type), onlyTabs: [key], ...(source.type === "reasons" ? { followWorld: false } : {}) } as HomeSection;
+  // a section that showed there stops: a section for every tile now names every tile but this one
+  const rest = shownForTile(source, key) ? (source.onlyTabs?.length ? source.onlyTabs : keys).filter((k) => k !== key) : source.onlyTabs;
+  const kept = { ...source, onlyTabs: rest?.length ? rest : undefined } as HomeSection;
+  return { sections: [...sections.slice(0, index), kept, copy, ...sections.slice(index + 1)], copyId: copy.id };
+}
+
+/**
+ * Moves a section one step up or down among the sections `visible` keeps (what one tile shows): it takes the
+ * place of its neighbour in that view, past the sections the view hides. No neighbour = no change.
+ */
+export function moveInView(sections: HomeSection[], id: string, delta: -1 | 1, visible: (section: HomeSection) => boolean): HomeSection[] {
+  const shown = sections.filter(visible);
+  const at = shown.findIndex((s) => s.id === id);
+  const neighbour = shown[at + delta];
+  if (at < 0 || !neighbour) return sections;
+  const rest = sections.filter((s) => s.id !== id);
+  const target = rest.findIndex((s) => s.id === neighbour.id);
+  const insertAt = delta < 0 ? target : target + 1;
+  return [...rest.slice(0, insertAt), sections.find((s) => s.id === id) as HomeSection, ...rest.slice(insertAt)];
+}
+
 // ---------------------------------------------------------------- section catalog
 export interface SectionKind {
   type: HomeSectionType;
@@ -814,7 +887,7 @@ export function newSection(type: HomeSectionType): HomeSection {
     case "banners":
       return { ...common, type, title: "", layout: "overlay", items: [], mode: "manual", source: "sale", term: "", tours: [], limit: 4, autoCta: "" };
     case "reasons":
-      return { ...common, type, title: "", items: [] };
+      return { ...common, type, title: "", items: [], followWorld: true };
     case "reviews":
       return { ...common, type, title: "", items: [], source: "manual", minRating: 4, limit: 8 };
     case "summary":
@@ -847,7 +920,12 @@ export function sectionSummary(section: HomeSection): string {
       return section.title || "The site's lead form title";
     case "artists":
     case "destinations":
-      return [section.title, section.mode === "auto" ? `Automatic · ${TILE_SOURCE_LABELS[section.source]}` : `${section.items.length} items`].filter(Boolean).join(" · ");
+      return [
+        section.title,
+        section.mode === "events" ? "From Mega Events" : section.mode === "auto" ? `Automatic · ${TILE_SOURCE_LABELS[section.source]}` : `${section.items.length} items`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
     case "banners":
       return [section.title, section.mode === "auto" ? `Automatic · ${TOUR_SOURCE_LABELS[section.source]}` : `${section.items.length} items`].filter(Boolean).join(" · ");
     case "reviews":

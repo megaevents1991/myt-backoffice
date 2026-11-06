@@ -37,7 +37,7 @@ function reasonsSection(value: unknown): HomeSection | null {
     .filter((item) => item.title !== "" || item.text !== "")
     .slice(0, 8);
   if (!items.length) return null;
-  return { id: TERM_EXTRA_IDS.reasons, visible: true, type: "reasons", title: REASONS_TITLE, items };
+  return { id: TERM_EXTRA_IDS.reasons, visible: true, type: "reasons", title: REASONS_TITLE, items, followWorld: true };
 }
 
 /** A slider of the page (picture, title, a line, a button, a link per slide), as a Banners section staff fill by hand. */

@@ -593,6 +593,41 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
+        title: t("Give each world its own picture, card, slider and reasons", "לתת לכל עולם תמונה, כרטיס, סליידר וסיבות משלו"),
+        steps: [
+          t(
+            "The picture at the top: open the \"Tour finder\" section, open the world's tile and \"Upload\" one picture in \"Picture at the top\". Empty = the world's own hero image (Categories & Tags), else its first tours' pictures.",
+            "התמונה למעלה: פותחים את הסקשן \"Tour finder\", פותחים את הכפתור של העולם ומעלים תמונה אחת ב-\"Picture at the top\". ריק = התמונה הראשית של העולם עצמו (קטגוריות ותגיות), אחרת תמונות הטיולים הראשונים שלו.",
+          ),
+          t(
+            "Click the world's chip under \"The page as a tile shows it\": the list shows only what a customer with that tile chosen sees. A section added there shows for that tile only.",
+            "לוחצים על הצ'יפ של העולם תחת \"The page as a tile shows it\": הרשימה מציגה רק מה שלקוח שבחר את הכפתור הזה רואה. סקשן שמוסיפים שם מופיע רק לכפתור הזה.",
+          ),
+          t(
+            "To give a world its own version of a section (a coloured card, a slider): click the copy icon of that section → \"Its own copy for\" the world, then change the copy. The section itself stops showing for that world.",
+            "כדי לתת לעולם גרסה משלו של סקשן (כרטיס צבעוני, סליידר): לוחצים על אייקון ההעתקה של הסקשן ← \"Its own copy for\" העולם, ומשנים את ההעתק. הסקשן המקורי מפסיק להופיע לעולם הזה.",
+          ),
+          t(
+            "Reasons follow the world by themselves: while a world's tile is chosen, the Reasons part of that world's own page shows instead of the home page's (\"Each world shows its own reasons\" in the Reasons section). Write a world's reasons on its page in [Categories & Tags](/tours/terms).",
+            "הסיבות עוברות לבד לפי העולם: כל עוד הכפתור של עולם בחור, חלק ה-Reasons של עמוד העולם עצמו מופיע במקום הסיבות של עמוד הבית (\"Each world shows its own reasons\" בסקשן Reasons). כותבים את הסיבות של עולם בעמוד שלו ב[קטגוריות ותגיות](/tours/terms).",
+          ),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
+        ],
+      },
+      {
+        title: t("Show the artists Mega Events sells now", "להציג את האמנים שמגה איבנטס מוכרת עכשיו"),
+        steps: [
+          t(
+            "Open the \"Artist tiles\" section and choose \"From Mega Events: the artists it sells now\" in \"Which artists\". Set \"How many at most\".",
+            "פותחים את הסקשן \"Artist tiles\" ובוחרים \"From Mega Events: the artists it sells now\" ב-\"Which artists\". קובעים \"How many at most\".",
+          ),
+          t(
+            "The slider follows mega-events.co.il by itself: the order of its own artists row, its pictures, and a click opens the artist's page there. An artist with nothing left to sell drops off within six hours.",
+            "הסליידר עוקב אחרי mega-events.co.il לבד: הסדר של שורת האמנים שלו, התמונות שלו, ולחיצה פותחת את עמוד האמן שם. אמן שאין לו מה למכור יורד תוך שש שעות.",
+          ),
+        ],
+      },
+      {
         title: t("Dress the page in a world: its color, its words, its banners", "להלביש את העמוד בעולם: הצבע, המילים והבאנרים שלו"),
         steps: [
           t("A tile that shows a world dresses the whole page while a customer has it chosen: the header, the buttons and the footer take the world's color, and the header says its brand name. Set \"Brand name\" and \"World color\" on the world itself, in [Categories & Tags](/tours/terms).", "כפתור שמציג עולם מלביש את כל העמוד כל עוד הלקוח עליו: ההדר, הכפתורים והפוטר מקבלים את צבע העולם, וההדר כותב את שם המותג שלו. קובעים \"Brand name\" ו-\"World color\" על העולם עצמו, ב[קטגוריות ותגיות](/tours/terms)."),

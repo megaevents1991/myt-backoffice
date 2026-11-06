@@ -17,6 +17,7 @@ import { ImageListEditor, ImageUrlField } from "@/components/tours/content/field
 import { HtmlField } from "@/components/tours/content/html-field";
 import type { SiteEditorOptions } from "@/lib/actions/tours-site-actions";
 import {
+  ARTIST_FILL_MODES,
   BANNER_LAYOUTS,
   BANNER_LAYOUT_LABELS,
   BANNER_POINTS_MAX,
@@ -32,6 +33,7 @@ import {
   TOUR_SOURCE_KIND,
   TOUR_SOURCE_LABELS,
   newId,
+  type ArtistFillMode,
   type HomeSection,
   type TileSource,
   type TourSource,
@@ -47,6 +49,8 @@ interface FormProps<T extends HomeSection["type"]> {
   onChange: (section: Of<T>) => void;
   options: SiteEditorOptions;
   siteUrl: string | null;
+  /** The section is on the home page (it has the Tour finder's tiles), not on a term page. */
+  onHome?: boolean;
 }
 
 const Grid = ({ children, className }: { children: ReactNode; className?: string }) => (
@@ -101,6 +105,10 @@ const selectOf = <T extends string>(value: T, options: readonly T[], labels: Rec
 const termLabel = (source: TourSource): string => TOUR_SOURCE_LABELS[source].replace("The tours of a ", "").replace(/^./, (c) => c.toUpperCase());
 
 const FILL_LABELS = { manual: "I pick them", auto: "Automatic" } as const;
+const ARTIST_FILL_LABELS: Record<ArtistFillMode, string> = {
+  ...FILL_LABELS,
+  events: "From Mega Events: the artists it sells now",
+};
 
 // ---------------------------------------------------------------- shared parts
 interface TourRule {
@@ -230,6 +238,49 @@ function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
   );
 }
 
+type TileTab = Of<"tours">["tabs"][number];
+
+/**
+ * The one picture at the top of the page while a tile is chosen (Liz, 06.11: "אופציה לשים תמונה אחת וזהו"): the
+ * first banner of the tile, with no title or link to fill in. Empty says what shows instead - the picture of the
+ * tile's world, else its first tours, else the general banners. A tile that already rotates several pictures
+ * keeps them: they are edited under "Banner of this tile".
+ */
+function TilePicture({
+  tab,
+  onChange,
+  options,
+  siteUrl,
+}: {
+  tab: TileTab;
+  onChange: (slides: TileTab["banner"]["slides"]) => void;
+  options: SiteEditorOptions;
+  siteUrl: string | null;
+}) {
+  const slides = tab.banner.slides;
+  if (slides.length > 1)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Picture at the top: {slides.length} pictures rotate while this tile is chosen - change them under &quot;Banner of this tile&quot; below.
+      </p>
+    );
+  const world = tab.show === "world" ? options.terms.find((t) => t.kind === "audiences" && t.slug === tab.world) : undefined;
+  const fallback = world?.image
+    ? `Empty = the picture of the world "${world.name}" (its first hero image, Categories & Tags > Worlds).`
+    : world
+      ? `Empty = the pictures of the tile's first tours; the world "${world.name}" has no hero image of its own. With neither, the general banners stay.`
+      : "Empty = the pictures of the tile's first tours; with none, the general banners stay.";
+  return (
+    <ImageUrlField
+      label="Picture at the top"
+      value={slides[0]?.image ?? ""}
+      onChange={(image) => onChange(image ? [{ image, alt: slides[0]?.alt || tab.label, href: slides[0]?.href ?? "" }] : [])}
+      siteUrl={siteUrl}
+      hint={`The wide picture at the top of the page while a customer has this tile chosen - one picture, about 1920 x 500. ${fallback}`}
+    />
+  );
+}
+
 // ---------------------------------------------------------------- tour finder
 function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) {
   return (
@@ -315,6 +366,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                 <ToursPicker label="Tours of this tile" value={tab.tours} onChange={(tours) => patch({ tours })} options={options} max={48} />
               )}
               <ImageUrlField label="Icon" value={tab.icon} onChange={(icon) => patch({ icon })} siteUrl={siteUrl} hint="Square icon, shown at 86 x 86." />
+              <TilePicture tab={tab} onChange={(slides) => patch({ banner: { ...tab.banner, slides } })} options={options} siteUrl={siteUrl} />
 
               <Fold
                 title="Banner of this tile"
@@ -443,18 +495,30 @@ function TermTilesForm({ section, onChange, options, siteUrl }: FormProps<"artis
   const kind = section.type;
   const noun = kind === "artists" ? "Artist" : "Destination";
   const plural = kind === "artists" ? "artists" : "destinations";
-  const update = (change: Partial<typeof section>) => (onChange as (s: typeof section) => void)({ ...section, ...change });
+  const update = (change: Partial<typeof section>) => (onChange as (s: typeof section) => void)({ ...section, ...change } as typeof section);
   const termKind = TOUR_SOURCE_KIND[section.source as TourSource];
+  const fromEvents = section.type === "artists" && section.mode === "events";
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => update({ title })} />
       <Grid>
         <Field
           label={`Which ${plural}`}
-          hint={`"I pick them" = the ${plural} you list here, in this order. "Automatic" = the section fills itself with the ${plural} of the tours of a rule (a world, a tag, a category, a destination, on sale) or all of them; a ${noun.toLowerCase()} without a picture is skipped.`}
+          hint={
+            section.type === "artists"
+              ? '"I pick them" = the artists you list here, in this order. "Automatic" = the artists of the tours of a rule on this site. "From Mega Events" = the artists mega-events.co.il sells right now, in the order of its own artists row, with its pictures; a click opens the artist\'s page there. It follows that site by itself: an artist with nothing left to sell drops off.'
+              : `"I pick them" = the ${plural} you list here, in this order. "Automatic" = the section fills itself with the ${plural} of the tours of a rule (a world, a tag, a category, a destination, on sale) or all of them; a ${noun.toLowerCase()} without a picture is skipped.`
+          }
         >
-          {selectOf(section.mode, ["manual", "auto"] as const, FILL_LABELS, (mode) => update({ mode }))}
+          {section.type === "artists"
+            ? selectOf<ArtistFillMode>(section.mode, ARTIST_FILL_MODES, ARTIST_FILL_LABELS, (mode) => update({ mode }))
+            : selectOf(section.mode, ["manual", "auto"] as const, FILL_LABELS, (mode) => update({ mode }))}
         </Field>
+        {fromEvents && (
+          <Field label="How many at most">
+            <Input type="number" min={1} max={24} dir="ltr" value={section.limit} onChange={(e) => update({ limit: clamp(e.target.value, 24) })} />
+          </Field>
+        )}
         {section.mode === "auto" && (
           <>
             <Field label={`The ${plural} of which tours`} hint={`"All of them" lists every ${noun.toLowerCase()}, the ones with the most tours first. A rule lists the ${plural} its tours go to, the most used first.`}>
@@ -587,10 +651,28 @@ function BannersForm({ section, onChange, options, siteUrl }: FormProps<"banners
   );
 }
 
-function ReasonsForm({ section, onChange, siteUrl }: FormProps<"reasons">) {
+function ReasonsForm({ section, onChange, options, siteUrl, onHome }: FormProps<"reasons">) {
+  const own = options.terms.filter((t) => t.kind === "audiences" && (t.reasons ?? 0) > 0);
   return (
     <div className="space-y-4">
       <TitleField value={section.title} onChange={(title) => onChange({ ...section, title })} />
+      {onHome && (
+        <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
+          <div className="flex items-center gap-2">
+            <Switch id={`${section.id}-follow`} checked={section.followWorld} onCheckedChange={(followWorld) => onChange({ ...section, followWorld })} />
+            <label htmlFor={`${section.id}-follow`} className="text-sm font-medium">
+              Each world shows its own reasons
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            While a customer has a tile of a world chosen, the reasons of that world&apos;s own page take this section&apos;s place (Categories &amp; Tags &gt;
+            Worlds &gt; the world &gt; its Reasons part, switched on). A world without them shows the reasons below.{" "}
+            {own.length
+              ? `Worlds with reasons of their own now: ${own.map((t) => `${t.name} (${t.reasons})`).join(", ")}.`
+              : "No world has reasons of its own yet."}
+          </p>
+        </div>
+      )}
       <p className="text-sm text-muted-foreground">
         The first Reasons section of the home page that is not ticked for any tile also shows on tour pages: beside the order summary of the booking step, the
         icons and titles of its first four reasons.
@@ -849,13 +931,16 @@ export function SectionForm({
   onChange,
   options,
   siteUrl,
+  onHome,
 }: {
   section: HomeSection;
   onChange: (section: HomeSection) => void;
   options: SiteEditorOptions;
   siteUrl: string | null;
+  /** The section is on the home page (it has the Tour finder's tiles). */
+  onHome?: boolean;
 }) {
-  const shared = { onChange, options, siteUrl };
+  const shared = { onChange, options, siteUrl, onHome };
   switch (section.type) {
     case "hero":
       return <HeroForm section={section} {...shared} />;
