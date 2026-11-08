@@ -8,6 +8,10 @@ Date: 2026-11-08. Sources:
   ids hold a Hebrew letter, which a db document id refuses.
 - Dor's seven rulings on the open points, 08.11 (section 15).
 
+**Status (08.11):** Dor approved phases E1-E3 for building ("בוא נעשה הכול חוץ מ-4"). The plan is
+`docs/superpowers/plans/2026-11-08-whatsapp-mega-events.md`. Phase E4 (marketing) is not built this round; section 12
+keeps its rules.
+
 It builds on `docs/superpowers/specs/2026-10-21-whatsapp-cloud-api-design.md` (the tours design, "the tours spec"
 below) and its phase 1 code, which is on prod. Coexistence, the Meta app "Mega Messaging", the webhook, the provider
 adapter, tokens in env and the template cache are all decided there and are not re-argued here.
