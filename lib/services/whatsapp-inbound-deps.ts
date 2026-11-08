@@ -25,6 +25,17 @@ import {
   saveContacts,
   removeContacts,
 } from "@/lib/services/whatsapp-db";
+import {
+  addAutoTexts,
+  autoTexts,
+  chatByKey,
+  markChat,
+  moveToFollowUp,
+  recentEchoes,
+  reservationsByIds,
+  reservationsByPhoneKeys,
+  upsertChat,
+} from "@/lib/services/whatsapp-events-db";
 
 export function realInboundDeps(): InboundDeps {
   // one company read per batch, however many messages it carries
@@ -62,6 +73,10 @@ export function realInboundDeps(): InboundDeps {
     upsertTemplate,
     saveContacts,
     removeContacts,
+    async companyProducts(id) {
+      return (await companyOf(id))?.productTypes ?? [];
+    },
+    events: { chatByKey, upsertChat, markChat, reservationsByPhoneKeys, reservationsByIds, moveToFollowUp, autoTexts, addAutoTexts, recentEchoes },
     log: {
       info: (message) => console.info(message),
       warn: (message) => console.warn(`[whatsapp] ${message}`),

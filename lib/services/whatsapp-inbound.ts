@@ -15,6 +15,8 @@
 import { OPT_OUT_REPLY, isOptOut, shouldOpenInquiry, standInText, type WaEvent } from "@/lib/whatsapp/rules";
 import { phoneKey, whatsappPhone } from "@/lib/tours/cases";
 import type { WaAccount, WaContactRow, WaCustomerLite, WaCustomerPatch, WaLeadInsert, WaLeadResult, WaMessageInsert, WaTemplate } from "@/lib/services/whatsapp-db";
+import { handleEventsMessage, suggestAutoTextsAfterHistory, type EventsInboundDeps } from "@/lib/services/whatsapp-events-inbound";
+import { isEventsCompany } from "@/lib/whatsapp/events/chat-rules";
 
 export interface InboundDeps {
   now(): string;
@@ -41,6 +43,13 @@ export interface InboundDeps {
   saveContacts(companyId: string, rows: readonly WaContactRow[]): Promise<void>;
   removeContacts(companyId: string, phones: readonly string[]): Promise<void>;
   log: { warn(message: string): void; error(message: string): void; info?(message: string): void };
+  /**
+   * The products the account's company sells - a company selling events (Mega Events) takes the Events branch
+   * (spec 2026-11-08), which never writes tours customers / leads. Absent = tours (the tours selftest's stubs).
+   */
+  companyProducts?(companyId: string): Promise<string[]>;
+  /** The Events branch's own dependencies (lib/services/whatsapp-events-inbound.ts). */
+  events?: EventsInboundDeps;
 }
 
 export interface InboundSummary {
@@ -54,7 +63,18 @@ export interface InboundSummary {
 }
 
 /** What one batch shares: the ids already stored, and one customer lookup per phone. */
-type Batch = { known: Set<string>; customers: Map<string, Promise<WaCustomerLite[]>> };
+type Batch = { known: Set<string>; customers: Map<string, Promise<WaCustomerLite[]>>; events: Map<string, Promise<boolean>> };
+
+/** Is this company on the Events branch - read once per company per batch. */
+function isEventsAccount(deps: InboundDeps, batch: Batch, companyId: string): Promise<boolean> {
+  if (!deps.companyProducts || !deps.events) return Promise.resolve(false);
+  let pending = batch.events.get(companyId);
+  if (!pending) {
+    pending = deps.companyProducts(companyId).then(isEventsCompany);
+    batch.events.set(companyId, pending);
+  }
+  return pending;
+}
 
 function customersOf(deps: InboundDeps, batch: Batch, companyId: string, key: string): Promise<WaCustomerLite[]> {
   const cacheKey = `${companyId}|${key}`;
@@ -105,6 +125,10 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
     return;
   }
   const companyId = account.companyId;
+  if (deps.events && (await isEventsAccount(deps, batch, companyId))) {
+    await handleEventsMessage(ev, account, phone, key, deps, deps.events, out);
+    return;
+  }
   const live = ev.origin !== "history";
   const inboundFromCustomer = ev.direction === "in" && ev.origin === "customer";
 
@@ -178,13 +202,14 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
 }
 
 /** A chunk of the history sync arrived: the account's history_synced_at says when the last one came. */
-async function handleHistory(ev: Extract<WaEvent, { kind: "history" }>, deps: InboundDeps, out: InboundSummary): Promise<void> {
+async function handleHistory(ev: Extract<WaEvent, { kind: "history" }>, deps: InboundDeps, out: InboundSummary, batch: Batch): Promise<void> {
   const account = await deps.accountByPhoneId(ev.phoneNumberId);
   if (!account) {
     out.skipped += 1;
     return;
   }
   await deps.patchAccount(account.id, { historySyncedAt: deps.now() });
+  if (deps.events && (await isEventsAccount(deps, batch, account.companyId))) await suggestAutoTextsAfterHistory(ev, account, deps.events);
 }
 
 async function handleTemplate(ev: Extract<WaEvent, { kind: "template" }>, deps: InboundDeps, out: InboundSummary): Promise<void> {
@@ -260,14 +285,14 @@ export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps):
       deps.log.warn(`known-id check failed (${e instanceof Error ? e.message : String(e)}) - every message is tried`);
     }
   }
-  const batch: Batch = { known, customers: new Map() };
+  const batch: Batch = { known, customers: new Map(), events: new Map() };
   for (const ev of events) {
     try {
       if (ev.kind === "message") await handleMessage(ev, deps, out, batch);
       else if (ev.kind === "status") {
         await deps.updateStatus(ev.waMessageId, ev.status, ev.at, ev.error);
         out.statuses += 1;
-      } else if (ev.kind === "history") await handleHistory(ev, deps, out);
+      } else if (ev.kind === "history") await handleHistory(ev, deps, out, batch);
       else if (ev.kind === "template") await handleTemplate(ev, deps, out);
       else if (ev.kind === "account") await handleAccount(ev, deps, out);
     } catch (e) {

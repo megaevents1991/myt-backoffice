@@ -623,13 +623,21 @@ export async function insertLead(row: WaLeadInsert): Promise<WaLeadResult> {
 type TemplateRow = { name: string; language: string; category: string | null; status: string; body: string | null; param_count: number | null; synced_at: string };
 const toTemplate = (r: TemplateRow): WaTemplate => ({ name: r.name, language: r.language, category: r.category, status: r.status, body: r.body, paramCount: r.param_count, syncedAt: r.synced_at });
 
+/**
+ * The row an upsert writes. A field Meta did not send (null) is LEFT OUT, never written as null: the webhook's
+ * message_template_status_update carries the status alone, and writing null there wiped the body and parameter count a
+ * "Sync templates" had stored (found 08.11 - an upsert sets only the columns it is given).
+ */
+export function templateUpsertRow(companyId: string, t: Omit<WaTemplate, "syncedAt">): Record<string, unknown> {
+  const row: Record<string, unknown> = { company_id: companyId, name: t.name, language: t.language, status: t.status, synced_at: new Date().toISOString() };
+  if (t.category !== null) row.category = t.category;
+  if (t.body !== null) row.body = t.body;
+  if (t.paramCount !== null) row.param_count = t.paramCount;
+  return row;
+}
+
 export async function upsertTemplate(companyId: string, t: Omit<WaTemplate, "syncedAt">): Promise<void> {
-  const { error } = await db
-    .from("wa_templates")
-    .upsert(
-      { company_id: companyId, name: t.name, language: t.language, category: t.category, status: t.status, body: t.body, param_count: t.paramCount, synced_at: new Date().toISOString() },
-      { onConflict: "company_id,name,language" },
-    );
+  const { error } = await db.from("wa_templates").upsert(templateUpsertRow(companyId, t), { onConflict: "company_id,name,language" });
   if (error) {
     if (missingTable(error)) {
       warnOnce("wa_templates", "wa_templates is missing (migration not applied)");

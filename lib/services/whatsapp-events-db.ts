@@ -247,6 +247,26 @@ export async function reservationsByPhoneKeys(keys: string[]): Promise<EventsOrd
     if (error) throw new Error(`reservations: ${error.message}`);
     rows.push(...((data ?? []) as ResRow[]));
   }
+  return toOrders(rows);
+}
+
+/** The orders a rep attached chats to (R-3), in the same shape. */
+export async function reservationsByIds(ids: number[]): Promise<EventsOrderLite[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const rows: ResRow[] = [];
+  for (const part of chunks(unique)) {
+    const { data, error } = await db
+      .from("reservations")
+      .select("id, status, created_at, is_deleted, main_contact_phone_key, event_id, main_contact_first_name, main_contact_last_name")
+      .in("id", part);
+    if (error) throw new Error(`reservations: ${error.message}`);
+    rows.push(...((data ?? []) as ResRow[]));
+  }
+  return toOrders(rows);
+}
+
+async function toOrders(rows: ResRow[]): Promise<EventsOrderLite[]> {
   const eventDates = await eventDatesOf(rows.map((r) => r.event_id).filter((x): x is number => typeof x === "number"));
   return rows.map((r) => ({
     id: r.id,
