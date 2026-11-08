@@ -1209,6 +1209,31 @@ Main's side mirrors the constant and no longer trusts such a landing (check-in =
 day). To find who saved one: `/audit-log`, entity `offline_flight` - the `changes` carry
 `outbound_arrival_time: {from, to}` and the actor.
 
+### Tours companies - the Meta product feed (2026-11-08, Dor: "פרודקט פיד גם לפמילי")
+
+Plan: mega-family `docs/plans/PRODUCT-FEED-PLAN.md`. One item per tour, a Meta **Activities** catalog (Mega Events' columns), branded
+pictures, item id `mf-<tour id>` (the site's pixel sends the same `content_ids`). **The company site says what it sells**:
+`<site_url>/feeds/tours.json` (the card's price - the cheapest open date with an offer, per person, its own currency, never
+converted -, live dates, links, labels, the tours left out with what is missing and what to do). Nothing here repeats a price rule.
+- **Publish** (`lib/feed/tours-feed.ts` + `lib/feed/tours-publish.ts`): the `publishMetaFeed` cron runs Mega Events first, unchanged,
+  then every tours company with a `site_url`, each in its own try/catch (the answer's status stays Mega Events'). It writes
+  `public_resources/feeds/<slug>/meta-activities-feed.csv` (the file to register in Commerce Manager; `lib/feed/activities-csv.ts` is a
+  port of myt-main `toActivitiesCsv` - change both together) and `feeds/<slug>/report.json` (what the screen reads). A report with no
+  tour at all is refused (a broken build), so the previous file stays; all tours left out is a real, empty catalog.
+- **Pictures** (`lib/creative/tours.ts`, `components/creative/TourTemplate.tsx`, `renderTourCreativePng`): drawn by the hourly
+  `nightlyCampaignCreatives` cron BEFORE the events (60 s at most), named by a hash of what they draw -
+  `creatives/output/auto/<slug>/tour-<id>-<hash>-{square|banner}.png` - so no table and no write to `tours.packages`. Bump
+  `TOUR_RENDER_VERSION` when the template changes. An item without its drawn picture goes out with the tour's own photo (Mega Events
+  drops such an event). Every word on it is the report's (`bidiVisual` for the Hebrew). Look at them:
+  `npx tsx --env-file=.env.local scripts/tour-creative-render.ts <dir> [report-url]`.
+- **Screen:** Website > **Product Feed** (`/tours/feed`, `requireCompany("tours")` - no tours_agent): the address, the last publish,
+  every item with its picture and labels, the tours left out with "מה חסר / מה עושים" and an Edit link, the CSV, **Sync now** (draws
+  the missing pictures, then publishes), and a warning when Settings holds both a pixel and a GTM container (the site sends the pixel's
+  events itself).
+- **The pixel id reaches the site** through `c_<slug>.site_analytics (pixel, gtm)` (migration `20261108134000`, `provision_company`
+  pasted with that one view), from Settings > Analytics.
+- Selftest: `npx tsx scripts/tours-feed-selftest.ts`.
+
 ### Mega Family home page per world (2026-11-06, Liz's five notes)
 
 The home editor (`/tours/homepage`, `components/tours/site/sections-board.tsx`) shows **the page as one tile shows it**: a chip per
