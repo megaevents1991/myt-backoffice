@@ -15,7 +15,7 @@ import type { FeedCompany, ToursReport, ToursReportItem, TourCreative } from "@/
  */
 
 /** Bump when the template changes what it draws, so every tour is drawn again. */
-export const TOUR_RENDER_VERSION = "t1";
+export const TOUR_RENDER_VERSION = "t2";
 const BUCKET = "creatives";
 const SIZES: CreativeSize[] = ["square", "banner"];
 

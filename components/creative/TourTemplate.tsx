@@ -82,10 +82,12 @@ export function TourTemplate(props: TourCreativeInput & { width: number; height:
         {props.includesText ? <div style={{ display: "flex", fontSize: portrait ? 40 : 21, color: "rgba(255,255,255,0.92)" }}>{bidiVisual(props.includesText)}</div> : null}
         {dates ? <div style={{ display: "flex", marginTop: portrait ? 10 : 4, fontSize: portrait ? 40 : 21, color: "rgba(255,255,255,0.85)" }}>{bidiVisual(dates)}</div> : null}
         {price ? (
-          <div style={{ display: "flex", alignItems: "center", marginTop: portrait ? 26 : 12, padding: portrait ? "22px 64px" : "10px 34px", borderRadius: 999, backgroundColor: brand, boxShadow: "0 10px 40px rgba(0,0,0,0.35)" }}>
+          // white, in the world's deep colour: a pill in the world's own colour vanished into its scrim when a world's two
+          // colours are the same (Mega Family: blue and blue - Dor, 08.11: "white button")
+          <div style={{ display: "flex", alignItems: "center", marginTop: portrait ? 26 : 12, padding: portrait ? "22px 64px" : "10px 34px", borderRadius: 999, backgroundColor: INK, color: deep, boxShadow: "0 10px 40px rgba(0,0,0,0.35)" }}>
             {/* visual order (RTL): the price first on the right, the old one struck through on its left */}
             {props.onSale && props.priceRegularText ? (
-              <div style={{ display: "flex", fontSize: portrait ? 44 : 22, color: "rgba(255,255,255,0.75)", textDecoration: "line-through", marginRight: portrait ? 22 : 12 }}>{props.priceRegularText}</div>
+              <div style={{ display: "flex", fontSize: portrait ? 44 : 22, color: deep, opacity: 0.55, textDecoration: "line-through", marginRight: portrait ? 22 : 12 }}>{props.priceRegularText}</div>
             ) : null}
             <div style={{ display: "flex", fontSize: portrait ? 72 : 36, fontWeight: 700 }}>{bidiVisual(price)}</div>
           </div>
