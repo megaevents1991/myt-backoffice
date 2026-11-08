@@ -19,6 +19,8 @@ import {
 } from "../lib/whatsapp/events/chat-rules";
 import { OPT_OUT_REPLY, type WaEvent } from "../lib/whatsapp/rules";
 import { isAlertTime, unansweredFor, workingMinutesBetween } from "../lib/whatsapp/events/working-time";
+import { outboxDecision, type OrderLite, type OutboxKind, type OutboxRowLite } from "../lib/whatsapp/events/outbox";
+import { cleanParam, documentsOf, greetingName, paramsFor, type ParamSource } from "../lib/whatsapp/events/params";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { templateUpsertRow, type WaAccount, type WaMessageInsert } from "../lib/services/whatsapp-db";
 import type { EventsOrderLite, WaChat } from "../lib/services/whatsapp-events-db";
@@ -103,6 +105,48 @@ async function main(): Promise<void> {
   assert.equal(isAlertTime(new Date("2026-11-08T08:00:00Z")), true);
   assert.equal(isAlertTime(new Date("2026-11-13T08:00:00Z")), false, "Friday is not alert time");
   assert.equal(isAlertTime(new Date("2026-11-08T16:00:00Z")), false, "18:00 is not alert time");
+
+  // Task 11: the send decision (spec section 9, in its order) and the template parameters
+  {
+    const env = { auto: true, approved: new Set(["payment_received:he", "payment_failed:he", "order_cancelled:he", "flight_reminder:he"]) };
+    const obRow = (kind: OutboxKind, o: Partial<OutboxRowLite> = {}): OutboxRowLite => ({ id: "ob-1", kind, reservationId: 1, dueAt: "2026-11-08T09:00:00Z", fromStatus: null, createdAt: "2026-11-08T08:45:00Z", ...o });
+    const obOrder = (o: Partial<OrderLite> = {}): OrderLite => ({
+      id: 1, status: "Paid", isDeleted: false, whatsappOffAt: null, itineraryGroup: null, phone: "0542002722", phoneKey: "542002722",
+      eventId: 1, eventDate: "2026-12-01", createdAt: "2026-10-01T00:00:00Z", paymentReceivedSent: false, ...o,
+    });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder(), false, { ...env, auto: false }, NOW), { act: "skip", reason: "הופסק ידנית" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ isDeleted: true }), false, env, NOW), { act: "skip", reason: "ההזמנה נמחקה" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ whatsappOffAt: "2026-11-01T00:00:00Z" }), false, env, NOW), { act: "skip", reason: "כבוי להזמנה הזו" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ itineraryGroup: "g1" }), false, env, NOW), { act: "skip", reason: "טיול יורו - לא בסבב הזה" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ phone: "12" }), false, env, NOW), { act: "skip", reason: "אין טלפון תקין" });
+    assert.deepEqual(outboxDecision(obRow("materials_sent"), obOrder(), false, env, NOW), { act: "skip", reason: "התבנית לא אושרה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed", { dueAt: "2026-11-08T10:10:00Z" }), obOrder({ status: "Pending" }), false, env, NOW), { act: "wait" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), true, env, NOW), { act: "skip", reason: "שולם בהזמנה חדשה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Paid" }), false, env, NOW), { act: "skip", reason: "ההזמנה השתנתה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), false, env, NOW), { act: "send", to: "972542002722" });
+    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Pending" }), obOrder({ status: "Cancelled" }), false, env, NOW), { act: "skip", reason: "ההזמנה לא שולמה" });
+    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Paid" }), obOrder({ status: "Cancelled" }), false, env, NOW), { act: "send", to: "972542002722" });
+    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Follow-up" }), obOrder({ status: "Cancelled", paymentReceivedSent: true }), false, env, NOW), { act: "send", to: "972542002722" }, "paid earlier, moved, then cancelled");
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ eventDate: "2026-10-01" }), false, env, NOW), { act: "skip", reason: "האירוע עבר" });
+    assert.deepEqual(outboxDecision(obRow("flight_reminder", { dueAt: "2026-11-07T07:00:00Z" }), obOrder(), false, env, NOW), { act: "skip", reason: "עבר הזמן" });
+    assert.deepEqual(outboxDecision(obRow("flight_reminder"), obOrder({ status: "Cancelled" }), false, env, NOW), { act: "skip", reason: "ההזמנה השתנתה" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder(), false, env, NOW), { act: "send", to: "972542002722" });
+    assert.equal(documentsOf({ hasFlight: true, hasHotel: true }), "אישור ההזמנה, כרטיסי הטיסה ושובר המלון");
+    assert.equal(documentsOf({ hasFlight: false, hasHotel: true }), "אישור ההזמנה ושובר המלון");
+    assert.equal(documentsOf({ hasFlight: true, hasHotel: false }), "אישור ההזמנה וכרטיסי הטיסה");
+    assert.equal(documentsOf({ hasFlight: false, hasHotel: false }), "אישור ההזמנה");
+    assert.equal(greetingName("דנה"), "דנה");
+    assert.equal(greetingName("dana123"), "חברים");
+    assert.equal(greetingName(null), "חברים");
+    assert.equal(cleanParam("a\nb\t c     d"), "a b c d");
+    const src: ParamSource = { firstName: "דנה", orderId: 4821, eventLabel: "אוואסיס במנצ׳סטר", eventName: "אוואסיס", resumeUrl: "https://www.mega-events.co.il/order/1", documents: "אישור ההזמנה" };
+    assert.deepEqual(paramsFor("payment_received", src), ["דנה", "4821", "אוואסיס במנצ׳סטר", "אישור ההזמנה"]);
+    assert.deepEqual(paramsFor("order_cancelled", src), ["דנה", "אוואסיס במנצ׳סטר", "4821"]);
+    assert.deepEqual(paramsFor("payment_failed", src), ["דנה", "אוואסיס במנצ׳סטר", "https://www.mega-events.co.il/order/1"]);
+    const flight = { ...src, flight: { city: "לונדון", number: "LY317", date: "12.11", hour: "06:40", airport: "נתב״ג" } };
+    assert.deepEqual(paramsFor("flight_reminder", flight), ["דנה", "לונדון", "LY317", "12.11", "06:40", "נתב״ג"]);
+    assert.deepEqual(paramsFor("event_today", { ...src, place: "אצטדיון הית׳אד, מנצ׳סטר" }), ["דנה", "אוואסיס", "אצטדיון הית׳אד, מנצ׳סטר"]);
+  }
 
   await inboundSection();
 

@@ -37,8 +37,8 @@ export const WAITLIST_TEMPLATE_DEFAULT = "waitlist_date_open";
 export const WAITLIST_TEMPLATE_LANGUAGE = "he";
 
 /** A name that goes out in our message: letters, one word, short. A visitor typed it, and it goes to a phone they typed. */
-const NAME_ALLOWED = /^[\p{L}\p{M}][\p{L}\p{M}'’׳-]{0,19}$/u;
-const NO_NAME = "חברים";
+export const NAME_ALLOWED = /^[\p{L}\p{M}][\p{L}\p{M}'’׳-]{0,19}$/u;
+export const NO_NAME = "חברים";
 const NO_TOUR = "הטיול";
 /** The hours a customer may get this message, Israel time: [from, to) per weekday, Sunday = 0. Shabbat has none. */
 const SEND_HOURS: Record<number, [number, number] | null> = { 0: [9, 20], 1: [9, 20], 2: [9, 20], 3: [9, 20], 4: [9, 20], 5: [9, 13], 6: null };
