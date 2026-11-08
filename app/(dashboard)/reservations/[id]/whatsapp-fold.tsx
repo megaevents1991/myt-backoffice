@@ -19,6 +19,7 @@ import { ThreadView } from "@/components/whatsapp/thread-view";
 import { ReplyBox } from "@/components/whatsapp/reply-box";
 import { WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { markChatHandled, reservationWhatsapp, setReservationWhatsappOff, type ReservationWhatsapp } from "@/lib/actions/whatsapp-events-actions";
+import { foldTargets } from "@/lib/whatsapp/events/chat-rules";
 
 const KIND_LABELS: Record<string, string> = {
   payment_received: "התשלום התקבל",
@@ -54,7 +55,8 @@ export function WhatsappFold({ reservationId, phone }: { reservationId: number; 
     if (res.success && res.data) setData(res.data);
   }, [reservationId, run]);
 
-  const chat = data?.chats[0] ?? null;
+  // each chat answered on its own: a reply to a companion never goes to the customer, each has its own window
+  const targets = data ? foldTargets(data.chats, data.phoneKey) : [];
   const unseen = !!data?.chats.some((c) => c.lastInAt && (!c.seenAt || c.lastInAt > c.seenAt));
 
   return (
@@ -98,27 +100,6 @@ export function WhatsappFold({ reservationId, phone }: { reservationId: number; 
                     />
                     לא לשלוח וואטסאפ להזמנה הזו
                   </label>
-                  {chat && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={async () => {
-                        setBusy(true);
-                        const res = await run(() => markChatHandled(chat.id), "סומן כטופל");
-                        setBusy(false);
-                        if (res.success) void load();
-                      }}
-                    >
-                      <CheckCheck className="h-4 w-4" />
-                      טופל
-                    </Button>
-                  )}
-                  {chat && (
-                    <Link href={`/whatsapp?chat=${chat.id}`} className="text-sm underline">
-                      פתח במסך הוואטסאפ
-                    </Link>
-                  )}
                   <span className="ms-auto">
                     <WhatsAppButton phone={phone} message="" iconOnly />
                   </span>
@@ -128,7 +109,35 @@ export function WhatsappFold({ reservationId, phone }: { reservationId: number; 
                 ) : (
                   <p className="text-sm text-muted-foreground">{data.thread.connected ? "אין הודעות עם הטלפון הזה." : "המספר של החברה עדיין לא מחובר."}</p>
                 )}
-                {chat && <ReplyBox chatId={chat.id} reservationId={reservationId} lastInAt={chat.lastInAt} onSent={() => void load()} />}
+                {targets.map((t) => (
+                  <div key={t.chatId} className="space-y-2 rounded-md border p-2">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-medium">{t.own ? "הלקוח" : "מצורף להזמנה"}</span>
+                      <span className="text-muted-foreground" dir="ltr">
+                        {t.phone}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ms-auto"
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          const res = await run(() => markChatHandled(t.chatId), "סומן כטופל");
+                          setBusy(false);
+                          if (res.success) void load();
+                        }}
+                      >
+                        <CheckCheck className="h-4 w-4" />
+                        טופל
+                      </Button>
+                      <Link href={`/whatsapp?chat=${t.chatId}`} className="underline">
+                        פתח במסך הוואטסאפ
+                      </Link>
+                    </div>
+                    <ReplyBox chatId={t.chatId} reservationId={reservationId} lastInAt={t.lastInAt} onSent={() => void load()} />
+                  </div>
+                ))}
                 {data.outbox.length > 0 && (
                   <div className="space-y-1">
                     <p className="text-sm font-medium">הודעות אוטומטיות</p>

@@ -38,6 +38,8 @@ export async function handleEventsMessage(
   deps: InboundDeps,
   ed: EventsInboundDeps,
   out: InboundSummary,
+  /** Phones whose chat this batch already wrote for history - a history batch writes each chat ONCE. */
+  historyChats: Set<string> = new Set(),
 ): Promise<void> {
   const companyId = account.companyId;
   const live = ev.origin !== "history";
@@ -67,10 +69,13 @@ export async function handleEventsMessage(
   }
   out.stored += 1;
 
-  // history (connect day's 6 months): the conversation exists, but nothing in it is new or waiting for an answer
+  // history (connect day's 6 months): the conversation exists, and that is all. It stamps no seen / answered - "now"
+  // would hide a LIVE message that came in meanwhile - and never sets last_in_at, so nothing in it is new or waiting.
   if (!live) {
-    const now = deps.now();
-    await ed.upsertChat(companyId, phone, key, { seenAt: now, answeredAt: now });
+    if (!historyChats.has(`${companyId}|${key}`)) {
+      historyChats.add(`${companyId}|${key}`);
+      await ed.upsertChat(companyId, phone, key, {});
+    }
     return;
   }
 

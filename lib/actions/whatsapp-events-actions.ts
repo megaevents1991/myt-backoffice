@@ -11,7 +11,7 @@ import { supabaseTyped } from "@/lib/supabase-server";
 import { actionFail, actionOk, UserError, type ActionResult } from "@/lib/tours/action-kit";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { WA_THREAD_PAGE, WA_TEXT_MAX, standInText, type WaMessageType } from "@/lib/whatsapp/rules";
-import { replyState } from "@/lib/whatsapp/events/chat-rules";
+import { linkSearchOf, replyState, threadKeysOf } from "@/lib/whatsapp/events/chat-rules";
 import { unansweredFor } from "@/lib/whatsapp/events/working-time";
 import { countUnanswered } from "@/lib/services/whatsapp-events-alerts";
 import { assembleThread, emptyWaThread, type WaThread, type WaThreadMessage } from "@/lib/tours/cases";
@@ -88,10 +88,11 @@ async function ownChat(company: Company, chatId: string): Promise<WaChat> {
   return chat;
 }
 
-async function threadOfChats(company: Company, chats: WaChat[], before?: string): Promise<WaThread> {
-  if (chats.length === 0) return emptyWaThread();
+async function threadOfChats(company: Company, chats: WaChat[], before?: string, extraKeys: string[] = []): Promise<WaThread> {
+  const keys = threadKeysOf(chats, extraKeys[0] ?? "").concat(extraKeys.slice(1)).filter(Boolean);
+  if (keys.length === 0) return emptyWaThread();
   const [page, account] = await Promise.all([
-    listThread(company.id, chats.map((c) => c.phoneKey), { before, limit: WA_THREAD_PAGE }),
+    listThread(company.id, keys, { before, limit: WA_THREAD_PAGE }),
     accountOfCompany(company.id),
   ]);
   const lastInAt = chats.map((c) => c.lastInAt).filter((x): x is string => !!x).sort().pop() ?? null;
@@ -209,22 +210,24 @@ export type LinkCandidate = { id: number; name: string; status: string; eventNam
 export async function searchReservationsForLink(q: string): Promise<ActionResult<LinkCandidate[]>> {
   try {
     await staff();
-    const term = (typeof q === "string" ? q : "").trim().slice(0, 60);
-    if (term.length < 2) return actionOk([]);
-    const digits = term.replace(/\D/g, "");
-    let query = supabaseTyped
+    const search = linkSearchOf(typeof q === "string" ? q : "");
+    if (!search) return actionOk([]);
+    // the phone key column is not in the generated types yet (migration 20261108190000) - one boundary cast
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (supabaseTyped as any)
       .from("reservations")
       .select("id, main_contact_first_name, main_contact_last_name, status, event_order_info")
       .is("is_deleted", null)
       .order("created_at", { ascending: false })
       .limit(SEARCH_MAX);
-    if (/^\d+$/.test(term) && term.length <= 7) query = query.eq("id", Number(term));
-    else if (digits.length >= 9) query = query.ilike("main_contact_phone_number", `%${digits.slice(-7)}%`);
-    else {
-      const safe = term.replace(/[%_,()]/g, " ").trim();
-      query = query.or(`main_contact_first_name.ilike.%${safe}%,main_contact_last_name.ilike.%${safe}%`);
-    }
-    const { data, error } = await query;
+    if (search.kind === "id") query = query.eq("id", search.id);
+    // a phone in any spelling: its last 9 digits, indexed (main_contact_phone_key)
+    else if (search.kind === "phone") query = query.eq("main_contact_phone_key", search.key);
+    else query = query.or(`main_contact_first_name.ilike.%${search.text}%,main_contact_last_name.ilike.%${search.text}%`);
+    const { data, error } = (await query) as {
+      data: { id: number; main_contact_first_name: string | null; main_contact_last_name: string | null; status: string | null; event_order_info: unknown }[] | null;
+      error: { message: string } | null;
+    };
     if (error) throw new Error(`reservations: ${error.message}`);
     return actionOk(
       (data ?? []).map((r) => {
@@ -265,6 +268,8 @@ export async function setChatOptOut(chatId: string, optedOut: boolean, note: str
 }
 
 export type ReservationWhatsapp = {
+  /** The order's own phone key - the fold puts that chat first (foldTargets). */
+  phoneKey: string;
   chats: ChatRow[];
   thread: WaThread;
   off: { at: string; by: string | null } | null;
@@ -282,12 +287,13 @@ export async function reservationWhatsapp(reservationId: number): Promise<Action
       reservationWhatsappOff(reservationId),
       outboxOfReservation(reservationId),
     ]);
-    const [rows, thread] = await Promise.all([rowsOf(company, chats), threadOfChats(company, chats)]);
+    // the order's own phone always: what we sent shows even before the customer ever wrote
+    const [rows, thread] = await Promise.all([rowsOf(company, chats), threadOfChats(company, chats, undefined, key ? [key] : [])]);
     if (!session.impersonator) {
       const at = new Date().toISOString();
       await Promise.all(chats.filter((c) => c.lastInAt && (!c.seenAt || c.lastInAt > c.seenAt)).map((c) => markChat(c.id, { seenAt: at, seenBy: session.sub })));
     }
-    return actionOk({ chats: rows, thread, off, outbox });
+    return actionOk({ phoneKey: key, chats: rows, thread, off, outbox });
   } catch (e) {
     return actionFail(e, SCOPE);
   }

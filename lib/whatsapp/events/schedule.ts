@@ -98,3 +98,11 @@ export function flightParams(f: FlightFacts, flightCity: string): { city: string
   const [, m, d] = f.departureLocal.slice(0, 10).split("-");
   return { city: flightCity, number: f.number, date: `${d}.${m}`, hour: formatHm(f.departureLocal) ?? "", airport: airportLabel(f.airport) };
 }
+
+/** The event dates the schedule looks at: a return a week after the show, a flight up to two weeks before it. */
+export const SCHEDULE_DAYS_BACK = 8;
+export const SCHEDULE_DAYS_AHEAD = 14 + FLIGHT_REMINDER_DAYS_BEFORE;
+
+export function candidateWindow(today: string): { from: string; to: string } {
+  return { from: addDays(today, -SCHEDULE_DAYS_BACK), to: addDays(today, SCHEDULE_DAYS_AHEAD) };
+}

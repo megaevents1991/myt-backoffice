@@ -52,7 +52,10 @@ function stillMatches(kind: OutboxKind, status: string): boolean {
   return status === "Paid"; // the date kinds
 }
 
-export function outboxDecision(row: OutboxRowLite, order: OrderLite, newerPaidSameEvent: boolean, env: DecisionEnv, now: Date): Decision {
+/** A newer reservation of the same phone for the same event: "paid" when one of them is Paid, "other" when not, else null. */
+export type NewerOrder = "paid" | "other" | null;
+
+export function outboxDecision(row: OutboxRowLite, order: OrderLite, newer: NewerOrder, env: DecisionEnv, now: Date): Decision {
   if (Date.parse(row.dueAt) > now.getTime()) return { act: "wait" };
   if (!env.auto) return skip("הופסק ידנית");
   if (order.isDeleted) return skip("ההזמנה נמחקה");
@@ -65,8 +68,13 @@ export function outboxDecision(row: OutboxRowLite, order: OrderLite, newerPaidSa
   if (!stillMatches(row.kind, order.status)) return skip("ההזמנה השתנתה");
   const today = israelToday(now);
   if (row.kind === "payment_received" && order.eventDate && order.eventDate < today) return skip("האירוע עבר");
-  // a retry inserts a NEW reservation: a customer who paid on it must not hear the first try failed
-  if (row.kind === "payment_failed" && newerPaidSameEvent) return skip("שולם בהזמנה חדשה");
+  if (row.kind === "payment_failed") {
+    // myt-main may write Pending over a Paid row (a second, failing gateway read): a paid customer never hears "failed"
+    if (row.fromStatus === "Paid" || order.paymentReceivedSent) return skip("ההזמנה כבר שולמה");
+    // a retry inserts a NEW reservation: the newest attempt speaks for all of them - paid, or still being paid
+    if (newer === "paid") return skip("שולם בהזמנה חדשה");
+    if (newer === "other") return skip("יש ניסיון תשלום חדש יותר");
+  }
   if (row.kind === "order_cancelled" && row.fromStatus !== "Paid" && !order.paymentReceivedSent) return skip("ההזמנה לא שולמה");
   if (DATE_KINDS.has(row.kind) && israelToday(new Date(row.dueAt)) < today) return skip("עבר הזמן");
   return { act: "send", to };

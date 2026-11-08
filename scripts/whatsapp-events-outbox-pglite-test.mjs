@@ -80,6 +80,23 @@ await exec(`insert into public.wa_accounts(company_id, is_active) values ('${MEG
   assert.ok(wait >= 899 && wait <= 901, `payment_failed waits 15 minutes (got ${wait}s)`);
 }
 
+// a payment result CLEARED (to null or {}) is no failure
+{
+  const id = await newOrder("Pending", { payment_info: '{"status":"FAILED"}' });
+  await q(`update public.reservations set payment_info = null where id = $1`, [id]);
+  const j = await newOrder("Pending", { payment_info: '{"x":1}' });
+  await q(`update public.reservations set payment_info = '{}' where id = $1`, [j]);
+  assert.equal((await rows()).filter((r) => r.dedupe_key.startsWith(`payment_failed:${id}:`) || r.dedupe_key.startsWith(`payment_failed:${j}:`)).length, 0, "a cleared payment result is no failure");
+}
+
+// the claim column, and a lock never holds a booking: the function waits at most lock_timeout
+{
+  const cols = await q(`select column_name from information_schema.columns where table_name = 'wa_outbox' and column_name = 'claimed_at'`);
+  assert.equal(cols.length, 1, "wa_outbox.claimed_at exists");
+  const [fn] = await q(`select proconfig from pg_proc where proname = 'reservations_wa_outbox'`);
+  assert.ok((fn.proconfig ?? []).some((c) => c.startsWith("lock_timeout=")), "the trigger function carries a lock_timeout");
+}
+
 // phone_order: the mail flag flips on a Pending order with no payment and no settlement method
 {
   const id = await newOrder("Pending");

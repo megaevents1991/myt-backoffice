@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase-server";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { fetchPaged } from "@/lib/supabase-paged";
 import { israelToday } from "@/lib/marketing/range";
-import { dueThisHour, flightFacts, lateBooking, slotFor, type FlightFacts, type ScheduleKind } from "@/lib/whatsapp/events/schedule";
+import { candidateWindow, dueThisHour, flightFacts, lateBooking, slotFor, type FlightFacts, type ScheduleKind } from "@/lib/whatsapp/events/schedule";
 import { accountOfCompany } from "@/lib/services/whatsapp-db";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,18 +72,11 @@ export async function runEventsSchedule(opts: { dryRun: boolean; now?: Date }, d
 
 // ---------------------------------------------------------------- the real dependencies
 
-/** Events from this many days ago (a return a week after the show) to this many ahead (3 days before the flight). */
-const DAYS_BACK = 8;
-const DAYS_AHEAD = 5;
 const IN_CHUNK = 200;
 const chunks = <T>(xs: T[]): T[][] => {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += IN_CHUNK) out.push(xs.slice(i, i + IN_CHUNK));
   return out;
-};
-const shift = (day: string, n: number): string => {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 };
 
 type ResRow = { id: number; created_at: string; event_id: number | null; offline_flight_id: number | null; flight_order_info: unknown };
@@ -96,8 +89,9 @@ export function realScheduleDeps(): ScheduleDeps {
       // nothing to queue before the number is connected (the trigger follows the same rule)
       const account = await accountOfCompany(MEGA_EVENTS_COMPANY_ID);
       if (!account?.isActive) return [];
-      const today = israelToday(now);
-      const { data: events, error: eventsError } = await db.from("events").select("id, date").gte("date", shift(today, -DAYS_BACK)).lte("date", shift(today, DAYS_AHEAD));
+      // a return a week after the show .. a flight two weeks before it (candidateWindow, selftested)
+      const window = candidateWindow(israelToday(now));
+      const { data: events, error: eventsError } = await db.from("events").select("id, date").gte("date", window.from).lte("date", window.to);
       if (eventsError) throw new Error(`events: ${eventsError.message}`);
       const eventDate = new Map(((events ?? []) as { id: number; date: string }[]).map((e) => [e.id, String(e.date).slice(0, 10)]));
       if (eventDate.size === 0) return [];

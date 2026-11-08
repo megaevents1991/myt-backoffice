@@ -122,3 +122,32 @@ export function withoutWaColumns<T extends Record<string, unknown>>(row: T): Omi
   for (const c of WA_RESERVATION_COLUMNS) delete copy[c];
   return copy as Omit<T, (typeof WA_RESERVATION_COLUMNS)[number]>;
 }
+
+/**
+ * The order fold answers EACH chat on its own (review 08.11): the order's own phone first, then the companions a rep
+ * attached - a reply to one never goes to the other, and each has its own 24-hour window.
+ */
+export function foldTargets<C extends { id: string; phoneKey: string; phone: string; lastInAt: string | null }>(
+  chats: C[],
+  orderPhoneKey: string,
+): { chatId: string; phone: string; lastInAt: string | null; own: boolean }[] {
+  return [...chats]
+    .sort((a, b) => Number(b.phoneKey === orderPhoneKey) - Number(a.phoneKey === orderPhoneKey))
+    .map((c) => ({ chatId: c.id, phone: c.phone, lastInAt: c.lastInAt, own: c.phoneKey === orderPhoneKey }));
+}
+
+/** "הצמד להזמנה": what the term is - an order number, a phone (any spelling, matched by its key), or a name. */
+export function linkSearchOf(term: string): { kind: "id"; id: number } | { kind: "phone"; key: string } | { kind: "name"; text: string } | null {
+  const t = term.trim().slice(0, 60);
+  if (t.length < 2) return null;
+  const digits = t.replace(/\D/g, "");
+  if (/^\d{2,7}$/.test(t)) return { kind: "id", id: Number(t) };
+  if (digits.length >= 9 && /^[\d\s()+\-.]+$/.test(t)) return { kind: "phone", key: digits.slice(-9) };
+  const text = t.replace(/[%_,()]/g, " ").trim();
+  return text ? { kind: "name", text } : null;
+}
+
+/** The phone keys a reservation's thread reads: its own phone always (what we sent shows before the customer ever wrote) + its chats. */
+export function threadKeysOf(chats: { phoneKey: string }[], reservationKey: string): string[] {
+  return [...new Set([reservationKey, ...chats.map((c) => c.phoneKey)].filter(Boolean))];
+}

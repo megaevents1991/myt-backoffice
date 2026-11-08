@@ -65,6 +65,14 @@ assert.equal(after.main_contact_phone_key, "542002722", "a whole-row update cann
 const [old] = await q(`select main_contact_phone_key from public.reservations where main_contact_phone_number = '052-528-7144'`);
 assert.equal(old.main_contact_phone_key, "525287144", "the backfill keys rows that existed before");
 
+// a writer WITHOUT execute on public.phone_key (any role but the owner / service_role) still saves a reservation
+await exec(`grant select, insert, update on public.reservations to authenticated; grant usage, select on sequence public.reservations_id_seq to authenticated;`);
+await exec(`revoke all on function public.phone_key(text) from public; revoke execute on function public.phone_key(text) from authenticated;`);
+await exec(`set role authenticated;`);
+const [asOther] = await q(`insert into public.reservations(main_contact_phone_number, status) values ('054-111-2222', 'Pending') returning main_contact_phone_key`);
+await exec(`reset role;`);
+assert.equal(asOther.main_contact_phone_key, "541112222", "a role without phone_key still saves, keyed");
+
 // the off switch columns exist and default to null
 const [off] = await q(`select whatsapp_off_at, whatsapp_off_by from public.reservations limit 1`);
 assert.equal(off.whatsapp_off_at, null);

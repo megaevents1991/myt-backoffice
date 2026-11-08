@@ -11,8 +11,11 @@ import {
   marksFor,
   markedReservation,
   normAutoText,
+  foldTargets,
+  linkSearchOf,
   replyState,
   signupSyncs,
+  threadKeysOf,
   suggestAutoTexts,
   withoutWaColumns,
   type EventsResLite,
@@ -22,7 +25,7 @@ import { isAlertTime, unansweredFor, workingMinutesBetween } from "../lib/whatsa
 import { outboxDecision, type OrderLite, type OutboxKind, type OutboxRowLite } from "../lib/whatsapp/events/outbox";
 import { cleanParam, documentsOf, greetingName, paramsFor, type ParamSource } from "../lib/whatsapp/events/params";
 import { drainOutbox, type DrainDeps, type DrainRow } from "../lib/services/whatsapp-events-outbox";
-import { airportLabel, dueThisHour, flightFacts, flightParams, lateBooking, slotFor } from "../lib/whatsapp/events/schedule";
+import { airportLabel, candidateWindow, dueThisHour, flightFacts, flightParams, lateBooking, slotFor } from "../lib/whatsapp/events/schedule";
 import { runEventsSchedule, type ScheduleCandidate, type ScheduleDeps } from "../lib/services/whatsapp-events-schedule";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { templateUpsertRow, type WaAccount, type WaMessageInsert } from "../lib/services/whatsapp-db";
@@ -117,23 +120,26 @@ async function main(): Promise<void> {
       id: 1, status: "Paid", isDeleted: false, whatsappOffAt: null, itineraryGroup: null, phone: "0542002722", phoneKey: "542002722",
       eventId: 1, eventDate: "2026-12-01", createdAt: "2026-10-01T00:00:00Z", paymentReceivedSent: false, ...o,
     });
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder(), false, { ...env, auto: false }, NOW), { act: "skip", reason: "הופסק ידנית" });
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ isDeleted: true }), false, env, NOW), { act: "skip", reason: "ההזמנה נמחקה" });
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ whatsappOffAt: "2026-11-01T00:00:00Z" }), false, env, NOW), { act: "skip", reason: "כבוי להזמנה הזו" });
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ itineraryGroup: "g1" }), false, env, NOW), { act: "skip", reason: "טיול יורו - לא בסבב הזה" });
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ phone: "12" }), false, env, NOW), { act: "skip", reason: "אין טלפון תקין" });
-    assert.deepEqual(outboxDecision(obRow("materials_sent"), obOrder(), false, env, NOW), { act: "skip", reason: "התבנית לא אושרה" });
-    assert.deepEqual(outboxDecision(obRow("payment_failed", { dueAt: "2026-11-08T10:10:00Z" }), obOrder({ status: "Pending" }), false, env, NOW), { act: "wait" });
-    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), true, env, NOW), { act: "skip", reason: "שולם בהזמנה חדשה" });
-    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Paid" }), false, env, NOW), { act: "skip", reason: "ההזמנה השתנתה" });
-    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), false, env, NOW), { act: "send", to: "972542002722" });
-    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Pending" }), obOrder({ status: "Cancelled" }), false, env, NOW), { act: "skip", reason: "ההזמנה לא שולמה" });
-    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Paid" }), obOrder({ status: "Cancelled" }), false, env, NOW), { act: "send", to: "972542002722" });
-    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Follow-up" }), obOrder({ status: "Cancelled", paymentReceivedSent: true }), false, env, NOW), { act: "send", to: "972542002722" }, "paid earlier, moved, then cancelled");
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ eventDate: "2026-10-01" }), false, env, NOW), { act: "skip", reason: "האירוע עבר" });
-    assert.deepEqual(outboxDecision(obRow("flight_reminder", { dueAt: "2026-11-07T07:00:00Z" }), obOrder(), false, env, NOW), { act: "skip", reason: "עבר הזמן" });
-    assert.deepEqual(outboxDecision(obRow("flight_reminder"), obOrder({ status: "Cancelled" }), false, env, NOW), { act: "skip", reason: "ההזמנה השתנתה" });
-    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder(), false, env, NOW), { act: "send", to: "972542002722" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder(), null, { ...env, auto: false }, NOW), { act: "skip", reason: "הופסק ידנית" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ isDeleted: true }), null, env, NOW), { act: "skip", reason: "ההזמנה נמחקה" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ whatsappOffAt: "2026-11-01T00:00:00Z" }), null, env, NOW), { act: "skip", reason: "כבוי להזמנה הזו" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ itineraryGroup: "g1" }), null, env, NOW), { act: "skip", reason: "טיול יורו - לא בסבב הזה" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ phone: "12" }), null, env, NOW), { act: "skip", reason: "אין טלפון תקין" });
+    assert.deepEqual(outboxDecision(obRow("materials_sent"), obOrder(), null, env, NOW), { act: "skip", reason: "התבנית לא אושרה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed", { dueAt: "2026-11-08T10:10:00Z" }), obOrder({ status: "Pending" }), null, env, NOW), { act: "wait" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), "paid", env, NOW), { act: "skip", reason: "שולם בהזמנה חדשה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), "other", env, NOW), { act: "skip", reason: "יש ניסיון תשלום חדש יותר" }, "repeated failures: the newest attempt speaks");
+    assert.deepEqual(outboxDecision(obRow("payment_failed", { fromStatus: "Paid" }), obOrder({ status: "Pending" }), null, env, NOW), { act: "skip", reason: "ההזמנה כבר שולמה" }, "Paid -> Pending never tells a paid customer it failed");
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending", paymentReceivedSent: true }), null, env, NOW), { act: "skip", reason: "ההזמנה כבר שולמה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Paid" }), null, env, NOW), { act: "skip", reason: "ההזמנה השתנתה" });
+    assert.deepEqual(outboxDecision(obRow("payment_failed"), obOrder({ status: "Pending" }), null, env, NOW), { act: "send", to: "972542002722" });
+    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Pending" }), obOrder({ status: "Cancelled" }), null, env, NOW), { act: "skip", reason: "ההזמנה לא שולמה" });
+    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Paid" }), obOrder({ status: "Cancelled" }), null, env, NOW), { act: "send", to: "972542002722" });
+    assert.deepEqual(outboxDecision(obRow("order_cancelled", { fromStatus: "Follow-up" }), obOrder({ status: "Cancelled", paymentReceivedSent: true }), null, env, NOW), { act: "send", to: "972542002722" }, "paid earlier, moved, then cancelled");
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder({ eventDate: "2026-10-01" }), null, env, NOW), { act: "skip", reason: "האירוע עבר" });
+    assert.deepEqual(outboxDecision(obRow("flight_reminder", { dueAt: "2026-11-07T07:00:00Z" }), obOrder(), null, env, NOW), { act: "skip", reason: "עבר הזמן" });
+    assert.deepEqual(outboxDecision(obRow("flight_reminder"), obOrder({ status: "Cancelled" }), null, env, NOW), { act: "skip", reason: "ההזמנה השתנתה" });
+    assert.deepEqual(outboxDecision(obRow("payment_received"), obOrder(), null, env, NOW), { act: "send", to: "972542002722" });
     assert.equal(documentsOf({ hasFlight: true, hasHotel: true }), "אישור ההזמנה, כרטיסי הטיסה ושובר המלון");
     assert.equal(documentsOf({ hasFlight: false, hasHotel: true }), "אישור ההזמנה ושובר המלון");
     assert.equal(documentsOf({ hasFlight: true, hasHotel: false }), "אישור ההזמנה וכרטיסי הטיסה");
@@ -179,6 +185,23 @@ async function main(): Promise<void> {
     assert.deepEqual(flightParams(ff, "לונדון"), { city: "לונדון", number: "LY317", date: "12.11", hour: "06:40", airport: "נתב״ג" });
   }
 
+  // review fixes: the fold answers each chat on its own; the link search reads a typed phone; the thread always reads the
+  // order's own phone; the schedule's window reaches a flight two weeks before the show
+  {
+    const own = { id: "c1", phoneKey: "542002722", phone: "972542002722", lastInAt: "2026-11-08T09:00:00Z" };
+    const mate = { id: "c2", phoneKey: "525287144", phone: "972525287144", lastInAt: "2026-11-08T09:30:00Z" };
+    assert.deepEqual(foldTargets([mate, own], "542002722").map((t) => [t.chatId, t.own]), [["c1", true], ["c2", false]], "the order's own phone first");
+    assert.deepEqual(linkSearchOf("4821"), { kind: "id", id: 4821 });
+    assert.deepEqual(linkSearchOf("054-200-2722"), { kind: "phone", key: "542002722" });
+    assert.deepEqual(linkSearchOf("+972 54 200 2722"), { kind: "phone", key: "542002722" });
+    assert.deepEqual(linkSearchOf("דנה"), { kind: "name", text: "דנה" });
+    assert.equal(linkSearchOf("a"), null);
+    assert.deepEqual(threadKeysOf([], "542002722"), ["542002722"], "a customer who never wrote still shows what we sent");
+    assert.deepEqual(threadKeysOf([own, mate], "542002722"), ["542002722", "525287144"]);
+    const w = candidateWindow("2026-11-08");
+    assert.ok(w.from <= "2026-10-31" && w.to >= "2026-11-22", `the window reaches 8 days back and 14 ahead (${w.from}..${w.to})`);
+  }
+
   await scheduleSection();
   await drainSection();
   await inboundSection();
@@ -215,7 +238,7 @@ function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]
   const moves: { id: number; today: string; chatId: string }[] = [];
   const marks: { chatId: string; patch: Record<string, unknown> }[] = [];
   const sent: { to: string; text: string }[] = [];
-  const calls = { insertLead: 0, findCustomers: 0, suggested: [] as string[][] };
+  const calls = { insertLead: 0, findCustomers: 0, suggested: [] as string[][], upserts: 0, contacts: 0 };
   let seq = 0;
   let now = opts.now ?? "2026-11-08T10:00:00.000Z";
   const later = (a: string | null | undefined, b: string | null | undefined) => (!a ? b ?? null : !b ? a : b > a ? b : a);
@@ -251,12 +274,15 @@ function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]
       return { ok: true };
     },
     upsertTemplate: async () => {},
-    saveContacts: async () => {},
+    saveContacts: async () => {
+      calls.contacts += 1;
+    },
     removeContacts: async () => {},
     log: { warn: () => {}, error: () => {} },
     events: {
       chatByKey: async (_c, key) => chats.get(key) ?? null,
       upsertChat: async (companyId, phone, key, patch) => {
+        calls.upserts += 1;
         const cur = chats.get(key);
         const next: WaChat = {
           id: cur?.id ?? `chat-${key}`,
@@ -359,9 +385,27 @@ async function inboundSection(): Promise<void> {
     const chat = t.chats.get("542002722");
     assert.equal(t.messages.length, 300);
     assert.equal(chat?.lastInAt ?? null, null, "history marks nothing: no last_in_at");
-    assert.ok(chat?.seenAt && chat?.answeredAt, "history marks nothing: seen and answered");
+    assert.equal(chat?.seenAt ?? null, null, "history stamps no seen (it would hide a live message)");
+    assert.equal(chat?.answeredAt ?? null, null, "history stamps no answer");
+    assert.equal(t.calls.upserts, 1, "one chat write per phone per history batch");
     assert.equal(t.moves.length, 0, "history moves no order");
     assert.equal(t.sent.length, 0, "history sends nothing");
+  }
+  // a live message, then a history chunk of the same phone: the live message stays new and unanswered
+  {
+    const t = makeEventsDeps();
+    await handleWebhookEvents([evMsg("live1", "2026-11-08T08:00:00.000Z", "שלום")], t.deps);
+    await handleWebhookEvents([{ ...evMsg("old1", "2026-06-01T08:00:00.000Z", "ישן"), origin: "history" }, evEcho("old2", "2026-06-01T08:05:00.000Z", "תשובה ישנה", "history")], t.deps);
+    const chat = t.chats.get("542002722");
+    assert.equal(chat?.lastInAt, "2026-11-08T08:00:00.000Z");
+    assert.equal(chat?.seenAt ?? null, null, "history never hides a live message");
+    assert.equal(chat?.answeredAt ?? null, null);
+  }
+  // the phone book of an events number is never stored (spec section 6)
+  {
+    const t = makeEventsDeps();
+    await handleWebhookEvents([{ kind: "contact", phoneNumberId: "444", phone: "972501112233", fullName: "אמא", firstName: "אמא", action: "add", at: null }], t.deps);
+    assert.equal(t.calls.contacts, 0, "no phone book for Mega Events");
   }
   // an echo answers; the app's own automatic text does not
   {
@@ -423,7 +467,8 @@ async function inboundSection(): Promise<void> {
 }
 
 // ------------------------------------------------------------ Task 12: the drain over injected deps
-function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sendFails?: boolean; auto?: boolean }) {
+function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sendFails?: boolean; auto?: boolean; finishThrowsFor?: string }) {
+  const claimed = new Set<string>();
   const sends: { to: string; template: string; params: string[]; reservationId: number }[] = [];
   const finishes: { id: string; patch: Record<string, unknown> }[] = [];
   const rows = opts.rows.map((r) => ({ ...r }));
@@ -436,12 +481,20 @@ function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sen
       order: { id, status: "Paid", isDeleted: false, whatsappOffAt: null, itineraryGroup: null, phone: "054-200-2722", phoneKey: "542002722", eventId: 1, eventDate: "2026-12-01", createdAt: "2026-10-01T00:00:00Z", paymentReceivedSent: false },
       source: { firstName: "דנה", orderId: id, eventLabel: "אוואסיס במנצ׳סטר", eventName: "אוואסיס", resumeUrl: "https://x/order/1", documents: "אישור ההזמנה" },
     }),
-    newerPaidSameEvent: async () => false,
+    newerOrderSameEvent: async () => null,
+    claim: async (id) => {
+      if (claimed.has(id)) return false;
+      claimed.add(id);
+      return true;
+    },
+    failStale: async () => 0,
     send: async (to, template, params, reservationId) => {
       sends.push({ to, template, params, reservationId });
       return opts.sendFails ? { ok: false, error: "(#131026) undeliverable" } : { ok: true };
     },
     finish: async (id, patch) => {
+      if (id === opts.finishThrowsFor) throw new Error("wa_outbox: down");
+      claimed.delete(id);
       finishes.push({ id, patch: patch as Record<string, unknown> });
       const r = rows.find((x) => x.id === id);
       if (r) {
@@ -496,6 +549,26 @@ async function drainSection(): Promise<void> {
     const t = makeDrainDeps({ rows: [drainRow("a", "materials_sent")] });
     await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
     assert.deepEqual([t.finishes[0].patch.status, t.finishes[0].patch.reason], ["skipped", "התבנית לא אושרה"]);
+  }
+  // a trial phone that is set but unusable fails CLOSED - real customers never get the trial week's messages
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")], trialPhone: "542002722" });
+    await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.equal(t.sends.length, 0, "an unusable trial phone sends nothing");
+    assert.deepEqual([t.finishes[0].patch.status, t.finishes[0].patch.reason], ["skipped", "טלפון הניסיון לא תקין"]);
+  }
+  // two drains at once: a row is claimed by one of them - the customer gets ONE message
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")] });
+    await Promise.all([drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps), drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps)]);
+    assert.equal(t.sends.length, 1, "a claimed row is sent once");
+  }
+  // one row failing does not stop the rows behind it
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received", { reservationId: 7 }), drainRow("b", "payment_received", { reservationId: 8 })], finishThrowsFor: "a" });
+    const out = await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.equal(t.sends.length, 2, "the second row still goes");
+    assert.equal(out.lines.find((l) => l.id === "a")?.result.startsWith("error"), true);
   }
   // pending wait is left pending
   {

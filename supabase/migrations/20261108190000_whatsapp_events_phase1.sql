@@ -11,13 +11,17 @@ alter table public.reservations add column if not exists main_contact_phone_key 
 alter table public.reservations add column if not exists whatsapp_off_at timestamptz;
 alter table public.reservations add column if not exists whatsapp_off_by uuid;
 
+-- The rule is written out here, NOT a call to public.phone_key: that function's EXECUTE is revoked from the public
+-- roles, and a BEFORE trigger that cannot run fails the write - a booking must never fail because of WhatsApp.
 create or replace function public.reservations_phone_key()
 returns trigger
 language plpgsql
 set search_path = public, pg_temp
 as $$
+declare
+  digits text := regexp_replace(coalesce(new.main_contact_phone_number, ''), '\D', '', 'g');
 begin
-  new.main_contact_phone_key := public.phone_key(new.main_contact_phone_number);
+  new.main_contact_phone_key := case when length(digits) >= 9 then right(digits, 9) else '' end;
   return new;
 end;
 $$;

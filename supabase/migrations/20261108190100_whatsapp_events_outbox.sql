@@ -20,10 +20,12 @@ create table if not exists public.wa_outbox (
   requested_by uuid,                                    -- staff, for an on-demand kind
   from_status text,                                     -- the order's status before the change that queued it
   attempts smallint not null default 0,
+  claimed_at timestamptz,                               -- pending -> sending (a drain took it); a stale one is closed, never re-sent
   created_at timestamptz not null default now(),
   finished_at timestamptz
 );
 create index if not exists wa_outbox_pending_idx on public.wa_outbox (status, due_at) where status = 'pending';
+alter table public.wa_outbox add column if not exists claimed_at timestamptz;
 create index if not exists wa_outbox_reservation_idx on public.wa_outbox (reservation_id) where reservation_id is not null;
 alter table public.wa_outbox enable row level security;
 revoke all on table public.wa_outbox from anon, authenticated;
@@ -33,6 +35,8 @@ returns trigger
 language plpgsql
 security definer
 set search_path = public, pg_temp
+-- a lock on wa_outbox / wa_accounts (a migration) must never hold a checkout: wait at most this, then 55P03 is caught
+set lock_timeout = '500ms'
 as $$
 declare
   mega_events constant uuid := 'a3f1c2d4-5b6e-4f70-8a91-b2c3d4e5f601';  -- MEGA_EVENTS_COMPANY_ID (lib/company-ids.ts)
@@ -44,7 +48,8 @@ begin
   -- everything, the assignments too, sits inside the guard: nothing here may fail the write that fired it
   begin
     before_status := case when tg_op = 'UPDATE' then old.status end;
-    new_info := nullif(nullif(coalesce(new.payment_info::text, ''), '{}'), 'null');
+    -- a result CLEARED (null / {} / 'null') is no failure: only a real gateway answer is
+    new_info := nullif(nullif(nullif(new.payment_info::text, ''), '{}'), 'null');
     old_info := case when tg_op = 'UPDATE' then coalesce(old.payment_info::text, '') else '' end;
     -- nothing piles up before connect day: only while Mega Events has a connected number
     if not exists (select 1 from public.wa_accounts a where a.company_id = mega_events and a.is_active) then

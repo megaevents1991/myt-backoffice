@@ -63,7 +63,7 @@ export interface InboundSummary {
 }
 
 /** What one batch shares: the ids already stored, and one customer lookup per phone. */
-type Batch = { known: Set<string>; customers: Map<string, Promise<WaCustomerLite[]>>; events: Map<string, Promise<boolean>> };
+type Batch = { known: Set<string>; customers: Map<string, Promise<WaCustomerLite[]>>; events: Map<string, Promise<boolean>>; historyChats: Set<string> };
 
 /** Is this company on the Events branch - read once per company per batch. */
 function isEventsAccount(deps: InboundDeps, batch: Batch, companyId: string): Promise<boolean> {
@@ -126,7 +126,7 @@ async function handleMessage(ev: MessageEvent, deps: InboundDeps, out: InboundSu
   }
   const companyId = account.companyId;
   if (deps.events && (await isEventsAccount(deps, batch, companyId))) {
-    await handleEventsMessage(ev, account, phone, key, deps, deps.events, out);
+    await handleEventsMessage(ev, account, phone, key, deps, deps.events, out, batch.historyChats);
     return;
   }
   const live = ev.origin !== "history";
@@ -240,12 +240,17 @@ async function handleAccount(ev: Extract<WaEvent, { kind: "account" }>, deps: In
  * seconds. The last word per number wins, written two ways it is one number. It touches no customer and opens no card, and
  * a failure names no contact: this is a private phone book, so it stays out of the logs.
  */
-async function handleContacts(events: Extract<WaEvent, { kind: "contact" }>[], deps: InboundDeps, out: InboundSummary): Promise<void> {
+async function handleContacts(events: Extract<WaEvent, { kind: "contact" }>[], deps: InboundDeps, out: InboundSummary, outerBatch: Batch): Promise<void> {
   for (const phoneNumberId of new Set(events.map((ev) => ev.phoneNumberId))) {
     const batch = events.filter((ev) => ev.phoneNumberId === phoneNumberId);
     try {
       const account = await deps.accountByPhoneId(phoneNumberId);
       if (!account) {
+        out.skipped += batch.length;
+        continue;
+      }
+      // Mega Events never keeps the number's phone book (spec 2026-11-08 section 6): it may hold personal contacts
+      if (await isEventsAccount(deps, outerBatch, account.companyId)) {
         out.skipped += batch.length;
         continue;
       }
@@ -285,7 +290,7 @@ export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps):
       deps.log.warn(`known-id check failed (${e instanceof Error ? e.message : String(e)}) - every message is tried`);
     }
   }
-  const batch: Batch = { known, customers: new Map(), events: new Map() };
+  const batch: Batch = { known, customers: new Map(), events: new Map(), historyChats: new Set() };
   for (const ev of events) {
     try {
       if (ev.kind === "message") await handleMessage(ev, deps, out, batch);
@@ -302,6 +307,6 @@ export async function handleWebhookEvents(events: WaEvent[], deps: InboundDeps):
     }
   }
   const contacts = events.filter((ev): ev is Extract<WaEvent, { kind: "contact" }> => ev.kind === "contact");
-  if (contacts.length) await handleContacts(contacts, deps, out);
+  if (contacts.length) await handleContacts(contacts, deps, out, batch);
   return out;
 }

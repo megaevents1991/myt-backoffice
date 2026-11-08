@@ -12,7 +12,7 @@ import { PUBLIC_SITE_URL } from "@/lib/site";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { shortPlace } from "@/lib/lodging";
 import { whatsappPhone } from "@/lib/tours/cases";
-import { outboxDecision, TEMPLATE_LANGUAGE, type OrderLite, type OutboxKind } from "@/lib/whatsapp/events/outbox";
+import { outboxDecision, TEMPLATE_LANGUAGE, type NewerOrder, type OrderLite, type OutboxKind } from "@/lib/whatsapp/events/outbox";
 import { documentsOf, paramsFor, type ParamSource } from "@/lib/whatsapp/events/params";
 import { flightFacts, flightParams } from "@/lib/whatsapp/events/schedule";
 import { sendTemplate } from "@/lib/services/whatsapp-cloud";
@@ -27,6 +27,9 @@ const BATCH = 100;
 /** myt-main's resume link (/api/find-order) works for 25 hours after the order was created. */
 const RESUME_WINDOW_MS = 25 * 60 * 60 * 1000;
 export const TRIAL_REASON = "נשלח לטלפון הניסיון";
+export const BAD_TRIAL_REASON = "טלפון הניסיון לא תקין";
+/** A row claimed for sending that never finished (a crash mid-send) is closed after this - never re-sent blindly. */
+export const STALE_SENDING_MS = 10 * 60 * 1000;
 
 export type DrainRow = {
   id: string;
@@ -46,7 +49,11 @@ export interface DrainDeps {
   pendingRows(opts: { reservationId?: number; limit: number; now: Date }): Promise<DrainRow[]>;
   approved(): Promise<Set<string>>;
   load(reservationId: number): Promise<{ order: OrderLite; source: ParamSource } | null>;
-  newerPaidSameEvent(order: OrderLite): Promise<boolean>;
+  newerOrderSameEvent(order: OrderLite): Promise<NewerOrder>;
+  /** pending -> sending, only if still pending: two drains at once never send one row twice. */
+  claim(id: string): Promise<boolean>;
+  /** A row left "sending" past STALE_SENDING_MS becomes failed ("נקטע באמצע שליחה") - it may have gone out. */
+  failStale(now: Date): Promise<number>;
   send(to: string, template: string, params: string[], reservationId: number): Promise<{ ok: true } | { ok: false; error: string }>;
   finish(id: string, patch: FinishPatch): Promise<void>;
 }
@@ -58,44 +65,56 @@ export async function drainOutbox(opts: { budgetMs: number; dryRun: boolean; res
   const now = deps.now();
   const env = deps.env();
   const out: DrainSummary = { sent: 0, skipped: 0, failed: 0, waiting: 0, lines: [] };
+  if (!opts.dryRun) await deps.failStale(now);
   const rows = await deps.pendingRows({ reservationId: opts.reservationId, limit: BATCH, now });
   if (rows.length === 0) return out;
   const approved = await deps.approved();
+  // a trial phone that is set but unusable fails CLOSED: real customers never get the trial week's messages
+  const trialSet = !!env.trialPhone;
+  const trial = trialSet ? whatsappPhone(env.trialPhone) : null;
   for (const row of rows) {
     if (Date.now() - started > opts.budgetMs) break;
-    const loaded = await deps.load(row.reservationId);
-    if (!loaded) {
-      out.skipped += 1;
-      out.lines.push({ id: row.id, kind: row.kind, reservationId: row.reservationId, result: "skip: ההזמנה לא נמצאה" });
-      if (!opts.dryRun) await deps.finish(row.id, { status: "skipped", reason: "ההזמנה לא נמצאה", sentTo: null, attempts: row.attempts });
-      continue;
-    }
-    const newer = row.kind === "payment_failed" ? await deps.newerPaidSameEvent(loaded.order) : false;
-    const decision = outboxDecision(row, loaded.order, newer, { auto: env.auto, approved }, now);
-    if (decision.act === "wait") {
-      out.waiting += 1;
-      out.lines.push({ id: row.id, kind: row.kind, reservationId: row.reservationId, result: "wait" });
-      continue;
-    }
-    if (decision.act === "skip") {
-      out.skipped += 1;
-      out.lines.push({ id: row.id, kind: row.kind, reservationId: row.reservationId, result: `skip: ${decision.reason}` });
-      if (!opts.dryRun) await deps.finish(row.id, { status: "skipped", reason: decision.reason, sentTo: null, attempts: row.attempts });
-      continue;
-    }
-    const trial = env.trialPhone ? whatsappPhone(env.trialPhone) : null;
-    const to = trial ?? decision.to;
-    out.lines.push({ id: row.id, kind: row.kind, reservationId: row.reservationId, result: "send" });
-    if (opts.dryRun) continue;
-    const answer = await deps.send(to, row.kind, paramsFor(row.kind, loaded.source), row.reservationId);
-    const attempts = row.attempts + 1;
-    if (answer.ok) {
-      out.sent += 1;
-      await deps.finish(row.id, { status: "sent", reason: trial ? TRIAL_REASON : null, sentTo: to, attempts });
-    } else {
-      const final = attempts >= MAX_ATTEMPTS;
-      if (final) out.failed += 1;
-      await deps.finish(row.id, { status: final ? "failed" : "pending", reason: answer.error, sentTo: to, attempts });
+    const line = (result: string) => out.lines.push({ id: row.id, kind: row.kind, reservationId: row.reservationId, result });
+    try {
+      const loaded = await deps.load(row.reservationId);
+      const decision = !loaded
+        ? ({ act: "skip", reason: "ההזמנה לא נמצאה" } as const)
+        : outboxDecision(row, loaded.order, row.kind === "payment_failed" ? await deps.newerOrderSameEvent(loaded.order) : null, { auto: env.auto, approved }, now);
+      if (decision.act === "wait") {
+        out.waiting += 1;
+        line("wait");
+        continue;
+      }
+      const skipReason = decision.act === "skip" ? decision.reason : trialSet && !trial ? BAD_TRIAL_REASON : null;
+      if (skipReason || !loaded || decision.act !== "send") {
+        out.skipped += 1;
+        line(`skip: ${skipReason}`);
+        if (!opts.dryRun && (await deps.claim(row.id))) await deps.finish(row.id, { status: "skipped", reason: skipReason, sentTo: null, attempts: row.attempts });
+        continue;
+      }
+      const to = trial ?? decision.to;
+      line("send");
+      if (opts.dryRun) continue;
+      if (!(await deps.claim(row.id))) {
+        out.lines[out.lines.length - 1].result = "taken by another drain";
+        continue;
+      }
+      const answer = await deps.send(to, row.kind, paramsFor(row.kind, loaded.source), row.reservationId);
+      const attempts = row.attempts + 1;
+      if (answer.ok) {
+        out.sent += 1;
+        await deps.finish(row.id, { status: "sent", reason: trial ? TRIAL_REASON : null, sentTo: to, attempts });
+      } else {
+        const final = attempts >= MAX_ATTEMPTS;
+        if (final) out.failed += 1;
+        await deps.finish(row.id, { status: final ? "failed" : "pending", reason: answer.error, sentTo: to, attempts });
+      }
+    } catch (e) {
+      // one row's failure never stops the queue behind it; its report line says what happened
+      const result = `error: ${e instanceof Error ? e.message : String(e)}`;
+      const last = out.lines[out.lines.length - 1];
+      if (last?.id === row.id) last.result = result;
+      else line(result);
     }
   }
   return out;
@@ -258,19 +277,36 @@ export function realDrainDeps(): DrainDeps {
       const got = await loadOrderForMessage(reservationId);
       return got ? { order: got.order, source: got.source } : null;
     },
-    async newerPaidSameEvent(order) {
-      if (!order.phoneKey || !order.eventId) return false;
+    async newerOrderSameEvent(order) {
+      if (!order.phoneKey || !order.eventId) return null;
       const { data, error } = await db
         .from("reservations")
-        .select("id")
+        .select("status")
         .eq("main_contact_phone_key", order.phoneKey)
         .eq("event_id", order.eventId)
-        .eq("status", "Paid")
         .is("is_deleted", null)
         .gt("created_at", order.createdAt)
-        .limit(1);
+        .limit(50);
       if (error) throw new Error(`reservations: ${error.message}`);
+      const newer = (data ?? []) as { status: string | null }[];
+      if (newer.length === 0) return null;
+      return newer.some((r) => r.status === "Paid") ? "paid" : "other";
+    },
+    async claim(id) {
+      const { data, error } = await db.from("wa_outbox").update({ status: "sending", claimed_at: new Date().toISOString() }).eq("id", id).eq("status", "pending").select("id");
+      if (error) throw new Error(`wa_outbox: ${error.message}`);
       return ((data ?? []) as unknown[]).length > 0;
+    },
+    async failStale(now) {
+      const before = new Date(now.getTime() - STALE_SENDING_MS).toISOString();
+      const { data, error } = await db
+        .from("wa_outbox")
+        .update({ status: "failed", reason: "נקטע באמצע שליחה - ייתכן שנשלח, לבדוק בשיחה", finished_at: now.toISOString() })
+        .eq("status", "sending")
+        .lt("claimed_at", before)
+        .select("id");
+      if (error) throw new Error(`wa_outbox: ${error.message}`);
+      return ((data ?? []) as unknown[]).length;
     },
     async send(to, template, params, reservationId) {
       const co = await companyOnce();
@@ -282,7 +318,8 @@ export function realDrainDeps(): DrainDeps {
       const { error } = await db
         .from("wa_outbox")
         .update({ status: patch.status, reason: patch.reason, sent_to: patch.sentTo, attempts: patch.attempts, finished_at: patch.status === "pending" ? null : new Date().toISOString() })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("status", "sending");
       if (error) throw new Error(`wa_outbox: ${error.message}`);
     },
   };
