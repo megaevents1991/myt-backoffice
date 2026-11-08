@@ -23,6 +23,7 @@ import { outboxDecision, type OrderLite, type OutboxKind, type OutboxRowLite } f
 import { cleanParam, documentsOf, greetingName, paramsFor, type ParamSource } from "../lib/whatsapp/events/params";
 import { drainOutbox, type DrainDeps, type DrainRow } from "../lib/services/whatsapp-events-outbox";
 import { airportLabel, dueThisHour, flightFacts, flightParams, lateBooking, slotFor } from "../lib/whatsapp/events/schedule";
+import { runEventsSchedule, type ScheduleCandidate, type ScheduleDeps } from "../lib/services/whatsapp-events-schedule";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { templateUpsertRow, type WaAccount, type WaMessageInsert } from "../lib/services/whatsapp-db";
 import type { EventsOrderLite, WaChat } from "../lib/services/whatsapp-events-db";
@@ -178,6 +179,7 @@ async function main(): Promise<void> {
     assert.deepEqual(flightParams(ff, "לונדון"), { city: "לונדון", number: "LY317", date: "12.11", hour: "06:40", airport: "נתב״ג" });
   }
 
+  await scheduleSection();
   await drainSection();
   await inboundSection();
 
@@ -293,7 +295,8 @@ function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]
   return { deps, messages, chats, moves, marks, sent, calls, setNow: (t: string) => (now = t) };
 }
 
-const evMsg = (id: string, at: string, text: string | null, extra: Partial<Extract<WaEvent, { kind: "message" }>> = {}): WaEvent => ({
+type MsgEvent = Extract<WaEvent, { kind: "message" }>;
+const evMsg = (id: string, at: string, text: string | null, extra: Partial<MsgEvent> = {}): MsgEvent => ({
   kind: "message",
   phoneNumberId: "444",
   waMessageId: id,
@@ -308,7 +311,7 @@ const evMsg = (id: string, at: string, text: string | null, extra: Partial<Extra
   direction: "in",
   ...extra,
 });
-const evEcho = (id: string, at: string, text: string, origin: "app" | "history" = "app"): WaEvent => ({
+const evEcho = (id: string, at: string, text: string, origin: "app" | "history" = "app"): MsgEvent => ({
   ...evMsg(id, at, text),
   from: "972542002722000",
   to: CUSTOMER,
@@ -500,6 +503,63 @@ async function drainSection(): Promise<void> {
     const out = await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
     assert.equal(t.finishes.length, 0, "pending wait is left pending");
     assert.equal(out.waiting, 1);
+  }
+}
+
+// ------------------------------------------------------------ Task 14: the schedule cron over injected deps
+function makeScheduleDeps(candidates: ScheduleCandidate[], afterTrip = false) {
+  const queued: { kind: string; reservationId: number; dueAt: string; dedupeKey: string }[] = [];
+  const deps: ScheduleDeps = {
+    afterTripOn: () => afterTrip,
+    candidates: async () => candidates,
+    enqueue: async (rows) => {
+      queued.push(...rows);
+    },
+  };
+  return { deps, queued };
+}
+async function scheduleSection(): Promise<void> {
+  const flying: ScheduleCandidate = {
+    id: 1, createdAt: "2026-10-01T00:00:00Z", eventDate: "2026-11-13", itineraryGroup: null, paymentReceivedSent: true,
+    flight: { departureLocal: "2026-11-12T06:40:00", number: "LY317", airport: "TLV", returnArrivalLocal: "2026-11-15T22:10:00" },
+  };
+  const ticketOnly: ScheduleCandidate = { id: 2, createdAt: "2026-10-01T00:00:00Z", eventDate: "2026-11-13", itineraryGroup: null, paymentReceivedSent: false, flight: null };
+  {
+    const t = makeScheduleDeps([flying, ticketOnly]);
+    const out = await runEventsSchedule({ dryRun: false, now: new Date("2026-11-09T07:05:00Z") }, t.deps);
+    assert.deepEqual(t.queued.map((q) => [q.kind, q.reservationId, q.dedupeKey]), [["flight_reminder", 1, "flight_reminder:1:2026-11-12"]]);
+    assert.equal(out.enqueued.length, 1);
+  }
+  {
+    const t = makeScheduleDeps([flying, ticketOnly]);
+    await runEventsSchedule({ dryRun: false, now: new Date("2026-11-13T08:05:00Z") }, t.deps);
+    assert.deepEqual(t.queued.map((q) => [q.kind, q.reservationId, q.dedupeKey]), [["event_today", 1, "event_today:1:2026-11-13"], ["event_today", 2, "event_today:2:2026-11-13"]]);
+  }
+  {
+    const off = makeScheduleDeps([flying]);
+    await runEventsSchedule({ dryRun: false, now: new Date("2026-11-16T09:05:00Z") }, off.deps);
+    assert.equal(off.queued.length, 0, "after_trip is off by default");
+    const on = makeScheduleDeps([flying, ticketOnly], true);
+    const out = await runEventsSchedule({ dryRun: false, now: new Date("2026-11-16T09:05:00Z") }, on.deps);
+    assert.deepEqual(on.queued.map((q) => q.dedupeKey), ["after_trip:1:2026-11-16"]);
+    const onDay14 = makeScheduleDeps([ticketOnly], true);
+    const out14 = await runEventsSchedule({ dryRun: false, now: new Date("2026-11-14T09:05:00Z") }, onDay14.deps);
+    assert.deepEqual(out14.skipped, [{ reservationId: 2, why: "הזמנה מלפני ההפעלה" }], "no after_trip for an order paid before launch");
+    assert.equal(out.enqueued.length, 1);
+  }
+  {
+    const late = { ...flying, id: 3, createdAt: "2026-11-10T00:00:00Z" };
+    const trip = { ...flying, id: 4, itineraryGroup: "g1" };
+    const t = makeScheduleDeps([late, trip]);
+    const out = await runEventsSchedule({ dryRun: false, now: new Date("2026-11-09T07:05:00Z") }, t.deps);
+    assert.equal(t.queued.length, 0);
+    assert.deepEqual(out.skipped, [{ reservationId: 3, why: "הזמנה מאוחרת" }, { reservationId: 4, why: "טיול יורו - לא בסבב הזה" }]);
+  }
+  {
+    const t = makeScheduleDeps([flying]);
+    const out = await runEventsSchedule({ dryRun: true, now: new Date("2026-11-09T07:05:00Z") }, t.deps);
+    assert.equal(t.queued.length, 0, "dry run writes nothing");
+    assert.equal(out.enqueued.length, 1, "dry run lists what it would enqueue");
   }
 }
 

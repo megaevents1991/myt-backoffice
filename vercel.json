@@ -116,6 +116,10 @@
     {
       "path": "/api/cron/waEventsOutbox",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/waEventsSchedule",
+      "schedule": "5 * * * *"
     }
   ],
   "functions": {

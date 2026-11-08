@@ -1209,6 +1209,39 @@ Main's side mirrors the constant and no longer trusts such a landing (check-in =
 day). To find who saved one: `/audit-log`, entity `offline_flight` - the `changes` carry
 `outbound_arrival_time: {from, to}` and the actor.
 
+### WhatsApp for Mega Events (2026-11-08, Alon's questionnaire + Dor's rulings; phases E1-E3)
+
+Spec `docs/superpowers/specs/2026-11-08-whatsapp-mega-events-design.md`, plan `docs/superpowers/plans/2026-11-08-whatsapp-mega-events.md`,
+migrations `20261108190000_whatsapp_events_phase1.sql` + `20261108190100_whatsapp_events_outbox.sql`. The number 054-200-2722 joins
+the tours phase-1 wire (webhook, `wa_messages`, `sendTemplate`, template cache) - **but Mega Events has no tours customers / leads**:
+`handleMessage` dispatches a company selling `events` (`isEventsCompany`) to `handleEventsMessage`
+(`lib/services/whatsapp-events-inbound.ts`), which never writes `leads` / `customers`. **E1 must be live before connect day**, or every
+message opens tours rows under Mega Events. A conversation = `wa_chats` (one per company + `phone_key`; `last_in_at` live inbound only,
+`answered_at` an app echo or an api reply - never an automation or one of the app's own greeting / away texts in `wa_app_auto_texts`,
+seeded from the history on its last chunk or by "מצא מההיסטוריה"; generated `is_unseen` / `is_unanswered` for the list filters). It shows
+on every order of the phone (`reservations.main_contact_phone_key`, trigger-kept - NOT generated: `updateReservation` spreads a whole row)
+and on a rep-attached order (`linked_reservation_id`, R-3); the list's 💬 mark sits on ONE order (`markedReservation`: linked, else the
+nearest Paid ahead, else the newest). History marks nothing; a reaction / sticker opens nothing; "הסר" counts only as the WHOLE message
+and stops marketing on Mega Events only. A NEW conversation (24 h gap) from a phone whose only orders AHEAD are Lost moves the newest to
+Follow-up today (R-2; Pending / 24Save older than 7 days do not block). No phone-book sync for Mega Events (`signupSyncs`). Screens:
+`/whatsapp` (nav, all Mega Events staff; `?tab=chats|settings`, `?f=all|new|unanswered|no_order`, `?chat=`), the order page's folded
+WhatsApp section (thread, reply box, "טופל", the off switch `reservations.whatsapp_off_at`, the order's automatic messages), the list view
+`/reservations?status=wa-new`, the dashboard banner. Reply box = free text inside 24 h of the customer's last message only. Unanswered =
+60 WORKING minutes (Sunday-Thursday 09:00-17:00 Israel, `lib/whatsapp/events/working-time.ts`). **Order updates (E2):** the AFTER trigger
+`reservations_wa_outbox` (exception-safe - it can never fail myt-main's checkout; inserts only while Mega Events has an active `wa_accounts`
+row) queues `payment_received` / `payment_failed` (+15 min, dropped when the same phone paid the same event on a NEWER order - a retry
+always inserts a new row) / `phone_order` (not a voucher order) / `materials_sent` / `order_cancelled` (only an order that was paid) into
+`wa_outbox`; `outboxDecision` (`lib/whatsapp/events/outbox.ts`, Hebrew reasons printed on the order) gates each send - kill switch, off
+switch, Euro Trip rows (not this round), a valid phone, an APPROVED template, the order still matching. Templates (Hebrew, drafts in spec
+section 10, Alon + Tom approve the wording): `payment_received`, `payment_failed`, `phone_order`, `materials_sent`, `order_cancelled`,
+`flight_reminder`, `event_today`, `after_trip`. **Trial (D-7):** while `NEXT_SECRET_WA_EVENTS_TRIAL_PHONE` is set every automatic message
+goes THERE. **By date (E3):** `flight_reminder` 09:00 three days before the outbound (none for a booking made after that slot),
+`event_today` 10:00 (the venue only when the ticket is TixStock / LiveTickets - `events` has no time or venue), `after_trip` 11:00 the day
+after the return, OFF until `EVENTS_WA_AFTER_TRIP=on` (Alon's wording is not in). Marketing (E4: the cart reminder, the checkout consent,
+`wa_consents`) is NOT built - the spec's section 12 holds the researched legal rules. Pure rules + one selftest
+`scripts/whatsapp-events-selftest.ts`; SQL on PGlite `scripts/whatsapp-events-sql-pglite-test.mjs`,
+`scripts/whatsapp-events-outbox-pglite-test.mjs` (`PGLITE_PATH`).
+
 ### Tours companies - the Meta product feed (2026-11-08, Dor: "פרודקט פיד גם לפמילי")
 
 Plan: mega-family `docs/plans/PRODUCT-FEED-PLAN.md`. One item per tour, a Meta **Activities** catalog (Mega Events' columns), branded
@@ -1334,6 +1367,9 @@ fallback for manual triggers:
   **Search index (15.10.2026, Dor):** the same document carries `index` - every event Mega Events lists that is not sold out (its Sold tag, the site's card flags, the tickets of the rows the list read anyway), soonest first, at most 400 (`EVENTS_INDEX_MAX`): `{ id, name, date, dateLabel, place, category, href, image }` (`image` https or null) plus `price` / `currency` / `priceLabel` / `priceNote` only on the events of `items` (copied, never priced again) - `buildEventsIndex`, from the first read alone, which now also takes `name`, `location`, `event_location`, `card_image_url`, `art_image_url` (`FEED_LIGHT_COLUMNS`; still no tickets). It feeds the company site's live search ("סלין" lists every listed Celine Dion show). The index counts as a change (a site deploy, so about one a day as events cross the 3-day window), and is kept with the list while the site's row is unreadable.
 
 - `toursWaitlistDates` - every hour at :35 (`35 * * * *`): a date that opened on a tour a card waits for moves the card to "נפתח תאריך" with a follow-up on the next working day and sends the customer one WhatsApp when the company can (`lib/tours/waitlist-dates.ts`, nothing moves at night or on Shabbat, 30 cards an hour per company, 45 s). `?dry_run=1` = the full report (case numbers + date codes), no write, no send. See "A date opens on a waiting list".
+- `waEventsOutbox` - every 2 minutes: sends Mega Events' queued WhatsApp order updates whose time came (`drainOutbox`, 45 s, trial phone and kill switch honoured). `?dry_run=1` = the decisions only. See "WhatsApp for Mega Events".
+- `waEventsSchedule` - hourly at :05: queues the date messages whose Israel-time slot is this hour (flight reminder, event today, after trip when on). `?dry_run=1` lists them.
+- `waEventsAlerts` - every 15 minutes in working hours (`*/15 6-15 * * 0-4`): ONE mail of the Mega Events chats that became unanswered (60 working minutes) since the last run, to `NEXT_SECRET_WA_EVENTS_ALERT_TO` (else `DEFAULT_FROM`). `?dry_run=1` = the report.
 
 ### Environment Variables
 
@@ -2314,6 +2350,15 @@ NEXT_SECRET_WHATSAPP_CONFIG_ID=
 NEXT_SECRET_WHATSAPP_VERIFY_TOKEN=
 # Optional: a company's own sending token (wins over the shared NEXT_SECRET_WHATSAPP_TOKEN), same <SLUG> rule.
 NEXT_SECRET_WHATSAPP_TOKEN_MEGA_FAMILY=
+# Mega Events WhatsApp (spec 2026-11-08). "off" stops every automatic message (queued rows end skipped "הופסק ידנית").
+EVENTS_WHATSAPP_AUTO=
+# Trial week (D-7): while set (a phone, any spelling) every automatic Mega Events message goes to THIS phone instead of
+# the customer, with the customer's parameters. Unset it to go live.
+NEXT_SECRET_WA_EVENTS_TRIAL_PHONE=
+# Who gets the unanswered-chat digest (comma-separated). Unset -> DEFAULT_FROM (Alon's Mega mailbox).
+NEXT_SECRET_WA_EVENTS_ALERT_TO=
+# "on" starts the after-trip message (after Alon's wording is approved by Meta). Off by default.
+EVENTS_WA_AFTER_TRIP=
 ```
 
 ## Database

@@ -14,6 +14,7 @@ import { shortPlace } from "@/lib/lodging";
 import { whatsappPhone } from "@/lib/tours/cases";
 import { outboxDecision, TEMPLATE_LANGUAGE, type OrderLite, type OutboxKind } from "@/lib/whatsapp/events/outbox";
 import { documentsOf, paramsFor, type ParamSource } from "@/lib/whatsapp/events/params";
+import { flightFacts, flightParams } from "@/lib/whatsapp/events/schedule";
 import { sendTemplate } from "@/lib/services/whatsapp-cloud";
 import { companyById, listTemplates } from "@/lib/services/whatsapp-db";
 
@@ -145,10 +146,13 @@ export async function loadOrderForMessage(reservationId: number): Promise<{ orde
   if (error) throw new Error(`reservations: ${error.message}`);
   const row = data as OrderRow | null;
   if (!row) return null;
-  const [eventRes, sentRes, itineraryGroup] = await Promise.all([
+  const [eventRes, sentRes, itineraryGroup, offlineFlight] = await Promise.all([
     row.event_id ? db.from("events").select("id, name, date, location, event_location").eq("id", row.event_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
     db.from("wa_outbox").select("id").eq("reservation_id", row.id).eq("kind", "payment_received").eq("status", "sent").limit(1),
     itineraryGroupOf(row.id),
+    row.offline_flight_id
+      ? db.from("flights").select("outbound_departure_time, outbound_flight_number, outbound_departure_airport, inbound_arrival_time, is_deleted, cancelled_at").eq("id", row.offline_flight_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
   if (eventRes.error) throw new Error(`events: ${eventRes.error.message}`);
   const event = (eventRes.data ?? null) as EventRow | null;
@@ -173,6 +177,10 @@ export async function loadOrderForMessage(reservationId: number): Promise<{ orde
   };
   const hasFlight = !!row.offline_flight_id || !!(row.flight_order_info && row.flight_order_info.outbound);
   const hasHotel = !!row.offline_hotel_id || hasHotelInfo(row.hotel_order_info) || (Array.isArray(row.hotel_segments) && row.hotel_segments.length > 0);
+  const facts = flightFacts({ flightOrderInfo: row.flight_order_info, offline: offlineFlight.error ? null : offlineFlight.data ?? null });
+  // the flight lands in the FLIGHT city (events.location), which on a two-city event is not the show's city
+  const flightCity = event?.location?.name ? shortPlace(event.location.name) : city;
+  const venue = await venueOf(info);
   const source: ParamSource = {
     firstName: row.main_contact_first_name,
     orderId: row.id,
@@ -180,8 +188,31 @@ export async function loadOrderForMessage(reservationId: number): Promise<{ orde
     eventName,
     resumeUrl: row.event_id ? `${PUBLIC_SITE_URL}/order/${row.event_id}${fresh ? `?orderId=${row.id}` : ""}` : PUBLIC_SITE_URL,
     documents: documentsOf({ hasFlight, hasHotel }),
+    ...(facts ? { flight: flightParams(facts, flightCity) } : {}),
+    place: venue && city ? `${venue}, ${city}` : venue || city,
   };
   return { order, source, row, event };
+}
+
+/** The venue's name, only when the order's ticket comes from TixStock or LiveTickets (events carry none of their own). */
+async function venueOf(info: { supplier?: string; supplier_event_id?: string } | undefined): Promise<string> {
+  const supplier = (info?.supplier ?? "").toLowerCase();
+  const id = info?.supplier_event_id;
+  if (!id) return "";
+  try {
+    if (supplier === "tixstock") {
+      const { data } = await db.from("tixstock_events").select("venue_name").eq("event_id", String(id)).maybeSingle();
+      return ((data as { venue_name: string | null } | null)?.venue_name ?? "").trim();
+    }
+    if (supplier === "livetickets" && /^\d+$/.test(String(id))) {
+      const { data } = await db.from("live_events").select("venues").eq("event_id", Number(id)).maybeSingle();
+      const venues = (data as { venues: { name?: string }[] | null } | null)?.venues;
+      return (Array.isArray(venues) ? venues[0]?.name ?? "" : "").trim();
+    }
+  } catch {
+    // no venue is no failure: the city alone is printed
+  }
+  return "";
 }
 
 export function realDrainDeps(): DrainDeps {

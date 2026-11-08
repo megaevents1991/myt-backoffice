@@ -162,6 +162,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       t("A customer with only unpaid (Lost) orders for an event ahead who starts a new conversation: their newest Lost order moves to Follow-up with today's date.", "לקוח שיש לו רק הזמנות Lost לאירוע עתידי ופותח שיחה חדשה: ההזמנה האחרונה שלו עוברת ל-Follow-up עם יום חזרה היום."),
       t("\"הסר\" as the whole message stops marketing for this number on Mega Events only; updates about the order continue.", "\"הסר\" כהודעה שלמה עוצר שיווק למספר הזה במגה איבנטס בלבד; עדכונים על ההזמנה ממשיכים."),
       t("Settings (admins): connect the number, and the app's own greeting / away texts - those never count as an answer.", "הגדרות (מנהלים): חיבור המספר, והודעות הפתיחה / 'לא זמינים' של האפליקציה - אלה אף פעם לא נחשבות תשובה."),
+      t("Automatic messages (after the templates are approved): payment received, payment failed, phone order received, materials sent (when you mark \"סמן שחומר נשלח ללקוח\"), order cancelled, 3 days before the flight, and the morning of the event. Each order's WhatsApp section lists them with sent / not sent and why.", "הודעות אוטומטיות (אחרי שהתבניות מאושרות): התשלום התקבל, התשלום לא עבר, הזמנה טלפונית התקבלה, החומר נשלח (כשמסמנים \"סמן שחומר נשלח ללקוח\"), ההזמנה בוטלה, 3 ימים לפני הטיסה ובבוקר האירוע. בכל הזמנה, בחלק הוואטסאפ, רואים אותן עם נשלח / לא נשלח ולמה."),
+      t("\"לא לשלוח וואטסאפ להזמנה הזו\" on the order stops its automatic messages. In the first week every automatic message goes to Alon's phone instead of the customer.", "\"לא לשלוח וואטסאפ להזמנה הזו\" בהזמנה עוצר את ההודעות האוטומטיות שלה. בשבוע הראשון כל ההודעות האוטומטיות הולכות לטלפון של אלון במקום ללקוח."),
     ],
   },
   {
