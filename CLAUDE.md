@@ -1219,7 +1219,8 @@ converted -, live dates, links, labels, the tours left out with what is missing 
   then every tours company with a `site_url`, each in its own try/catch (the answer's status stays Mega Events'). It writes
   `public_resources/feeds/<slug>/meta-activities-feed.csv` (the file to register in Commerce Manager; `lib/feed/activities-csv.ts` is a
   port of myt-main `toActivitiesCsv` - change both together) and `feeds/<slug>/report.json` (what the screen reads). A report with no
-  tour at all is refused (a broken build), so the previous file stays; all tours left out is a real, empty catalog.
+  tour at all, or one where every tour is left out (an empty read is as likely as a sell-out), is refused: the previous file
+  stays. The report is fetched with a 20 s timeout; the creatives cron cuts each company 15 s past its deadline.
 - **Pictures** (`lib/creative/tours.ts`, `components/creative/TourTemplate.tsx`, `renderTourCreativePng`): drawn by the hourly
   `nightlyCampaignCreatives` cron BEFORE the events (60 s at most), named by a hash of what they draw -
   `creatives/output/auto/<slug>/tour-<id>-<hash>-{square|banner}.png` - so no table and no write to `tours.packages`. Bump
