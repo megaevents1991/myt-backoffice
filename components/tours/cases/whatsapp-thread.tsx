@@ -8,13 +8,13 @@
  * phase 2 - the thread only reads.
  */
 import { useEffect, useRef, useState } from "react";
-import { FileDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { fmtInstant } from "@/lib/tours/format";
-import { WA_CONSENT_LABELS, deliveryMark, originLabel, type WaThread, type WaThreadMessage } from "@/lib/tours/cases";
+import { WA_CONSENT_LABELS, type WaThread, type WaThreadMessage } from "@/lib/tours/cases";
+import { ThreadView } from "@/components/whatsapp/thread-view";
 import { loadThreadBefore, markThreadSeen, setCustomerConsent } from "@/lib/actions/whatsapp-thread-actions";
 import { WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { Notice } from "@/components/tours/ui";
@@ -28,39 +28,6 @@ function sinceLabel(iso: string, now: number): string {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours} שע׳`;
   return `${Math.round(hours / 24)} ימים`;
-}
-
-function Bubble({ m }: { m: WaThreadMessage }) {
-  const mine = m.direction === "out";
-  const origin = originLabel(m.origin);
-  const isImage = !!m.mediaUrl && !!m.mediaMime && m.mediaMime.startsWith("image/");
-  return (
-    <div className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm shadow-sm", mine ? "ms-auto bg-emerald-50 dark:bg-emerald-950/40" : "me-auto bg-muted")}>
-      {origin && <div className="mb-0.5 text-[11px] font-medium text-muted-foreground">{origin}</div>}
-      {m.template ? (
-        <div>
-          <span className="font-medium">{m.template.name}</span>
-          {m.template.params.length > 0 && <span className="text-muted-foreground"> · {m.template.params.join(" · ")}</span>}
-        </div>
-      ) : (
-        m.text && <div className="whitespace-pre-wrap break-words">{m.text}</div>
-      )}
-      {m.mediaUrl &&
-        (isImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={m.mediaUrl} alt="" className="mt-1 max-h-64 rounded-md" />
-        ) : (
-          <a href={m.mediaUrl} className="mt-1 inline-flex items-center gap-1 text-xs underline">
-            <FileDown className="h-3.5 w-3.5" />
-            קובץ
-          </a>
-        ))}
-      <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span dir="ltr">{fmtInstant(m.sentAt)}</span>
-        {mine && <span className={cn(m.status === "failed" && "text-destructive")}>{deliveryMark(m.status, m.error)}</span>}
-      </div>
-    </div>
-  );
 }
 
 export function WhatsappThread({
@@ -130,17 +97,7 @@ export function WhatsappThread({
       {!thread.connected && <Notice tone="info">המספר של החברה עדיין לא מחובר - הגדרות &gt; WhatsApp</Notice>}
 
       {messages.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {hasMore && customerId && (
-            <Button variant="ghost" size="sm" className="self-center" disabled={loadingMore} onClick={() => void loadMore()}>
-              {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
-              עוד
-            </Button>
-          )}
-          {messages.map((m) => (
-            <Bubble key={m.id} m={m} />
-          ))}
-        </div>
+        <ThreadView messages={messages} hasMore={hasMore && !!customerId} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
       ) : (
         thread.connected && <p className="text-sm text-muted-foreground">אין הודעות עדיין.</p>
       )}

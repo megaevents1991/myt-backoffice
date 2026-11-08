@@ -74,6 +74,8 @@ export interface WaMessageInsert {
   status: string;
   sentBy: string | null;
   sentAt: string;
+  /** Mega Events: the order an outbound message is about (an automation, a reply from the order's page). */
+  reservationId?: number | null;
 }
 
 export interface WaCustomerLite {
@@ -320,6 +322,7 @@ export async function insertMessage(row: WaMessageInsert): Promise<{ inserted: b
         status: row.status,
         sent_by: row.sentBy,
         sent_at: row.sentAt,
+        ...(row.reservationId != null ? { reservation_id: row.reservationId } : {}),
       },
       { onConflict: "wa_message_id", ignoreDuplicates: true },
     )

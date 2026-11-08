@@ -91,6 +91,8 @@ export type SendMeta = {
   sentBy?: string | null;
   customerId?: string | null;
   caseId?: string | null;
+  /** Mega Events: the order the message is about (wa_messages.reservation_id). */
+  reservationId?: number | null;
 };
 
 type Outgoing = SendMeta & {
@@ -119,6 +121,7 @@ async function recordAndSend(company: Company, out: Outgoing, call: () => Promis
     status: "accepted",
     sentBy: out.sentBy ?? null,
     sentAt: nowIso(),
+    reservationId: out.reservationId ?? null,
   });
   await gate.take(company.id);
   const answer = await call();
@@ -138,6 +141,7 @@ async function recordAndSend(company: Company, out: Outgoing, call: () => Promis
           ...(out.template ? { template: out.template.name } : {}),
           case_id: out.caseId ?? null,
           customer_id: out.customerId ?? null,
+          ...(out.reservationId != null ? { reservation_id: out.reservationId } : {}),
           wa_message_id: answer.messageId,
         },
       });

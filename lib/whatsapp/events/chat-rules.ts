@@ -3,7 +3,7 @@
  * sections 5 and 7). Mega Events has no tours `customers` / `leads`: a conversation is one `wa_chats` row per phone, and it
  * shows on every order of that phone. Selftest: scripts/whatsapp-events-selftest.ts.
  */
-import { OPT_OUT_WORDS, type WaMessageType } from "@/lib/whatsapp/rules";
+import { OPT_OUT_WORDS, canSendText, type WaMessageType } from "@/lib/whatsapp/rules";
 
 /** The order as the conversation rules need it. `eventDate` = the event's day, YYYY-MM-DD. */
 export type EventsResLite = { id: number; status: string; createdAt: string; eventDate: string | null; isDeleted: boolean };
@@ -90,4 +90,10 @@ export function markedReservation(rs: EventsResLite[], linkedId: number | null, 
  */
 export function signupSyncs(productTypes: readonly string[]): { contacts: boolean; history: boolean } {
   return { contacts: !isEventsCompany(productTypes), history: true };
+}
+
+/** The reply box: free text only inside the 24-hour window after the customer wrote; past it, the rep answers in the app. */
+export function replyState(lastInAt: string | null, now: string): { open: boolean; note: string | null } {
+  if (canSendText(lastInAt, now)) return { open: true, note: null };
+  return { open: false, note: lastInAt ? "הלקוח כתב לפני יותר מ-24 שעות - עונים מהאפליקציה" : "הלקוח עוד לא כתב - עונים מהאפליקציה" };
 }

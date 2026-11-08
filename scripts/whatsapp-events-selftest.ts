@@ -10,6 +10,7 @@ import {
   lostToFollowUp,
   markedReservation,
   normAutoText,
+  replyState,
   signupSyncs,
   suggestAutoTexts,
   type EventsResLite,
@@ -64,6 +65,11 @@ async function main(): Promise<void> {
   // Task 5: what a signup asks Meta to sync - no phone book for Mega Events (Nir's phone may hold personal contacts)
   assert.deepEqual(signupSyncs(["events"]), { contacts: false, history: true });
   assert.deepEqual(signupSyncs(["tours"]), { contacts: true, history: true });
+
+  // Task 6: the reply box opens only inside the 24-hour window
+  assert.deepEqual(replyState("2026-11-08T09:00:00Z", "2026-11-08T10:00:00Z"), { open: true, note: null });
+  assert.deepEqual(replyState("2026-11-07T09:00:00Z", "2026-11-08T10:00:00Z"), { open: false, note: "הלקוח כתב לפני יותר מ-24 שעות - עונים מהאפליקציה" });
+  assert.equal(replyState(null, "2026-11-08T10:00:00Z").open, false);
 
   await inboundSection();
 

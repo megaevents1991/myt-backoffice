@@ -375,3 +375,30 @@ export async function recentEchoes(companyId: string, days: number): Promise<{ p
   }
   return rows.map((r) => ({ phoneKey: r.phone_key, text: r.text }));
 }
+
+// ---------------------------------------------------------------- the list's last line per chat
+
+export type LastMessage = { text: string | null; type: string; sentAt: string; direction: "in" | "out" };
+
+/** The newest message of each phone key (one read: the newest rows of these keys, first per key). */
+export async function lastMessages(companyId: string, keys: string[]): Promise<Map<string, LastMessage>> {
+  const out = new Map<string, LastMessage>();
+  const unique = [...new Set(keys.filter(Boolean))];
+  for (const part of chunks(unique, 50)) {
+    const { data, error } = await db
+      .from("wa_messages")
+      .select("phone_key, text, type, sent_at, direction")
+      .eq("company_id", companyId)
+      .in("phone_key", part)
+      .order("sent_at", { ascending: false })
+      .limit(Math.min(1000, part.length * 20));
+    if (error) {
+      if (missingTable(error)) return out;
+      throw new Error(`wa_messages: ${error.message}`);
+    }
+    for (const r of (data ?? []) as { phone_key: string; text: string | null; type: string; sent_at: string; direction: "in" | "out" }[]) {
+      if (!out.has(r.phone_key)) out.set(r.phone_key, { text: r.text, type: r.type, sentAt: r.sent_at, direction: r.direction });
+    }
+  }
+  return out;
+}
