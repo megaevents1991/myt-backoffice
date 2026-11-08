@@ -40,7 +40,7 @@ function offsetMs(at: Date): number {
 }
 
 /** The UTC instant of an Israel wall-clock time (the second guess settles a DST edge). */
-function israelWallToUtc(y: number, m: number, d: number, h: number): number {
+export function israelWallToUtc(y: number, m: number, d: number, h: number): number {
   const guess = Date.UTC(y, m - 1, d, h, 0);
   const first = guess - offsetMs(new Date(guess));
   const second = guess - offsetMs(new Date(first));

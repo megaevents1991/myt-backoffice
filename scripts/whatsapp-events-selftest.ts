@@ -22,6 +22,7 @@ import { isAlertTime, unansweredFor, workingMinutesBetween } from "../lib/whatsa
 import { outboxDecision, type OrderLite, type OutboxKind, type OutboxRowLite } from "../lib/whatsapp/events/outbox";
 import { cleanParam, documentsOf, greetingName, paramsFor, type ParamSource } from "../lib/whatsapp/events/params";
 import { drainOutbox, type DrainDeps, type DrainRow } from "../lib/services/whatsapp-events-outbox";
+import { airportLabel, dueThisHour, flightFacts, flightParams, lateBooking, slotFor } from "../lib/whatsapp/events/schedule";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { templateUpsertRow, type WaAccount, type WaMessageInsert } from "../lib/services/whatsapp-db";
 import type { EventsOrderLite, WaChat } from "../lib/services/whatsapp-events-db";
@@ -147,6 +148,34 @@ async function main(): Promise<void> {
     const flight = { ...src, flight: { city: "לונדון", number: "LY317", date: "12.11", hour: "06:40", airport: "נתב״ג" } };
     assert.deepEqual(paramsFor("flight_reminder", flight), ["דנה", "לונדון", "LY317", "12.11", "06:40", "נתב״ג"]);
     assert.deepEqual(paramsFor("event_today", { ...src, place: "אצטדיון הית׳אד, מנצ׳סטר" }), ["דנה", "אוואסיס", "אצטדיון הית׳אד, מנצ׳סטר"]);
+  }
+
+  // Task 13: the reminder slots (Israel time) and the flight's facts
+  {
+    const amadeus = { outbound: { departureTime: "2026-11-12T06:40:00", departureAirport: "TLV", flightNumber: "LY315" }, inbound: { arrivalTime: "2026-11-15T22:10:00" }, offer: { itineraries: [{ segments: [{ carrierCode: "LY", number: "317" }] }] } };
+    const ff = flightFacts({ flightOrderInfo: amadeus, offline: null });
+    assert.ok(ff);
+    assert.equal(ff.number, "LY317", "the operating segment, not the validating carrier's stored number");
+    assert.equal(flightFacts({ flightOrderInfo: {}, offline: null }), null, "a skipped flight has no reminder");
+    assert.equal(flightFacts({ flightOrderInfo: { outbound: { departureTime: "0" } }, offline: null }), null, "an unreadable time");
+    const offline = { outbound_departure_time: "2026-11-12 09:00:00", outbound_flight_number: "IZ101", outbound_departure_airport: "TLV", inbound_arrival_time: null, is_deleted: null, cancelled_at: null };
+    assert.equal(flightFacts({ flightOrderInfo: amadeus, offline })?.number, "IZ101", "a live offline row wins");
+    assert.equal(flightFacts({ flightOrderInfo: amadeus, offline: { ...offline, cancelled_at: "2026-11-01T00:00:00Z" } })?.number, "LY317", "a cancelled offline row does not");
+    // 3 days before 12.11 at 09:00 Israel (IST, UTC+2) = 2026-11-09T07:00:00Z
+    assert.equal(slotFor("flight_reminder", { flight: ff, eventDate: "2026-11-13" }), "2026-11-09T07:00:00.000Z");
+    assert.equal(slotFor("event_today", { flight: ff, eventDate: "2026-11-13" }), "2026-11-13T08:00:00.000Z");
+    assert.equal(slotFor("after_trip", { flight: ff, eventDate: "2026-11-13" }), "2026-11-16T09:00:00.000Z");
+    assert.equal(slotFor("after_trip", { flight: null, eventDate: "2026-11-13" }), "2026-11-14T09:00:00.000Z");
+    assert.equal(slotFor("flight_reminder", { flight: null, eventDate: "2026-11-13" }), null);
+    assert.equal(slotFor("event_today", { flight: null, eventDate: null }), null);
+    assert.equal(dueThisHour("2026-11-09T07:00:00.000Z", new Date("2026-11-09T07:05:00Z")), true);
+    assert.equal(dueThisHour("2026-11-09T07:00:00.000Z", new Date("2026-11-09T08:05:00Z")), false);
+    assert.equal(dueThisHour("2026-11-09T07:00:00.000Z", new Date("2026-11-09T06:59:00Z")), false);
+    assert.equal(lateBooking("2026-11-10T10:00:00Z", "2026-11-09T07:00:00.000Z"), true);
+    assert.equal(lateBooking("2026-11-01T10:00:00Z", "2026-11-09T07:00:00.000Z"), false);
+    assert.equal(airportLabel("TLV"), "נתב״ג");
+    assert.equal(airportLabel("ETM"), "ETM");
+    assert.deepEqual(flightParams(ff, "לונדון"), { city: "לונדון", number: "LY317", date: "12.11", hour: "06:40", airport: "נתב״ג" });
   }
 
   await drainSection();
