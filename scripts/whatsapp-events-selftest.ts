@@ -14,6 +14,7 @@ import {
   foldTargets,
   linkSearchOf,
   replyState,
+  sameNumber,
   signupSyncs,
   threadKeysOf,
   suggestAutoTexts,
@@ -232,7 +233,9 @@ const EV_ACCOUNT: WaAccount = {
 const TOURS_ACCOUNT: WaAccount = { ...EV_ACCOUNT, id: "acc-1", companyId: "co-1", phoneNumberId: "111", wabaId: "222" };
 const CUSTOMER = "972542002722";
 
-function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]; now?: string } = {}) {
+function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]; now?: string; upsertFailsOnce?: boolean } = {}) {
+  let upsertFails = !!opts.upsertFailsOnce;
+  const echoArgs: { days: number; max: number }[] = [];
   const messages: (WaMessageInsert & { id: string })[] = [];
   const chats = new Map<string, WaChat>();
   const moves: { id: number; today: string; chatId: string }[] = [];
@@ -283,6 +286,10 @@ function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]
       chatByKey: async (_c, key) => chats.get(key) ?? null,
       upsertChat: async (companyId, phone, key, patch) => {
         calls.upserts += 1;
+        if (upsertFails) {
+          upsertFails = false;
+          throw new Error("wa_chats: a blip");
+        }
         const cur = chats.get(key);
         const next: WaChat = {
           id: cur?.id ?? `chat-${key}`,
@@ -315,10 +322,13 @@ function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]
       addAutoTexts: async (_c, texts) => {
         calls.suggested.push(texts);
       },
-      recentEchoes: async () => [1, 2, 3, 4, 5].map((i) => ({ phoneKey: `50000000${i}`, text: "שלום, נחזור אליכם" })),
+      recentEchoes: async (_c, days, max) => {
+        echoArgs.push({ days, max });
+        return [1, 2, 3, 4, 5].map((i) => ({ phoneKey: `50000000${i}`, text: "שלום, נחזור אליכם" }));
+      },
     },
   };
-  return { deps, messages, chats, moves, marks, sent, calls, setNow: (t: string) => (now = t) };
+  return { deps, messages, chats, moves, marks, sent, calls, echoArgs, setNow: (t: string) => (now = t) };
 }
 
 type MsgEvent = Extract<WaEvent, { kind: "message" }>;
@@ -345,8 +355,9 @@ const evEcho = (id: string, at: string, text: string, origin: "app" | "history" 
   origin,
   direction: "out",
 });
-const order = (id: number, status: string, createdAt: string, eventDate: string | null): EventsOrderLite => ({
+const order = (id: number, status: string, createdAt: string, eventDate: string | null, phone = "054-200-2722"): EventsOrderLite => ({
   ...r(id, status, createdAt, eventDate),
+  phone,
   phoneKey: "542002722",
   eventId: 1,
   contactName: "דנה כהן",
@@ -401,6 +412,26 @@ async function inboundSection(): Promise<void> {
     assert.equal(chat?.seenAt ?? null, null, "history never hides a live message");
     assert.equal(chat?.answeredAt ?? null, null);
   }
+  // a chat write that fails once is tried again - the message was stored and Meta will not re-deliver it
+  {
+    const t = makeEventsDeps({ upsertFailsOnce: true });
+    await handleWebhookEvents([evMsg("w1", "2026-11-08T09:00:00.000Z", "שלום")], t.deps);
+    assert.equal(t.chats.get("542002722")?.lastInAt, "2026-11-08T09:00:00.000Z", "a chat write is retried once");
+  }
+  // "הסר" is answered by the system - the chat does not wait for a rep
+  {
+    const t = makeEventsDeps();
+    await handleWebhookEvents([evMsg("w1", "2026-11-08T09:00:00.000Z", "הסר")], t.deps);
+    assert.ok(t.marks.some((m) => m.patch.answeredAt === "2026-11-08T09:00:00.000Z"), "an opt-out is answered");
+  }
+  // full-number binding: an order of another country whose last 9 digits are the same is not this customer's
+  {
+    assert.equal(sameNumber("054-200-2722", "972542002722"), true);
+    assert.equal(sameNumber("+44 7542 002722", "972542002722"), false);
+    const t = makeEventsDeps({ orders: [order(9, "Lost", "2026-10-01T00:00:00Z", "2026-12-01", "+44 7542 002722")] });
+    await handleWebhookEvents([evMsg("w1", "2026-11-08T08:00:00.000Z", "היי")], t.deps);
+    assert.equal(t.moves.length, 0, "another country's order never moves");
+  }
   // the phone book of an events number is never stored (spec section 6)
   {
     const t = makeEventsDeps();
@@ -450,6 +481,7 @@ async function inboundSection(): Promise<void> {
     const t = makeEventsDeps();
     await handleWebhookEvents([{ kind: "history", phoneNumberId: "444", phase: 2, chunkOrder: 9, progress: 100 }], t.deps);
     assert.deepEqual(t.calls.suggested, [["שלום, נחזור אליכם"]]);
+    assert.ok(t.echoArgs[0].max <= 5000, "the webhook's suggestion reads a bounded slice (30 s)");
     const u = makeEventsDeps();
     await handleWebhookEvents([{ kind: "history", phoneNumberId: "444", phase: 0, chunkOrder: 1, progress: 40 }], u.deps);
     assert.deepEqual(u.calls.suggested, [], "only the last chunk suggests");
@@ -469,6 +501,7 @@ async function inboundSection(): Promise<void> {
 // ------------------------------------------------------------ Task 12: the drain over injected deps
 function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sendFails?: boolean; auto?: boolean; finishThrowsFor?: string }) {
   const claimed = new Set<string>();
+  const touched: { phone: string; at: string }[] = [];
   const sends: { to: string; template: string; params: string[]; reservationId: number }[] = [];
   const finishes: { id: string; patch: Record<string, unknown> }[] = [];
   const rows = opts.rows.map((r) => ({ ...r }));
@@ -482,6 +515,9 @@ function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sen
       source: { firstName: "דנה", orderId: id, eventLabel: "אוואסיס במנצ׳סטר", eventName: "אוואסיס", resumeUrl: "https://x/order/1", documents: "אישור ההזמנה" },
     }),
     newerOrderSameEvent: async () => null,
+    touchChat: async (phone, at) => {
+      touched.push({ phone, at });
+    },
     claim: async (id) => {
       if (claimed.has(id)) return false;
       claimed.add(id);
@@ -503,7 +539,7 @@ function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sen
       }
     },
   };
-  return { deps, sends, finishes, rows };
+  return { deps, sends, finishes, rows, touched };
 }
 const drainRow = (id: string, kind: OutboxKind, o: Partial<DrainRow> = {}): DrainRow => ({
   id, kind, reservationId: 7, dueAt: "2026-11-08T09:00:00Z", fromStatus: "Pending", createdAt: "2026-11-08T08:59:00Z", status: "pending", attempts: 0, ...o,
@@ -522,12 +558,18 @@ async function drainSection(): Promise<void> {
     assert.equal(t.finishes[0].patch.reason, "נשלח לטלפון הניסיון");
     assert.equal(out.sent, 1);
   }
-  // without trial, to the customer
+  // without trial, to the customer - and the customer's chat shows the message went out
   {
     const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")] });
     await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
     assert.equal(t.sends[0].to, "972542002722");
     assert.equal(t.finishes[0].patch.reason, null);
+    assert.deepEqual(t.touched.map((x) => x.phone), ["972542002722"], "an automatic send touches the customer's chat");
+  }
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")], trialPhone: "0525287144" });
+    await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.equal(t.touched.length, 0, "a trial send touches no customer chat");
   }
   // dry run sends nothing and finishes nothing
   {

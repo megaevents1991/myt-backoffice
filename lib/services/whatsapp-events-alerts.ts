@@ -10,6 +10,7 @@ import { appOrigin, DEFAULT_FROM, sendMail } from "@/lib/email";
 import { escapeHtml } from "@/lib/html-escape";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { isAlertTime, unansweredFor } from "@/lib/whatsapp/events/working-time";
+import { sameNumber } from "@/lib/whatsapp/events/chat-rules";
 import { markChat, reservationsByPhoneKeys } from "@/lib/services/whatsapp-events-db";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +60,7 @@ export async function runEventsAlerts(opts: { dryRun: boolean; now?: Date; compa
 
   const orders = await reservationsByPhoneKeys(fresh.map((c) => c.phoneKey));
   const lines = fresh.map((c) => {
-    const own = orders.filter((o) => o.phoneKey === c.phoneKey && !o.isDeleted);
+    const own = orders.filter((o) => o.phoneKey === c.phoneKey && !o.isDeleted && sameNumber(o.phone, c.phone));
     const name = own.find((o) => o.contactName)?.contactName || c.profileName || "ללא שם";
     const chips = own.slice(0, 3).map((o) => `#${o.id} ${o.status}`).join(", ");
     const url = `${appOrigin()}/whatsapp?chat=${encodeURIComponent(c.id)}`;

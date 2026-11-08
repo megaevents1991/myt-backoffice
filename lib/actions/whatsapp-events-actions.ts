@@ -11,7 +11,7 @@ import { supabaseTyped } from "@/lib/supabase-server";
 import { actionFail, actionOk, UserError, type ActionResult } from "@/lib/tours/action-kit";
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { WA_THREAD_PAGE, WA_TEXT_MAX, standInText, type WaMessageType } from "@/lib/whatsapp/rules";
-import { linkSearchOf, replyState, threadKeysOf } from "@/lib/whatsapp/events/chat-rules";
+import { linkSearchOf, replyState, sameNumber, threadKeysOf } from "@/lib/whatsapp/events/chat-rules";
 import { unansweredFor } from "@/lib/whatsapp/events/working-time";
 import { countUnanswered } from "@/lib/services/whatsapp-events-alerts";
 import { assembleThread, emptyWaThread, type WaThread, type WaThreadMessage } from "@/lib/tours/cases";
@@ -66,7 +66,7 @@ async function rowsOf(company: Company, chats: WaChat[]): Promise<ChatRow[]> {
   const [byKey, linked, last] = await Promise.all([reservationsByPhoneKeys(keys), reservationsByIds(linkedIds), lastMessages(company.id, keys)]);
   const now = new Date();
   return chats.map((chat) => {
-    const orders = byKey.filter((o) => o.phoneKey === chat.phoneKey && !o.isDeleted);
+    const orders = byKey.filter((o) => o.phoneKey === chat.phoneKey && !o.isDeleted && sameNumber(o.phone, chat.phone));
     const link = linked.find((o) => o.id === chat.linkedReservationId);
     if (link && !orders.some((o) => o.id === link.id)) orders.push(link);
     const lm = last.get(chat.phoneKey);
@@ -281,12 +281,14 @@ export async function reservationWhatsapp(reservationId: number): Promise<Action
   try {
     const { session, company } = await staff();
     if (!Number.isInteger(reservationId) || reservationId <= 0) throw new UserError("Order not found.");
-    const key = await reservationPhoneKey(reservationId);
-    const [chats, off, outbox] = await Promise.all([
+    const { key, phone } = await reservationPhoneKey(reservationId);
+    const [allChats, off, outbox] = await Promise.all([
       chatsOfReservation(company.id, reservationId, key),
       reservationWhatsappOff(reservationId),
       outboxOfReservation(reservationId),
     ]);
+    // the phone's chat is this order's only when it is the FULL number; a rep-attached chat always is
+    const chats = allChats.filter((c) => c.linkedReservationId === reservationId || sameNumber(phone, c.phone));
     // the order's own phone always: what we sent shows even before the customer ever wrote
     const [rows, thread] = await Promise.all([rowsOf(company, chats), threadOfChats(company, chats, undefined, key ? [key] : [])]);
     if (!session.impersonator) {
@@ -323,6 +325,23 @@ export async function getUnansweredCount(): Promise<ActionResult<{ count: number
   try {
     const { company } = await staff();
     return actionOk({ count: await countUnanswered(company.id) });
+  } catch (e) {
+    return actionFail(e, SCOPE);
+  }
+}
+
+/** The order page's older messages: the page before `before` over the order's phone and its attached chats, oldest first. */
+export async function loadReservationThreadBefore(reservationId: number, before: string): Promise<ActionResult<{ messages: WaThreadMessage[]; hasMore: boolean }>> {
+  try {
+    const { company } = await staff();
+    if (!Number.isInteger(reservationId) || reservationId <= 0) throw new UserError("Order not found.");
+    if (typeof before !== "string" || Number.isNaN(Date.parse(before))) throw new UserError("Bad page.");
+    const { key, phone } = await reservationPhoneKey(reservationId);
+    const chats = (await chatsOfReservation(company.id, reservationId, key)).filter((c) => c.linkedReservationId === reservationId || sameNumber(phone, c.phone));
+    const keys = threadKeysOf(chats, key);
+    if (keys.length === 0) return actionOk({ messages: [], hasMore: false });
+    const page = await listThread(company.id, keys, { before, limit: WA_THREAD_PAGE });
+    return actionOk({ messages: [...page.messages].reverse(), hasMore: page.hasMore });
   } catch (e) {
     return actionFail(e, SCOPE);
   }

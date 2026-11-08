@@ -93,6 +93,20 @@ await q(`insert into public.wa_chats(company_id, phone, phone_key) values ($1, '
 [flags] = await q(`select is_unseen, is_unanswered from public.wa_chats where phone_key = '500000000'`);
 assert.deepEqual([flags.is_unseen, flags.is_unanswered], [false, false], "a chat with no live inbound message is neither");
 
+// wa_chat_touch: one statement, timestamps only move FORWARD, a staff mark landing in between is never overwritten
+{
+  const touch = (lastIn, seen, profile = null) =>
+    q(`select * from public.wa_chat_touch($1, '972501234567', '501234567', $2, $3, null, null, $4)`, [co.id, profile, lastIn, seen]);
+  await touch("2026-11-08T10:00:00Z", null, "דנה");
+  await q(`update public.wa_chats set seen_at = '2026-11-08T10:05:00Z' where phone_key = '501234567'`);
+  const [row] = await touch("2026-11-08T09:00:00Z", null, "אחר");
+  assert.equal(new Date(row.last_in_at).toISOString(), "2026-11-08T10:00:00.000Z", "an older message never moves last_in_at back");
+  assert.equal(new Date(row.seen_at).toISOString(), "2026-11-08T10:05:00.000Z", "a staff mark in between survives");
+  assert.equal(row.profile_name, "דנה", "the profile name is filled only when empty");
+  const [later] = await touch("2026-11-08T11:00:00Z", null);
+  assert.equal(new Date(later.last_in_at).toISOString(), "2026-11-08T11:00:00.000Z");
+}
+
 // wa_app_auto_texts: one per company + normalized text
 await q(`insert into public.wa_app_auto_texts(company_id, text_norm, text, source) values ($1, 'שלום', 'שלום', 'history')`, [co.id]);
 await assert.rejects(q(`insert into public.wa_app_auto_texts(company_id, text_norm, text, source) values ($1, 'שלום', 'שלום ', 'staff')`, [co.id]), /duplicate|unique/i);

@@ -6,7 +6,7 @@
  * Dependencies are injected (`EventsInboundDeps`) - scripts/whatsapp-events-selftest.ts runs it over stubs.
  */
 import { OPT_OUT_REPLY, shouldOpenInquiry, type WaEvent } from "@/lib/whatsapp/rules";
-import { countsAsInbound, isOptOutWhole, lostToFollowUp, normAutoText, suggestAutoTexts } from "@/lib/whatsapp/events/chat-rules";
+import { countsAsInbound, isOptOutWhole, lostToFollowUp, normAutoText, sameNumber, suggestAutoTexts } from "@/lib/whatsapp/events/chat-rules";
 import { israelToday } from "@/lib/marketing/range";
 import type { WaAccount } from "@/lib/services/whatsapp-db";
 import type { ChatMark, ChatPatch, EventsOrderLite, WaChat } from "@/lib/services/whatsapp-events-db";
@@ -21,13 +21,24 @@ export interface EventsInboundDeps {
   moveToFollowUp(reservationId: number, today: string, chatId: string): Promise<boolean>;
   autoTexts(companyId: string): Promise<Set<string>>;
   addAutoTexts(companyId: string, texts: string[], source: "history" | "staff"): Promise<void>;
-  recentEchoes(companyId: string, days: number): Promise<{ phoneKey: string; text: string | null }[]>;
+  recentEchoes(companyId: string, days: number, max: number): Promise<{ phoneKey: string; text: string | null }[]>;
 }
 
 type MessageEvent = Extract<WaEvent, { kind: "message" }>;
 
 /** How far back the app's automatic texts are looked for once the history sync ends (the sync covers 6 months). */
 const AUTO_TEXT_LOOKBACK_DAYS = 200;
+/** The webhook's suggestion reads at most this many rows: it runs inside Meta's 30 seconds (the button reads more). */
+const AUTO_TEXT_WEBHOOK_ROWS = 5_000;
+
+/** A chat write that fails is tried once more: the message is stored, and Meta will not re-deliver an acknowledged batch. */
+async function upsertChatRetry(ed: EventsInboundDeps, ...args: Parameters<EventsInboundDeps["upsertChat"]>): Promise<WaChat> {
+  try {
+    return await ed.upsertChat(...args);
+  } catch {
+    return ed.upsertChat(...args);
+  }
+}
 
 /** One Mega Events message; `phone` / `key` = the customer's number and its last 9 digits (the caller resolved both). */
 export async function handleEventsMessage(
@@ -74,7 +85,7 @@ export async function handleEventsMessage(
   if (!live) {
     if (!historyChats.has(`${companyId}|${key}`)) {
       historyChats.add(`${companyId}|${key}`);
-      await ed.upsertChat(companyId, phone, key, {});
+      await upsertChatRetry(ed, companyId, phone, key, {});
     }
     return;
   }
@@ -82,22 +93,23 @@ export async function handleEventsMessage(
   // an echo: a rep wrote from the app - an answer, and a sign someone saw the chat - unless it is the app's own text
   if (ev.direction === "out") {
     const automatic = (await ed.autoTexts(companyId)).has(normAutoText(ev.text));
-    await ed.upsertChat(companyId, phone, key, automatic ? { lastOutAt: ev.sentAt } : { lastOutAt: ev.sentAt, answeredAt: ev.sentAt, seenAt: ev.sentAt });
+    await upsertChatRetry(ed, companyId, phone, key, automatic ? { lastOutAt: ev.sentAt } : { lastOutAt: ev.sentAt, answeredAt: ev.sentAt, seenAt: ev.sentAt });
     return;
   }
 
   // a reaction or a sticker asks nothing: stored and shown, but no mark, no timer, no order move
   if (!countsAsInbound(ev.type)) {
-    await ed.upsertChat(companyId, phone, key, ev.profileName ? { profileName: ev.profileName } : {});
+    await upsertChatRetry(ed, companyId, phone, key, ev.profileName ? { profileName: ev.profileName } : {});
     return;
   }
 
   // read BEFORE this message moves it: the 24-hour gap is measured against the previous live inbound message
   const before = await ed.chatByKey(companyId, key);
-  const chat = await ed.upsertChat(companyId, phone, key, { lastInAt: ev.sentAt, ...(ev.profileName ? { profileName: ev.profileName } : {}) });
+  const chat = await upsertChatRetry(ed, companyId, phone, key, { lastInAt: ev.sentAt, ...(ev.profileName ? { profileName: ev.profileName } : {}) });
 
   if (isOptOutWhole(ev.text)) {
-    await ed.markChat(chat.id, { optedOutAt: ev.sentAt, optedOutSource: "reply" });
+    // the system answers it (the confirmation below): the chat does not wait for a rep
+    await ed.markChat(chat.id, { optedOutAt: ev.sentAt, optedOutSource: "reply", answeredAt: ev.sentAt });
     const answer = await deps.sendServiceText(account, phone, OPT_OUT_REPLY);
     if (!answer.ok) deps.log.warn(`opt-out reply to ${key} not sent: ${answer.error ?? "unknown"}`);
     out.optOuts += 1;
@@ -105,7 +117,8 @@ export async function handleEventsMessage(
   }
 
   if (!shouldOpenInquiry(before?.lastInAt ?? null, ev.sentAt)) return;
-  const orders = await ed.reservationsByPhoneKeys([key]);
+  // the same last 9 digits are the same person only when the order's phone is this FULL number
+  const orders = (await ed.reservationsByPhoneKeys([key])).filter((o) => sameNumber(o.phone, phone));
   if (chat.linkedReservationId !== null && !orders.some((o) => o.id === chat.linkedReservationId)) {
     orders.push(...(await ed.reservationsByIds([chat.linkedReservationId])));
   }
@@ -122,6 +135,6 @@ export async function suggestAutoTextsAfterHistory(
   ed: EventsInboundDeps,
 ): Promise<void> {
   if ((ev.progress ?? 0) < 100) return;
-  const texts = suggestAutoTexts(await ed.recentEchoes(account.companyId, AUTO_TEXT_LOOKBACK_DAYS));
+  const texts = suggestAutoTexts(await ed.recentEchoes(account.companyId, AUTO_TEXT_LOOKBACK_DAYS, AUTO_TEXT_WEBHOOK_ROWS));
   if (texts.length) await ed.addAutoTexts(account.companyId, texts, "history");
 }

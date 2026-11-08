@@ -72,6 +72,31 @@ create index if not exists wa_chats_unanswered_idx on public.wa_chats (company_i
 alter table public.wa_chats enable row level security;
 revoke all on table public.wa_chats from anon, authenticated;
 
+-- 3b. One statement that creates a chat or moves its timestamps FORWARD only (greatest), so a webhook delivered out of
+--     order, or a staff "seen" landing between a read and a write, is never overwritten with an older value. The
+--     profile name is filled only when empty. Called by upsertChat (lib/services/whatsapp-events-db.ts).
+create or replace function public.wa_chat_touch(
+  p_company uuid, p_phone text, p_key text, p_profile text,
+  p_last_in timestamptz, p_last_out timestamptz, p_answered timestamptz, p_seen timestamptz
+)
+returns setof public.wa_chats
+language sql
+set search_path = public, pg_temp
+as $$
+  insert into public.wa_chats as c (company_id, phone, phone_key, profile_name, last_in_at, last_out_at, answered_at, seen_at)
+  values (p_company, p_phone, p_key, p_profile, p_last_in, p_last_out, p_answered, p_seen)
+  on conflict (company_id, phone_key) do update set
+    profile_name = coalesce(nullif(c.profile_name, ''), excluded.profile_name),
+    last_in_at = greatest(c.last_in_at, excluded.last_in_at),
+    last_out_at = greatest(c.last_out_at, excluded.last_out_at),
+    answered_at = greatest(c.answered_at, excluded.answered_at),
+    seen_at = greatest(c.seen_at, excluded.seen_at),
+    updated_at = now()
+  returning c.*;
+$$;
+revoke all on function public.wa_chat_touch(uuid, text, text, text, timestamptz, timestamptz, timestamptz, timestamptz) from public;
+revoke execute on function public.wa_chat_touch(uuid, text, text, text, timestamptz, timestamptz, timestamptz, timestamptz) from anon, authenticated;
+
 -- 4. The WhatsApp Business app's own automatic texts (greeting / away message): an echo of one is not a rep's answer.
 create table if not exists public.wa_app_auto_texts (
   id uuid primary key default gen_random_uuid(),

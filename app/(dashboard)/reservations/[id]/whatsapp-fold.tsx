@@ -18,7 +18,8 @@ import { fmtInstant } from "@/lib/tours/format";
 import { ThreadView } from "@/components/whatsapp/thread-view";
 import { ReplyBox } from "@/components/whatsapp/reply-box";
 import { WhatsAppButton } from "@/components/tours/cases/case-ui";
-import { markChatHandled, reservationWhatsapp, setReservationWhatsappOff, type ReservationWhatsapp } from "@/lib/actions/whatsapp-events-actions";
+import { loadReservationThreadBefore, markChatHandled, reservationWhatsapp, setReservationWhatsappOff, type ReservationWhatsapp } from "@/lib/actions/whatsapp-events-actions";
+import type { WaThreadMessage } from "@/lib/tours/cases";
 import { foldTargets } from "@/lib/whatsapp/events/chat-rules";
 
 const KIND_LABELS: Record<string, string> = {
@@ -47,12 +48,17 @@ export function WhatsappFold({ reservationId, phone }: { reservationId: number; 
   const [data, setData] = useState<ReservationWhatsapp | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [older, setOlder] = useState<{ messages: WaThreadMessage[]; hasMore: boolean } | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const res = await run(() => reservationWhatsapp(reservationId));
     setLoading(false);
-    if (res.success && res.data) setData(res.data);
+    if (res.success && res.data) {
+      setData(res.data);
+      setOlder(null);
+    }
   }, [reservationId, run]);
 
   // each chat answered on its own: a reply to a companion never goes to the customer, each has its own window
@@ -105,7 +111,19 @@ export function WhatsappFold({ reservationId, phone }: { reservationId: number; 
                   </span>
                 </div>
                 {data.thread.messages.length > 0 ? (
-                  <ThreadView messages={data.thread.messages} hasMore={false} />
+                  <ThreadView
+                    messages={older ? [...older.messages, ...data.thread.messages] : data.thread.messages}
+                    hasMore={older ? older.hasMore : data.thread.hasMore}
+                    loadingMore={loadingMore}
+                    onLoadMore={async () => {
+                      const first = (older?.messages ?? data.thread.messages)[0];
+                      if (!first) return;
+                      setLoadingMore(true);
+                      const res = await run(() => loadReservationThreadBefore(reservationId, first.sentAt));
+                      setLoadingMore(false);
+                      if (res.success && res.data) setOlder({ messages: [...res.data.messages, ...(older?.messages ?? [])], hasMore: res.data.hasMore });
+                    }}
+                  />
                 ) : (
                   <p className="text-sm text-muted-foreground">{data.thread.connected ? "אין הודעות עם הטלפון הזה." : "המספר של החברה עדיין לא מחובר."}</p>
                 )}

@@ -4,6 +4,7 @@
  * shows on every order of that phone. Selftest: scripts/whatsapp-events-selftest.ts.
  */
 import { OPT_OUT_WORDS, canSendText, type WaMessageType } from "@/lib/whatsapp/rules";
+import { whatsappPhone } from "@/lib/tours/cases";
 
 /** The order as the conversation rules need it. `eventDate` = the event's day, YYYY-MM-DD. */
 export type EventsResLite = { id: number; status: string; createdAt: string; eventDate: string | null; isDeleted: boolean };
@@ -100,13 +101,14 @@ export function replyState(lastInAt: string | null, now: string): { open: boolea
 
 /** The orders of the reservations list that wear the "new message" mark: one per unseen chat (markedReservation). */
 export function marksFor(
-  unseen: { phoneKey: string; linkedReservationId: number | null }[],
-  orders: (EventsResLite & { phoneKey: string })[],
+  unseen: { phoneKey: string; linkedReservationId: number | null; phone?: string }[],
+  orders: (EventsResLite & { phoneKey: string; phone?: string | null })[],
   today: string,
 ): Set<number> {
   const out = new Set<number>();
   for (const chat of unseen) {
-    const own = orders.filter((o) => o.phoneKey === chat.phoneKey);
+    // full-number binding when both sides carry the phone (sameNumber)
+    const own = orders.filter((o) => o.phoneKey === chat.phoneKey && (chat.phone === undefined || o.phone === undefined || sameNumber(o.phone, chat.phone)));
     if (own.length === 0 && chat.linkedReservationId === null) continue;
     const id = markedReservation(own, chat.linkedReservationId, today);
     if (id !== null) out.add(id);
@@ -150,4 +152,14 @@ export function linkSearchOf(term: string): { kind: "id"; id: number } | { kind:
 /** The phone keys a reservation's thread reads: its own phone always (what we sent shows before the customer ever wrote) + its chats. */
 export function threadKeysOf(chats: { phoneKey: string }[], reservationKey: string): string[] {
   return [...new Set([reservationKey, ...chats.map((c) => c.phoneKey)].filter(Boolean))];
+}
+
+/**
+ * Full-number binding (the tours security review of 21.10, applied to Mega Events): a chat and an order share the last
+ * 9 digits by their key, but they are the same person only when the order's phone normalises to the chat's FULL
+ * number - another country's number with the same last 9 digits is someone else.
+ */
+export function sameNumber(orderPhone: string | null | undefined, chatPhone: string): boolean {
+  const full = whatsappPhone(orderPhone);
+  return !!full && full === chatPhone;
 }

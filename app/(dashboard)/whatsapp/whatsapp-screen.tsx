@@ -11,6 +11,7 @@ import { CheckCheck, Link2, Link2Off, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UrlTabs } from "@/components/url-tabs";
@@ -32,6 +33,7 @@ import {
   markChatHandled,
   openEventsChat,
   searchReservationsForLink,
+  setChatOptOut,
   type ChatRow,
   type LinkCandidate,
 } from "@/lib/actions/whatsapp-events-actions";
@@ -84,6 +86,11 @@ function ChatsTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // opening a chat marks it seen: the list's dot goes at once, no reload (stable - ChatPane's open() depends on it)
+  const markSeenInList = useCallback((id: string, at: string) => {
+    setList((cur) => (cur ? { ...cur, rows: cur.rows.map((r) => (r.id === id ? { ...r, seenAt: at } : r)) } : cur));
+  }, []);
 
   const pages = list ? Math.max(1, Math.ceil(list.total / list.pageSize)) : 1;
   return (
@@ -158,12 +165,23 @@ function ChatsTab() {
           </div>
         )}
       </div>
-      <div className="min-w-0">{chatId ? <ChatPane key={chatId} chatId={chatId} onChanged={() => void load()} /> : <p className="text-sm text-muted-foreground">בחרו שיחה מהרשימה.</p>}</div>
+      <div className="min-w-0">
+        {chatId ? (
+          <ChatPane
+            key={chatId}
+            chatId={chatId}
+            onChanged={() => void load()}
+            onSeen={markSeenInList}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">בחרו שיחה מהרשימה.</p>
+        )}
+      </div>
     </div>
   );
 }
 
-function ChatPane({ chatId, onChanged }: { chatId: string; onChanged: () => void }) {
+function ChatPane({ chatId, onChanged, onSeen }: { chatId: string; onChanged: () => void; onSeen: (id: string, at: string) => void }) {
   const run = useActionToast();
   const [data, setData] = useState<{ chat: ChatRow; thread: WaThread } | null>(null);
   const [older, setOlder] = useState<{ messages: WaThreadMessage[]; hasMore: boolean } | null>(null);
@@ -175,8 +193,9 @@ function ChatPane({ chatId, onChanged }: { chatId: string; onChanged: () => void
     if (res.success && res.data) {
       setData(res.data);
       setOlder(null);
+      onSeen(chatId, new Date().toISOString());
     } else if (!res.success) void run(async () => res);
-  }, [chatId, run]);
+  }, [chatId, run, onSeen]);
 
   useEffect(() => {
     void open();
@@ -213,6 +232,7 @@ function ChatPane({ chatId, onChanged }: { chatId: string; onChanged: () => void
             טופל
           </Button>
           <LinkButton chat={chat} onLinked={() => { void open(); onChanged(); }} />
+          <OptOutButton chat={chat} onDone={() => { void open(); onChanged(); }} />
           <WhatsAppButton phone={chat.phone} message="" iconOnly />
         </span>
       </div>
@@ -304,6 +324,39 @@ function LinkButton({ chat, onLinked }: { chat: ChatRow; onLinked: () => void })
             </li>
           ))}
         </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Staff mark (or clear) an opt-out with a note - marketing stops on Mega Events only; order updates continue. */
+function OptOutButton({ chat, onDone }: { chat: ChatRow; onDone: () => void }) {
+  const run = useActionToast();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const optedOut = !!chat.optedOutAt;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="ghost">{optedOut ? "בטל הסרה" : "סמן הסרה"}</Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 space-y-2" dir="rtl">
+        <p className="text-sm">{optedOut ? "למה מבטלים את ההסרה? (הלקוח ביקש לחזור...)" : "למה הסרה? (ביקש/ה בשיחה...)"}</p>
+        <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={300} dir="auto" />
+        <Button
+          size="sm"
+          disabled={note.trim().length < 3}
+          onClick={async () => {
+            const res = await run(() => setChatOptOut(chat.id, !optedOut, note), optedOut ? "ההסרה בוטלה" : "סומן כהוסר");
+            if (res.success) {
+              setOpen(false);
+              setNote("");
+              onDone();
+            }
+          }}
+        >
+          שמור
+        </Button>
       </PopoverContent>
     </Popover>
   );

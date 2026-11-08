@@ -83,13 +83,6 @@ const toChat = (r: ChatRow): WaChat => ({
   alertedAt: r.alerted_at,
 });
 
-/** The later of two instants (null-safe): a webhook delivered out of order never moves a timestamp back. */
-function later(a: string | null | undefined, b: string | null | undefined): string | null {
-  if (!a) return b ?? null;
-  if (!b) return a;
-  return Date.parse(b) > Date.parse(a) ? b : a;
-}
-
 export async function chatByKey(companyId: string, phoneKey: string): Promise<WaChat | null> {
   const { data, error } = await db.from("wa_chats").select(CHAT_COLUMNS).eq("company_id", companyId).eq("phone_key", phoneKey).maybeSingle();
   if (error) {
@@ -108,23 +101,25 @@ export async function chatById(chatId: string): Promise<WaChat | null> {
   return data ? toChat(data as ChatRow) : null;
 }
 
-/** Creates the chat or moves its timestamps FORWARD only; the profile name is filled only when empty. */
+/**
+ * Creates the chat or moves its timestamps FORWARD only; the profile name is filled only when empty. One statement in
+ * the database (public.wa_chat_touch, greatest()), so a staff mark landing meanwhile is never overwritten.
+ */
 export async function upsertChat(companyId: string, phone: string, phoneKey: string, patch: ChatPatch): Promise<WaChat> {
-  const current = await chatByKey(companyId, phoneKey);
-  const row = {
-    company_id: companyId,
-    phone_key: phoneKey,
-    phone: current?.phone ?? phone,
-    profile_name: current?.profileName || patch.profileName || null,
-    last_in_at: later(current?.lastInAt, patch.lastInAt),
-    last_out_at: later(current?.lastOutAt, patch.lastOutAt),
-    answered_at: later(current?.answeredAt, patch.answeredAt),
-    seen_at: later(current?.seenAt, patch.seenAt),
-    updated_at: new Date().toISOString(),
-  };
-  const { data, error } = await db.from("wa_chats").upsert(row, { onConflict: "company_id,phone_key" }).select(CHAT_COLUMNS).single();
+  const { data, error } = await db.rpc("wa_chat_touch", {
+    p_company: companyId,
+    p_phone: phone,
+    p_key: phoneKey,
+    p_profile: patch.profileName ?? null,
+    p_last_in: patch.lastInAt ?? null,
+    p_last_out: patch.lastOutAt ?? null,
+    p_answered: patch.answeredAt ?? null,
+    p_seen: patch.seenAt ?? null,
+  });
   if (error) throw new Error(`wa_chats: ${error.message}`);
-  return toChat(data as ChatRow);
+  const row = (Array.isArray(data) ? data[0] : data) as ChatRow | undefined;
+  if (!row) throw new Error("wa_chats: the touch returned no row");
+  return toChat(row);
 }
 
 export type ChatMark = {
@@ -222,7 +217,7 @@ export async function chatsOfReservation(companyId: string, reservationId: numbe
 
 // ---------------------------------------------------------------- reservations
 
-export type EventsOrderLite = EventsResLite & { phoneKey: string; eventId: number | null; contactName: string };
+export type EventsOrderLite = EventsResLite & { phoneKey: string; eventId: number | null; contactName: string; phone: string | null };
 
 type ResRow = {
   id: number;
@@ -233,6 +228,7 @@ type ResRow = {
   event_id: number | null;
   main_contact_first_name: string | null;
   main_contact_last_name: string | null;
+  main_contact_phone_number: string | null;
 };
 
 /** The orders of these phone keys with their event's date (two reads; keys and event ids chunked by 200). */
@@ -243,7 +239,7 @@ export async function reservationsByPhoneKeys(keys: string[]): Promise<EventsOrd
   for (const part of chunks(unique)) {
     const { data, error } = await db
       .from("reservations")
-      .select("id, status, created_at, is_deleted, main_contact_phone_key, event_id, main_contact_first_name, main_contact_last_name")
+      .select("id, status, created_at, is_deleted, main_contact_phone_key, event_id, main_contact_first_name, main_contact_last_name, main_contact_phone_number")
       .in("main_contact_phone_key", part);
     if (error) throw new Error(`reservations: ${error.message}`);
     rows.push(...((data ?? []) as ResRow[]));
@@ -259,7 +255,7 @@ export async function reservationsByIds(ids: number[]): Promise<EventsOrderLite[
   for (const part of chunks(unique)) {
     const { data, error } = await db
       .from("reservations")
-      .select("id, status, created_at, is_deleted, main_contact_phone_key, event_id, main_contact_first_name, main_contact_last_name")
+      .select("id, status, created_at, is_deleted, main_contact_phone_key, event_id, main_contact_first_name, main_contact_last_name, main_contact_phone_number")
       .in("id", part);
     if (error) throw new Error(`reservations: ${error.message}`);
     rows.push(...((data ?? []) as ResRow[]));
@@ -278,6 +274,7 @@ async function toOrders(rows: ResRow[]): Promise<EventsOrderLite[]> {
     phoneKey: r.main_contact_phone_key ?? "",
     eventId: r.event_id,
     contactName: [r.main_contact_first_name, r.main_contact_last_name].filter(Boolean).join(" ").trim(),
+    phone: r.main_contact_phone_number,
   }));
 }
 
@@ -354,8 +351,11 @@ export async function removeAutoText(companyId: string, textNorm: string): Promi
   autoTextCache.delete(companyId);
 }
 
-/** What the number sent from the app (live echoes and history) in the last `days` - the source of the auto-text guess. */
-export async function recentEchoes(companyId: string, days: number): Promise<{ phoneKey: string; text: string | null }[]> {
+/**
+ * What the number sent from the app (live echoes and history) in the last `days`, the newest `max` rows - the source of
+ * the auto-text guess. The webhook's call keeps `max` small (its 30 s); the settings button may read more.
+ */
+export async function recentEchoes(companyId: string, days: number, max = 50_000): Promise<{ phoneKey: string; text: string | null }[]> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const { rows, error } = await fetchPaged<{ id: string; phone_key: string; text: string | null }>(
     () =>
@@ -368,7 +368,7 @@ export async function recentEchoes(companyId: string, days: number): Promise<{ p
         .eq("type", "text")
         .gte("sent_at", since)
         .order("id"),
-    50_000,
+    max,
   );
   if (error) {
     if (missingTable(error as DbError)) return [];
@@ -409,7 +409,7 @@ export async function whatsappMarks(companyId: string): Promise<Set<number>> {
   const unseen = await unseenChats(companyId);
   if (unseen.length === 0) return new Set();
   const orders = await reservationsByPhoneKeys(unseen.map((c) => c.phoneKey));
-  return marksFor(unseen, orders, israelToday());
+  return marksFor(unseen.map((c) => ({ phoneKey: c.phoneKey, linkedReservationId: c.linkedReservationId, phone: c.phone })), orders, israelToday());
 }
 
 /** Reads the per-order "no WhatsApp" switch (D-6). A deploy that beat its migration reads as "on". */
@@ -431,11 +431,12 @@ export async function setReservationWhatsappOffAt(reservationId: number, off: bo
   if (error) throw new Error(`reservations: ${error.message}`);
 }
 
-/** The phone key of one order (kept by the trigger), "" when it has none or the column is not migrated yet. */
-export async function reservationPhoneKey(reservationId: number): Promise<string> {
-  const { data, error } = await db.from("reservations").select("main_contact_phone_key").eq("id", reservationId).maybeSingle();
-  if (error) return "";
-  return ((data as { main_contact_phone_key: string | null } | null)?.main_contact_phone_key ?? "") || "";
+/** The phone of one order and its key (kept by the trigger); "" when it has none or the column is not migrated yet. */
+export async function reservationPhoneKey(reservationId: number): Promise<{ key: string; phone: string | null }> {
+  const { data, error } = await db.from("reservations").select("main_contact_phone_key, main_contact_phone_number").eq("id", reservationId).maybeSingle();
+  if (error) return { key: "", phone: null };
+  const row = data as { main_contact_phone_key: string | null; main_contact_phone_number: string | null } | null;
+  return { key: row?.main_contact_phone_key ?? "", phone: row?.main_contact_phone_number ?? null };
 }
 
 export type OutboxLine = { kind: string; at: string; status: string; reason: string | null; sentTo: string | null };

@@ -11,12 +11,13 @@ import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { shortPlace } from "@/lib/lodging";
-import { whatsappPhone } from "@/lib/tours/cases";
 import { outboxDecision, TEMPLATE_LANGUAGE, type NewerOrder, type OrderLite, type OutboxKind } from "@/lib/whatsapp/events/outbox";
 import { documentsOf, paramsFor, type ParamSource } from "@/lib/whatsapp/events/params";
 import { flightFacts, flightParams } from "@/lib/whatsapp/events/schedule";
 import { sendTemplate } from "@/lib/services/whatsapp-cloud";
 import { companyById, listTemplates } from "@/lib/services/whatsapp-db";
+import { upsertChat } from "@/lib/services/whatsapp-events-db";
+import { phoneKey, whatsappPhone } from "@/lib/tours/cases";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -56,6 +57,8 @@ export interface DrainDeps {
   failStale(now: Date): Promise<number>;
   send(to: string, template: string, params: string[], reservationId: number): Promise<{ ok: true } | { ok: false; error: string }>;
   finish(id: string, patch: FinishPatch): Promise<void>;
+  /** The customer's conversation shows that something went out (last_out_at) - an automation is no answer. */
+  touchChat(phone: string, at: string): Promise<void>;
 }
 
 export type DrainSummary = { sent: number; skipped: number; failed: number; waiting: number; lines: { id: string; kind: string; reservationId: number; result: string }[] };
@@ -104,6 +107,8 @@ export async function drainOutbox(opts: { budgetMs: number; dryRun: boolean; res
       if (answer.ok) {
         out.sent += 1;
         await deps.finish(row.id, { status: "sent", reason: trial ? TRIAL_REASON : null, sentTo: to, attempts });
+        // a trial send reached the trial phone, not the customer: their chat stays as it was
+        if (!trial) await deps.touchChat(decision.to, now.toISOString()).catch(() => undefined);
       } else {
         const final = attempts >= MAX_ATTEMPTS;
         if (final) out.failed += 1;
@@ -313,6 +318,9 @@ export function realDrainDeps(): DrainDeps {
       if (!co) return { ok: false, error: "Mega Events company not found" };
       const answer = await sendTemplate(co, { to, template, params, language: TEMPLATE_LANGUAGE, origin: "automation", reservationId });
       return answer.ok ? { ok: true } : { ok: false, error: answer.error };
+    },
+    async touchChat(phone, at) {
+      await upsertChat(MEGA_EVENTS_COMPANY_ID, phone, phoneKey(phone), { lastOutAt: at });
     },
     async finish(id, patch) {
       const { error } = await db
