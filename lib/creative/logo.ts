@@ -50,14 +50,53 @@ export function logoSize(bytes: Uint8Array): Omit<LogoImage, "src"> | null {
 }
 
 const MIME = { png: "image/png", jpeg: "image/jpeg", svg: "image/svg+xml" } as const;
+const LOGO_MAX_BYTES = 2_000_000;
+
+/** An address in a private, loopback, link-local or unspecified range (IPv4 or IPv6). Pure. */
+export function isPrivateAddress(ip: string): boolean {
+  const v4 = /^(?:::ffff:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/i.exec(ip);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  }
+  const v6 = ip.toLowerCase();
+  return v6 === "::" || v6 === "::1" || v6.startsWith("fe8") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb") || v6.startsWith("fc") || v6.startsWith("fd");
+}
+
+/** https, and every address the host resolves to is public. */
+async function isPublicHttps(url: string): Promise<boolean> {
+  let host: string;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "https:") return false;
+    host = u.hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return false;
+  }
+  try {
+    const { lookup } = await import("node:dns/promises");
+    const addresses = await lookup(host, { all: true });
+    return addresses.length > 0 && addresses.every((a) => !isPrivateAddress(a.address));
+  } catch {
+    return false;
+  }
+}
 
 /** The logo at `url`, ready for Satori, or null (no logo, not an image Satori draws, a site that does not answer). */
 export async function loadLogo(url: string): Promise<LogoImage | null> {
   if (!url) return null;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    // the address is typed by staff (Worlds > Logo, the site's header logo): a public https host only, no redirect,
+    // a bounded answer - the server never fetches an internal address for them
+    if (!(await isPublicHttps(url))) {
+      console.error("[tour-creatives] logo refused (not a public https address):", url);
+      return null;
+    }
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: "error" });
     if (!res.ok) return null;
+    if (Number(res.headers.get("content-length") || 0) > LOGO_MAX_BYTES) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength > LOGO_MAX_BYTES) return null;
     const size = logoSize(bytes);
     if (!size) return null;
     return { ...size, src: `data:${MIME[size.format]};base64,${Buffer.from(bytes).toString("base64")}` };

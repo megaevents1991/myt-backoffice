@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { ACTIVITIES_HEADERS, csvCell, toActivitiesCsv } from "../lib/feed/activities-csv";
 import { parseToursReport, toursActivityRows, type ToursReport, type ToursReportItem } from "../lib/feed/tours-feed";
 import { tourCreativeFile, tourCreativeHash, tourCreativeInput } from "../lib/creative/tours";
-import { fitBox, logoSize } from "../lib/creative/logo";
+import { fitBox, isPrivateAddress, logoSize } from "../lib/creative/logo";
 
 const item = (over: Partial<ToursReportItem> = {}): ToursReportItem => ({
   id: "mf-115",
@@ -111,4 +111,7 @@ assert.deepEqual(fitBox({ width: 297, height: 43 }, 440, 190), { width: 440, hei
 /* the world's logo is part of what a picture draws */
 assert.notEqual(h(item({ worldLogo: "https://mega-family.vercel.app/brand/mega-family-logo.jpg" })), base, "world logo");
 
+/* a logo is never fetched from an internal address */
+for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "0.0.0.0", "100.64.0.1", "::1", "fe80::1", "fd00::1", "::ffff:127.0.0.1"]) assert.ok(isPrivateAddress(ip), ip);
+for (const ip of ["76.76.21.21", "172.15.0.1", "172.32.0.1", "8.8.8.8", "2606:4700::6810:84e5"]) assert.ok(!isPrivateAddress(ip), ip);
 console.log("tours-feed selftest passed");
