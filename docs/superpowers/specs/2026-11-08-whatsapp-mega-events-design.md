@@ -528,31 +528,97 @@ D-1's sending window (Sunday-Thursday 09:00-20:00, Friday 09:00-13:00, never Sha
 (Alon's note on D-1). Order updates go out at any hour: a payment at 01:00 gets its message at 01:00. The date kinds
 have fixed morning slots of their own, and a flight reminder may go out on a Saturday morning.
 
-## 12. Marketing and opt-out (E4)
+## 12. Marketing and opt-out (E4 - not built this round)
 
-**Consent.** Alon chose a sentence in the booking terms over a checkbox (M-1). The idea is that a customer who bought
-also gets offers and can refuse. For customers who bought before the sentence (M-2), only a lawyer's opinion on the
-law's "existing customer" exception decides.
+### The law, as researched 08.11.2026 (not legal advice)
 
-- E4 adds the sentence to myt-main's terms and a line next to the terms checkbox at checkout. This is a cross-repo
-  change.
-- The date the sentence goes live is `EVENTS_MARKETING_TERMS_FROM`. `canSendEventsMarketing(reservation, chat)` (pure)
-  = the order was created on or after that date, and the chat is not opted out.
-- Before the lawyer answers, no marketing kind is sent to anyone else.
+Sources: the statute (§30A of the Communications Law, Amendment 40), Supreme Court rulings, and the Privacy Protection
+Authority's consent opinion of 25.02.2026. Every claim was checked against a source.
 
-**Cart reminder (C-10, Dor's ruling 1: on demand, not automatic).**
+**What the law requires:**
+
+- **It covers WhatsApp.** A WhatsApp message is an "הודעה אלקטרונית"; small-claims courts in 2025 ruled on WhatsApp ads
+  (Chen v. Rosental, Kornfeld v. Matarot).
+- **Ad or service: the test is the message's purpose.** A service message is free to send (Supreme Court, 2019, the
+  Bezeq ruling). A service message that also carries a promotion, an upsell or a link to a marketing page tends to be
+  held an ad.
+  - So the E2 / E3 templates must stay purely about the customer's own order.
+  - Meta's rules say the same: one promotional line makes a template marketing, and Meta re-categorizes automatically.
+- **Consent must be explicit, prior and in writing.** A checkbox, a form, a WhatsApp message from the customer ("כן,
+  שלחו לי מבצעים") or a recorded call all count. Unrecorded oral consent does not.
+  - Once a customer denies having consented, **the sender must prove it.** In Kornfeld the company lost because it
+    showed no sign-up record.
+  - A pre-ticked box, or consent bundled into the terms, is treated as invalid in practice (the Authority's opinion;
+    no Supreme Court holding).
+- **The existing-customer exception (§30A(c)).** All four conditions must hold:
+  1. the details were given during a purchase or a negotiation to purchase;
+  2. the customer was told they would be used for ads;
+  3. they were given a chance to refuse, and did not;
+  4. the ad is for a similar product or service.
+
+  The notice may come after the details, as long as it comes before the first ad (Lapid v. Cellcom, 2019). This is the
+  only legal footing for Alon's "a sentence in the terms" (M-1). It also needs the chance to refuse on the same screen,
+  and it reaches only similar trips of the same brand.
+- **Asking a private person for consent by WhatsApp is not allowed.** The one-time request is allowed only to a
+  business.
+- **Every ad must carry:**
+  - "פרסומת" at the start (WhatsApp has no subject line, so it is the first word);
+  - the sender's name and contact details;
+  - the right to refuse, how to do it, and a valid web address for refusals.
+
+  A "הסר" reply counts as a refusal and must be honored at once. After a refusal there is no defense for any later ad.
+- **Penalties:** up to ₪1,000 per message without proof of damage, and class actions are expressly allowed. Small
+  claims in 2025 awarded ₪200-250 per WhatsApp message. Bots sending ads everywhere say nothing about what is legal.
+- **Meta:** opt-in must name the business and say what the person agrees to receive. Meta advises a separate opt-in
+  per category. **An abandoned-cart reminder is marketing "even if requested by users."** Each WhatsApp user may
+  receive only a limited number of marketing templates, counted across all businesses.
+
+**What is unsettled (the lawyer's part):**
+
+- whether an abandoned checkout counts as a "negotiation to purchase";
+- how past buyers who were never told can be brought under the exception (in the Lapid-based ruling, the notice came on
+  an invoice email);
+- whether Mega Events and Mega Family are "similar".
+
+### Rules E4 will enforce in code
+
+- **Consent per brand and per channel**, in a new `wa_consents` table: phone (E.164), brand (company), basis
+  (`explicit` / `existing_customer`), scope, `at`, source (form URL and version / checkout order id / inbound
+  `wa_message_id` / staff id), the exact wording shown (text + version + hash), unticked by default, IP / user agent,
+  and, for `existing_customer`, the order id and the notice's wording and date.
+- Every refusal is recorded too: time, channel, scope, raw text, and when suppression took effect.
+- Every marketing send records the consent row it relied on.
+- Keep these records 7 years (the civil limitation period).
+- **Recommended capture (stronger than M-1's terms sentence):**
+  - a separate, unticked checkbox at checkout: "אני מאשר/ת לקבל ממגה איבנטס עדכונים ומבצעים בוואטסאפ ובמייל";
+  - a newsletter form with the same wording;
+  - both write `explicit` rows.
+  - A customer who writes "yes, send me offers" in a chat they started is also `explicit`, marked by staff from the
+    message.
+  - **Dor decides, when E4 starts: checkbox, or Alon's terms sentence plus a refusal option on the checkout screen**
+    (`existing_customer`, similar trips only).
+- **`canSendEventsMarketing(phone, brand)`** (pure) = an `explicit` row, or an `existing_customer` row with its four
+  conditions recorded, and no later refusal.
+  - No WhatsApp ever asks a private person for consent.
+  - Past buyers stay out until the lawyer says how to notify them.
+- **Every marketing template** starts with "פרסומת", names "מגה איבנטס" with a phone and web address, and ends with
+  "להסרה השיבו: הסר או בקרו ב-<url>".
+
+### The cart reminder (C-10, Dor's ruling 1: on demand, not automatic)
 
 - A button "שלח תזכורת להשלמת ההזמנה" on the page of a `Pending` (unpaid), `Lost` or `24Save` order inserts a
   `cart_reminder` outbox row with `requested_by`. One per order per 7 days. **My call.**
 - The link is myt-main's resume link `/order/{eventId}?orderId={id}` while it works (25 hours from `created_at`), else
   the event page.
-- A rep pressing it does not make it a non-ad under the law: it passes the same marketing gate.
+- It is marketing under both the law and Meta, so it passes the same gate.
 - Inside 24 hours of the customer writing to us, the rep can simply answer in free text from the reply box (a service
   message, no gate).
 
-**Opt-out.** "הסר" sets `wa_chats.opted_out_at`.
+### Opt-out
 
-- It stops marketing kinds on Mega Events only (M-3, C-13). Order updates continue.
+"הסר" sets `wa_chats.opted_out_at` and writes a refusal row.
+
+- It stops marketing on Mega Events only (M-3, C-13). Order updates continue.
 - A staff member can mark or clear it from the thread with a note, audited `whatsapp.consent`.
 
 ## 13. Connect day (Alon + Nir, before 09:00 - K-1, K-2, ruling 7)
