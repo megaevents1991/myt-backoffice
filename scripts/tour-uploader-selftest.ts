@@ -160,6 +160,7 @@ import {
   ticketVerdict,
   withBuiltCount,
 } from "@/lib/uploader/edit-changes";
+import { makeRealPlan } from "@/lib/uploader/test-run";
 import { cardWarnings, coveredBy, handedOffCodes, isPanelRowKey, isRunLevel, iso, nextPanelDone, PANEL_DONE_MAX, PANEL_KEY_MAX, RUN_LEVEL_CODES, runLevelRows, splitPanelRows, subjectRowId, taskSteps, type PageTaskRef, type PanelRow } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { normalizeName } from "@/lib/on-tour";
@@ -7289,6 +7290,27 @@ async function supplierSvgFetchChecks(): Promise<void> {
     ["no_artist_page", "no_hebrew_name", "no_team_page"],
     "handedOffCodes: names / subject rows marked handled drop their codes",
   );
+}
+
+// ---- Test run made real (08.11, Dor: U2 was a test run - 20 approved shows, none on the site) ----
+{
+  type St = UploaderItem["status"];
+  const it = (status: St, event_id: number | null) => ({ status, event_id }) as Pick<UploaderItem, "status" | "event_id">;
+  const plan = makeRealPlan([
+    it("approved", 1313),
+    it("approved", 1314),
+    it("ready", 1340),
+    it("rejected", 1331),
+    it("skipped", null),
+    it("question", null),
+    it("error", 1350),
+    it("approved", 1313),
+  ]);
+  same(plan.eventIds, [1313, 1314, 1340, 1350], "makeRealPlan: every built event still in play, once each - a rejected show's (deleted) event is out");
+  same(plan.liveIds, [1313, 1314], "makeRealPlan: the approved shows' events go live at once");
+  same(plan.waiting, 1, "makeRealPlan: a ready show reaches the site when approved");
+  same(makeRealPlan([]), { eventIds: [], liveIds: [], waiting: 0 }, "makeRealPlan: an empty run switches nothing");
+  same(makeRealPlan([it("approved", 0), it("approved", -3), it("ready", 1.5)]).eventIds, [], "makeRealPlan: an id that is no event id is skipped");
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----

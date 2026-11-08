@@ -119,7 +119,9 @@ import {
   writeEventTickets,
   writeLiveTicketsDropped,
   writeNamesTaskId,
+  writeEventsReal,
   writePanelDone,
+  writeRunReal,
   writeSubjectCache,
   writeVenueNameHe,
   type EventTicketsRow,
@@ -237,6 +239,7 @@ import {
   type SubjectCache,
 } from "@/lib/uploader/run-rules";
 import { isPanelRowKey, nextPanelDone, subjectRowId as subjectRowIdOf } from "@/lib/uploader/run-panel";
+import { makeRealPlan } from "@/lib/uploader/test-run";
 import type {
   ApproveAllResult,
   ApproveResult,
@@ -254,6 +257,7 @@ import type {
   LocationPickListResult,
   LocationPickResult,
   LocationProposeResult,
+  MakeRealResult,
   NamesProposeResult,
   Ok,
   OpenQuestions,
@@ -803,6 +807,48 @@ export async function getRun(runId: string, opts?: { people?: boolean }): Promis
 }
 
 /**
+ * "הפוך לריצה אמיתית" (08.11, Dor: U2 was a test run - Alon approved 20 shows and none reached the site): the run stops
+ * being a test run, then every built event of it still in play (`makeRealPlan`) stops being a test event. The run goes
+ * FIRST, so a show the build loop finishes meanwhile is born real (and approve in a real run clears a leftover mark -
+ * `unhide`). An approved show's event is listed at once (the site is revalidated); a ready one when it is approved.
+ * From then on the run's answers and rejections count for real runs too (`priorRunScope`). Audited per event (`update`,
+ * `is_test` true -> false) and `uploader.run_made_real`. `not_test` = it is not a test run (any more).
+ */
+export async function makeRunReal(runId: string): Promise<MakeRealResult> {
+  const session = await requireAdmin();
+  if (!isUuid(runId)) return fail("bad_input");
+  const { run, failed } = await readRun(runId);
+  if (failed) return fail("db_error");
+  if (!run) return fail("not_found");
+  if (!run.is_test) return fail("not_test");
+  const items = await readRunItems(runId);
+  if (items === null) return fail("db_error");
+
+  const turned = await writeRunReal(runId);
+  if (turned !== "ok") return fail(turned);
+  const plan = makeRealPlan(items);
+  const changed = await writeEventsReal(plan.eventIds);
+  const meta = { agent: AGENT, run_id: runId, via: "uploader.run_made_real" };
+  for (const id of changed ?? []) {
+    await logAudit({ action: "update", entityType: "event", entityId: id, changes: { is_test: { from: true, to: false } }, metadata: meta });
+  }
+  const live = (changed ?? []).filter((id) => plan.liveIds.includes(id)).length;
+  await logAudit({
+    action: "uploader.run_made_real",
+    entityType: "uploader_run",
+    entityId: runId,
+    metadata: { ...meta, by: session.sub, events: changed?.length ?? 0, live, waiting: plan.waiting, events_failed: changed === null },
+  });
+  if (live > 0) {
+    await revalidateMain();
+    invalidatePriceLight("rows");
+  }
+  // The run is real either way; `events_failed` = some events kept their test mark (approve in a real run clears it).
+  if (changed === null) return fail("events_not_switched");
+  return { ok: true, events: changed.length, live, waiting: plan.waiting };
+}
+
+/**
  * "טופל" on a row of the run-level panel (08.11, Dor: "צ'ק בוקס שמנקה אותה משם אחרי שטיפלתי"): the row's key is added
  * to (`done`) or taken off (`!done`) the run's `panel_done` - the board hides a checked row and lists it under
  * "N טופלו". It changes nothing else: the items' warnings stay as they were built (a later classify or rename still
@@ -1322,7 +1368,7 @@ export async function approveItem(itemId: string): Promise<ApproveResult> {
   if ("kind" in read) return { ok: false, kind: read.kind };
   const { item, run } = read;
 
-  const listed = await unhide(item);
+  const listed = await unhide(item, { real: !run.is_test });
   if (!listed.ok) return listed;
   const marked = await markApproved(session.sub, run, item, listed);
   // The event is listed whatever the record said - it is re-checked and the site refreshed either way.
@@ -1361,7 +1407,7 @@ export async function approveAll(runId: string): Promise<ApproveAllResult> {
       failed.push({ itemId: item.id, kind: "time_budget" });
       continue;
     }
-    const listed = await unhide(item);
+    const listed = await unhide(item, { real: !run.is_test });
     if (!listed.ok) {
       failed.push({ itemId: item.id, kind: listed.kind });
       continue;

@@ -46,6 +46,7 @@ import { QuestionCard } from "./question-card";
 import { RejectDialog } from "./reject-dialog";
 import { RunPanel } from "./run-panel";
 import { ShowCard } from "./show-card";
+import { TestRunBanner } from "./test-run-banner";
 import { rtl, useRunBoard } from "./use-run-board";
 
 /** The toast's line for a show put back in the queue of a STOPPED run. */
@@ -508,6 +509,8 @@ export function BoardClient({
     <TooltipProvider delayDuration={200}>
       <div ref={rootRef} dir="rtl" className="container mx-auto max-w-6xl space-y-5 pb-4 pt-6">
         <BoardHeader board={board} counts={counts} onJumpToQuestion={jumpToQuestion} onDescription={() => setDialog({ kind: "description" })} />
+
+        {board.run.is_test && <TestRunBanner runId={runId} items={items} onDone={refresh} />}
 
         {panelShown && (
           <RunPanel

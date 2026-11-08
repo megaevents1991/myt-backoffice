@@ -48,6 +48,8 @@ const ACTION_ERROR_HE: Record<string, string> = {
   // The fix wave (21.10): createRun / resumeRun's one-run-per-subject rule, the parse cap, the conditional
   // soft delete, the two-city distance rule, approveAll's skipped re-check, a ready item whose event is gone.
   run_in_progress: "כבר רצה העלאה על הנושא הזה - חכו שתסתיים או עצרו אותה",
+  not_test: "הריצה כבר אמיתית - רעננו את הדף",
+  events_not_switched: "הריצה הפכה לאמיתית, אבל חלק מהאירועים נשארו מסומנים כבדיקה - ספרו לדור",
   // Only the parse refuses for the cap; the round "אלון 1" dialogs open for a manual fill instead (ruling R13).
   rate_limited: "יותר מדי פענוחים בזמן קצר - נסו שוב בעוד כמה דקות, או מלאו את התוכנית ידנית",
   event_live: "האירוע כבר באתר - לא נמחק",

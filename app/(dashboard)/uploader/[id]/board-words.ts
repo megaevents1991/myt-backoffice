@@ -356,6 +356,23 @@ export const PANEL_DONE_SHOW = (n: number): string => (n === 1 ? "נושא אח�
 export const PANEL_DONE_HIDE = "הסתר את מה שטופל";
 export const PANEL_ALL_DONE = "הכל טופל";
 export const PANEL_DONE_FAILED = "הסימון לא נשמר";
+
+// "הפוך לריצה אמיתית" (08.11, Dor): a test run's events stay off the site even after approve - the board says so, and
+// one button makes the run real.
+export const TEST_RUN_TITLE = "ריצת בדיקה: אירועים שתאשר לא יעלו לאתר";
+export const TEST_RUN_TEXT =
+  "כל אירועי הריצה מסומנים כאירועי בדיקה, והאתר והפידים מדלגים עליהם גם אחרי אישור. אם הריצה צריכה לעלות באמת, הפכו אותה לאמיתית.";
+export const BTN_MAKE_REAL = "הפוך לריצה אמיתית";
+export const MAKE_REAL_TITLE = "להפוך את הריצה לאמיתית?";
+export const MAKE_REAL_LIVE = (n: number): string =>
+  n === 0 ? "אין עדיין הופעות מאושרות." : n === 1 ? "הופעה אחת שכבר אישרת תעלה לאתר מיד." : `${n} הופעות שכבר אישרת יעלו לאתר מיד.`;
+export const MAKE_REAL_WAITING = (n: number): string =>
+  n === 0 ? "" : n === 1 ? "הופעה אחת שמחכה לאישור תעלה כשתאשר אותה." : `${n} הופעות שמחכות לאישור יעלו כשתאשר אותן.`;
+export const MAKE_REAL_AFTER =
+  "הופעות שייבנו מעכשיו ייבנו כאמיתיות, והתשובות והדחיות של הריצה יחולו גם על ריצות אמיתיות. אין דרך חזרה לריצת בדיקה.";
+export const BTN_MAKE_REAL_CONFIRM = "כן, הפוך לאמיתית";
+export const MAKE_REAL_DONE = (live: number): string =>
+  live === 0 ? "הריצה אמיתית עכשיו" : live === 1 ? "הריצה אמיתית · הופעה אחת עלתה לאתר" : `הריצה אמיתית · ${live} הופעות עלו לאתר`;
 /** The grey line a card folds its run-level warnings into (a button to the panel). */
 export const FOLD_LINE = (n: number): string => (n === 1 ? "הערה אחת ברמת הריצה - בפאנל למעלה" : `${n} הערות ברמת הריצה - בפאנל למעלה`);
 

@@ -295,4 +295,10 @@ export type LocationPickListResult =
  * open location questions of the same city it answered too, `task_closed` = false when this question's own task did
  * not close (the answer is saved).
  */
+/**
+ * `makeRunReal` (08.11): the run is no longer a test run; `events` = how many of its events stopped being test events,
+ * `live` = of them, approved shows now on the site; `waiting` = ready shows that reach the site when approved.
+ */
+export type MakeRealResult = { ok: true; events: number; live: number; waiting: number } | { ok: false; kind: string };
+
 export type LocationPickResult = { ok: true; location_id: number; name: string; applied: number; task_closed: boolean } | { ok: false; kind: string };

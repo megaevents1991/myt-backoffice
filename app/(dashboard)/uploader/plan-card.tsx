@@ -562,7 +562,7 @@ export function PlanCard({
           <span>
             <span className="block text-sm font-medium">ריצת בדיקה</span>
             <span className="block text-xs text-muted-foreground">
-              האירועים יסומנו גם כאירועי בדיקה - בטוח גם לפני שהאתר עודכן
+              האירועים יסומנו כאירועי בדיקה ולא יעלו לאתר, גם אחרי אישור. אפשר להפוך את הריצה לאמיתית מהלוח שלה.
             </span>
           </span>
           <Switch checked={isTest} onCheckedChange={setIsTest} className="mt-0.5" />

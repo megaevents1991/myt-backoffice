@@ -317,6 +317,40 @@ export async function readPanelDone(runId: string): Promise<{ keys: string[]; re
   return { keys: Array.isArray(raw) ? raw.filter((k): k is string => typeof k === "string") : [], ready: true };
 }
 
+/** "הפוך לריצה אמיתית": the run stops being a test run. false = it was not one any more (made real meanwhile) or the write failed (logged). */
+export async function writeRunReal(runId: string): Promise<"ok" | "not_test" | "db_error"> {
+  const { data, error } = (await db.from("uploader_runs").update({ is_test: false }).eq("id", runId).eq("is_test", true).select("id")) as DbResult<{ id: string }[]>;
+  if (error) {
+    logDb("run made real", error);
+    return "db_error";
+  }
+  return (data ?? []).length > 0 ? "ok" : "not_test";
+}
+
+/**
+ * "הפוך לריצה אמיתית": these events stop being test events - only those still marked and not deleted. The ids that
+ * changed, or null when a write failed (what was written stays written). In chunks of 200 (a `.in()` travels in the URL).
+ */
+export async function writeEventsReal(ids: readonly number[]): Promise<number[] | null> {
+  const changed: number[] = [];
+  for (let at = 0; at < ids.length; at += 200) {
+    const chunk = ids.slice(at, at + 200);
+    const { data, error } = (await db
+      .from("events")
+      .update({ is_test: false })
+      .in("id", chunk)
+      .eq("is_test", true)
+      .is("is_deleted", null)
+      .select("id")) as DbResult<{ id: number }[]>;
+    if (error) {
+      logDb("events made real", error);
+      return null;
+    }
+    changed.push(...(data ?? []).map((r) => r.id));
+  }
+  return changed;
+}
+
 /** Writes the run's handled panel rows whole. */
 export async function writePanelDone(runId: string, keys: string[]): Promise<"ok" | "db_error"> {
   const { error } = (await db.from("uploader_runs").update({ panel_done: keys }).eq("id", runId)) as { error: DbError };
@@ -730,7 +764,12 @@ export type Unhidden = { ok: true; eventId: number; before: EditRow } | { ok: fa
  * update of `events.is_hidden` alone (never through `updateEvent`), only while the event is not
  * deleted. `before` = the row as staff left it, read before the un-hide (the edit diff).
  */
-export async function unhide(item: UploaderItem): Promise<Unhidden> {
+/**
+ * Approve's write: the event leaves "hidden". `real` (the run is not a test run) also clears a test mark the event may
+ * still carry - a show built a moment before its run was made real ("הפוך לריצה אמיתית", 08.11) - so approving in a real
+ * run always lists the event. A test run's approve never touches the mark (its events stay off the site by design).
+ */
+export async function unhide(item: UploaderItem, opts: { real: boolean } = { real: false }): Promise<Unhidden> {
   if (item.status !== "ready") return { ok: false, kind: "not_ready" };
   if (item.event_id === null) return { ok: false, kind: "event_gone" };
   const before = await supabaseTyped.from("events").select(EDIT_EVENT_COLUMNS).eq("id", item.event_id).is("is_deleted", null).maybeSingle();
@@ -742,7 +781,7 @@ export async function unhide(item: UploaderItem): Promise<Unhidden> {
   if (liveBlockers(item.blockers, before.data).length > 0) return { ok: false, kind: "blocked" };
   const listed = (await db
     .from("events")
-    .update({ is_hidden: false })
+    .update(opts.real ? { is_hidden: false, is_test: false } : { is_hidden: false })
     .eq("id", item.event_id)
     .is("is_deleted", null)
     .select("id")) as DbResult<{ id: number }[]>;
