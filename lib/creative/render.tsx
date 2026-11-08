@@ -6,6 +6,7 @@ import {
   BLOB_SHAPES,
   type CreativeInput,
 } from "@/components/creative/MatchTemplate";
+import { TourTemplate, type TourCreativeInput } from "@/components/creative/TourTemplate";
 
 export const SIZES = {
   // Meta feed main image is 4:5 portrait (was 1080×1080) - fills the whole
@@ -95,5 +96,20 @@ export async function renderCreativePng(
       fonts: [{ name: "brand", data: font, style: "normal", weight: 700 }],
     },
   );
+  return image.arrayBuffer();
+}
+
+/** The branded Meta picture of a tour (components/creative/TourTemplate.tsx), in the brand font. */
+export async function renderTourCreativePng(
+  input: TourCreativeInput,
+  size: CreativeSize,
+): Promise<ArrayBuffer> {
+  const { width, height } = SIZES[size];
+  const font = await loadBrandFont();
+  const image = new ImageResponse(<TourTemplate {...input} width={width} height={height} />, {
+    width,
+    height,
+    fonts: [{ name: "brand", data: font, style: "normal", weight: 700 }],
+  });
   return image.arrayBuffer();
 }

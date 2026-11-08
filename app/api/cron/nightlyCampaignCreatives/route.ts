@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guardCronRoute } from "@/lib/auth/guards";
 import { runCampaignCreatives } from "@/lib/creative/auto";
+import { drawAllTourCreatives } from "@/lib/feed/tours-publish";
 
 /**
  * Nightly campaign creatives for the Meta product feed. Walks feed-eligible
@@ -26,8 +27,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const summary = await runCampaignCreatives({ limit });
-    return NextResponse.json(summary);
+    // the tours companies' pictures first (a few tours, bounded to 60 s - lib/feed/tours-publish.ts), so a backlog of
+    // events never starves them; then the events with the rest of the run
+    const started = Date.now();
+    const tours = limit === null ? await drawAllTourCreatives(started + 60_000) : [];
+    const summary = await runCampaignCreatives({ limit, timeBudgetMs: Math.max(30_000, 250_000 - (Date.now() - started)) });
+    return NextResponse.json({ ...summary, tours });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("[campaign-cron] run failed:", message);
