@@ -33,8 +33,12 @@ const GROUP = "#6E34B1";
 const GROUP_DEEP = "#2A1640";
 const INK = "#FFFFFF";
 
-/** "#abc" / "#aabbcc" -> the same, else the fallback (a colour typed in the backoffice). */
-const hex = (v: string, fallback: string) => (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : fallback);
+/** "#aabbcc" (a "#abc" is spread out) -> the same, else the fallback. The gradients add an alpha pair to it. */
+function hex(v: string, fallback: string): string {
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(v);
+  if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`;
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : fallback;
+}
 
 /** A font size that keeps a line on one line, from the number of letters (MatchTemplate's fitOneLine). */
 function fit(text: string, max: number, width: number, min: number): number {

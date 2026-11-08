@@ -74,8 +74,17 @@ export async function drawAllTourCreatives(deadline: number): Promise<(TourCreat
   const out: (TourCreativeRun | { company: string; error: string })[] = [];
   for (const company of companies) {
     try {
-      const report = await fetchToursReport(company.siteUrl as string);
-      out.push((await ensureTourCreatives(company, report, deadline)).run);
+      const work = (async () => (await ensureTourCreatives(company, await fetchToursReport(company.siteUrl as string), deadline)).run)();
+      // the deadline is checked between tours; a picture whose photo never answers is cut here, 15 s past it
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const stop = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("out of time - the next run goes on")), Math.max(0, deadline - Date.now()) + 15_000);
+      });
+      try {
+        out.push(await Promise.race([work, stop]));
+      } finally {
+        clearTimeout(timer);
+      }
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       console.error(`[tour-creatives] ${company.slug} failed:`, error);

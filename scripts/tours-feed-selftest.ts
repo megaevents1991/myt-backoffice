@@ -77,8 +77,8 @@ assert.throws(() => parseToursReport(null));
 assert.throws(() => parseToursReport({ items: "x", skipped: [] }));
 assert.throws(() => parseToursReport(report([])), /no tour at all/);
 assert.throws(() => parseToursReport(report([item({ id: "115" })])), /without id/);
-/* all tours left out is a real, empty catalog (the site answered) */
-assert.equal(parseToursReport(report([], [{ id: "mf-1", name: "x", slug: "x", reason: "no-price", why: { missing: "", fix: "", actionable: true } }])).items.length, 0);
+/* every tour left out never empties the catalog: the previous file stays */
+assert.throws(() => parseToursReport(report([], [{ id: "mf-1", name: "x", slug: "x", reason: "no-price", why: { missing: "", fix: "", actionable: true } }])), /previous feed stays/);
 
 /* the picture's hash: what it draws, nothing else */
 const logo = "https://mega-family.vercel.app/media/2025/12/megatr-logo.png";

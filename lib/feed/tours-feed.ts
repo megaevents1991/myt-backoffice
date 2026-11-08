@@ -100,9 +100,11 @@ export function parseToursReport(value: unknown): ToursReport {
       throw new Error("the tours report has an item without id / price / link");
     }
   }
-  if (r.items.length + r.skipped.length === 0) {
-    // a site with no tour at all is a broken build, not an empty catalog: keep the previous file
-    throw new Error("the tours report lists no tour at all");
+  if (r.items.length === 0) {
+    // Never an empty catalog: Meta would drop every item at its next fetch. No tour at all is a broken build; every
+    // tour left out is as likely a read that came back empty (a key, a view) as a real sell-out. The previous file
+    // stays; the Product Feed screen shows the tours left out and why.
+    throw new Error(r.skipped.length ? `no tour can be sold in the report (${r.skipped.length} left out) - the previous feed stays` : "the tours report lists no tour at all");
   }
   return {
     generatedAt: String(r.generatedAt ?? ""),
@@ -118,7 +120,8 @@ export function parseToursReport(value: unknown): ToursReport {
 /** The company site's tours report, fetched like the Mega Events sources: no redirect, plain bytes, a live answer. */
 export async function fetchToursReport(siteUrl: string): Promise<ToursReport> {
   const url = `${siteUrl.replace(/\/$/, "")}/feeds/tours.json`;
-  const res = await fetch(url, { headers: { "Accept-Encoding": "identity", Accept: "application/json" }, cache: "no-store", redirect: "error" });
+  // a bounded wait: a cold or hung company site must never eat a cron's run (Mega Events' creatives share it)
+  const res = await fetch(url, { headers: { "Accept-Encoding": "identity", Accept: "application/json" }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`${url} returned HTTP ${res.status}`);
   if (!res.headers.get("x-feed-generated")) throw new Error(`${url} missing X-Feed-Generated - not the tours report`);
   return parseToursReport(await res.json());
