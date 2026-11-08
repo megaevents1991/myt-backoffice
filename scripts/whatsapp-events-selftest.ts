@@ -8,11 +8,13 @@ import {
   isEventsCompany,
   isOptOutWhole,
   lostToFollowUp,
+  marksFor,
   markedReservation,
   normAutoText,
   replyState,
   signupSyncs,
   suggestAutoTexts,
+  withoutWaColumns,
   type EventsResLite,
 } from "../lib/whatsapp/events/chat-rules";
 import { OPT_OUT_REPLY, type WaEvent } from "../lib/whatsapp/rules";
@@ -70,6 +72,16 @@ async function main(): Promise<void> {
   assert.deepEqual(replyState("2026-11-08T09:00:00Z", "2026-11-08T10:00:00Z"), { open: true, note: null });
   assert.deepEqual(replyState("2026-11-07T09:00:00Z", "2026-11-08T10:00:00Z"), { open: false, note: "הלקוח כתב לפני יותר מ-24 שעות - עונים מהאפליקציה" });
   assert.equal(replyState(null, "2026-11-08T10:00:00Z").open, false);
+
+  // Task 8: which orders wear the "new message" mark, and the edit page's whole-row save never writes the WhatsApp columns
+  {
+    const orders = [{ ...r(10, "Paid", "2026-09-01T00:00:00Z", "2026-12-01"), phoneKey: "542002722" }, { ...r(11, "Lost", "2026-10-01T00:00:00Z", "2026-12-05"), phoneKey: "542002722" }];
+    assert.deepEqual([...marksFor([{ phoneKey: "542002722", linkedReservationId: null }], orders, TODAY)], [10]);
+    assert.deepEqual([...marksFor([{ phoneKey: "500000000", linkedReservationId: 11 }], orders, TODAY)], [11]);
+    assert.deepEqual([...marksFor([{ phoneKey: "599999999", linkedReservationId: null }], orders, TODAY)], [], "a chat with no order marks nothing");
+    assert.deepEqual([...marksFor([], orders, TODAY)], []);
+    assert.deepEqual(withoutWaColumns({ status: "Paid", whatsapp_off_at: null, whatsapp_off_by: null, main_contact_phone_key: "x" }), { status: "Paid" });
+  }
 
   await inboundSection();
 

@@ -7,7 +7,8 @@
 import { supabase } from "@/lib/supabase-server";
 import { logAudit } from "@/lib/audit";
 import { fetchPaged } from "@/lib/supabase-paged";
-import { normAutoText, type EventsResLite } from "@/lib/whatsapp/events/chat-rules";
+import { marksFor, normAutoText, type EventsResLite } from "@/lib/whatsapp/events/chat-rules";
+import { israelToday } from "@/lib/marketing/range";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = supabase as any;
@@ -401,4 +402,61 @@ export async function lastMessages(companyId: string, keys: string[]): Promise<M
     }
   }
   return out;
+}
+
+/** The reservations list's "new message" marks: the one order each unseen chat points at (spec R-1). */
+export async function whatsappMarks(companyId: string): Promise<Set<number>> {
+  const unseen = await unseenChats(companyId);
+  if (unseen.length === 0) return new Set();
+  const orders = await reservationsByPhoneKeys(unseen.map((c) => c.phoneKey));
+  return marksFor(unseen, orders, israelToday());
+}
+
+/** Reads the per-order "no WhatsApp" switch (D-6). A deploy that beat its migration reads as "on". */
+export async function reservationWhatsappOff(reservationId: number): Promise<{ at: string; by: string | null } | null> {
+  const { data, error } = await db.from("reservations").select("whatsapp_off_at, whatsapp_off_by, main_contact_phone_key").eq("id", reservationId).maybeSingle();
+  if (error) {
+    if (error.code === "42703" || error.code === "PGRST204") return null;
+    throw new Error(`reservations: ${error.message}`);
+  }
+  const row = data as { whatsapp_off_at: string | null; whatsapp_off_by: string | null } | null;
+  return row?.whatsapp_off_at ? { at: row.whatsapp_off_at, by: row.whatsapp_off_by } : null;
+}
+
+export async function setReservationWhatsappOffAt(reservationId: number, off: boolean, by: string | null): Promise<void> {
+  const { error } = await db
+    .from("reservations")
+    .update(off ? { whatsapp_off_at: new Date().toISOString(), whatsapp_off_by: by } : { whatsapp_off_at: null, whatsapp_off_by: null })
+    .eq("id", reservationId);
+  if (error) throw new Error(`reservations: ${error.message}`);
+}
+
+/** The phone key of one order (kept by the trigger), "" when it has none or the column is not migrated yet. */
+export async function reservationPhoneKey(reservationId: number): Promise<string> {
+  const { data, error } = await db.from("reservations").select("main_contact_phone_key").eq("id", reservationId).maybeSingle();
+  if (error) return "";
+  return ((data as { main_contact_phone_key: string | null } | null)?.main_contact_phone_key ?? "") || "";
+}
+
+export type OutboxLine = { kind: string; at: string; status: string; reason: string | null; sentTo: string | null };
+
+/** The order's automatic messages (wa_outbox, phase E2) - [] before that table exists. */
+export async function outboxOfReservation(reservationId: number): Promise<OutboxLine[]> {
+  const { data, error } = await db
+    .from("wa_outbox")
+    .select("kind, created_at, finished_at, status, reason, sent_to")
+    .eq("reservation_id", reservationId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) {
+    if (missingTable(error)) return [];
+    throw new Error(`wa_outbox: ${error.message}`);
+  }
+  return ((data ?? []) as { kind: string; created_at: string; finished_at: string | null; status: string; reason: string | null; sent_to: string | null }[]).map((r) => ({
+    kind: r.kind,
+    at: r.finished_at ?? r.created_at,
+    status: r.status,
+    reason: r.reason,
+    sentTo: r.sent_to,
+  }));
 }

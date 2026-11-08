@@ -1,5 +1,8 @@
 "use server";
 
+import { withoutWaColumns } from "@/lib/whatsapp/events/chat-rules";
+import { whatsappMarks } from "@/lib/services/whatsapp-events-db";
+import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { followUpDateOnSave, isFollowUpStatus } from "@/lib/reservations/follow-up";
@@ -79,9 +82,14 @@ export async function getReservations(): Promise<ReservationListRow[]> {
   // The Euro Trip chips ride the same wait: the three itinerary columns are NOT in the
   // list select above (a deploy that beat its migration must still list everything), they
   // come from a separate best-effort read that answers an empty map on any failure.
-  const [agentLabels, itineraryMarks] = await Promise.all([
+  const [agentLabels, itineraryMarks, waMarks] = await Promise.all([
     getAgentLabelsForReservations(rows.map((r) => r.id)),
     loadItineraryMarks(supabase),
+    // best-effort, like the Euro Trip chips: a failed read leaves every row unmarked, never the list empty
+    whatsappMarks(MEGA_EVENTS_COMPANY_ID).catch((e: unknown) => {
+      console.warn("getReservations: whatsapp marks not read:", e instanceof Error ? e.message : e);
+      return new Set<number>();
+    }),
   ]);
 
   return rows.map(({ payment_info, ...row }) => ({
@@ -90,6 +98,7 @@ export async function getReservations(): Promise<ReservationListRow[]> {
     ...itineraryMarks.get(row.id),
     has_payment_info: payment_info != null,
     agent_label: agentLabels.get(row.id) ?? null,
+    ...(waMarks.has(row.id) ? { wa_new: true } : {}),
   }));
 }
 
@@ -349,7 +358,10 @@ export async function updateReservation(
   // The two cost columns are mapped by hand: cleaned here, never trusted as the form sent them.
   // A key the caller did not send is left out entirely, so a save that never touched the cost
   // (the list's inline edits, or a page loaded before the migration) cannot write it.
-  const { actual_cost_usd, actual_cost_note, ...rest } = input;
+  // The WhatsApp columns (the "no WhatsApp" switch, the trigger-kept phone key) are never written by this form: a stale
+  // edit page would undo a switch flipped meanwhile (spec 2026-11-08 section 5).
+  const { actual_cost_usd, actual_cost_note, ...restAll } = input;
+  const rest = withoutWaColumns(restAll as Record<string, unknown>) as typeof restAll;
   const cost: { actual_cost_usd?: number | null; actual_cost_note?: string | null } = {};
   if (actual_cost_usd !== undefined) cost.actual_cost_usd = cleanActualCost(actual_cost_usd);
   if (actual_cost_note !== undefined) cost.actual_cost_note = cleanCostNote(actual_cost_note);

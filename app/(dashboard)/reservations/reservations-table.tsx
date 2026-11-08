@@ -45,7 +45,8 @@ function isOfflineReservation(r: ReservationListRow) {
 
 // "Which pile am I looking at" lives in the URL (?status=Follow-up) - the dashboard and the
 // morning mail link straight to it, and a refresh keeps it.
-const STATUS_VIEWS = ["all", FOLLOW_UP_STATUS] as const;
+const WA_NEW_VIEW = "wa-new";
+const STATUS_VIEWS = ["all", FOLLOW_UP_STATUS, WA_NEW_VIEW] as const;
 type StatusView = (typeof STATUS_VIEWS)[number];
 
 const STATUS_TONE: Record<string, string> = {
@@ -587,6 +588,11 @@ export function ReservationsTable() {
               ) : (
                 "-"
               )}
+              {reservation.wa_new && (
+                <span className="text-sm" title="New WhatsApp message - open the order's WhatsApp section" aria-label="New WhatsApp message">
+                  💬
+                </span>
+              )}
               {settlementMethod === "voucher" && (
                 <span
                   className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
@@ -698,8 +704,9 @@ export function ReservationsTable() {
   const followUpReservations = listedReservations
     .filter((r) => isFollowUpStatus(r.status))
     .sort((a, b) => compareFollowUps(a, b, today));
+  const waNewReservations = listedReservations.filter((r) => r.wa_new);
   const visibleReservations =
-    statusView === FOLLOW_UP_STATUS ? followUpReservations : listedReservations;
+    statusView === FOLLOW_UP_STATUS ? followUpReservations : statusView === WA_NEW_VIEW ? waNewReservations : listedReservations;
 
   // Non-superadmins never see the Deleted column - they can't reveal deleted
   // rows via the toggle, so it would only ever read "-".
@@ -731,9 +738,10 @@ export function ReservationsTable() {
       views={[
         { id: "all", label: "All", count: listedReservations.length },
         { id: FOLLOW_UP_STATUS, label: "Follow-up", count: followUpReservations.length },
+        { id: WA_NEW_VIEW, label: "הודעות חדשות", count: waNewReservations.length },
       ]}
       activeView={statusView}
-      onViewChange={(id) => setStatusView(id === FOLLOW_UP_STATUS ? FOLLOW_UP_STATUS : "all")}
+      onViewChange={(id) => setStatusView(id === FOLLOW_UP_STATUS ? FOLLOW_UP_STATUS : id === WA_NEW_VIEW ? WA_NEW_VIEW : "all")}
       // A customer waiting for a call back today stands out in the full list too.
       getRowClassName={(row) => {
         const r = row.original;

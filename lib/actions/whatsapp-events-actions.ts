@@ -17,7 +17,13 @@ import { sendText } from "@/lib/services/whatsapp-cloud";
 import { accountOfCompany, listThread } from "@/lib/services/whatsapp-db";
 import {
   chatById,
+  chatsOfReservation,
   lastMessages,
+  outboxOfReservation,
+  reservationPhoneKey,
+  reservationWhatsappOff,
+  setReservationWhatsappOffAt,
+  type OutboxLine,
   listChats,
   markChat,
   reservationsByIds,
@@ -250,6 +256,54 @@ export async function setChatOptOut(chatId: string, optedOut: boolean, note: str
       metadata: { company_id: company.id, note: clean.slice(0, 300) },
     });
     return actionOk({ optedOutAt });
+  } catch (e) {
+    return actionFail(e, SCOPE);
+  }
+}
+
+export type ReservationWhatsapp = {
+  chats: ChatRow[];
+  thread: WaThread;
+  off: { at: string; by: string | null } | null;
+  outbox: OutboxLine[];
+};
+
+/** The order page's WhatsApp section in ONE read: its phone's chat + attached chats, the thread, the switch, the log. */
+export async function reservationWhatsapp(reservationId: number): Promise<ActionResult<ReservationWhatsapp>> {
+  try {
+    const { session, company } = await staff();
+    if (!Number.isInteger(reservationId) || reservationId <= 0) throw new UserError("Order not found.");
+    const key = await reservationPhoneKey(reservationId);
+    const [chats, off, outbox] = await Promise.all([
+      chatsOfReservation(company.id, reservationId, key),
+      reservationWhatsappOff(reservationId),
+      outboxOfReservation(reservationId),
+    ]);
+    const [rows, thread] = await Promise.all([rowsOf(company, chats), threadOfChats(company, chats)]);
+    if (!session.impersonator) {
+      const at = new Date().toISOString();
+      await Promise.all(chats.filter((c) => c.lastInAt && (!c.seenAt || c.lastInAt > c.seenAt)).map((c) => markChat(c.id, { seenAt: at, seenBy: session.sub })));
+    }
+    return actionOk({ chats: rows, thread, off, outbox });
+  } catch (e) {
+    return actionFail(e, SCOPE);
+  }
+}
+
+/** D-6: "לא לשלוח וואטסאפ להזמנה הזו" - no automatic message goes out for this order while it is on. */
+export async function setReservationWhatsappOff(reservationId: number, off: boolean): Promise<ActionResult<{ off: boolean }>> {
+  try {
+    const { session, company } = await staff();
+    if (!Number.isInteger(reservationId) || reservationId <= 0) throw new UserError("Order not found.");
+    await setReservationWhatsappOffAt(reservationId, !!off, session.sub);
+    await logAudit({
+      action: "reservation.whatsapp_off",
+      entityType: "reservation",
+      entityId: reservationId,
+      changes: { whatsapp_off: { to: !!off } },
+      metadata: { company_id: company.id },
+    });
+    return actionOk({ off: !!off });
   } catch (e) {
     return actionFail(e, SCOPE);
   }

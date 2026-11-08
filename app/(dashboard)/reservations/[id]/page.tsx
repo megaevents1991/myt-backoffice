@@ -56,6 +56,7 @@ import type { OfflineHotelRoom } from "@/types/offline-hotel.types";
 import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { otherHotelHolders, type ItineraryGroup } from "@/lib/itinerary/reservation-group";
 import { ItineraryPanel } from "./itinerary-panel";
+import { WhatsappFold } from "./whatsapp-fold";
 import { israelDate } from "@/lib/tasks/reminders";
 import { followUpLabel, isFollowUpStatus } from "@/lib/reservations/follow-up";
 import {
@@ -1188,6 +1189,9 @@ export default function ReservationDetailsPage({
       {itineraryGroup && (
         <ItineraryPanel group={itineraryGroup} currentId={reservation.id} />
       )}
+
+      {/* WhatsApp (spec 2026-11-08): folded, it reads nothing until opened. */}
+      <WhatsappFold reservationId={reservation.id} phone={reservation.main_contact_phone_number ?? null} />
 
       {/* Attribution is reference info, not daily-workflow data - it lives
           collapsed at the bottom so it's there when a "מאיפה הוא הגיע?"

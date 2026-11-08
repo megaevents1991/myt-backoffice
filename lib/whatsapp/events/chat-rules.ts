@@ -97,3 +97,28 @@ export function replyState(lastInAt: string | null, now: string): { open: boolea
   if (canSendText(lastInAt, now)) return { open: true, note: null };
   return { open: false, note: lastInAt ? "הלקוח כתב לפני יותר מ-24 שעות - עונים מהאפליקציה" : "הלקוח עוד לא כתב - עונים מהאפליקציה" };
 }
+
+/** The orders of the reservations list that wear the "new message" mark: one per unseen chat (markedReservation). */
+export function marksFor(
+  unseen: { phoneKey: string; linkedReservationId: number | null }[],
+  orders: (EventsResLite & { phoneKey: string })[],
+  today: string,
+): Set<number> {
+  const out = new Set<number>();
+  for (const chat of unseen) {
+    const own = orders.filter((o) => o.phoneKey === chat.phoneKey);
+    if (own.length === 0 && chat.linkedReservationId === null) continue;
+    const id = markedReservation(own, chat.linkedReservationId, today);
+    if (id !== null) out.add(id);
+  }
+  return out;
+}
+
+/** The reservation columns only WhatsApp writes - the edit page's whole-row save must never carry them back. */
+const WA_RESERVATION_COLUMNS = ["whatsapp_off_at", "whatsapp_off_by", "main_contact_phone_key"] as const;
+
+export function withoutWaColumns<T extends Record<string, unknown>>(row: T): Omit<T, (typeof WA_RESERVATION_COLUMNS)[number]> {
+  const copy: Record<string, unknown> = { ...row };
+  for (const c of WA_RESERVATION_COLUMNS) delete copy[c];
+  return copy as Omit<T, (typeof WA_RESERVATION_COLUMNS)[number]>;
+}

@@ -156,6 +156,8 @@ export type ReservationListRow = Pick<
   | "itinerary_of"
 > & {
   has_payment_info: boolean;
+  /** An unseen WhatsApp conversation marks this order (spec 2026-11-08 R-1). */
+  wa_new?: boolean;
   /** Which office agent the booking is credited to (utm_touches, resolved
    *  across every office) - null when unattributed. See getAgentLabelsForReservations. */
   agent_label: string | null;
