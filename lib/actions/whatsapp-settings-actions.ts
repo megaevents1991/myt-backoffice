@@ -14,7 +14,7 @@ import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { actionFail, actionOk, UserError, type ActionResult } from "@/lib/tours/action-kit";
 import { companyAudit } from "@/lib/tours/company-kit";
 import { whatsappPhone } from "@/lib/tours/cases";
-import { parseSignupInput } from "@/lib/whatsapp/rules";
+import { parseSignupInput, pickSignupPhone } from "@/lib/whatsapp/rules";
 import { tokenFor } from "@/lib/whatsapp/env";
 import { exchangeSignupCode, metaProvider, sendTemplate } from "@/lib/services/whatsapp-cloud";
 import { accountOfCompany, listTemplates as cachedTemplates, patchAccount, phoneOwner, upsertAccount, upsertTemplate, type WaAccount, type WaTemplate } from "@/lib/services/whatsapp-db";
@@ -70,7 +70,7 @@ export async function getWhatsappSettings(): Promise<ActionResult<WhatsappSettin
  * WABA's webhooks, the number is read and stored as the company's account, and - when the admin chose to share the
  * history - the six-month sync is requested (once; Meta allows it within 24 h of the signup).
  */
-export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: string; wabaId: string; sharedHistory: boolean }): Promise<ActionResult<WaAccount>> {
+export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: string | null; wabaId: string; sharedHistory: boolean }): Promise<ActionResult<WaAccount>> {
   try {
     const { company } = await manager();
     const input = parseSignupInput(raw);
@@ -79,23 +79,27 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
     if ("error" in exchanged) throw new UserError(exchanged.error);
     const token = exchanged.token;
 
-    // the ids come from the browser: the number must be one of THAT WABA's (Meta says), and not another company's row
-    // here (wa_accounts is unique on phone_number_id - an upsert would hand the number over; security review 21.10)
-    const owner = await phoneOwner(input.phoneNumberId);
-    if (owner && owner !== company.id) throw new UserError("This number is connected to another company.");
+    // the ids come from the browser: the number must be one of THAT WABA's (Meta says) - and a coexistence signup names
+    // the WABA alone, so its one number is read off it (pickSignupPhone) - and not another company's row here
+    // (wa_accounts is unique on phone_number_id - an upsert would hand the number over; security review 21.10)
     const numbers = await metaProvider.wabaPhoneNumbers(token, input.wabaId);
-    if (!numbers || !numbers.includes(input.phoneNumberId)) throw new UserError("The phone number does not belong to that WhatsApp Business Account - run the signup again.");
+    if (!numbers) throw new UserError("Meta did not answer the account's phone numbers - try the connect again.");
+    const picked = pickSignupPhone(input.phoneNumberId, numbers);
+    if (!picked.ok) throw new UserError(picked.error);
+    const phoneNumberId = picked.phoneNumberId;
+    const owner = await phoneOwner(phoneNumberId);
+    if (owner && owner !== company.id) throw new UserError("This number is connected to another company.");
 
     const subscribed = await metaProvider.subscribeApp(token, input.wabaId);
     if (!subscribed.ok) throw new UserError(`The webhook subscription failed: ${subscribed.error}`);
-    const info = await metaProvider.phoneInfo(token, input.phoneNumberId);
+    const info = await metaProvider.phoneInfo(token, phoneNumberId);
     if (!info) throw new UserError("Meta did not answer the phone number read - run the signup again.");
     const mode = info.isOnBizApp === true || info.platformType === "SMB" ? "coexistence" : "api_only";
 
     const account = await upsertAccount({
       companyId: company.id,
       wabaId: input.wabaId,
-      phoneNumberId: input.phoneNumberId,
+      phoneNumberId,
       displayPhone: info.displayPhone,
       verifiedName: info.verifiedName,
       mode,
@@ -111,7 +115,7 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
 
     const problems: string[] = [];
     // one shot each, within 24 h of the signup; the contacts do not hang on the history choice
-    const contacts = await metaProvider.requestContactsSync({ token, phoneId: input.phoneNumberId });
+    const contacts = await metaProvider.requestContactsSync({ token, phoneId: phoneNumberId });
     let contactsRequestedAt: string | null = account.contactsRequestedAt;
     if (contacts.ok) {
       contactsRequestedAt = new Date().toISOString();
@@ -119,7 +123,7 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
     } else problems.push(`The number is connected, but the contacts sync was not requested: ${contacts.error}`);
     let historyRequestedAt: string | null = account.historyRequestedAt;
     if (input.sharedHistory) {
-      const history = await metaProvider.requestHistorySync({ token, phoneId: input.phoneNumberId });
+      const history = await metaProvider.requestHistorySync({ token, phoneId: phoneNumberId });
       if (history.ok) {
         historyRequestedAt = new Date().toISOString();
         await patchAccount(account.id, { historyRequestedAt });
@@ -130,7 +134,7 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
       action: "whatsapp.connected",
       entityType: "wa_account",
       entityId: account.id,
-      metadata: { ...companyAudit(company), waba_id: input.wabaId, phone_number_id: input.phoneNumberId, mode, shared_history: input.sharedHistory },
+      metadata: { ...companyAudit(company), waba_id: input.wabaId, phone_number_id: phoneNumberId, mode, shared_history: input.sharedHistory },
     });
     return actionOk({ ...account, historyRequestedAt, contactsRequestedAt }, warning);
   } catch (e) {

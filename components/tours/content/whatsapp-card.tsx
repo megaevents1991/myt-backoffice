@@ -4,7 +4,8 @@
  * The WhatsApp card on Settings (spec 2026-10-21 section 8). Not connected: what the admin must know before the
  * coexistence signup (the app version, broadcast lists, linked computers, the history choice) and the button that
  * runs Meta's Embedded Signup - Meta's JS SDK is loaded on demand, every signup event is logged to the console and
- * kept on screen (Meta's "session logging"), and the code plus the two ids go to finishWhatsappSignup. Connected:
+ * kept on screen (Meta's "session logging"), and the code plus the account id (and the number's id when Meta names it
+ * - a coexistence signup does not, `lib/whatsapp/signup-event.ts`) go to finishWhatsappSignup. Connected:
  * the number, its mode and quality, the history state, the sending-token hint, the template cache with a sync
  * button, and a test send to the admin's own phone.
  */
@@ -16,6 +17,7 @@ import { useActionToast } from "@/hooks/use-action-toast";
 import { fmtInstant } from "@/lib/tours/format";
 import { Notice, Section } from "@/components/tours/ui";
 import { finishWhatsappSignup, sendWhatsappTest, syncWhatsappTemplates, type WhatsappSettings } from "@/lib/actions/whatsapp-settings-actions";
+import { signupFinishOf, type SignupFinish } from "@/lib/whatsapp/signup-event";
 
 const GRAPH_VERSION = "v26.0";
 const SDK_SRC = "https://connect.facebook.net/en_US/sdk.js";
@@ -61,6 +63,10 @@ function loadFbSdk(appId: string): Promise<FbSdk> {
 }
 
 type SignupEvent = { at: string; event: string; detail: string };
+type PendingSignup = { code: string | null; ids: SignupFinish | null; sent: boolean; sharedHistory: boolean };
+
+/** How long the card waits for Meta's finish event after the code arrived, before it says the ids never came. */
+const IDS_WAIT_MS = 20_000;
 
 const MODE_LABELS: Record<string, string> = { coexistence: "משותף עם אפליקציית WhatsApp Business", api_only: "API בלבד" };
 
@@ -73,12 +79,40 @@ export function WhatsappCard({ initial }: { initial: WhatsappSettings }) {
   const [testing, setTesting] = useState(false);
   const [testTemplate, setTestTemplate] = useState("");
   const [events, setEvents] = useState<SignupEvent[]>([]);
-  const ids = useRef<{ phoneNumberId: string | null; wabaId: string | null }>({ phoneNumberId: null, wabaId: null });
+  // The signup answers in two pieces, in either order: the code (FB.login's callback) and the ids (Meta's message
+  // event). The finish runs once, when both are in - a coexistence signup that is lost here has already converted the
+  // number at Meta, and its history can be requested only within 24 hours.
+  const pending = useRef<PendingSignup | null>(null);
+  const idsWait = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const log = useCallback((event: string, detail: string) => {
     console.info(`[whatsapp signup] ${event}: ${detail}`);
     setEvents((list) => [...list, { at: new Date().toISOString(), event, detail }]);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (idsWait.current) clearTimeout(idsWait.current);
+    },
+    [],
+  );
+
+  const finishIfReady = useCallback(async () => {
+    const p = pending.current;
+    if (!p || p.sent || !p.code || !p.ids) return;
+    p.sent = true;
+    if (idsWait.current) clearTimeout(idsWait.current);
+    const code = p.code;
+    const { wabaId, phoneNumberId } = p.ids;
+    if (!wabaId) {
+      log("NO_IDS", "the signup finished without a waba_id");
+      setConnecting(false);
+      return;
+    }
+    const answer = await run(() => finishWhatsappSignup({ code, phoneNumberId, wabaId, sharedHistory: p.sharedHistory }), "WhatsApp connected");
+    if (answer.success && answer.data) setSettings((s) => ({ ...s, account: answer.data ?? s.account }));
+    setConnecting(false);
+  }, [log, run]);
 
   // Meta posts the signup's progress to the opener window; only facebook.com origins are listened to
   useEffect(() => {
@@ -86,11 +120,15 @@ export function WhatsappCard({ initial }: { initial: WhatsappSettings }) {
       if (!/\.facebook\.com$/.test(event.origin) && event.origin !== "https://www.facebook.com") return;
       if (typeof event.data !== "string") return;
       try {
-        const data = JSON.parse(event.data) as { type?: string; event?: string; data?: { phone_number_id?: string; waba_id?: string; current_step?: string; error_message?: string } };
+        const data = JSON.parse(event.data) as { type?: string; event?: string; data?: { current_step?: string; error_message?: string } };
         if (data.type !== "WA_EMBEDDED_SIGNUP") return;
-        if (data.event === "FINISH") {
-          ids.current = { phoneNumberId: data.data?.phone_number_id ?? null, wabaId: data.data?.waba_id ?? null };
-          log("FINISH", `phone_number_id=${ids.current.phoneNumberId ?? "?"} waba_id=${ids.current.wabaId ?? "?"}`);
+        const finish = signupFinishOf(data.event, data.data);
+        if (finish) {
+          log(String(data.event), `phone_number_id=${finish.phoneNumberId ?? "read from the account"} waba_id=${finish.wabaId ?? "?"}`);
+          if (pending.current) {
+            pending.current.ids = finish;
+            void finishIfReady();
+          }
         } else if (data.event === "CANCEL") log("CANCEL", `at step ${data.data?.current_step ?? "?"}`);
         else if (data.event === "ERROR") log("ERROR", data.data?.error_message ?? "unknown");
         else log(data.event ?? "?", JSON.stringify(data.data ?? {}));
@@ -100,35 +138,39 @@ export function WhatsappCard({ initial }: { initial: WhatsappSettings }) {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [log]);
+  }, [log, finishIfReady]);
 
   const connect = async () => {
     const signup = settings.signup;
     if (!signup) return;
     setConnecting(true);
-    ids.current = { phoneNumberId: null, wabaId: null };
+    if (idsWait.current) clearTimeout(idsWait.current);
+    const attempt: PendingSignup = { code: null, ids: null, sent: false, sharedHistory };
+    pending.current = attempt;
     try {
       const fb = await loadFbSdk(signup.appId);
       log("START", "opening the Facebook signup");
       fb.login(
         (response) => {
-          void (async () => {
-            const code = response.authResponse?.code ?? null;
-            if (!code) {
-              log("NO_CODE", response.status ?? "the login returned no code");
-              setConnecting(false);
-              return;
-            }
-            const { phoneNumberId, wabaId } = ids.current;
-            if (!phoneNumberId || !wabaId) {
-              log("NO_IDS", "the signup finished without a phone_number_id / waba_id");
-              setConnecting(false);
-              return;
-            }
-            const answer = await run(() => finishWhatsappSignup({ code, phoneNumberId, wabaId, sharedHistory }), "WhatsApp connected");
-            if (answer.success && answer.data) setSettings((s) => ({ ...s, account: answer.data ?? s.account }));
+          const code = response.authResponse?.code ?? null;
+          if (pending.current !== attempt || attempt.sent) return;
+          if (!code) {
+            attempt.sent = true;
+            log("NO_CODE", response.status ?? "the login returned no code");
             setConnecting(false);
-          })();
+            return;
+          }
+          attempt.code = code;
+          if (attempt.ids) {
+            void finishIfReady();
+            return;
+          }
+          // no finish event yet: say so and free the button, but a late finish event still completes the connect
+          idsWait.current = setTimeout(() => {
+            if (pending.current !== attempt || attempt.sent || attempt.ids) return;
+            log("NO_IDS", "Meta sent the code but no finish event yet - see the events above");
+            setConnecting(false);
+          }, IDS_WAIT_MS);
         },
         {
           config_id: signup.configId,

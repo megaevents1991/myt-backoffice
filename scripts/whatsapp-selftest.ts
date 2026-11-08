@@ -18,7 +18,8 @@ import {
   type WaEvent,
 } from "../lib/whatsapp/rules";
 import { envKey, phoneIdFor, tokenFor } from "../lib/whatsapp/env";
-import { WA_TEXT_MAX, parseSignupInput } from "../lib/whatsapp/rules";
+import { WA_TEXT_MAX, parseSignupInput, pickSignupPhone } from "../lib/whatsapp/rules";
+import { signupFinishOf } from "../lib/whatsapp/signup-event";
 import {
   RateGate,
   createMetaProvider,
@@ -242,6 +243,25 @@ assert.equal(parseSignupInput({ code: "AQBx signup", phoneNumberId: "111222333",
 assert.equal(parseSignupInput({ code: "x".repeat(5000), phoneNumberId: "111222333", wabaId: "222333444" }).ok, false, "too long");
 assert.equal(parseSignupInput(null).ok, false);
 assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: 111222333, wabaId: "222333444" }).ok, false, "a number is not an id string");
+// a coexistence signup names the account alone (08.11.2026): no phone id is not an error, a bad one still is
+assert.deepEqual(parseSignupInput({ code: "AQBx-signup-code_123.456", wabaId: "222333444", sharedHistory: true }), { ok: true, code: "AQBx-signup-code_123.456", phoneNumberId: null, wabaId: "222333444", sharedHistory: true }, "coexistence: no phone id");
+assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: null, wabaId: "222333444" }).ok, true, "null = not named");
+assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: "  ", wabaId: "222333444" }).ok, true, "blank = not named");
+assert.equal(parseSignupInput({ code: "AQBx-signup-code_123.456", phoneNumberId: null, wabaId: "" }).ok, false, "the account id stays required");
+// ---- which number the signup connected
+assert.deepEqual(pickSignupPhone("111222333", ["999888777", "111222333"]), { ok: true, phoneNumberId: "111222333" }, "a named number of the account");
+assert.equal(pickSignupPhone("111222333", ["999888777"]).ok, false, "a named number must be the account's");
+assert.deepEqual(pickSignupPhone(null, ["111222333"]), { ok: true, phoneNumberId: "111222333" }, "coexistence: the account's one number");
+assert.equal(pickSignupPhone(null, []).ok, false, "an account with no number is not a connect");
+assert.equal(pickSignupPhone(null, ["111222333", "999888777"]).ok, false, "several numbers and none named: never a guess");
+// ---- Meta's finish events (lib/whatsapp/signup-event.ts, the card)
+assert.deepEqual(signupFinishOf("FINISH", { phone_number_id: "111222333", waba_id: "222333444", business_id: "333444555" }), { wabaId: "222333444", phoneNumberId: "111222333" }, "a new number");
+assert.deepEqual(signupFinishOf("FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", { waba_id: "222333444" }), { wabaId: "222333444", phoneNumberId: null }, "coexistence: the account alone");
+assert.equal(signupFinishOf("FINISH_ONLY_WABA", { waba_id: "222333444" }), null, "an account with no number is not a finish");
+assert.equal(signupFinishOf("CANCEL", { current_step: "x" }), null);
+assert.equal(signupFinishOf(undefined, {}), null);
+assert.deepEqual(signupFinishOf("FINISH", { phone_number_id: "<script>", waba_id: 222333444 }), { wabaId: null, phoneNumberId: null }, "only digit strings are ids");
+assert.deepEqual(signupFinishOf("FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", null), { wabaId: null, phoneNumberId: null }, "no data");
 // ---- one line for chips
 assert.equal(previewText("שלום\nמה המחיר?", 10), "שלום מה ה…");
 assert.equal(previewText("קצר", 10), "קצר");

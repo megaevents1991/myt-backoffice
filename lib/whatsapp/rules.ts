@@ -322,7 +322,12 @@ export function previewText(text: string | null | undefined, max = 80): string {
 
 // ---------------------------------------------------------------- Embedded Signup
 
-export type SignupInput = { code: string; phoneNumberId: string; wabaId: string; sharedHistory: boolean };
+/**
+ * phoneNumberId is null when the signup did not name the number: a number that stays in the WhatsApp Business app
+ * (coexistence) finishes with the account id alone (`FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`), and the server reads
+ * the number off that account (pickSignupPhone).
+ */
+export type SignupInput = { code: string; phoneNumberId: string | null; wabaId: string; sharedHistory: boolean };
 /** Meta's signup code: one token, no whitespace, a sane length. */
 const SIGNUP_CODE = /^[A-Za-z0-9_\-#.]{10,4096}$/;
 const META_ID = /^\d{6,20}$/;
@@ -333,9 +338,27 @@ export function parseSignupInput(raw: unknown): ({ ok: true } & SignupInput) | {
   if (!o) return { ok: false, error: "The signup answer is missing." };
   const code = typeof o.code === "string" ? o.code.trim() : "";
   if (!SIGNUP_CODE.test(code)) return { ok: false, error: "The signup code is missing or malformed." };
-  const phoneNumberId = typeof o.phoneNumberId === "string" ? o.phoneNumberId.trim() : "";
-  if (!META_ID.test(phoneNumberId)) return { ok: false, error: "The phone number id is missing - the signup did not finish." };
+  const rawPhone = o.phoneNumberId;
+  const absent = rawPhone === undefined || rawPhone === null || (typeof rawPhone === "string" && rawPhone.trim() === "");
+  const phoneNumberId = absent ? null : typeof rawPhone === "string" ? rawPhone.trim() : "";
+  if (phoneNumberId !== null && !META_ID.test(phoneNumberId)) return { ok: false, error: "The phone number id is malformed - the signup did not finish." };
   const wabaId = typeof o.wabaId === "string" ? o.wabaId.trim() : "";
   if (!META_ID.test(wabaId)) return { ok: false, error: "The WhatsApp Business Account id is missing - the signup did not finish." };
   return { ok: true, code, phoneNumberId, wabaId, sharedHistory: o.sharedHistory === true };
+}
+
+/**
+ * The number the signup connected, against the account's own numbers as Meta lists them. A number the browser named
+ * must be one of them (the ids come from the browser); none named = the account's one number - a coexistence account
+ * holds exactly the number that stayed in the app, so zero or several is a signup to look at, never a guess.
+ */
+export function pickSignupPhone(named: string | null, accountNumbers: string[]): { ok: true; phoneNumberId: string } | { ok: false; error: string } {
+  if (named) {
+    return accountNumbers.includes(named)
+      ? { ok: true, phoneNumberId: named }
+      : { ok: false, error: "The phone number does not belong to that WhatsApp Business Account - run the signup again." };
+  }
+  if (accountNumbers.length === 1) return { ok: true, phoneNumberId: accountNumbers[0] };
+  if (accountNumbers.length === 0) return { ok: false, error: "The WhatsApp Business Account has no phone number yet - check WhatsApp Manager, then run the signup again." };
+  return { ok: false, error: `The WhatsApp Business Account holds ${accountNumbers.length} numbers and the signup did not say which one - check WhatsApp Manager.` };
 }
