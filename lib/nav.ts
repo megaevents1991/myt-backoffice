@@ -19,6 +19,7 @@ import {
   LayoutTemplate,
   Map as MapIcon,
   MapPin,
+  MessageCircle,
   Percent,
   Plane,
   Rss,
@@ -106,6 +107,13 @@ const NAV: NavGroup[] = [
         href: "/reservations",
         icon: ClipboardList,
         keywords: "orders bookings הזמנות",
+        productType: "events",
+      },
+      {
+        name: "WhatsApp",
+        href: "/whatsapp",
+        icon: MessageCircle,
+        keywords: "whatsapp וואטסאפ שיחות הודעות chats messages",
         productType: "events",
       },
       {

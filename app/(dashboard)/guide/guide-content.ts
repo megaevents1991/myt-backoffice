@@ -132,6 +132,39 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     links: [{ label: t("Open the dashboard", "פתח את הדשבורד"), href: "/dashboard" }],
   },
   {
+    id: "whatsapp-events",
+    nav: "/whatsapp",
+    productType: "events",
+    title: t("WhatsApp - the conversations of our number", "וואטסאפ - השיחות של המספר שלנו"),
+    intro: t(
+      "Every WhatsApp conversation of the company's number 054-200-2722, in or out - what customers write, what reps answer from the WhatsApp app, and the automatic messages. Each conversation shows on every order of the same phone; the WhatsApp app keeps working as before.",
+      "כל שיחות הוואטסאפ של המספר של החברה 054-200-2722, נכנסות ויוצאות - מה שהלקוחות כותבים, מה שהנציגים עונים מאפליקציית וואטסאפ וההודעות האוטומטיות. כל שיחה מופיעה בכל ההזמנות של אותו טלפון; אפליקציית וואטסאפ ממשיכה לעבוד כרגיל.",
+    ),
+    howTo: [
+      {
+        title: t("Answer a customer", "לענות ללקוח"),
+        steps: [
+          t("Open [WhatsApp](/whatsapp). A dot = a message nobody opened yet; red \"לא נענתה\" = waiting over an hour of working time (Sunday-Thursday 9:00-17:00).", "פותחים את [וואטסאפ](/whatsapp). נקודה = הודעה שאף אחד עוד לא פתח; אדום \"לא נענתה\" = מחכה יותר משעת עבודה (א׳-ה׳ 9:00-17:00)."),
+          t("Click the conversation: the thread opens beside the list with the phone's orders.", "לוחצים על השיחה: השרשור נפתח ליד הרשימה, עם ההזמנות של אותו טלפון."),
+          t("Type in the box and press Enter. The box works only within 24 hours of the customer's last message; after that answer from the WhatsApp app (the green icon).", "כותבים בתיבה ולוחצים Enter. התיבה עובדת רק בתוך 24 שעות מההודעה האחרונה של הלקוח; אחרי זה עונים מאפליקציית וואטסאפ (האייקון הירוק)."),
+          t("No reply needed (a thank-you, a sticker)? Press \"טופל\" - the conversation stops waiting.", "לא צריך לענות (תודה, סטיקר)? לוחצים \"טופל\" - השיחה מפסיקה לחכות."),
+        ],
+      },
+      {
+        title: t("Attach a companion's phone to an order", "להצמיד טלפון של בן זוג להזמנה"),
+        steps: [
+          t("Someone writes from a phone that is on no order, but travels on one? Open the conversation and press \"הצמד להזמנה\".", "מישהו כותב מטלפון שלא מופיע באף הזמנה, אבל נוסע בהזמנה קיימת? פותחים את השיחה ולוחצים \"הצמד להזמנה\"."),
+          t("Search by order number, name or phone and pick the order. The conversation now shows on that order too. \"בטל הצמדה\" undoes it.", "מחפשים לפי מספר הזמנה, שם או טלפון ובוחרים את ההזמנה. מעכשיו השיחה מופיעה גם בה. \"בטל הצמדה\" מבטל."),
+        ],
+      },
+    ],
+    points: [
+      t("A customer with only unpaid (Lost) orders for an event ahead who starts a new conversation: their newest Lost order moves to Follow-up with today's date.", "לקוח שיש לו רק הזמנות Lost לאירוע עתידי ופותח שיחה חדשה: ההזמנה האחרונה שלו עוברת ל-Follow-up עם יום חזרה היום."),
+      t("\"הסר\" as the whole message stops marketing for this number on Mega Events only; updates about the order continue.", "\"הסר\" כהודעה שלמה עוצר שיווק למספר הזה במגה איבנטס בלבד; עדכונים על ההזמנה ממשיכים."),
+      t("Settings (admins): connect the number, and the app's own greeting / away texts - those never count as an answer.", "הגדרות (מנהלים): חיבור המספר, והודעות הפתיחה / 'לא זמינים' של האפליקציה - אלה אף פעם לא נחשבות תשובה."),
+    ],
+  },
+  {
     id: "reservations",
     nav: "/reservations",
     productType: "events",

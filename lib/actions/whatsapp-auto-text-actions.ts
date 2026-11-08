@@ -11,6 +11,8 @@ import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { actionFail, actionOk, UserError, type ActionResult } from "@/lib/tours/action-kit";
 import { normAutoText, suggestAutoTexts } from "@/lib/whatsapp/events/chat-rules";
 import { addAutoTexts, listAutoTextRows, recentEchoes, removeAutoText as removeRow } from "@/lib/services/whatsapp-events-db";
+import { getWhatsappSettings, type WhatsappSettings } from "@/lib/actions/whatsapp-settings-actions";
+import { whatsappPhone } from "@/lib/tours/cases";
 
 const SCOPE = "whatsapp-auto-text-actions";
 const NOT_ADMIN = "Company admins only.";
@@ -68,6 +70,34 @@ export async function findAutoTexts(): Promise<ActionResult<AutoTextRow[]>> {
     const found = suggestAutoTexts(await recentEchoes(company.id, LOOKBACK_DAYS));
     if (found.length) await addAutoTexts(company.id, found, "history");
     return actionOk(await listAutoTextRows(company.id), found.length ? undefined : "No repeated text was found yet.");
+  } catch (e) {
+    return actionFail(e, SCOPE);
+  }
+}
+
+export type EventsWhatsappSettingsTab = {
+  settings: WhatsappSettings | null;
+  settingsError: string | null;
+  autoTexts: AutoTextRow[];
+  /** The last 4 digits of the trial phone while NEXT_SECRET_WA_EVENTS_TRIAL_PHONE is set (spec D-7), else null. */
+  trialPhoneLast4: string | null;
+  /** EVENTS_WHATSAPP_AUTO=off - the automatic messages are stopped. */
+  autoOff: boolean;
+};
+
+/** The WhatsApp screen's settings tab in ONE read: the connect card, the app's automatic texts, trial and kill switch. */
+export async function getEventsWhatsappSettingsTab(): Promise<ActionResult<EventsWhatsappSettingsTab>> {
+  try {
+    const { company } = await manager();
+    const [settings, autoTexts] = await Promise.all([getWhatsappSettings(), listAutoTextRows(company.id)]);
+    const trial = whatsappPhone(process.env.NEXT_SECRET_WA_EVENTS_TRIAL_PHONE ?? null);
+    return actionOk({
+      settings: settings.success ? settings.data ?? null : null,
+      settingsError: settings.success ? null : settings.error,
+      autoTexts,
+      trialPhoneLast4: trial ? trial.slice(-4) : null,
+      autoOff: process.env.EVENTS_WHATSAPP_AUTO?.trim().toLowerCase() === "off",
+    });
   } catch (e) {
     return actionFail(e, SCOPE);
   }
