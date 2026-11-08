@@ -251,9 +251,11 @@ An app ECHO (a rep wrote from the app) is stored as `direction: out`, `origin: a
 section 5). A reply means someone saw it: we cannot know when a rep read a chat in the app, so "opened" = opened in the
 system OR answered anywhere (Alon's note on B-3).
 
-HISTORY (the 6-month sync on connect day) fills `wa_messages` with `origin: history`. Chats are upserted with
-`seen_at` = `answered_at` = now, so connect day raises no unseen mark and no alert. No Follow-up moves come from
-history.
+HISTORY (the 6-month sync on connect day) fills `wa_messages` with `origin: history`. A history chat is created once
+per phone per batch and stamps nothing: no `last_in_at`, no `seen_at`, no `answered_at`. With no `last_in_at` a chat is
+never unseen or unanswered, so connect day raises no mark and no alert. Stamping "now" would hide a LIVE message that
+arrived meanwhile (review, 08.11). No Follow-up moves come from history. The phone book (`smb_app_state_sync`) is never
+stored for Mega Events.
 
 STATUSES, contacts and template status are as today. A template status update writes the status alone (section 2).
 
@@ -366,7 +368,10 @@ Pure rule `unansweredFor(lastInAt, answeredAt, now)`, selftested.
   connect day.
 - Its whole body is inside `begin ... exception when others then raise warning ...; end;` and it returns null. **A
   failure inside it can never fail myt-main's checkout or a staff save.** The PGlite test proves it: break the outbox
-  table and the reservation write still succeeds.
+  table and the reservation write still succeeds. `lock_timeout` 500 ms: a lock on the queue (a migration) never holds a
+  checkout. A cleared payment result (null / `{}`) is no failure. The phone-key BEFORE trigger writes its rule out
+  instead of calling `public.phone_key` (whose EXECUTE is revoked from the public roles), so it can never fail a write
+  either.
 - `insert ... on conflict (dedupe_key) do nothing`.
 
 | kind | fires when (old -> new) | dedupe |
@@ -420,6 +425,13 @@ selftested). The answer is send, skip with a reason, or wait. It checks, in orde
 
 Then the send:
 
+- **A row is claimed before it is sent** (`pending -> sending`, `claimed_at`, only while still pending), so two drains at
+  once never send it twice. It is finished only from `sending`. A row left `sending` for 10 minutes (a crash mid-send) is
+  closed `failed` with "נקטע באמצע שליחה - ייתכן שנשלח", never re-sent. One row's failure never stops the rows behind it.
+- `payment_failed` is dropped when the order was paid (`from_status` Paid, or its `payment_received` went out - myt-main
+  may write Pending over a Paid row). It is also dropped when ANY newer order of the same phone for the same event
+  exists: paid, or still being paid, the newest attempt speaks for all.
+- A trial phone that is set but unusable fails closed ("טלפון הניסיון לא תקין"), never to the customer.
 - `sendTemplate` with `origin: automation` and `reservation_id`.
 - **Trial (D-7):** while `NEXT_SECRET_WA_EVENTS_TRIAL_PHONE` is set, the message goes to THAT phone, with the
   customer's parameters, and `sent_to` records it. The customer gets nothing.
