@@ -15,6 +15,7 @@ import { actionFail, actionOk, UserError, type ActionResult } from "@/lib/tours/
 import { companyAudit } from "@/lib/tours/company-kit";
 import { whatsappPhone } from "@/lib/tours/cases";
 import { parseSignupInput, pickSignupPhone } from "@/lib/whatsapp/rules";
+import { signupSyncs } from "@/lib/whatsapp/events/chat-rules";
 import { tokenFor } from "@/lib/whatsapp/env";
 import { exchangeSignupCode, metaProvider, sendTemplate } from "@/lib/services/whatsapp-cloud";
 import { accountOfCompany, listTemplates as cachedTemplates, patchAccount, phoneOwner, upsertAccount, upsertTemplate, type WaAccount, type WaTemplate } from "@/lib/services/whatsapp-db";
@@ -34,8 +35,10 @@ export type WhatsappSettings = {
   staffPhone: string | null;
 };
 
+/** A company admin of a company that sells tours (Mega Family) or events (Mega Events - spec 2026-11-08 section 6). */
 async function manager() {
-  const { session, company } = await requireCompany("tours");
+  const { session, company } = await requireCompany();
+  if (!company.productTypes.includes("tours") && !company.productTypes.includes("events")) throw new UserError(NOT_ADMIN);
   if (!isManagerRole(session.role)) throw new UserError(NOT_ADMIN);
   return { session, company };
 }
@@ -115,12 +118,14 @@ export async function finishWhatsappSignup(raw: { code: string; phoneNumberId: s
 
     const problems: string[] = [];
     // one shot each, within 24 h of the signup; the contacts do not hang on the history choice
-    const contacts = await metaProvider.requestContactsSync({ token, phoneId: phoneNumberId });
     let contactsRequestedAt: string | null = account.contactsRequestedAt;
-    if (contacts.ok) {
-      contactsRequestedAt = new Date().toISOString();
-      await patchAccount(account.id, { contactsRequestedAt });
-    } else problems.push(`The number is connected, but the contacts sync was not requested: ${contacts.error}`);
+    if (signupSyncs(company.productTypes).contacts) {
+      const contacts = await metaProvider.requestContactsSync({ token, phoneId: phoneNumberId });
+      if (contacts.ok) {
+        contactsRequestedAt = new Date().toISOString();
+        await patchAccount(account.id, { contactsRequestedAt });
+      } else problems.push(`The number is connected, but the contacts sync was not requested: ${contacts.error}`);
+    }
     let historyRequestedAt: string | null = account.historyRequestedAt;
     if (input.sharedHistory) {
       const history = await metaProvider.requestHistorySync({ token, phoneId: phoneNumberId });

@@ -10,6 +10,7 @@ import {
   lostToFollowUp,
   markedReservation,
   normAutoText,
+  signupSyncs,
   suggestAutoTexts,
   type EventsResLite,
 } from "../lib/whatsapp/events/chat-rules";
@@ -59,6 +60,10 @@ async function main(): Promise<void> {
   assert.equal(markedReservation(rs, 3, TODAY), 3);
   assert.equal(markedReservation([r(4, "Lost", "2026-10-01T00:00:00Z", "2026-01-01"), r(5, "Lost", "2026-10-02T00:00:00Z", "2026-01-01")], null, TODAY), 5);
   assert.equal(markedReservation([], null, TODAY), null);
+
+  // Task 5: what a signup asks Meta to sync - no phone book for Mega Events (Nir's phone may hold personal contacts)
+  assert.deepEqual(signupSyncs(["events"]), { contacts: false, history: true });
+  assert.deepEqual(signupSyncs(["tours"]), { contacts: true, history: true });
 
   await inboundSection();
 

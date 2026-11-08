@@ -83,3 +83,11 @@ export function markedReservation(rs: EventsResLite[], linkedId: number | null, 
   const newest = [...live].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return newest[0]?.id ?? null;
 }
+
+/**
+ * What a signup asks Meta to sync. Mega Events: no phone book - nothing in its design reads `wa_contacts`, and the
+ * phone book on the number's phone may hold personal contacts (spec section 6). The history is always offered.
+ */
+export function signupSyncs(productTypes: readonly string[]): { contacts: boolean; history: boolean } {
+  return { contacts: !isEventsCompany(productTypes), history: true };
+}
