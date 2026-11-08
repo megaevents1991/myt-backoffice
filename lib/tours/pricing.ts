@@ -16,6 +16,9 @@
  *   3 adults + kid = 2 x adult-in-double + third-adult + that fourth person
  *   (until 14.10.2026 these two needed fourth-kid itself, as on WordPress, and most dates never offered
  *   them; Alon: "לא נותן 3 מבוגרים וילד", Dor chose the same fallback - migration 20261014230000)
+ *   couple + 3 kids = two rooms: 4 x adult-in-double + third-kid (the double, and the triple whose third
+ *   bed is the child's - Daniel, 08.11.2026; it was 2 x double + third-kid + 2 x fourth person,
+ *   migration 20261108180000)
  *
  * Pure functions, no I/O. The same table lives in the customer site
  * (mega-family/lib/data/departures.mjs) and in the database, which prices online
@@ -83,7 +86,8 @@ export function roomPrice(key: string, m: PriceMatrix): number | null {
     case "three_adults_kid":
       return double != null && thirdAdult != null && extra != null ? 2 * double + thirdAdult + extra : null;
     case "couple_3_kids":
-      return double != null && thirdKid != null && extra != null ? 2 * double + thirdKid + 2 * extra : null;
+      // two rooms: the double, and the triple whose third bed is the child's (Daniel, 08.11.2026)
+      return double != null && thirdKid != null ? 4 * double + thirdKid : null;
     default:
       return null;
   }
