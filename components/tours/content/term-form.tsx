@@ -145,6 +145,14 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
             folder="terms"
             hint="Shown faintly behind the name on the world's tile. Empty = the first hero image."
           />
+          <ImageUrlField
+            label="Logo"
+            value={form.logo}
+            onChange={(logo) => set("logo", logo)}
+            siteUrl={saved.siteUrl}
+            folder="terms"
+            hint='The world&apos;s logo on the branded Meta pictures of its tours (Website > Product Feed), with the small "מגה תיירות" in the corner. PNG, JPG or SVG: a logo on white (Mega Family) is drawn as a white badge; light letters on a clear background (Mega Events) sit on the photo. Empty = "מגה תיירות" alone.'
+          />
           <p className="text-xs text-muted-foreground">
             Any color works as the world&apos;s color: where white text would not read on it, the site darkens it until it does. The second color is for a world whose logo has two (Mega Family: the red of &quot;פמילי&quot; and the blue of &quot;מגה&quot;): the buttons, links and tints take the world color, while the header, the footer, the title card and the dark cards take the second color. Empty = darker shades of the world color. The booking button is the site&apos;s red unless the world sets its own color for it (Mega Family: its blue, so no big red on its pages); a red world lends it its own red.
           </p>

@@ -1,10 +1,16 @@
 import { bidiVisual } from "@/components/creative/MatchTemplate";
+import { fitBox, type LogoImage } from "@/lib/creative/logo";
 
 /**
  * The branded Meta picture of a TOUR (mega-family docs/plans/PRODUCT-FEED-PLAN.md): the tour's own photo, the company's
  * logo, the tour's name, where it goes, what the price holds, its date and the price as the site's card prints it
  * ("החל מ-1,555$ לאדם", the card's note under it, the price before a discount struck through). Every word comes from
  * the site's tours report - nothing is invented here. Rendered by lib/creative/render.tsx renderTourCreativePng.
+ *
+ * The logo is the tour's WORLD's (Dor, 08.11: "לפי עולמות - מגה איבנטס, מגה פמילי"; backoffice Categories & Tags >
+ * Worlds > Logo), and the group's "מגה תיירות" sits small in the top-right corner, so the brand house shows; a tour
+ * of no world (or a world without a logo) carries the group's logo alone, in the middle. A logo on white (a JPEG -
+ * Mega Family's swoosh) is drawn as a rounded badge; light letters on a clear background sit on the photo.
  *
  * Satori: flex only, no BiDi (Hebrew goes through bidiVisual), no objectPosition. The 4:5 picture keeps everything
  * that must survive Meta's square crop inside SAFE_INSET from the top and bottom, as MatchTemplate does.
@@ -26,7 +32,24 @@ export type TourCreativeInput = {
   /** The world's colours; "" = the group's purple. */
   color: string;
   colorDeep: string;
+  /** The tour's world's logo, absolute ("" = none). */
+  worldLogo?: string;
 };
+
+/** The two logos as lib/creative/render.tsx loaded them (null = not drawn). */
+export type TourLogos = { world: LogoImage | null; group: LogoImage | null };
+
+function Logo({ img, maxW, maxH, radius }: { img: LogoImage; maxW: number; maxH: number; radius: number }) {
+  const box = fitBox(img, maxW, maxH);
+  const badge = img.format === "jpeg";
+  return (
+    // (Satori draws boxShadow "none" as a black box at the origin: a plain logo gets no shadow key at all)
+    <div style={{ display: "flex", width: box.width, height: box.height, ...(badge ? { borderRadius: radius, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,0.35)" } : {}) }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={img.src} width={box.width} height={box.height} alt="" />
+    </div>
+  );
+}
 
 const SAFE_INSET = 148;
 const GROUP = "#6E34B1";
@@ -46,7 +69,7 @@ function fit(text: string, max: number, width: number, min: number): number {
   return Math.min(max, Math.max(min, est));
 }
 
-export function TourTemplate(props: TourCreativeInput & { width: number; height: number }) {
+export function TourTemplate(props: TourCreativeInput & { width: number; height: number; logos: TourLogos }) {
   const { width, height } = props;
   const portrait = height > width;
   const brand = hex(props.color, GROUP);
@@ -62,13 +85,19 @@ export function TourTemplate(props: TourCreativeInput & { width: number; height:
       <div style={{ position: "absolute", left: 0, top: 0, width, height: Math.round(height * 0.3), display: "flex", background: `linear-gradient(180deg, ${deep}E6 0%, ${deep}00 100%)` }} />
       <div style={{ position: "absolute", left: 0, top: Math.round(height * 0.42), width, height: Math.round(height * 0.58), display: "flex", background: `linear-gradient(0deg, ${deep}FA 0%, ${deep}C0 55%, ${deep}00 100%)` }} />
 
-      {/* the logo */}
+      {/* the world's logo in the middle (the group's when the tour has none), the group's small in the top-right corner */}
       <div style={{ display: "flex", justifyContent: "center", paddingTop: portrait ? SAFE_INSET : 26 }}>
-        {props.logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={props.logo} width={portrait ? 360 : 200} height={portrait ? 99 : 55} alt="" style={{ objectFit: "contain" }} />
+        {props.logos.world ? (
+          <Logo img={props.logos.world} maxW={portrait ? 440 : 250} maxH={portrait ? 190 : 104} radius={portrait ? 22 : 12} />
+        ) : props.logos.group ? (
+          <Logo img={props.logos.group} maxW={portrait ? 360 : 200} maxH={portrait ? 99 : 55} radius={0} />
         ) : null}
       </div>
+      {props.logos.world && props.logos.group ? (
+        <div style={{ position: "absolute", top: portrait ? SAFE_INSET : 26, right: portrait ? 44 : 26, display: "flex" }}>
+          <Logo img={props.logos.group} maxW={portrait ? 170 : 104} maxH={portrait ? 47 : 29} radius={0} />
+        </div>
+      ) : null}
 
       {/* the tour */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: portrait ? SAFE_INSET : 30, paddingLeft: 40, paddingRight: 40 }}>

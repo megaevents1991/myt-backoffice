@@ -555,6 +555,8 @@ export interface TermForm {
   /** A destination, artist, tag or category page stays in the site's menus even while it lists no tour. */
   menuAlways: boolean;
   icon: string;
+  /** A world's logo (terms.data.logo): the branded Meta pictures of its tours carry it, with the group's small logo in the corner. */
+  logo: string;
   externalUrl: string;
   /** A tag that is a sub-category of a world: that audience's slug ("" = none). */
   worldSlug: string;

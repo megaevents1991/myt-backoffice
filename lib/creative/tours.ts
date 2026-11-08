@@ -15,7 +15,7 @@ import type { FeedCompany, ToursReport, ToursReportItem, TourCreative } from "@/
  */
 
 /** Bump when the template changes what it draws, so every tour is drawn again. */
-export const TOUR_RENDER_VERSION = "t2";
+export const TOUR_RENDER_VERSION = "t3";
 const BUCKET = "creatives";
 const SIZES: CreativeSize[] = ["square", "banner"];
 
@@ -35,6 +35,7 @@ export function tourCreativeInput(item: ToursReportItem, logo: string): TourCrea
     logo,
     color: item.color,
     colorDeep: item.colorDeep,
+    worldLogo: item.worldLogo ?? "",
   };
 }
 
@@ -55,6 +56,7 @@ export function tourCreativeHash(input: TourCreativeInput): string {
     input.logo,
     input.color,
     input.colorDeep,
+    input.worldLogo ?? "",
   ];
   return createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 12);
 }

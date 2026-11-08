@@ -7,6 +7,7 @@ import {
   type CreativeInput,
 } from "@/components/creative/MatchTemplate";
 import { TourTemplate, type TourCreativeInput } from "@/components/creative/TourTemplate";
+import { loadLogo, type LogoImage } from "@/lib/creative/logo";
 
 export const SIZES = {
   // Meta feed main image is 4:5 portrait (was 1080×1080) - fills the whole
@@ -99,14 +100,22 @@ export async function renderCreativePng(
   return image.arrayBuffer();
 }
 
+/** Logos fetched once per run (every tour of a world carries the same one). */
+const logoCache = new Map<string, Promise<LogoImage | null>>();
+function logoOf(url: string): Promise<LogoImage | null> {
+  if (!url) return Promise.resolve(null);
+  if (!logoCache.has(url)) logoCache.set(url, loadLogo(url));
+  return logoCache.get(url) as Promise<LogoImage | null>;
+}
+
 /** The branded Meta picture of a tour (components/creative/TourTemplate.tsx), in the brand font. */
 export async function renderTourCreativePng(
   input: TourCreativeInput,
   size: CreativeSize,
 ): Promise<ArrayBuffer> {
   const { width, height } = SIZES[size];
-  const font = await loadBrandFont();
-  const image = new ImageResponse(<TourTemplate {...input} width={width} height={height} />, {
+  const [font, world, group] = await Promise.all([loadBrandFont(), logoOf(input.worldLogo ?? ""), logoOf(input.logo)]);
+  const image = new ImageResponse(<TourTemplate {...input} width={width} height={height} logos={{ world, group }} />, {
     width,
     height,
     fonts: [{ name: "brand", data: font, style: "normal", weight: 700 }],

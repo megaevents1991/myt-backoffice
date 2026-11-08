@@ -406,6 +406,7 @@ const termSchema = z.object({
   ctaColor: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
   menuAlways: z.boolean(),
   icon: imagePath,
+  logo: imagePath,
   externalUrl: z.string().trim().max(600).refine((v) => v === "" || /^https?:\/\//i.test(v), "A link to another site starts with https://"),
   worldSlug: z.string().trim().max(200),
   // which parts a page may hold depends on the term's kind: checked in saveTourTerm (termSectionsSchema)
@@ -1574,6 +1575,7 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         ctaColor: dataText(data, "ctaColor"),
         menuAlways: data.menuAlways === true,
         icon: dataText(data, "icon"),
+        logo: dataText(data, "logo"),
         externalUrl: dataText(data, "externalUrl"),
         worldSlug: dataText(data, "worldSlug"),
         sections: isTermPageKind(row.kind) ? readTermSections(row.kind, data.sections, extras) : [],
@@ -1632,6 +1634,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
       patch.setData("colorDeep", dataText(stored, "colorDeep"), input.colorDeep);
       patch.setData("ctaColor", dataText(stored, "ctaColor"), input.ctaColor);
       patch.setData("icon", dataText(stored, "icon"), input.icon);
+      patch.setData("logo", dataText(stored, "logo"), input.logo);
       patch.setData("externalUrl", dataText(stored, "externalUrl"), input.externalUrl);
       // the key the tours of this world carry; given once, when the audience becomes a world
       if (!dataText(stored, "worldKey") && (input.brandName || input.color)) {

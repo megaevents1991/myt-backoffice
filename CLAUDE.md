@@ -1225,7 +1225,11 @@ converted -, live dates, links, labels, the tours left out with what is missing 
   `nightlyCampaignCreatives` cron BEFORE the events (60 s at most), named by a hash of what they draw -
   `creatives/output/auto/<slug>/tour-<id>-<hash>-{square|banner}.png` - so no table and no write to `tours.packages`. Bump
   `TOUR_RENDER_VERSION` when the template changes. An item without its drawn picture goes out with the tour's own photo (Mega Events
-  drops such an event). Every word on it is the report's (`bidiVisual` for the Hebrew). Look at them:
+  drops such an event). Every word on it is the report's (`bidiVisual` for the Hebrew). **The logo is the tour's world's**
+  (Dor 08.11: "לפי עולמות"; Categories & Tags > Worlds > **Logo**, `terms.data.logo`, migration `20261108150000` set Mega
+  Family's swoosh and Mega Events' wordmark), with the group's "מגה תיירות" small in the top-right corner; no world logo =
+  the group's alone in the middle. `lib/creative/logo.ts` reads PNG / JPEG / SVG (a JPEG = a logo on white, drawn as a rounded
+  badge; WebP is not drawn). Satori draws `boxShadow: "none"` as a black box - leave the key out. Look at them:
   `npx tsx --env-file=.env.local scripts/tour-creative-render.ts <dir> [report-url]`.
 - **Screen:** Website > **Product Feed** (`/tours/feed`, `requireCompany("tours")` - no tours_agent): the address, the last publish,
   every item with its picture and labels, the tours left out with "מה חסר / מה עושים" and an Edit link, the CSV, **Sync now** (draws

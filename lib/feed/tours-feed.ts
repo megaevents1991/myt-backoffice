@@ -47,6 +47,8 @@ export type ToursReportItem = {
   color: string;
   colorDeep: string;
   world: string;
+  /** The world's logo, absolute ("" = the tour carries the group's logo alone). */
+  worldLogo?: string;
   onSale: boolean;
 };
 

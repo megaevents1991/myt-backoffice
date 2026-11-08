@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { ACTIVITIES_HEADERS, csvCell, toActivitiesCsv } from "../lib/feed/activities-csv";
 import { parseToursReport, toursActivityRows, type ToursReport, type ToursReportItem } from "../lib/feed/tours-feed";
 import { tourCreativeFile, tourCreativeHash, tourCreativeInput } from "../lib/creative/tours";
+import { fitBox, logoSize } from "../lib/creative/logo";
 
 const item = (over: Partial<ToursReportItem> = {}): ToursReportItem => ({
   id: "mf-115",
@@ -94,5 +95,20 @@ assert.equal(h(item({ description: "אחר" })), base, "the description is not d
 assert.equal(h(item({ link: "https://elsewhere/" })), base, "the link is not drawn");
 assert.match(base, /^[0-9a-f]{12}$/);
 assert.equal(tourCreativeFile("mf-115", base, "square"), `tour-mf-115-${base}-square.png`);
+
+/* a world's logo: measured from its bytes (PNG, JPEG, SVG), drawn into a box with its proportions */
+const png = new Uint8Array(33);
+png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 200, 0, 0, 0, 55]);
+assert.deepEqual(logoSize(png), { format: "png", width: 200, height: 55 });
+const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 17, 8, 0, 173, 1, 53, 3, 0, 0, 0, 0]);
+assert.deepEqual(logoSize(jpeg), { format: "jpeg", width: 309, height: 173 });
+const svg = (root: string) => new TextEncoder().encode(`<?xml version="1.0"?>${root}<path d="M0 0"/></svg>`);
+assert.deepEqual(logoSize(svg('<svg width="297" height="43" viewBox="0 0 297 43" xmlns="http://www.w3.org/2000/svg">')), { format: "svg", width: 297, height: 43 });
+assert.deepEqual(logoSize(svg('<svg viewBox="0 0 174 25" fill="none">')), { format: "svg", width: 174, height: 25 });
+assert.equal(logoSize(new TextEncoder().encode("RIFF....WEBPVP8 ")), null, "a WebP is not drawn");
+assert.deepEqual(fitBox({ width: 309, height: 173 }, 440, 190), { width: 339, height: 190 });
+assert.deepEqual(fitBox({ width: 297, height: 43 }, 440, 190), { width: 440, height: 64 });
+/* the world's logo is part of what a picture draws */
+assert.notEqual(h(item({ worldLogo: "https://mega-family.vercel.app/brand/mega-family-logo.jpg" })), base, "world logo");
 
 console.log("tours-feed selftest passed");
