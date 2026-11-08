@@ -2,6 +2,7 @@
 
 import { withoutWaColumns } from "@/lib/whatsapp/events/chat-rules";
 import { whatsappMarks } from "@/lib/services/whatsapp-events-db";
+import { drainOutbox, drainOutboxFor } from "@/lib/services/whatsapp-events-outbox";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
@@ -420,6 +421,7 @@ export async function updateReservation(
     ...(notice ? { metadata: { actual_cost_skipped: "columns not migrated yet" } } : {}),
   });
   if (toRelease) await releaseOfflineInventory(toRelease);
+  await drainOutboxFor(id);
   return { ...(data[0] as Reservation), ...(notice ? { notice } : {}) };
 }
 
@@ -493,6 +495,8 @@ export async function setTravelMaterialsSent(
     entityId: id,
     metadata: { travel_materials_sent: sent },
   });
+  // the trigger queued "materials sent" (WhatsApp, spec 2026-11-08) - it leaves now, never failing this action
+  await drainOutboxFor(id);
   revalidatePath(`/reservations/${id}`);
   return { ok: true };
 }
@@ -543,6 +547,11 @@ export async function updateReservationsStatus(ids: number[], status: string) {
   for (const r of toRelease) {
     await releaseOfflineInventory(r);
   }
+  // a bulk move may queue one WhatsApp update per order (spec 2026-11-08): one drain pass inside its budget, the cron
+  // sends what is left within two minutes
+  await drainOutbox({ budgetMs: 8000, dryRun: false }).catch((e: unknown) =>
+    console.warn("updateReservationsStatus: whatsapp drain failed:", e instanceof Error ? e.message : e),
+  );
   return data as Reservation[];
 }
 
@@ -574,6 +583,7 @@ export async function cancelReservation(id: number): Promise<Reservation> {
   });
 
   await releaseOfflineInventory(reservation);
+  await drainOutboxFor(id);
 
   revalidatePath(`/reservations/${id}`);
   revalidatePath("/reservations");

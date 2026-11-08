@@ -21,6 +21,7 @@ import { OPT_OUT_REPLY, type WaEvent } from "../lib/whatsapp/rules";
 import { isAlertTime, unansweredFor, workingMinutesBetween } from "../lib/whatsapp/events/working-time";
 import { outboxDecision, type OrderLite, type OutboxKind, type OutboxRowLite } from "../lib/whatsapp/events/outbox";
 import { cleanParam, documentsOf, greetingName, paramsFor, type ParamSource } from "../lib/whatsapp/events/params";
+import { drainOutbox, type DrainDeps, type DrainRow } from "../lib/services/whatsapp-events-outbox";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { templateUpsertRow, type WaAccount, type WaMessageInsert } from "../lib/services/whatsapp-db";
 import type { EventsOrderLite, WaChat } from "../lib/services/whatsapp-events-db";
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
     assert.deepEqual(paramsFor("event_today", { ...src, place: "אצטדיון הית׳אד, מנצ׳סטר" }), ["דנה", "אוואסיס", "אצטדיון הית׳אד, מנצ׳סטר"]);
   }
 
+  await drainSection();
   await inboundSection();
 
   console.log("whatsapp-events selftest: OK");
@@ -385,6 +387,90 @@ async function inboundSection(): Promise<void> {
     assert.equal(row.status, "APPROVED");
     const full = templateUpsertRow("co-ev", { name: "x", language: "he", category: "UTILITY", status: "APPROVED", body: "שלום {{1}}", paramCount: 1 });
     assert.equal(full.body, "שלום {{1}}");
+  }
+}
+
+// ------------------------------------------------------------ Task 12: the drain over injected deps
+function makeDrainDeps(opts: { rows: DrainRow[]; trialPhone?: string | null; sendFails?: boolean; auto?: boolean }) {
+  const sends: { to: string; template: string; params: string[]; reservationId: number }[] = [];
+  const finishes: { id: string; patch: Record<string, unknown> }[] = [];
+  const rows = opts.rows.map((r) => ({ ...r }));
+  const deps: DrainDeps = {
+    now: () => new Date("2026-11-08T10:00:00Z"),
+    env: () => ({ auto: opts.auto ?? true, trialPhone: opts.trialPhone ?? null }),
+    pendingRows: async ({ reservationId }) => rows.filter((r) => r.status === "pending" && (reservationId === undefined || r.reservationId === reservationId)),
+    approved: async () => new Set(["payment_received:he", "payment_failed:he"]),
+    load: async (id) => ({
+      order: { id, status: "Paid", isDeleted: false, whatsappOffAt: null, itineraryGroup: null, phone: "054-200-2722", phoneKey: "542002722", eventId: 1, eventDate: "2026-12-01", createdAt: "2026-10-01T00:00:00Z", paymentReceivedSent: false },
+      source: { firstName: "דנה", orderId: id, eventLabel: "אוואסיס במנצ׳סטר", eventName: "אוואסיס", resumeUrl: "https://x/order/1", documents: "אישור ההזמנה" },
+    }),
+    newerPaidSameEvent: async () => false,
+    send: async (to, template, params, reservationId) => {
+      sends.push({ to, template, params, reservationId });
+      return opts.sendFails ? { ok: false, error: "(#131026) undeliverable" } : { ok: true };
+    },
+    finish: async (id, patch) => {
+      finishes.push({ id, patch: patch as Record<string, unknown> });
+      const r = rows.find((x) => x.id === id);
+      if (r) {
+        r.status = patch.status;
+        r.attempts = patch.attempts;
+      }
+    },
+  };
+  return { deps, sends, finishes, rows };
+}
+const drainRow = (id: string, kind: OutboxKind, o: Partial<DrainRow> = {}): DrainRow => ({
+  id, kind, reservationId: 7, dueAt: "2026-11-08T09:00:00Z", fromStatus: "Pending", createdAt: "2026-11-08T08:59:00Z", status: "pending", attempts: 0, ...o,
+});
+
+async function drainSection(): Promise<void> {
+  // trial sends to the trial phone, with the customer's parameters
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")], trialPhone: "0525287144" });
+    const out = await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.equal(t.sends.length, 1);
+    assert.equal(t.sends[0].to, "972525287144", "trial sends to the trial phone");
+    assert.deepEqual(t.sends[0].params, ["דנה", "7", "אוואסיס במנצ׳סטר", "אישור ההזמנה"]);
+    assert.equal(t.finishes[0].patch.status, "sent");
+    assert.equal(t.finishes[0].patch.sentTo, "972525287144");
+    assert.equal(t.finishes[0].patch.reason, "נשלח לטלפון הניסיון");
+    assert.equal(out.sent, 1);
+  }
+  // without trial, to the customer
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")] });
+    await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.equal(t.sends[0].to, "972542002722");
+    assert.equal(t.finishes[0].patch.reason, null);
+  }
+  // dry run sends nothing and finishes nothing
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")] });
+    const out = await drainOutbox({ budgetMs: 5000, dryRun: true }, t.deps);
+    assert.equal(t.sends.length, 0, "dry run sends nothing");
+    assert.equal(t.finishes.length, 0, "dry run finishes nothing");
+    assert.equal(out.lines[0].result, "send");
+  }
+  // a failed send retries twice then stays failed
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_received")], sendFails: true });
+    for (let i = 0; i < 4; i++) await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.deepEqual(t.finishes.map((f) => [f.patch.status, f.patch.attempts]), [["pending", 1], ["pending", 2], ["failed", 3]], "two retries, then failed");
+    assert.match(String(t.finishes[2].patch.reason), /131026/);
+  }
+  // a skip is final, with its reason
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "materials_sent")] });
+    await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.deepEqual([t.finishes[0].patch.status, t.finishes[0].patch.reason], ["skipped", "התבנית לא אושרה"]);
+  }
+  // pending wait is left pending
+  {
+    const t = makeDrainDeps({ rows: [drainRow("a", "payment_failed", { dueAt: "2026-11-08T10:10:00Z" })] });
+    const out = await drainOutbox({ budgetMs: 5000, dryRun: false }, t.deps);
+    assert.equal(t.finishes.length, 0, "pending wait is left pending");
+    assert.equal(out.waiting, 1);
   }
 }
 
