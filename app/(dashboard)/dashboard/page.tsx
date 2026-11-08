@@ -13,6 +13,7 @@ import { CreativeGapsPanel } from "@/components/creative-gaps-panel";
 import { GoogleReviewsHealthAlert } from "@/components/google-reviews-health-alert";
 import { PriceLightWidget } from "@/components/price-light-widget";
 import { FollowUpAlert, FollowUpWidget, useFollowUps } from "@/components/follow-up-widget";
+import { WhatsappUnansweredAlert } from "@/components/whatsapp-unanswered-alert";
 
 export default function Dashboard() {
   const [error, setError] = useState<Error | null>(null);
@@ -65,6 +66,7 @@ export default function Dashboard() {
 
       {/* Only renders while a customer in Follow-up is waiting for a call back today. */}
       <FollowUpAlert data={followUps} />
+      <WhatsappUnansweredAlert />
 
       {/* Cards Section */}
       <Suspense fallback={<DashboardSkeleton />}>

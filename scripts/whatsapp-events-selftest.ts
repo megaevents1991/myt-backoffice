@@ -18,6 +18,7 @@ import {
   type EventsResLite,
 } from "../lib/whatsapp/events/chat-rules";
 import { OPT_OUT_REPLY, type WaEvent } from "../lib/whatsapp/rules";
+import { isAlertTime, unansweredFor, workingMinutesBetween } from "../lib/whatsapp/events/working-time";
 import { handleWebhookEvents, type InboundDeps } from "../lib/services/whatsapp-inbound";
 import { templateUpsertRow, type WaAccount, type WaMessageInsert } from "../lib/services/whatsapp-db";
 import type { EventsOrderLite, WaChat } from "../lib/services/whatsapp-events-db";
@@ -82,6 +83,26 @@ async function main(): Promise<void> {
     assert.deepEqual([...marksFor([], orders, TODAY)], []);
     assert.deepEqual(withoutWaColumns({ status: "Paid", whatsapp_off_at: null, whatsapp_off_by: null, main_contact_phone_key: "x" }), { status: "Paid" });
   }
+
+  // Task 9: working minutes (Sunday-Thursday 09:00-17:00 Israel) and the unanswered rule
+  // Sunday 08.11.2026 is IST (UTC+2): 09:00 IL = 07:00Z
+  assert.equal(workingMinutesBetween(new Date("2026-11-08T07:00:00Z"), new Date("2026-11-08T08:00:00Z")), 60);
+  // 16:30 Sunday -> 09:30 Monday = 30 + 30
+  assert.equal(workingMinutesBetween(new Date("2026-11-08T14:30:00Z"), new Date("2026-11-09T07:30:00Z")), 60);
+  // Thursday 16:00 -> Sunday 09:00 = 60 (Friday and Saturday do not count)
+  assert.equal(workingMinutesBetween(new Date("2026-11-12T14:00:00Z"), new Date("2026-11-15T07:00:00Z")), 60);
+  // a message at night counts from 09:00
+  assert.equal(workingMinutesBetween(new Date("2026-11-08T22:00:00Z"), new Date("2026-11-09T08:00:00Z")), 60);
+  assert.equal(workingMinutesBetween(new Date("2026-11-08T08:00:00Z"), new Date("2026-11-08T07:00:00Z")), 0, "to before from");
+  // summer (IDT, UTC+3): Sunday 07.06.2026 09:00 IL = 06:00Z
+  assert.equal(workingMinutesBetween(new Date("2026-06-07T06:00:00Z"), new Date("2026-06-07T07:00:00Z")), 60);
+  assert.equal(unansweredFor("2026-11-08T07:00:00Z", null, new Date("2026-11-08T07:59:00Z")), null);
+  assert.equal(unansweredFor("2026-11-08T07:00:00Z", null, new Date("2026-11-08T08:00:00Z")), 60);
+  assert.equal(unansweredFor("2026-11-08T07:00:00Z", "2026-11-08T07:10:00Z", new Date("2026-11-08T09:00:00Z")), null, "answered");
+  assert.equal(unansweredFor(null, null, new Date("2026-11-08T09:00:00Z")), null);
+  assert.equal(isAlertTime(new Date("2026-11-08T08:00:00Z")), true);
+  assert.equal(isAlertTime(new Date("2026-11-13T08:00:00Z")), false, "Friday is not alert time");
+  assert.equal(isAlertTime(new Date("2026-11-08T16:00:00Z")), false, "18:00 is not alert time");
 
   await inboundSection();
 

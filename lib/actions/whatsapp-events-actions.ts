@@ -12,6 +12,8 @@ import { actionFail, actionOk, UserError, type ActionResult } from "@/lib/tours/
 import { normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { WA_THREAD_PAGE, WA_TEXT_MAX, standInText, type WaMessageType } from "@/lib/whatsapp/rules";
 import { replyState } from "@/lib/whatsapp/events/chat-rules";
+import { unansweredFor } from "@/lib/whatsapp/events/working-time";
+import { countUnanswered } from "@/lib/services/whatsapp-events-alerts";
 import { assembleThread, emptyWaThread, type WaThread, type WaThreadMessage } from "@/lib/tours/cases";
 import { sendText } from "@/lib/services/whatsapp-cloud";
 import { accountOfCompany, listThread } from "@/lib/services/whatsapp-db";
@@ -62,6 +64,7 @@ async function rowsOf(company: Company, chats: WaChat[]): Promise<ChatRow[]> {
   const keys = chats.map((c) => c.phoneKey);
   const linkedIds = chats.map((c) => c.linkedReservationId).filter((x): x is number => x !== null);
   const [byKey, linked, last] = await Promise.all([reservationsByPhoneKeys(keys), reservationsByIds(linkedIds), lastMessages(company.id, keys)]);
+  const now = new Date();
   return chats.map((chat) => {
     const orders = byKey.filter((o) => o.phoneKey === chat.phoneKey && !o.isDeleted);
     const link = linked.find((o) => o.id === chat.linkedReservationId);
@@ -72,7 +75,7 @@ async function rowsOf(company: Company, chats: WaChat[]): Promise<ChatRow[]> {
       orders: orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((o) => ({ id: o.id, status: o.status })),
       displayName: displayNameOf(chat, orders),
       lastText: lm ? lm.text ?? standInText(lm.type as WaMessageType) : null,
-      unansweredMinutes: null,
+      unansweredMinutes: unansweredFor(chat.lastInAt, chat.answeredAt, now),
     };
   });
 }
@@ -304,6 +307,16 @@ export async function setReservationWhatsappOff(reservationId: number, off: bool
       metadata: { company_id: company.id },
     });
     return actionOk({ off: !!off });
+  } catch (e) {
+    return actionFail(e, SCOPE);
+  }
+}
+
+/** The dashboard banner: how many Mega Events chats wait 60+ working minutes for an answer. */
+export async function getUnansweredCount(): Promise<ActionResult<{ count: number }>> {
+  try {
+    const { company } = await staff();
+    return actionOk({ count: await countUnanswered(company.id) });
   } catch (e) {
     return actionFail(e, SCOPE);
   }
