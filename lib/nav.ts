@@ -358,6 +358,14 @@ const NAV: NavGroup[] = [
         productType: "tours",
       },
       {
+        // What the company's Meta catalog gets, what is left out and why, Sync now (mega-family PRODUCT-FEED-PLAN, 08.11.2026)
+        name: "Product Feed",
+        href: "/tours/feed",
+        icon: Rss,
+        keywords: "product feed meta facebook instagram catalog commerce manager ads pixel creatives פיד מוצרים מטא פייסבוק קטלוג מודעות פיקסל קריאייטיב",
+        productType: "tours",
+      },
+      {
         name: "Content Pages",
         href: "/tours/pages",
         icon: FileText,

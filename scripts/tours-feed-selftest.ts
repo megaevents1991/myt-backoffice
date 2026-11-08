@@ -23,6 +23,7 @@ const item = (over: Partial<ToursReportItem> = {}): ToursReportItem => ({
   activity_sub_categories: "משפחות קלאסי",
   activity_date: "2026-12-07",
   labels: ["family", "איחוד-האמירויות", "משפחות-קלאסי", "חנוכה", "sale"],
+  slug: "פאטה-מורגנה",
   name: "פאטה מורגנה",
   places: "דובאי עם קפיצה לאבו דאבי",
   dateText: "7.12 - 11.12",

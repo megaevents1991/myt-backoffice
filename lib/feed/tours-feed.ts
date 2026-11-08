@@ -33,6 +33,8 @@ export type ToursReportItem = {
   activity_sub_categories: string;
   activity_date: string;
   labels: [string, string, string, string, string];
+  /** The tour's slug (tours.packages.slug). */
+  slug: string;
   name: string;
   places: string;
   dateText: string;
