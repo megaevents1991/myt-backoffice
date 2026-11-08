@@ -7,6 +7,7 @@ import type { ClassificationRow, ProposedRow } from "@/lib/uploader/classify";
 import type { DescriptionValues, TemplateFamily } from "@/lib/uploader/description";
 import type { DescriptionPlan, EditKind, LearnShowRow, LiveTicketsPlan, NotCarried, PlaceField } from "@/lib/uploader/edit-changes";
 import type { LocationInput } from "@/lib/uploader/location";
+import type { PickableLocation } from "@/lib/uploader/place";
 import type { PageTaskRef } from "@/lib/uploader/run-panel";
 import type { PlanPreview, SubjectArt } from "@/lib/uploader/run-rules";
 import type { LinkTeam, TeamRow } from "@/lib/uploader/team-names";
@@ -101,6 +102,12 @@ export type RunBoard = {
   pageTasks: PageTaskRef[];
   /** The assignee of the newest `uploader_page` task - who "פתח משימה" starts on; null = none yet. */
   pageTaskAssignee: string | null;
+  /**
+   * The run-level panel rows a person marked handled (`uploader_runs.panel_done`, 08.11): hidden from the panel, listed
+   * under "N טופלו". `panelDoneReady` = false before migration 20261108092909 (no checkbox then).
+   */
+  panelDone: string[];
+  panelDoneReady: boolean;
 };
 
 /** `getRun`'s answer when the run exists: the board, or `{ run: null, kind: "db_error" }` when a read failed (`getRun` answers null only for "no such run"). */
@@ -273,3 +280,19 @@ export type LocationProposeResult =
 export type LocationCreateResult =
   | { ok: true; location_id: number; applied: number; task_closed: boolean; existing: boolean }
   | { ok: false; kind: string; problem?: string };
+
+/**
+ * `listLocationsForQuestion` (08.11): the locations a person may answer a location question with (`pickableLocations` -
+ * the show's city first, then the nearest), `city` = the show's city as the supplier prints it, `others` = how many
+ * OTHER open location questions of the run are the same city (answered with the same pick).
+ */
+export type LocationPickListResult =
+  | { ok: true; locations: PickableLocation[]; city: string; others: number }
+  | { ok: false; kind: string };
+
+/**
+ * `answerWithLocation` (08.11): the question answered with a location we already have; `applied` = how many OTHER
+ * open location questions of the same city it answered too, `task_closed` = false when this question's own task did
+ * not close (the answer is saved).
+ */
+export type LocationPickResult = { ok: true; location_id: number; name: string; applied: number; task_closed: boolean } | { ok: false; kind: string };

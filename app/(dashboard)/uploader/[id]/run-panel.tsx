@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ExternalLink, GraduationCap, ImageOff, Info, Languages, ListChecks, ListTodo, MapPinned, UserRound } from "lucide-react";
+import { ChevronDown, ExternalLink, GraduationCap, ImageOff, Info, Languages, ListChecks, ListTodo, Loader2, MapPinned, UserRound } from "lucide-react";
 import { TaskEditor, type TaskEditorState } from "@/components/task-editor";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { PanelRow, PanelTask } from "@/lib/uploader/run-panel";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
@@ -15,7 +16,12 @@ import {
   BTN_OPEN_TEMPLATES,
   LEARN_RECIPE,
   PANEL_COLLAPSE,
+  PANEL_ALL_DONE,
   PANEL_COUNT_TITLE,
+  PANEL_DONE_HIDE,
+  PANEL_DONE_HINT,
+  PANEL_DONE_LABEL,
+  PANEL_DONE_SHOW,
   PANEL_EXPAND,
   PANEL_OTHER_FIXED,
   PANEL_TITLE,
@@ -40,6 +46,8 @@ import type { PanelVenue } from "./classify-dialog";
 // shared TaskEditor (a task for the missing page / picture) prefilled from it, on the marketing board - WRITTEN (what to
 // do, how many shows wait, the page) and on whoever got the last such task (Alon round 3, note 1). Once it is saved the
 // board reads the run again and the row leaves (`runLevelRows` drops a row a task already covers).
+// "טופל" (08.11, Dor): any row can be checked once handled - it leaves the list (the run keeps it, `panel_done`) and
+// waits under it ("N נושאים סומנו כטופלו · הצג"), where unchecking brings it back. One checkbox saves at a time.
 
 const ICON: Record<PanelRow["kind"], typeof MapPinned> = {
   venue: MapPinned,
@@ -58,14 +66,25 @@ export function RunPanel({
   onNames,
   assignee,
   onTaskSaved,
+  doneRows,
+  canMarkDone,
+  marking,
+  onMarkDone,
 }: {
+  /** The rows a person marked handled (`splitPanelRows(...).done`) - listed under the open ones on request. */
+  doneRows: PanelRow[];
+  /** false before migration 20261108092909 (`RunBoard.panelDoneReady`) - no checkbox then. */
+  canMarkDone: boolean;
+  /** The row whose checkbox is saving (every checkbox waits for it); null = none. */
+  marking: string | null;
+  onMarkDone: (key: string, done: boolean) => void;
   /** The run - a task's description links back to its board. */
   runId: string;
   /** Who a new page task starts on (`RunBoard.pageTaskAssignee`); null = the dialog's usual default. */
   assignee: string | null;
   /** A page task was saved: the board reads the run again (its row leaves the panel). */
   onTaskSaved: () => void;
-  /** `runLevelRows(board.items, board.fixedByHand, subject, board.missingNames)`; the board renders the panel only when it is not empty. */
+  /** The OPEN rows (`runLevelRows` minus the handled ones); the board renders the panel while any row - open or handled - exists. */
   rows: PanelRow[];
   /** The run's items - names the other events a person arranged at the same hall. */
   items: UploaderItem[];
@@ -74,6 +93,7 @@ export function RunPanel({
   onNames: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [showDone, setShowDone] = useState(false);
   const [editor, setEditor] = useState<TaskEditorState>({ open: false, task: null });
   const byId = new Map(items.map((i) => [i.id, i]));
 
@@ -165,6 +185,71 @@ export function RunPanel({
     }
   }
 
+  /** One row of the list: an open one (actions, "טופל" unchecked) or a handled one (greyed, checked, no actions). */
+  function renderRow(row: PanelRow, done: boolean) {
+    const Icon = ICON[row.kind];
+    const act = done ? null : action(row);
+    const others = done ? [] : (row.venue?.otherFixedItemIds ?? []).map((id) => byId.get(id)).filter((i): i is UploaderItem => i !== undefined);
+    const boxId = `panel-done-${row.key}`;
+    return (
+      <li key={row.key} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5", done && "text-muted-foreground")}>
+        <span
+          title={PANEL_COUNT_TITLE}
+          className="inline-flex h-6 min-w-7 shrink-0 items-center justify-center rounded-full bg-secondary px-2 text-xs font-semibold tabular-nums"
+        >
+          {row.count}
+        </span>
+        <div className="min-w-0 flex-1 basis-56">
+          <p className="flex items-start gap-1.5 text-[13px] leading-snug">
+            <Icon aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className={cn("min-w-0 break-words", (done || row.kind === "info") && "text-muted-foreground", done && "line-through decoration-muted-foreground/50")}>
+              {row.text}
+            </span>
+          </p>
+          {others.length > 0 && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 ps-5 text-xs text-muted-foreground">
+              <span>{PANEL_OTHER_FIXED}</span>
+              {others.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onLearn(item.id)}
+                  className="rounded-sm font-medium underline underline-offset-2 hover:text-foreground hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {item.event_id !== null ? (
+                    <>
+                      <bdi dir="ltr">#{item.event_id}</bdi> {showLabel(item)}
+                    </>
+                  ) : (
+                    showLabel(item)
+                  )}
+                </button>
+              ))}
+            </p>
+          )}
+        </div>
+        {(act || (!done && row.task)) && (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {act}
+            {!done && row.task && taskButton(row.task, row.count)}
+          </span>
+        )}
+        {canMarkDone && (
+          <label htmlFor={boxId} title={PANEL_DONE_HINT} className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+            <Checkbox
+              id={boxId}
+              checked={done}
+              disabled={marking !== null}
+              onCheckedChange={(v) => onMarkDone(row.key, v === true)}
+            />
+            {marking === row.key ? <Loader2 aria-hidden className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : null}
+            {PANEL_DONE_LABEL}
+          </label>
+        )}
+      </li>
+    );
+  }
+
   return (
     <section
       id="run-panel"
@@ -175,7 +260,7 @@ export function RunPanel({
       <header className={cn("flex items-center justify-between gap-3 bg-warning-muted/60 px-4 py-2.5", open && "border-b border-warning/30")}>
         <h2 id="run-panel-title" className="font-display text-sm font-semibold">
           {PANEL_TITLE}
-          <span className="font-normal text-muted-foreground"> · {PANEL_TOPICS(rows.length)}</span>
+          <span className="font-normal text-muted-foreground"> · {rows.length === 0 ? PANEL_ALL_DONE : PANEL_TOPICS(rows.length)}</span>
         </h2>
         <button
           type="button"
@@ -189,57 +274,23 @@ export function RunPanel({
         </button>
       </header>
 
-      {open && (
+      {open && rows.length > 0 && (
         <ul id="run-panel-rows" className="divide-y">
-          {rows.map((row) => {
-            const Icon = ICON[row.kind];
-            const act = action(row);
-            const others = (row.venue?.otherFixedItemIds ?? []).map((id) => byId.get(id)).filter((i): i is UploaderItem => i !== undefined);
-            return (
-              <li key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5">
-                <span
-                  title={PANEL_COUNT_TITLE}
-                  className="inline-flex h-6 min-w-7 shrink-0 items-center justify-center rounded-full bg-secondary px-2 text-xs font-semibold tabular-nums"
-                >
-                  {row.count}
-                </span>
-                <div className="min-w-0 flex-1 basis-56">
-                  <p className="flex items-start gap-1.5 text-[13px] leading-snug">
-                    <Icon aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className={cn("min-w-0 break-words", row.kind === "info" && "text-muted-foreground")}>{row.text}</span>
-                  </p>
-                  {others.length > 0 && (
-                    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 ps-5 text-xs text-muted-foreground">
-                      <span>{PANEL_OTHER_FIXED}</span>
-                      {others.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => onLearn(item.id)}
-                          className="rounded-sm font-medium underline underline-offset-2 hover:text-foreground hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {item.event_id !== null ? (
-                            <>
-                              <bdi dir="ltr">#{item.event_id}</bdi> {showLabel(item)}
-                            </>
-                          ) : (
-                            showLabel(item)
-                          )}
-                        </button>
-                      ))}
-                    </p>
-                  )}
-                </div>
-                {(act || row.task) && (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    {act}
-                    {row.task && taskButton(row.task, row.count)}
-                  </span>
-                )}
-              </li>
-            );
-          })}
+          {rows.map((row) => renderRow(row, false))}
         </ul>
+      )}
+      {open && doneRows.length > 0 && (
+        <div className={cn(rows.length > 0 && "border-t")}>
+          <button
+            type="button"
+            aria-expanded={showDone}
+            onClick={() => setShowDone((v) => !v)}
+            className="w-full px-4 py-2 text-start text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            {showDone ? PANEL_DONE_HIDE : PANEL_DONE_SHOW(doneRows.length)}
+          </button>
+          {showDone && <ul className="divide-y border-t bg-muted/30">{doneRows.map((row) => renderRow(row, true))}</ul>}
+        </div>
       )}
 
       {/* The way to arrange a hall by hand (round 2, Alon: "not clear which flow") - said once, under the hall rows. */}

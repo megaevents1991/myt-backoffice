@@ -99,6 +99,7 @@ import {
   readStyleLabels,
   readSubjectArt,
   readPageTasks,
+  readPanelDone,
   readSubjectCache,
   readVenueTemplate,
   recomputeRun,
@@ -118,6 +119,7 @@ import {
   writeEventTickets,
   writeLiveTicketsDropped,
   writeNamesTaskId,
+  writePanelDone,
   writeSubjectCache,
   writeVenueNameHe,
   type EventTicketsRow,
@@ -199,7 +201,7 @@ import {
   withLocationOption,
   type LocationInput,
 } from "@/lib/uploader/location";
-import { farFromVenueKm } from "@/lib/uploader/place";
+import { farFromVenueKm, pickableLocations } from "@/lib/uploader/place";
 import { cleanTemplate, DESCRIPTION_TOKENS, familyOf, TEMPLATE_FAMILIES, templateEdit, usesCompetition, type TemplateFamily } from "@/lib/uploader/description";
 import { eventNames, withSupplierSpellings } from "@/lib/uploader/names";
 import { applyPriorDefaults, emptyPlan, parsePlanInput, parseSteer, type Steer } from "@/lib/uploader/plan";
@@ -234,7 +236,7 @@ import {
   type StoredAnswer,
   type SubjectCache,
 } from "@/lib/uploader/run-rules";
-import { subjectRowId as subjectRowIdOf } from "@/lib/uploader/run-panel";
+import { isPanelRowKey, nextPanelDone, subjectRowId as subjectRowIdOf } from "@/lib/uploader/run-panel";
 import type {
   ApproveAllResult,
   ApproveResult,
@@ -249,6 +251,8 @@ import type {
   LearnPrompt,
   LearnResult,
   LocationCreateResult,
+  LocationPickListResult,
+  LocationPickResult,
   LocationProposeResult,
   NamesProposeResult,
   Ok,
@@ -772,11 +776,12 @@ export async function getRun(runId: string, opts?: { people?: boolean }): Promis
     if (!row) return { ...item, blockers: [...(item.blockers ?? []), EVENT_GONE_BLOCKER] };
     return { ...item, blockers: liveBlockers(item.blockers, row) };
   });
-  const [people, subjectArt, { missingNames, subjectRowId }, pageTasks] = await Promise.all([
+  const [people, subjectArt, { missingNames, subjectRowId }, pageTasks, panelDone] = await Promise.all([
     withPeople ? loadPeople() : Promise.resolve([]),
     readSubjectArt(run.plan),
     subjectFactsOf(run, stored),
     readPageTasks(),
+    readPanelDone(runId),
   ]);
   return {
     run,
@@ -792,7 +797,32 @@ export async function getRun(runId: string, opts?: { people?: boolean }): Promis
     editKinds,
     pageTasks: pageTasks?.refs ?? [],
     pageTaskAssignee: pageTasks?.assignee ?? null,
+    panelDone: panelDone?.keys ?? [],
+    panelDoneReady: panelDone?.ready ?? false,
   };
+}
+
+/**
+ * "טופל" on a row of the run-level panel (08.11, Dor: "צ'ק בוקס שמנקה אותה משם אחרי שטיפלתי"): the row's key is added
+ * to (`done`) or taken off (`!done`) the run's `panel_done` - the board hides a checked row and lists it under
+ * "N טופלו". It changes nothing else: the items' warnings stay as they were built (a later classify or rename still
+ * clears them the usual way). `not_ready` = the column is not migrated yet. Audited `uploader.panel_row_done`.
+ */
+export async function setPanelRowDone(runId: string, key: string, done: boolean): Promise<Ok> {
+  const session = await requireAdmin();
+  if (!isUuid(runId) || !isPanelRowKey(key) || typeof done !== "boolean") return fail("bad_input");
+  const current = await readPanelDone(runId);
+  if (current === null) return fail("db_error");
+  if (!current.ready) return fail("not_ready");
+  const written = await writePanelDone(runId, nextPanelDone(current.keys, key, done));
+  if (written !== "ok") return fail("db_error");
+  await logAudit({
+    action: "uploader.panel_row_done",
+    entityType: "uploader_run",
+    entityId: runId,
+    metadata: { agent: AGENT, run_id: runId, key, done, by: session.sub },
+  });
+  return { ok: true };
 }
 
 /**
@@ -1120,24 +1150,44 @@ export async function createLocationAndAnswer(itemId: string, input: unknown): P
       },
     });
   }
-  const key = String(locationId);
-
-  const own = await answerOne({ ...item, question: withLocationOption(item.question, key, optionLabel) }, run, { key, text: null }, session.sub);
-  if (!own.ok) {
-    console.error(`uploader-actions: location ${locationId} ${reused ? "reused" : "created"} but item ${item.id} was not answered (${own.kind})`);
-    if (reused) return fail(own.kind);
-    return { ...fail(own.kind), problem: `המיקום נוצר (#${locationId}) אבל התשובה להופעה לא נשמרה - רעננו את הלוח ובדקו את ההופעה` };
+  const answered = await answerCityWithLocation(item, item.question, run, { id: locationId, label: optionLabel }, session.sub);
+  if (!answered.ok) {
+    console.error(`uploader-actions: location ${locationId} ${reused ? "reused" : "created"} but item ${item.id} was not answered (${answered.kind})`);
+    if (reused) return fail(answered.kind);
+    return { ...fail(answered.kind), problem: `המיקום נוצר (#${locationId}) אבל התשובה להופעה לא נשמרה - רעננו את הלוח ובדקו את ההופעה` };
   }
+  return { ok: true, location_id: locationId, applied: answered.applied, task_closed: answered.taskClosed, existing: reused !== null };
+}
+
+/**
+ * A location question answered with location `location` (its id is the answer's key) - and every OTHER open location
+ * question of the run in the same city (`sameCityItems`, the run's city rule), each through `answerOne` and audited as
+ * a rule's child so the agent learns once. The location becomes one more option of each question first
+ * (`withLocationOption`: `checkAnswer` takes only an option the question lists, and its options were written before
+ * anyone picked). `extra` lands on this item's own `uploader.answered` row. A database failure stops the others - what
+ * was answered stays answered. The run's counts are recomputed once, at the end.
+ */
+async function answerCityWithLocation(
+  item: UploaderItem,
+  question: UploaderQuestion,
+  run: UploaderRun,
+  location: { id: number; label: string },
+  actorId: string,
+  extra: Record<string, unknown> = {},
+): Promise<{ ok: true; applied: number; taskClosed: boolean } | { ok: false; kind: string }> {
+  const key = String(location.id);
+  const own = await answerOne({ ...item, question: withLocationOption(question, key, location.label) }, run, { key, text: null }, actorId);
+  if (!own.ok) return own;
 
   let applied = 0;
   const open = await readRunItems(run.id, "question");
-  if (open === null) console.error(`uploader-actions: open questions of run ${run.id} not read - location ${locationId} answered no other question`);
+  if (open === null) console.error(`uploader-actions: open questions of run ${run.id} not read - location ${location.id} answered no other question`);
   const others = (open ?? []).filter((other) => other.id !== item.id);
   if (others.length > 0) {
     const cityKey = await cityKeyOf([item.show.city, ...others.map((other) => other.show.city)]);
     for (const other of sameCityItems(item, others, cityKey)) {
       if (other.question === null) continue;
-      const done = await answerOne({ ...other, question: withLocationOption(other.question, key, optionLabel) }, run, { key, text: null }, session.sub);
+      const done = await answerOne({ ...other, question: withLocationOption(other.question, key, location.label) }, run, { key, text: null }, actorId);
       if (!done.ok) {
         // A database failure stops it (what was answered stays answered); a question answered meanwhile is passed by.
         if (done.kind === "db_error" || done.kind === "split_failed") break;
@@ -1147,9 +1197,73 @@ export async function createLocationAndAnswer(itemId: string, input: unknown): P
       applied += 1;
     }
   }
-  await logAnswered(own.audit, applied > 0 ? { rule_applied: true, applied } : {});
+  await logAnswered({ ...own.audit, metadata: { ...own.audit.metadata, ...extra } }, applied > 0 ? { rule_applied: true, applied } : {});
   await recomputeRun(run.id);
-  return { ok: true, location_id: locationId, applied, task_closed: own.taskClosed, existing: reused !== null };
+  return { ok: true, applied, taskClosed: own.taskClosed };
+}
+
+/**
+ * "יש לנו מיקום" (08.11, Dor: "לא זיהה שיש מיקום - צריך שאוכל לדייק אותו"): the locations a person may answer an open
+ * `create_location` / `pick_location` question with - every location with an IATA, the show's city first, then the
+ * nearest to the venue (`pickableLocations`). TixStock put Barcelona's stadium at 40, -4 (the middle of Spain), so the
+ * question offered Madrid at 53 km and no way to say "it is Barcelona, we have it". `others` = the run's other open
+ * location questions of the same city, which the pick answers too. Reads only.
+ */
+export async function listLocationsForQuestion(itemId: string): Promise<LocationPickListResult> {
+  await requireAdmin();
+  if (!isUuid(itemId)) return fail("bad_input");
+  const read = await readItemAndRun(itemId);
+  if ("kind" in read) return fail(read.kind);
+  const { item, run } = read;
+  if (!isLocationQuestion(item)) return fail("not_question");
+
+  let rows: LocationRow[];
+  let open: UploaderItem[] | null;
+  try {
+    [rows, open] = await Promise.all([loadLocations(), readRunItems(run.id, "question")]);
+  } catch (e) {
+    console.error("uploader-actions: locations not read - no pick list", errorText(e));
+    return fail("db_error");
+  }
+  const others = (open ?? []).filter((other) => other.id !== item.id);
+  const cityKey = await cityKeyOf([item.show.city, ...others.map((other) => other.show.city)]);
+  return {
+    ok: true,
+    locations: pickableLocations(item.show, rows, (name) => cityKey(name ?? "")),
+    city: item.show.city,
+    others: sameCityItems(item, others, cityKey).length,
+  };
+}
+
+/**
+ * The question answered with a location we already have (the pick list above): the show is re-queued and builds as a
+ * package flying there (`decidePlace` step 2), and every other open location question of the same city in the run is
+ * answered with it too (`answerCityWithLocation`). Nothing is written to `locations`. No distance check: a person picked
+ * a known row on purpose - the venue's coordinates are what is wrong (the dialog prints the distance beside each row).
+ * Only a row with an IATA can be picked (a package must fly there; Manchester / Liverpool go through "חבילה דרך…").
+ * Audited `uploader.answered` with `picked_location`.
+ */
+export async function answerWithLocation(itemId: string, locationId: number): Promise<LocationPickResult> {
+  const session = await requireAdmin();
+  if (!isUuid(itemId) || typeof locationId !== "number" || !Number.isSafeInteger(locationId) || locationId <= 0) return fail("bad_input");
+  const read = await readItemAndRun(itemId);
+  if ("kind" in read) return fail(read.kind);
+  const { item, run } = read;
+  if (item.question === null || !isLocationQuestion(item)) return fail("not_question");
+
+  let rows: LocationRow[];
+  try {
+    rows = await loadLocations();
+  } catch (e) {
+    console.error("uploader-actions: locations not read - nothing answered", errorText(e));
+    return fail("db_error");
+  }
+  const row = rows.find((r) => r.id === locationId && (r.city_iata ?? "").trim() !== "");
+  if (!row) return fail("location_not_found");
+
+  const answered = await answerCityWithLocation(item, item.question, run, { id: row.id, label: row.name }, session.sub, { picked_location: row.id });
+  if (!answered.ok) return fail(answered.kind);
+  return { ok: true, location_id: row.id, name: row.name, applied: answered.applied, task_closed: answered.taskClosed };
 }
 
 /**

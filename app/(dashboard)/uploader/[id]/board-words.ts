@@ -349,6 +349,13 @@ export const TASK_ORIGIN = "מה-AI Uploader";
 /** Under a venue row with several events arranged by hand: the other ones, each offered as a source too. */
 export const PANEL_OTHER_FIXED = "נערכו בעורך גם:";
 export const PANEL_COUNT_TITLE = "הופעות שהנושא נוגע בהן";
+// "טופל" (08.11, Dor): a row a person handled leaves the panel; the handled ones wait under the list, uncheck = back.
+export const PANEL_DONE_LABEL = "טופל";
+export const PANEL_DONE_HINT = "סמנו אחרי שטיפלתם - השורה יורדת מהלוח (אפשר להחזיר)";
+export const PANEL_DONE_SHOW = (n: number): string => (n === 1 ? "נושא אחד סומן כטופל · הצג" : `${n} נושאים סומנו כטופלו · הצג`);
+export const PANEL_DONE_HIDE = "הסתר את מה שטופל";
+export const PANEL_ALL_DONE = "הכל טופל";
+export const PANEL_DONE_FAILED = "הסימון לא נשמר";
 /** The grey line a card folds its run-level warnings into (a button to the panel). */
 export const FOLD_LINE = (n: number): string => (n === 1 ? "הערה אחת ברמת הריצה - בפאנל למעלה" : `${n} הערות ברמת הריצה - בפאנל למעלה`);
 
@@ -659,3 +666,24 @@ export const LOCATION_TASK_OPEN = "משימת השאלה לא נסגרה - סג�
 /** The success toast: the new location and how many shows (this one included) now build as a package. */
 export const LOCATION_DONE = (name: string, shows: number): string =>
   shows === 1 ? `נוצר מיקום ${name} · הופעה אחת תיבנה כחבילה` : `נוצר מיקום ${name} · ${shows} הופעות ייבנו כחבילה`;
+
+// "יש לנו מיקום" (08.11, Dor): a location question answered with a location we already have - the supplier's venue
+// coordinates were wrong (TixStock: Barcelona's stadium at 40, -4, the middle of Spain), so the city was not found.
+export const PICK_LOCATION_BUTTON = "יש לנו מיקום - בחרו";
+export const PICK_LOCATION_TITLE = (city: string): string => `איזה מיקום שלנו הוא ${city || "העיר"}?`;
+export const PICK_LOCATION_INTRO = "בחרו את המיקום שממנו טסים להופעה - היא תיבנה כחבילה דרכו. טבלת המיקומים לא משתנה.";
+export const PICK_LOCATION_OTHERS = (others: number, city: string): string =>
+  others === 1 ? `גם הופעה פתוחה נוספת ב-${city} בריצה תיענה איתו.` : `גם ${others} הופעות פתוחות נוספות ב-${city} בריצה ייענו איתו.`;
+export const PICK_LOCATION_LOADING = "טוען מיקומים…";
+export const PICK_LOCATION_SEARCH = "חיפוש מיקום…";
+export const PICK_LOCATION_NONE = "אין מיקום בשם הזה";
+export const PICK_LOCATION_EMPTY = "אין מיקום עם קוד שדה תעופה - צרו אחד";
+export const PICK_LOCATION_SAME_CITY = "אותה עיר";
+export const PICK_LOCATION_KM = (km: number): string => `${km.toLocaleString("he-IL")} ק"מ מהאולם`;
+/** The picked row is beyond FAR_VENUE_KM from the venue's coordinates - said, never refused (the coordinates are what is wrong). */
+export const PICK_LOCATION_FAR = (name: string, km: number): string =>
+  `לפי הקואורדינטות שהספק נתן, האולם רחוק ${km.toLocaleString("he-IL")} ק"מ מ${name} - בדרך כלל זו נקודת אמצע של המדינה ולא האולם. אם ${name} נכון, המשיכו.`;
+export const PICK_LOCATION_OPEN_FAILED = "רשימת המיקומים לא נפתחה";
+export const BTN_PICK_LOCATION = (name: string | null): string => (name ? `בנה דרך ${name}` : "בחרו מיקום");
+export const PICK_LOCATION_DONE = (name: string, shows: number): string =>
+  shows === 1 ? `ההופעה תיבנה כחבילה דרך ${name}` : `${shows} הופעות ייבנו כחבילה דרך ${name}`;

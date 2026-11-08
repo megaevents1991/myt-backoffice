@@ -301,6 +301,33 @@ const isMissingColumn = (error: DbError): boolean => error?.code === "42703" || 
 let subjectCacheWarned = false;
 
 /**
+ * The run-level panel rows a person marked handled (`uploader_runs.panel_done`, migration 20261108092909): the keys,
+ * `[]` when none - and when the column is not there yet (the board then shows every row, as before). null = the read
+ * failed (the board shows every row; the checkbox answers `db_error`). Kept out of RUN_COLUMNS on purpose: a missing
+ * column must never take the whole board down.
+ */
+export async function readPanelDone(runId: string): Promise<{ keys: string[]; ready: boolean } | null> {
+  const { data, error } = (await db.from("uploader_runs").select("panel_done").eq("id", runId).maybeSingle()) as DbResult<{ panel_done: unknown }>;
+  if (error) {
+    if (isMissingColumn(error)) return { keys: [], ready: false };
+    logDb("panel_done read", error);
+    return null;
+  }
+  const raw = data?.panel_done;
+  return { keys: Array.isArray(raw) ? raw.filter((k): k is string => typeof k === "string") : [], ready: true };
+}
+
+/** Writes the run's handled panel rows whole. */
+export async function writePanelDone(runId: string, keys: string[]): Promise<"ok" | "db_error"> {
+  const { error } = (await db.from("uploader_runs").update({ panel_done: keys }).eq("id", runId)) as { error: DbError };
+  if (error) {
+    logDb("panel_done write", error);
+    return "db_error";
+  }
+  return "ok";
+}
+
+/**
  * The run's stored `subject_cache` (raw - `freshSubjectCache` judges it), or null: none yet, or the
  * column is not there yet (migration `tour_uploader_grants` not applied - logged once, the build then
  * resolves per item exactly as before), or the read failed (logged). Never throws.

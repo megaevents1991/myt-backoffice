@@ -8,9 +8,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 // `@/hooks/use-toast`, not `@/components/ui/use-toast`: the mounted <Toaster /> reads this store.
 import { useToast } from "@/hooks/use-toast";
 import { useUrlState } from "@/hooks/use-view-state";
-import { answerQuestion, approveAll, approveItem, rebuildTwoCity, rejectItem, resumeRun, retryItem, stopRun } from "@/lib/actions/uploader-actions";
+import { answerQuestion, approveAll, approveItem, rebuildTwoCity, rejectItem, resumeRun, retryItem, setPanelRowDone, stopRun } from "@/lib/actions/uploader-actions";
 import type { RunBoard } from "@/lib/uploader/action-types";
-import { handedOffCodes, runLevelRows } from "@/lib/uploader/run-panel";
+import { handedOffCodes, runLevelRows, splitPanelRows } from "@/lib/uploader/run-panel";
 import { applyRuleTo, canResume, runRuleOf } from "@/lib/uploader/run-rules";
 import type { UploaderItem } from "@/types/uploader.types";
 import { actionErrorText } from "../copy";
@@ -31,12 +31,14 @@ import {
   isRejectable,
   loadErrorText,
   NETWORK_TEXT,
+  PANEL_DONE_FAILED,
   showLabel,
   type BusyKind,
   type Filter,
 } from "./board-words";
 import { ClassifyDialog, type PanelVenue } from "./classify-dialog";
 import { CreateLocationDialog } from "./create-location-dialog";
+import { PickLocationDialog } from "./pick-location-dialog";
 import { DescriptionDialog } from "./description-dialog";
 import { LearnConfirm } from "./learn-confirm";
 import { NamesDialog } from "./names-dialog";
@@ -56,6 +58,7 @@ type RunDialog =
   | { kind: "learn"; itemId: string }
   | { kind: "description" }
   | { kind: "location"; itemId: string }
+  | { kind: "pick_location"; itemId: string }
   | null;
 
 // The review board of one run (spec §5.3, §11, §13; mockup B): the header, the filter pills, a card
@@ -88,6 +91,10 @@ export function BoardClient({
   const [picks, setPicks] = useState<Record<string, string | null>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef<Record<string, BusyKind>>({});
+  /** "טופל" on a panel row: the checkbox's value until the board read after the save confirms it (key -> checked). */
+  const [doneOverride, setDoneOverride] = useState<Record<string, boolean>>({});
+  /** The panel row whose checkbox is saving - one at a time (the run's list is written whole). */
+  const [marking, setMarking] = useState<string | null>(null);
 
   /** Every toast of the board; its description laid out right-to-left (a toast title is a plain string). */
   const say = useCallback(
@@ -346,8 +353,47 @@ export function BoardClient({
     [board, subject, items, fixedByHand],
   );
   const panelShown = panelRows.length > 0;
-  /** The warning codes whose page task already exists - the cards drop them too (neither printed nor folded). */
-  const handedOff = useMemo(() => (board && subject ? handedOffCodes(items, subject, board.pageTasks ?? []) : new Set<string>()), [board, subject, items]);
+  /** The panel rows a person marked handled: the run's list, with a checkbox still saving laid over it. */
+  const panelDone = useMemo(() => {
+    const keys = new Set(board?.panelDone ?? []);
+    for (const [key, checked] of Object.entries(doneOverride)) {
+      if (checked) keys.add(key);
+      else keys.delete(key);
+    }
+    return [...keys];
+  }, [board, doneOverride]);
+  const panelSplit = useMemo(() => splitPanelRows(panelRows, panelDone), [panelRows, panelDone]);
+  /** The warning codes whose page task already exists, or whose row was marked handled - the cards drop them too (neither printed nor folded). */
+  const handedOff = useMemo(
+    () => (board && subject ? handedOffCodes(items, subject, board.pageTasks ?? [], panelDone) : new Set<string>()),
+    [board, subject, items, panelDone],
+  );
+
+  /** "טופל" on a panel row: saved on the run, then the board is read again; a failure puts the checkbox back. */
+  const markPanelDone = useCallback(
+    async (key: string, done: boolean) => {
+      if (marking !== null) return;
+      setMarking(key);
+      setDoneOverride((o) => ({ ...o, [key]: done }));
+      const forget = () =>
+        setDoneOverride((o) => {
+          const next = { ...o };
+          delete next[key];
+          return next;
+        });
+      try {
+        const r = await setPanelRowDone(runId, key, done);
+        if (!r.ok) say(PANEL_DONE_FAILED, actionErrorText(r.kind), true);
+        else await refresh();
+      } catch {
+        say(PANEL_DONE_FAILED, NETWORK_TEXT, true);
+      } finally {
+        forget();
+        setMarking(null);
+      }
+    },
+    [marking, runId, refresh, say],
+  );
 
   /**
    * The ready / approved shows of the run with an event - what "למדו והחילו" may carry an edit to (the hall's shows
@@ -466,7 +512,11 @@ export function BoardClient({
         {panelShown && (
           <RunPanel
             runId={runId}
-            rows={panelRows}
+            rows={panelSplit.open}
+            doneRows={panelSplit.done}
+            canMarkDone={board.panelDoneReady === true}
+            marking={marking}
+            onMarkDone={(key, done) => void markPanelDone(key, done)}
             items={items}
             onClassify={(venue) => setDialog({ kind: "classify", venue })}
             onLearn={(itemId) => setDialog({ kind: "learn", itemId })}
@@ -517,6 +567,7 @@ export function BoardClient({
                       onAnswer={answer}
                       onReject={setRejecting}
                       onCreateLocation={(i) => setDialog({ kind: "location", itemId: i.id })}
+                      onPickLocation={(i) => setDialog({ kind: "pick_location", itemId: i.id })}
                     />
                   ) : (
                     <ShowCard
@@ -578,6 +629,11 @@ export function BoardClient({
       />
       <CreateLocationDialog
         item={dialog?.kind === "location" ? (board.items.find((i) => i.id === dialog.itemId) ?? null) : null}
+        onClose={closeDialog}
+        onDone={locationDone}
+      />
+      <PickLocationDialog
+        item={dialog?.kind === "pick_location" ? (board.items.find((i) => i.id === dialog.itemId) ?? null) : null}
         onClose={closeDialog}
         onDone={locationDone}
       />

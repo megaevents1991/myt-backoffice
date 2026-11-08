@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, Loader2, MapPinPlus, MessageCircleQuestion, Search } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Check, Loader2, MapPinCheck, MapPinPlus, MessageCircleQuestion, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { ANSWER_TEXT_MAX } from "@/lib/uploader/run-rules";
 import { matchesSearch } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import type { UploaderItem } from "@/types/uploader.types";
-import { SIMILAR_LINE, stampHe, type BusyKind } from "./board-words";
+import { PICK_LOCATION_BUTTON, SIMILAR_LINE, stampHe, type BusyKind } from "./board-words";
 import { ACTION, CardShell, RejectButton, StatusPill } from "./card-shell";
 
 // A show the builder could not decide alone (spec §5.3, §10): the loudest card on the board. The
@@ -36,6 +36,7 @@ export function QuestionCard({
   onAnswer,
   onReject,
   onCreateLocation,
+  onPickLocation,
 }: {
   item: UploaderItem;
   art: SubjectArt;
@@ -51,6 +52,12 @@ export function QuestionCard({
   onReject: (item: UploaderItem) => void;
   /** The `create` option of a location question: opens the form that creates the location and answers with it. */
   onCreateLocation: (item: UploaderItem) => void;
+  /**
+   * "יש לנו מיקום" (08.11): opens the list of our locations - answers the question with one (the supplier's venue
+   * coordinates were wrong, so the city was not found). On every `create_location` question, also those asked before
+   * the button existed (the server adds the picked location to the question's options).
+   */
+  onPickLocation: (item: UploaderItem) => void;
 }) {
   const q = item.question;
   const [picked, setPickedState] = useState<string | null>(null);
@@ -144,6 +151,23 @@ export function QuestionCard({
     );
   };
 
+  // "יש לנו מיקום": beside "צור מיקום" - a location we already have answers the question (the dialog lists them).
+  const pickButton = (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      disabled={answering || busy !== null}
+      onClick={() => onPickLocation(item)}
+      className={cn(
+        "inline-flex min-h-8 max-w-full items-center gap-1.5 rounded-md border border-dashed border-warning px-2.5 py-1 text-start text-[13px] font-medium leading-snug transition-colors duration-150 ease-out",
+        "hover:bg-warning-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:opacity-50",
+      )}
+    >
+      <MapPinCheck aria-hidden className="h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 break-words">{PICK_LOCATION_BUTTON}</span>
+    </button>
+  );
+
   return (
     <CardShell
       item={item}
@@ -209,7 +233,12 @@ export function QuestionCard({
               aria-label="אפשרויות"
               className={cn("flex flex-wrap gap-1.5", searchable && "max-h-44 overflow-y-auto rounded-md border p-1.5")}
             >
-              {visible.map((o) => option(o.key, o.label))}
+              {visible.map((o) => (
+                <Fragment key={o.key}>
+                  {option(o.key, o.label)}
+                  {q.kind === "create_location" && o.key === CREATE && pickButton}
+                </Fragment>
+              ))}
               {searchable && visible.length === 0 && (
                 <p className="px-1 py-0.5 text-xs text-muted-foreground">{q.kind === "pick_location" ? "אין מיקום בשם הזה" : "אין תוצאה"}</p>
               )}

@@ -250,6 +250,46 @@ export function farFromVenueKm(show: Pick<ShowIdentity, "lat" | "lon">, point: {
   return km > FAR_VENUE_KM ? Math.round(km) : null;
 }
 
+/** A location a person can answer a location question with ("יש לנו מיקום" - the pick list of `create_location`). */
+export type PickableLocation = { id: number; name: string; iata: string; km: number | null; sameCity: boolean };
+
+/**
+ * The locations a person may point a `create_location` / `pick_location` question at (08.11, Dor: TixStock put
+ * Barcelona's stadium at 40, -4 - the middle of Spain - and the show asked for a location we have). Only rows with an
+ * IATA (a package must fly there), one per name + IATA (Munich and Krakow are listed twice) - the lowest id. `sameCity`
+ * = the row's short name or an alias is the show's city through the run's rule and the country codes agree (an unknown
+ * one agrees) - the likely answer, listed first; then the nearest to the venue's coordinates (`km`, null when the show
+ * has none), then the name. Pure.
+ */
+export function pickableLocations(
+  show: Pick<ShowIdentity, "city" | "country_code" | "lat" | "lon">,
+  rows: readonly LocationRow[],
+  cityKey: (name: string | null) => string,
+): PickableLocation[] {
+  const at = typeof show.lat === "number" && typeof show.lon === "number" && Number.isFinite(show.lat) && Number.isFinite(show.lon)
+    ? { lat: show.lat, lon: show.lon }
+    : null;
+  const key = cityKey(show.city);
+  const byIdentity = new Map<string, LocationRow>();
+  for (const row of [...flyable([...rows])].sort((a, b) => a.id - b.id)) {
+    const identity = `${normalizeName(row.name)}|${iataOf(row).toUpperCase()}`;
+    if (!byIdentity.has(identity)) byIdentity.set(identity, row);
+  }
+  const list = [...byIdentity.values()].map((row): PickableLocation => ({
+    id: row.id,
+    name: row.name,
+    iata: iataOf(row).toUpperCase(),
+    km: at ? Math.round(distanceKm(at.lat, at.lon, row.latitude, row.longitude)) : null,
+    sameCity: key !== "" && countryAgrees(show.country_code, row) && [shortPlace(row.name), ...(row.aliases ?? [])].some((name) => cityKey(name) === key),
+  }));
+  return list.sort(
+    (a, b) =>
+      Number(b.sameCity) - Number(a.sameCity) ||
+      (a.km ?? Number.POSITIVE_INFINITY) - (b.km ?? Number.POSITIVE_INFINITY) ||
+      a.name.localeCompare(b.name, "he"),
+  );
+}
+
 /** "flight_city" / "choice_split" ... as the two-city decision line names the lodging. */
 function lodgingLabel(mode: string | null | undefined): string {
   switch (mode) {

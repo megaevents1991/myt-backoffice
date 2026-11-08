@@ -377,17 +377,76 @@ const carriersOf = (items: UploaderItem[]): Carrier[] =>
     .map((item): Carrier => ({ item, run: item.warnings.filter((w) => isRunLevel(item, w)) }));
 
 /**
- * The warning codes whose page task already exists (`coveredBy` over `pageTasks`): their panel rows leave and the
- * cards drop them (`cardWarnings`). Alon round 3, note 1: "להעלים את זה מהלוח כי זה לא ברמת הריצה יותר".
+ * The warning codes a row is made of - what leaves the cards once a person marked the row handled. A venue row has none
+ * here: its codes (`new_venue` / `unzoned_tickets`) are shared by every hall of the run, so one hall checked must not
+ * unfold another's - the cards keep folding them.
  */
-export function handedOffCodes(items: UploaderItem[], subject: PanelSubject, pageTasks: readonly PageTaskRef[]): Set<string> {
+function codesOfRow(row: PanelRow): string[] {
+  switch (row.kind) {
+    case "names":
+      return ["no_hebrew_name"];
+    case "subject":
+      return ["no_team_page", "no_artist_page"];
+    case "fix":
+    case "info":
+      return [row.key.slice(row.key.indexOf(":") + 1)];
+    default:
+      return [];
+  }
+}
+
+/**
+ * The warning codes the cards drop (neither printed nor folded - `cardWarnings`): a page / fix row whose task already
+ * exists (`coveredBy` over `pageTasks` - Alon round 3, note 1: "להעלים את זה מהלוח כי זה לא ברמת הריצה יותר"), and a
+ * names / page / fix / information row a person marked handled (`done`, 08.11).
+ */
+export function handedOffCodes(
+  items: UploaderItem[],
+  subject: PanelSubject,
+  pageTasks: readonly PageTaskRef[],
+  done: readonly string[] = [],
+): Set<string> {
   const out = new Set<string>();
-  if (pageTasks.length === 0) return out;
+  if (pageTasks.length === 0 && done.length === 0) return out;
   const carriers = carriersOf(items);
-  for (const row of [...subjectRow(carriers, subject), ...fixRows(carriers, subject)]) {
+  const checked = new Set(done);
+  for (const row of [...namesRow(carriers, []), ...subjectRow(carriers, subject), ...fixRows(carriers, subject), ...infoRow(carriers)]) {
     if (row.task && coveredBy(row.task, pageTasks)) out.add(row.task.code);
+    if (checked.has(row.key)) for (const code of codesOfRow(row)) out.add(code);
   }
   return out;
+}
+
+// ---- rows a person marked handled (08.11, Dor: "צ'ק בוקס שמנקה אותה משם אחרי שטיפלתי") ---------------------------------
+
+/** How many handled keys a run keeps (a run has a handful of rows - a cap, never a working limit). */
+export const PANEL_DONE_MAX = 200;
+/** A row key's cap: "venue:" + a supplier's drawing url. */
+export const PANEL_KEY_MAX = 600;
+const PANEL_KEY = /^(?:names|subject|venue:\S.*|fix:[a-z_]+|info:[a-z_]+)$/;
+
+/** Is this a key `runLevelRows` could make (what `uploader_runs.panel_done` may hold)? */
+export function isPanelRowKey(key: unknown): key is string {
+  return typeof key === "string" && key.length <= PANEL_KEY_MAX && PANEL_KEY.test(key);
+}
+
+/**
+ * The run's handled keys after one checkbox: added (once) or removed; anything that is no row key dropped, the newest
+ * `PANEL_DONE_MAX` kept. Pure.
+ */
+export function nextPanelDone(current: readonly string[], key: string, done: boolean): string[] {
+  const kept = current.filter((k) => isPanelRowKey(k) && k !== key);
+  const next = done ? [...kept, key] : kept;
+  return next.slice(-PANEL_DONE_MAX);
+}
+
+/**
+ * The panel's rows split by the run's handled keys: `open` = still to do (the panel's list), `done` = checked (listed
+ * under "N טופלו", where unchecking brings a row back). A key no row has any more (its warnings left) is ignored.
+ */
+export function splitPanelRows(rows: readonly PanelRow[], done: readonly string[]): { open: PanelRow[]; done: PanelRow[] } {
+  const checked = new Set(done);
+  return { open: rows.filter((r) => !checked.has(r.key)), done: rows.filter((r) => checked.has(r.key)) };
 }
 
 /**

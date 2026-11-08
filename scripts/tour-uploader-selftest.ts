@@ -160,14 +160,14 @@ import {
   ticketVerdict,
   withBuiltCount,
 } from "@/lib/uploader/edit-changes";
-import { cardWarnings, coveredBy, handedOffCodes, isRunLevel, iso, RUN_LEVEL_CODES, runLevelRows, subjectRowId, taskSteps, type PageTaskRef, type PanelRow } from "@/lib/uploader/run-panel";
+import { cardWarnings, coveredBy, handedOffCodes, isPanelRowKey, isRunLevel, iso, nextPanelDone, PANEL_DONE_MAX, PANEL_KEY_MAX, RUN_LEVEL_CODES, runLevelRows, splitPanelRows, subjectRowId, taskSteps, type PageTaskRef, type PanelRow } from "@/lib/uploader/run-panel";
 import { calculateSmartDates } from "@/lib/smart-dates";
 import { normalizeName } from "@/lib/on-tour";
 import { cleanZoneDescription, isUnsellableCategory, ZONE_DESCRIPTION_MAX, ZONE_LABEL_MAX as SVG_ZONE_LABEL_MAX } from "@/lib/venue-maps/svg-zones";
 import { zoneFromTemplate } from "@/lib/venue-maps/zone-from-template";
 import { distanceKm, findNearestLocation, type LocationRow } from "@/lib/services/nearest-location";
 import { nameFragments, searchWindow, subjectPatterns, tixSlices, TIX_SLICES_MAX } from "@/lib/services/uploader-search";
-import { createLocationQuestion, decidePlace, farFromVenueKm, locationFromAnswer, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
+import { createLocationQuestion, decidePlace, farFromVenueKm, locationFromAnswer, pickableLocations, SPLIT_DEFAULT_NIGHTS, venueCity, type PlaceInput } from "@/lib/uploader/place";
 import {
   aiProposedFlags,
   existingLocationFor,
@@ -7019,6 +7019,49 @@ async function supplierSvgFetchChecks(): Promise<void> {
   const farAndNear = place5(show5({}), [dallas, loc5(61, "ארלינגטון, ארצות הברית", "DCA", 38.88, -77.1, null, ["Arlington"])]);
   check(farAndNear.kind === "placed" && farAndNear.location.city_iata === "DCA", "A5: a far row passed by never hides the near one of the same name");
 
+  // -- 08.11 (Dor: "לא זיהה שיש מיקום"): TixStock put Estadio Olimpic Lluis Companys at 40, -4 (the middle of Spain) --------
+  // Barcelona (#5, BCN, alias "Barcelona") sits ~540 km from that point. With no country code on the row (23 of 35 rows
+  // had none until migration 20261108092406) A5 passed it by and the show asked, offering Madrid at 53 km.
+  const madrid8 = loc5(1, "מדריד, ספרד", "MAD", 40.4189369, -3.6920194, null, ["Madrid"]);
+  const barcelona8 = loc5(5, "ברצלונה, ספרד", "BCN", 41.390205, 2.154007, null, ["Barcelona"]);
+  const companys = show5({ name_english: "U2", city: "Barcelona", country_code: "ES", venue: "Estadio Olímpico Lluís Companys", lat: 40, lon: -4 });
+  const noCodes8 = place5(companys, [madrid8, barcelona8]);
+  check(
+    noCodes8.kind === "ask" && noCodes8.question.kind === "create_location" && noCodes8.question.options.some((o) => o.key === "two_city:1"),
+    "08.11: rows with no country code - Barcelona at 40/-4 asks create_location, offering Madrid (the bug as it was on prod)",
+  );
+  const withCodes8 = place5(companys, [
+    { ...madrid8, country_code: "ES" },
+    { ...barcelona8, country_code: "ES" },
+  ]);
+  check(
+    withCodes8.kind === "placed" && withCodes8.mode === "package" && withCodes8.location.city_iata === "BCN" && withCodes8.coordsFar !== null && withCodes8.coordsFar.km > FAR_VENUE_KM,
+    "08.11: with the rows' country codes (the migration) Barcelona at 40/-4 flies to BCN, warned venue_coords_far",
+  );
+
+  // pickableLocations: the list "יש לנו מיקום" answers a location question from.
+  const eq8 = eq5([madrid8, barcelona8]);
+  const key8 = (name: string | null) => eq8.cityKey(name);
+  const munichA = loc5(11, "מינכן, גרמניה", "MUC", 48.137, 11.575, null, ["Munich"]);
+  const munichB = loc5(30, "מינכן, גרמניה", "MUC", 48.137, 11.575, null, ["Munich"]);
+  const liverpool8 = loc5(31, "ליברפול", null, 53.41, -2.98, "GB");
+  const pick8 = pickableLocations(companys, [munichB, madrid8, liverpool8, barcelona8, munichA], key8);
+  same(
+    pick8.map((l) => l.id),
+    [5, 1, 11],
+    "pickableLocations: the show's city first, then the nearest; a row with no IATA is out; Munich listed twice -> once, the lowest id",
+  );
+  same(pick8[0], { id: 5, name: "ברצלונה, ספרד", iata: "BCN", km: pick8[0]?.km ?? -1, sameCity: true }, "pickableLocations: Barcelona is marked the same city");
+  check((pick8[0]?.km ?? 0) > FAR_VENUE_KM && pick8[1]?.km === 53, "pickableLocations: km from the venue's coordinates, rounded (Madrid 53)");
+  same(
+    pickableLocations(companys, [{ ...barcelona8, country_code: "IT" }], key8).map((l) => l.sameCity),
+    [false],
+    "pickableLocations: a known country that differs is not the same city (still listed)",
+  );
+  const noCoords8 = pickableLocations(show5({ city: "Barcelona", country_code: "ES", lat: null, lon: null }), [madrid8, barcelona8], key8);
+  same(noCoords8.map((l) => [l.id, l.km]), [[5, null], [1, null]], "pickableLocations: no coordinates -> no km, the city still first");
+  same(pickableLocations(show5({ city: "", lat: null, lon: null }), [barcelona8, madrid8], key8).map((l) => l.id), [5, 1], "pickableLocations: no city -> by name");
+
   // -- B4: an editor save that only excluded map sections is "fixed by hand" (learn step 2 unlocks) ------------------------
   const tixB4 = (category: string): EventTicket => ({ id: `t-${category}`, category, price: 100, description: "", colorOnTheMap: "rgb(5, 32, 60)", supplier: "tixstock" });
   const builtTickets = [tixB4("Cat 1"), tixB4("Cat 2")];
@@ -7217,6 +7260,35 @@ async function supplierSvgFetchChecks(): Promise<void> {
   same(handedOffCodes(items, subject, []).size, 0, "handedOffCodes: no tasks - none");
   same(cardWarnings(items[0], new Set(["no_crest"])), { card: [], folded: 1 }, "cardWarnings: a handed-off code is neither printed nor folded");
   same(cardWarnings(items[0]), { card: [], folded: 2 }, "cardWarnings: without hand-off both fold");
+
+  // -- 08.11 (Dor: "צ'ק בוקס שמנקה אותה משם אחרי שטיפלתי"): a row a person marked handled ---------------------------
+  for (const key of ["names", "subject", "fix:no_crest", "info:no_category_twin", "venue:https://cdn.tixstock.com/maps/Stade de France.svg"]) {
+    check(isPanelRowKey(key), `isPanelRowKey: ${key.slice(0, 30)}`);
+  }
+  for (const bad of ["", "venue:", "venue: x", "fix:", "fix:NO-CREST", "subjects", "names ", 5, null, `venue:https://x/${"a".repeat(PANEL_KEY_MAX)}`]) {
+    check(!isPanelRowKey(bad), `isPanelRowKey: refused (${JSON.stringify(bad)?.slice(0, 24)})`);
+  }
+  same(nextPanelDone([], "fix:no_crest", true), ["fix:no_crest"], "nextPanelDone: checked = added");
+  same(nextPanelDone(["fix:no_crest"], "fix:no_crest", true), ["fix:no_crest"], "nextPanelDone: checked twice = once");
+  same(nextPanelDone(["names", "fix:no_crest"], "names", false), ["fix:no_crest"], "nextPanelDone: unchecked = removed, the rest kept");
+  same(nextPanelDone(["junk key", "names"], "subject", true), ["names", "subject"], "nextPanelDone: a stored value that is no row key is dropped");
+  same(
+    nextPanelDone(Array.from({ length: PANEL_DONE_MAX }, (_, i) => `fix:k_${String.fromCharCode(97 + (i % 26))}${"_".repeat(Math.floor(i / 26))}`), "names", true).length,
+    PANEL_DONE_MAX,
+    "nextPanelDone: capped, the newest kept",
+  );
+  const allRows = runLevelRows(items, {}, subject, []);
+  const split = splitPanelRows(allRows, ["fix:no_bio", "venue:https://gone.svg"]);
+  same([keys(split.open), keys(split.done)], [["fix:no_crest"], ["fix:no_bio"]], "splitPanelRows: a checked row moves to done; a key no row has is ignored");
+  same(splitPanelRows(allRows, []).done.length, 0, "splitPanelRows: nothing checked - every row open");
+  same([...handedOffCodes(items, subject, [], ["fix:no_bio"])], ["no_bio"], "handedOffCodes: a fix row marked handled leaves the cards too");
+  same(cardWarnings(items[0], handedOffCodes(items, subject, [], ["fix:no_bio"])), { card: [], folded: 1 }, "cardWarnings: ... the crest still folds");
+  const named = [item("n", [W("no_hebrew_name"), W("no_artist_page")])];
+  same(
+    [...handedOffCodes(named, { kind: "artist", name_en: "U2", row_id: null }, [], ["names", "subject"])].sort(),
+    ["no_artist_page", "no_hebrew_name", "no_team_page"],
+    "handedOffCodes: names / subject rows marked handled drop their codes",
+  );
 }
 
 // ---- Task 15 A5: the signed plan_ai (Web Crypto is async - checked here, before the summary) ----
