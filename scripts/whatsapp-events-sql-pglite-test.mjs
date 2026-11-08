@@ -74,6 +74,17 @@ const [co] = await q(`insert into public.companies(slug) values ('mega-events') 
 await q(`insert into public.wa_chats(company_id, phone, phone_key) values ($1, '972542002722', '542002722')`, [co.id]);
 await assert.rejects(q(`insert into public.wa_chats(company_id, phone, phone_key) values ($1, '972542002722', '542002722')`, [co.id]), /duplicate|unique/i);
 
+// the list's filters: is_unseen / is_unanswered are computed by the database (a filter cannot compare two columns)
+await q(`update public.wa_chats set last_in_at = '2026-11-08T10:00:00Z', seen_at = '2026-11-08T09:00:00Z', answered_at = null where phone_key = '542002722'`);
+let [flags] = await q(`select is_unseen, is_unanswered from public.wa_chats where phone_key = '542002722'`);
+assert.deepEqual([flags.is_unseen, flags.is_unanswered], [true, true], "a message after the last look and no answer");
+await q(`update public.wa_chats set seen_at = '2026-11-08T10:05:00Z', answered_at = '2026-11-08T10:06:00Z' where phone_key = '542002722'`);
+[flags] = await q(`select is_unseen, is_unanswered from public.wa_chats where phone_key = '542002722'`);
+assert.deepEqual([flags.is_unseen, flags.is_unanswered], [false, false], "seen and answered");
+await q(`insert into public.wa_chats(company_id, phone, phone_key) values ($1, '972500000000', '500000000')`, [co.id]);
+[flags] = await q(`select is_unseen, is_unanswered from public.wa_chats where phone_key = '500000000'`);
+assert.deepEqual([flags.is_unseen, flags.is_unanswered], [false, false], "a chat with no live inbound message is neither");
+
 // wa_app_auto_texts: one per company + normalized text
 await q(`insert into public.wa_app_auto_texts(company_id, text_norm, text, source) values ($1, 'שלום', 'שלום', 'history')`, [co.id]);
 await assert.rejects(q(`insert into public.wa_app_auto_texts(company_id, text_norm, text, source) values ($1, 'שלום', 'שלום ', 'staff')`, [co.id]), /duplicate|unique/i);

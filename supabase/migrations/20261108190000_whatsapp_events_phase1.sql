@@ -54,11 +54,17 @@ create table if not exists public.wa_chats (
   opted_out_at timestamptz,                             -- "הסר" (reply) or staff - Mega Events only (M-3)
   opted_out_source text,
   alerted_at timestamptz,                               -- the unanswered alert for the current last_in_at went out
+  -- the list's filters: a PostgREST filter cannot compare two columns, so the database computes them. wa_chats is
+  -- written column by column (never a whole row), so a generated column is safe here - unlike reservations above.
+  is_unseen boolean generated always as (last_in_at is not null and (seen_at is null or last_in_at > seen_at)) stored,
+  is_unanswered boolean generated always as (last_in_at is not null and (answered_at is null or last_in_at > answered_at)) stored,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (company_id, phone_key)
 );
 create index if not exists wa_chats_last_in_idx on public.wa_chats (company_id, last_in_at desc);
+create index if not exists wa_chats_unseen_idx on public.wa_chats (company_id) where is_unseen;
+create index if not exists wa_chats_unanswered_idx on public.wa_chats (company_id) where is_unanswered;
 alter table public.wa_chats enable row level security;
 revoke all on table public.wa_chats from anon, authenticated;
 
