@@ -91,7 +91,7 @@ export function OverviewTab({ data }: { data: ClubPageData }) {
             <ul className="divide-y text-sm">
               {o.topEvents.map((t) => (
                 <li key={t.eventId} className="flex justify-between py-2">
-                  <span>{data.topEventNames[t.eventId] ?? `Event #${t.eventId}`}</span>
+                  <span dir="auto">{data.topEventNames[t.eventId] ?? `Event #${t.eventId}`}</span>
                   <span className="tabular-nums">{t.members}</span>
                 </li>
               ))}

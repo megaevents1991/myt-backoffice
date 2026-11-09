@@ -649,6 +649,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   report: "Report",
   order: "Order",
   series: "Series",
+  club: "Members Club",
 };
 
 /**

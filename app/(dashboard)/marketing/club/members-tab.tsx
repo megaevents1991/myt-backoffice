@@ -72,7 +72,19 @@ export function MembersTab({ members, onChanged }: { members: ClubMemberView[]; 
 
   const columns: ColumnDef<Row>[] = [
     { accessorKey: "member_no", header: ({ column }) => <SortableHeader label="No." column={column} />, cell: ({ row }) => <span className="tabular-nums">{row.original.member_no}</span> },
-    { accessorKey: "name", header: "Name", cell: ({ row }) => row.original.name || <span className="text-muted-foreground">-</span> },
+    {
+      accessorKey: "name",
+      header: "Name",
+      // Names are typed in Hebrew on the site: dir="auto" keeps their own direction inside the LTR table.
+      cell: ({ row }) =>
+        row.original.name ? (
+          <span dir="auto" className="whitespace-nowrap">
+            {row.original.name}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
+    },
     { accessorKey: "email", header: "Email" },
     { accessorKey: "phone", header: "Phone", cell: ({ row }) => <span dir="ltr" className="tabular-nums">{row.original.phone ?? ""}</span> },
     {
@@ -85,7 +97,13 @@ export function MembersTab({ members, onChanged }: { members: ClubMemberView[]; 
       header: "Joined at",
       cell: ({ row }) =>
         row.original.event_id != null ? (
-          <a className="underline underline-offset-2" href={`${PUBLIC_SITE_URL}/order/${row.original.event_id}`} target="_blank" rel="noreferrer">
+          <a
+            dir="auto"
+            className="inline-block min-w-[10rem] underline underline-offset-2"
+            href={`${PUBLIC_SITE_URL}/order/${row.original.event_id}`}
+            target="_blank"
+            rel="noreferrer"
+          >
             {row.original.eventName ?? `#${row.original.event_id}`}
           </a>
         ) : (
