@@ -104,5 +104,12 @@ const lines = csv.slice(1).split("\r\n");
 assert.equal(lines[0], "member_no,first_name,last_name,email,phone,joined_at,source,marketing,status,utm_source,utm_medium,utm_campaign,code");
 assert.ok(lines[1].includes('"Levi, ""Dana"""'), "quotes doubled, comma field quoted");
 assert.ok(lines[1].includes("2026-11-03 01:30"), "joined_at in Israel time");
+// a value typed on the public form must not run as a formula when the file opens in Excel
+const evil = membersCsv([member({ first_name: '=HYPERLINK("http://x","y")', utm_source: "+cmd", last_name: "@sum", utm_medium: "-1" })]);
+const evilRow = evil.slice(1).split("\r\n")[1];
+assert.ok(evilRow.startsWith("1001,\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\""), "a leading = is neutralized and quoted");
+assert.ok(evilRow.includes(",'@sum,"), "a leading @ is neutralized");
+assert.ok(evilRow.includes(",'+cmd,") && evilRow.includes(",'-1,"), "leading + and - are neutralized");
+assert.ok(membersCsv([member({})]).slice(1).split("\r\n")[1].startsWith("1001,"), "member_no is left as a number");
 
 console.log("club-selftest: all assertions passed");

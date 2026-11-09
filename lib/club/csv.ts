@@ -33,8 +33,11 @@ export function israelDateTime(iso: string): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
+/** A text value typed on the public form that starts like a formula (= + - @, tab, CR) is prefixed with ' so Excel /
+ *  Sheets show it as text and never run it. Numbers (member_no) pass as they are. */
 function cell(v: string | number | null | undefined): string {
-  const s = v == null ? "" : String(v);
+  let s = v == null ? "" : String(v);
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
