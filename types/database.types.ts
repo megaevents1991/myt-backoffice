@@ -1766,6 +1766,156 @@ export type Database = {
           },
         ]
       }
+      club_log: {
+        Row: {
+          action: string
+          at: string
+          consent_text: string | null
+          consent_version: string | null
+          id: number
+          ip: string | null
+          member_id: string | null
+          source: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          at?: string
+          consent_text?: string | null
+          consent_version?: string | null
+          id?: number
+          ip?: string | null
+          member_id?: string | null
+          source?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          at?: string
+          consent_text?: string | null
+          consent_version?: string | null
+          id?: number
+          ip?: string | null
+          member_id?: string | null
+          source?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      club_members: {
+        Row: {
+          coupon_code: string
+          coupon_id: number | null
+          consent_text: string | null
+          consent_version: string | null
+          created_at: string
+          email: string
+          event_id: number | null
+          first_name: string | null
+          id: string
+          last_name: string | null
+          marketing: string
+          member_no: number
+          phone: string | null
+          phone_key: string | null
+          removed_at: string | null
+          source: string | null
+          source_path: string | null
+          status: string
+          unsubscribe_source: string | null
+          unsubscribe_token: string
+          unsubscribed_at: string | null
+          updated_at: string
+          utm: Json | null
+          utm_campaign: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          welcome_error: string | null
+          welcome_sent_at: string | null
+        }
+        Insert: {
+          coupon_code: string
+          coupon_id?: number | null
+          consent_text?: string | null
+          consent_version?: string | null
+          created_at?: string
+          email: string
+          event_id?: number | null
+          first_name?: string | null
+          id?: string
+          last_name?: string | null
+          marketing?: string
+          member_no?: number
+          phone?: string | null
+          phone_key?: string | null
+          removed_at?: string | null
+          source?: string | null
+          source_path?: string | null
+          status?: string
+          unsubscribe_source?: string | null
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
+          updated_at?: string
+          utm?: Json | null
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          welcome_error?: string | null
+          welcome_sent_at?: string | null
+        }
+        Update: {
+          coupon_code?: string
+          coupon_id?: number | null
+          consent_text?: string | null
+          consent_version?: string | null
+          created_at?: string
+          email?: string
+          event_id?: number | null
+          first_name?: string | null
+          id?: string
+          last_name?: string | null
+          marketing?: string
+          member_no?: number
+          phone?: string | null
+          phone_key?: string | null
+          removed_at?: string | null
+          source?: string | null
+          source_path?: string | null
+          status?: string
+          unsubscribe_source?: string | null
+          unsubscribe_token?: string
+          unsubscribed_at?: string | null
+          updated_at?: string
+          utm?: Json | null
+          utm_campaign?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          welcome_error?: string | null
+          welcome_sent_at?: string | null
+        }
+        Relationships: []
+      }
+      club_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       coupons: {
         Row: {
           code: string
@@ -1781,6 +1931,7 @@ export type Database = {
           max_uses: number | null
           partner_tracking_code: string | null
           per_person: boolean
+          source: string | null
           times_paid: number
           times_used: number
           valid_until: string | null
@@ -1799,6 +1950,7 @@ export type Database = {
           max_uses?: number | null
           partner_tracking_code?: string | null
           per_person?: boolean
+          source?: string | null
           times_paid?: number
           times_used?: number
           valid_until?: string | null
@@ -1817,6 +1969,7 @@ export type Database = {
           max_uses?: number | null
           partner_tracking_code?: string | null
           per_person?: boolean
+          source?: string | null
           times_paid?: number
           times_used?: number
           valid_until?: string | null
