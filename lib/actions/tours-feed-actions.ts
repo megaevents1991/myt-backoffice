@@ -54,13 +54,20 @@ export async function getFeedScreen(): Promise<ActionResult<FeedScreenData>> {
   }
 }
 
-/** Draws the pictures the tours lack (up to ~3 minutes), then publishes the company's feed - what the crons do, now. */
+/** Draws the pictures the tours lack and the worlds' covers (up to ~3 minutes), then publishes the company's feed - what the crons do, now. */
 export async function syncToursFeedNow(): Promise<ActionResult<{ screen: FeedScreenData; result: CompanyFeedResult }>> {
   try {
     const { company } = await requireCompany("tours");
-    const { published, drawn } = await publishCompanyFeed(company, { deadline: Date.now() + 180_000 });
-    const result = companyFeedSummary(company, published, drawn);
-    const warning = drawn && drawn.remaining > 0 ? `${drawn.remaining} pictures are still to be drawn - the hourly run finishes them.` : undefined;
+    const { published, drawn, coversDrawn } = await publishCompanyFeed(company, { deadline: Date.now() + 180_000 });
+    const result = companyFeedSummary(company, published, drawn, coversDrawn);
+    const left = (drawn?.remaining ?? 0) + (coversDrawn?.remaining ?? 0);
+    const failed = coversDrawn?.errors.length ?? 0;
+    const warning =
+      left > 0
+        ? `${left} pictures are still to be drawn - the hourly run finishes them.`
+        : failed > 0
+          ? `${failed} world cover${failed === 1 ? "" : "s"} could not be drawn: ${coversDrawn?.errors.map((e) => `${e.key} (${e.error})`).join(", ")}`
+          : undefined;
     return actionOk({ screen: await screenData(company), result }, warning);
   } catch (e) {
     return actionFail(e, SCOPE, undefined);

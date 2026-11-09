@@ -26,6 +26,8 @@ export type ToursReportItem = {
   priceRegularValue: number | null;
   link: string;
   image: string;
+  /** "world" = the tour has no photo of its own and goes out with its world's picture (older reports: absent = "tour"). */
+  imageFrom?: "tour" | "world";
   gallery: string[];
   activity_category: string;
   performers: string;
@@ -60,6 +62,24 @@ export type ToursReportSkip = {
   why: { missing: string; fix: string; actionable: boolean };
 };
 
+/** A world with a picture, as the site's report lists it (mega-family lib/feed/tours-feed.ts TourFeedWorld). */
+export type ToursReportWorld = {
+  /** The key its tours carry in custom_label_0. */
+  key: string;
+  name: string;
+  brandName: string;
+  /** Its first hero picture, absolute. */
+  image: string;
+  /** Its logo, absolute ("" = none). */
+  logo: string;
+  color: string;
+  colorDeep: string;
+  /** The world's page, absolute. */
+  link: string;
+  /** Its tours in the feed. */
+  tours: number;
+};
+
 export type ToursReport = {
   generatedAt: string;
   siteBuiltAt: string | null;
@@ -69,6 +89,8 @@ export type ToursReport = {
   logo: string;
   items: ToursReportItem[];
   skipped: ToursReportSkip[];
+  /** The worlds with a picture - one feed cover each (lib/creative/worlds.ts). Empty from a site that does not list them. */
+  worlds: ToursReportWorld[];
 };
 
 /** The company a feed belongs to (lib/company.ts Company, the fields used here). */
@@ -77,12 +99,17 @@ export type FeedCompany = { id: string; slug: string; name: string; siteUrl: str
 /** The pictures of one tour, when both are drawn (lib/creative/tours.ts). */
 export type TourCreative = { square: string; banner: string };
 
+/** A world's feed cover, when both sizes are drawn (lib/creative/worlds.ts): the current files and the addresses that never change. */
+export type WorldCover = { square: string; banner: string; stableSquare: string; stableBanner: string };
+
 /** What a publish leaves in Storage next to the CSV - the Product Feed screen reads it. */
 export type PublishedToursReport = ToursReport & {
   publishedAt: string;
   csvUrl: string;
   /** The picture each item went out with: its branded one, or its own photo while that is not drawn yet. */
   images: Record<string, { image: string; branded: boolean; banner: string | null }>;
+  /** World key -> its cover, when drawn (absent in a publish from before the covers). */
+  covers?: Record<string, WorldCover>;
 };
 
 export const toursFeedPath = (slug: string) => `feeds/${slug}/meta-activities-feed.csv`;
@@ -116,7 +143,32 @@ export function parseToursReport(value: unknown): ToursReport {
     logo: String(r.logo ?? ""),
     items: r.items as ToursReportItem[],
     skipped: r.skipped as ToursReportSkip[],
+    worlds: parseWorlds((r as { worlds?: unknown }).worlds),
   };
+}
+
+/** The report's worlds that can be drawn (a key and an https picture); anything else is dropped, never fatal. */
+function parseWorlds(value: unknown): ToursReportWorld[] {
+  if (!Array.isArray(value)) return [];
+  const text = (v: unknown) => (typeof v === "string" ? v : "");
+  return value.flatMap((w) => {
+    if (!w || typeof w !== "object") return [];
+    const o = w as Record<string, unknown>;
+    if (!text(o.key) || !/^https:\/\//.test(text(o.image))) return [];
+    return [
+      {
+        key: text(o.key),
+        name: text(o.name),
+        brandName: text(o.brandName),
+        image: text(o.image),
+        logo: text(o.logo),
+        color: text(o.color),
+        colorDeep: text(o.colorDeep),
+        link: text(o.link),
+        tours: typeof o.tours === "number" && Number.isFinite(o.tours) ? Math.max(0, Math.floor(o.tours)) : 0,
+      },
+    ];
+  });
 }
 
 /** The company site's tours report, fetched like the Mega Events sources: no redirect, plain bytes, a live answer. */
@@ -165,13 +217,15 @@ async function upload(path: string, body: string, contentType: string): Promise<
 }
 
 /**
- * Publishes one tours company's feed. `creativeOf` names the drawn pictures (lib/creative/tours.ts); the publish never
- * draws - the hourly creatives cron does, and "Sync now" draws before it publishes. Throws with a readable message.
+ * Publishes one tours company's feed. `creativeOf` names the drawn pictures (lib/creative/tours.ts) and `coverOf` the
+ * worlds' drawn covers (lib/creative/worlds.ts); the publish never draws - the hourly creatives cron does, and "Sync now"
+ * draws before it publishes. Throws with a readable message.
  */
 export async function publishToursFeed(
   company: FeedCompany,
   creativeOf: (item: ToursReportItem) => TourCreative | null,
   report?: ToursReport,
+  coverOf?: (world: ToursReportWorld) => WorldCover | null,
 ): Promise<PublishedToursReport> {
   if (!company.siteUrl) throw new Error(`${company.slug} has no site address`);
   const rep = report ?? (await fetchToursReport(company.siteUrl));
@@ -182,7 +236,12 @@ export async function publishToursFeed(
     const c = creativeOf(it);
     images[it.id] = { image: c?.square || it.image, branded: !!c, banner: c?.banner ?? null };
   }
-  const published: PublishedToursReport = { ...rep, publishedAt: new Date().toISOString(), csvUrl, images };
+  const covers: Record<string, WorldCover> = {};
+  for (const w of rep.worlds) {
+    const c = coverOf?.(w);
+    if (c) covers[w.key] = c;
+  }
+  const published: PublishedToursReport = { ...rep, publishedAt: new Date().toISOString(), csvUrl, images, covers };
   await upload(toursReportPath(company.slug), JSON.stringify(published), "application/json; charset=utf-8");
   return published;
 }

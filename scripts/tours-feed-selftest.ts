@@ -1,10 +1,13 @@
-// Self-test for the tours companies' Meta feed (lib/feed/activities-csv.ts, lib/feed/tours-feed.ts, lib/creative/tours.ts).
+// Self-test for the tours companies' Meta feed (lib/feed/activities-csv.ts, lib/feed/tours-feed.ts, lib/creative/tours.ts,
+// lib/creative/worlds.ts + components/creative/WorldCoverTemplate.tsx).
 // Pure helpers only: no DB, no Storage, no network.
 //   npx tsx scripts/tours-feed-selftest.ts
 import assert from "node:assert/strict";
 import { ACTIVITIES_HEADERS, csvCell, toActivitiesCsv } from "../lib/feed/activities-csv";
 import { parseToursReport, toursActivityRows, type ToursReport, type ToursReportItem } from "../lib/feed/tours-feed";
 import { tourCreativeFile, tourCreativeHash, tourCreativeInput } from "../lib/creative/tours";
+import { worldCoverFile, worldCoverHash, worldCoverInput, worldCoverStablePath, worldFileKey } from "../lib/creative/worlds";
+import { FOCUS_X, coverBox, toursLine } from "../components/creative/WorldCoverTemplate";
 import { fitBox, isPrivateAddress, logoSize } from "../lib/creative/logo";
 
 const item = (over: Partial<ToursReportItem> = {}): ToursReportItem => ({
@@ -47,6 +50,7 @@ const report = (items: ToursReportItem[], skipped: ToursReport["skipped"] = []):
   logo: "https://mega-family.vercel.app/media/2025/12/megatr-logo.png",
   items,
   skipped,
+  worlds: [],
 });
 
 /* the CSV: Mega Events' verified bytes - header, column order, CRLF, no BOM */
@@ -110,6 +114,47 @@ assert.deepEqual(fitBox({ width: 309, height: 173 }, 440, 190), { width: 339, he
 assert.deepEqual(fitBox({ width: 297, height: 43 }, 440, 190), { width: 440, height: 64 });
 /* the world's logo is part of what a picture draws */
 assert.notEqual(h(item({ worldLogo: "https://mega-family.vercel.app/brand/mega-family-logo.jpg" })), base, "world logo");
+
+/* the worlds (Dor 09.11.2026): a report without them still parses; a world without a key or an https picture is dropped */
+const withWorlds = parseToursReport({
+  ...report([item()]),
+  worlds: [
+    { key: "family", name: "משפחות", brandName: "מגה פמילי", image: "https://x.supabase.co/terms/a.jpg", logo: "https://x/l.jpg", color: "#0059AA", colorDeep: "#0059AA", link: "https://s/a/", tours: 17 },
+    { key: "", name: "x", image: "https://x/a.jpg" },
+    { key: "ladies", name: "נשים", brandName: "מגה ליידיס", image: "/media/l.jpg", tours: 0 },
+    { key: "concept", name: "קונספט", brandName: "מגה קונספט", image: "https://x/c.jpg", tours: "3" },
+  ],
+});
+assert.deepEqual(withWorlds.worlds.map((w) => w.key), ["family", "concept"]);
+assert.equal(withWorlds.worlds[1].tours, 0, "a count that is not a number is 0");
+const { worlds: _none, ...older } = report([item()]);
+assert.deepEqual(parseToursReport(older).worlds, [], "a site that does not list worlds");
+/* a tour with its world's picture says so; the CSV takes it like any photo */
+const [fromWorld] = toursActivityRows(report([item({ imageFrom: "world", image: "https://x.supabase.co/terms/a.jpg" })]), "מגה תיירות", () => null);
+assert.equal(fromWorld.image_link, "https://x.supabase.co/terms/a.jpg");
+
+/* a world's cover: its hash follows what it draws, its files carry a safe key */
+const family = withWorlds.worlds[0];
+const ch = (over: Partial<typeof family> = {}) => worldCoverHash(worldCoverInput({ ...family, ...over }, logo));
+const cbase = ch();
+assert.notEqual(ch({ image: "https://x.supabase.co/terms/b.jpg" }), cbase, "a new hero picture draws a new cover");
+assert.notEqual(ch({ tours: 18 }), cbase, "the count of tours is drawn");
+assert.notEqual(ch({ name: "משפחות!" }), cbase, "the name is drawn");
+assert.equal(ch({ link: "https://elsewhere/" }), cbase, "the link is not drawn");
+assert.equal(worldCoverFile("family", cbase, "banner"), `world-family-${cbase}-banner.png`);
+assert.equal(worldFileKey("Mega Ladies/../x"), "mega-ladies-x");
+assert.equal(worldFileKey("משפחות"), "world", "a key with no latin letters still makes a file name");
+assert.equal(worldCoverStablePath("mega-family", "events", "square"), "feeds/mega-family/world-events-square.png");
+/* the crop keeps the people in the left third: a 16:9 picture in a 4:5 frame is centred at FOCUS_X, never past an edge */
+const box = coverBox({ width: 1600, height: 900 }, 1080, 1350);
+assert.deepEqual([box.width, box.height, box.top], [2400, 1350, 0]);
+assert.equal(box.left, Math.round(540 - 2400 * FOCUS_X));
+assert.ok(box.left <= 0 && box.left + box.width >= 1080);
+assert.equal(coverBox({ width: 1600, height: 900 }, 1200, 628).left, 0, "a wide frame keeps the picture's left edge");
+assert.equal(coverBox({ width: 100, height: 1000 }, 1080, 1350).left, 0);
+assert.equal(toursLine(17), "17 טיולים");
+assert.equal(toursLine(1), "טיול אחד");
+assert.equal(toursLine(0), "");
 
 /* a logo is never fetched from an internal address */
 for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "0.0.0.0", "100.64.0.1", "::1", "fe80::1", "fd00::1", "::ffff:127.0.0.1"]) assert.ok(isPrivateAddress(ip), ip);

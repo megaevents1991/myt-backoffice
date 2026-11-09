@@ -39,7 +39,7 @@ export type TourCreativeInput = {
 /** The two logos as lib/creative/render.tsx loaded them (null = not drawn). */
 export type TourLogos = { world: LogoImage | null; group: LogoImage | null };
 
-function Logo({ img, maxW, maxH, radius }: { img: LogoImage; maxW: number; maxH: number; radius: number }) {
+export function Logo({ img, maxW, maxH, radius }: { img: LogoImage; maxW: number; maxH: number; radius: number }) {
   const box = fitBox(img, maxW, maxH);
   const badge = img.format === "jpeg";
   return (
@@ -51,20 +51,20 @@ function Logo({ img, maxW, maxH, radius }: { img: LogoImage; maxW: number; maxH:
   );
 }
 
-const SAFE_INSET = 148;
-const GROUP = "#6E34B1";
-const GROUP_DEEP = "#2A1640";
-const INK = "#FFFFFF";
+export const SAFE_INSET = 148;
+export const GROUP = "#6E34B1";
+export const GROUP_DEEP = "#2A1640";
+export const INK = "#FFFFFF";
 
 /** "#aabbcc" (a "#abc" is spread out) -> the same, else the fallback. The gradients add an alpha pair to it. */
-function hex(v: string, fallback: string): string {
+export function hex(v: string, fallback: string): string {
   const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(v);
   if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`;
   return /^#[0-9a-f]{6}$/i.test(v) ? v : fallback;
 }
 
 /** A font size that keeps a line on one line, from the number of letters (MatchTemplate's fitOneLine). */
-function fit(text: string, max: number, width: number, min: number): number {
+export function fit(text: string, max: number, width: number, min: number): number {
   const est = Math.floor(width / (Math.max(1, [...text].length) * 0.52));
   return Math.min(max, Math.max(min, est));
 }

@@ -7,6 +7,7 @@ import {
   type CreativeInput,
 } from "@/components/creative/MatchTemplate";
 import { TourTemplate, type TourCreativeInput } from "@/components/creative/TourTemplate";
+import { WorldCoverTemplate, type WorldCoverInput } from "@/components/creative/WorldCoverTemplate";
 import { loadLogo, type LogoImage } from "@/lib/creative/logo";
 
 export const SIZES = {
@@ -116,6 +117,22 @@ export async function renderTourCreativePng(
   const { width, height } = SIZES[size];
   const [font, world, group] = await Promise.all([loadBrandFont(), logoOf(input.worldLogo ?? ""), logoOf(input.logo)]);
   const image = new ImageResponse(<TourTemplate {...input} width={width} height={height} logos={{ world, group }} />, {
+    width,
+    height,
+    fonts: [{ name: "brand", data: font, style: "normal", weight: 700 }],
+  });
+  return image.arrayBuffer();
+}
+
+/**
+ * The feed cover of a world (components/creative/WorldCoverTemplate.tsx), in the brand font. Its picture is loaded and
+ * measured like a logo (PNG / JPEG up to 2 MB) so the crop can follow the people; a picture that cannot be measured is
+ * drawn centred.
+ */
+export async function renderWorldCoverPng(input: WorldCoverInput, size: CreativeSize): Promise<ArrayBuffer> {
+  const { width, height } = SIZES[size];
+  const [font, world, group, picture] = await Promise.all([loadBrandFont(), logoOf(input.worldLogo), logoOf(input.logo), loadLogo(input.image)]);
+  const image = new ImageResponse(<WorldCoverTemplate {...input} width={width} height={height} logos={{ world, group }} picture={picture?.format === "svg" ? null : picture} />, {
     width,
     height,
     fonts: [{ name: "brand", data: font, style: "normal", weight: 700 }],
