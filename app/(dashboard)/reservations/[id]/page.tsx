@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getClubMemberNoByCode } from "@/lib/actions/club-actions";
+import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, ArrowLeft, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -112,6 +114,8 @@ export default function ReservationDetailsPage({
   // itinerary_group). null for an ordinary reservation, and also when the group cannot be
   // read (itinerary columns not migrated yet, a failed read) - the panel just stays hidden.
   const [itineraryGroup, setItineraryGroup] = useState<ItineraryGroup | null>(null);
+  // MEGA CLUB: the member number behind the order's coupon, when the coupon is a member code.
+  const [clubMemberNo, setClubMemberNo] = useState<number | null>(null);
 
   useEffect(() => {
     async function fetchReservation() {
@@ -138,6 +142,13 @@ export default function ReservationDetailsPage({
       .then(setAgentLabel)
       .catch(() => {});
   }, [resolvedParams.id, toast]);
+
+  useEffect(() => {
+    if (!reservation?.coupon_code) return;
+    getClubMemberNoByCode(reservation.coupon_code)
+      .then(setClubMemberNo)
+      .catch(() => {});
+  }, [reservation?.coupon_code]);
 
   useEffect(() => {
     if (!reservation) return;
@@ -342,6 +353,11 @@ export default function ReservationDetailsPage({
                 <p className="text-lg font-bold">
                   ${reservation.user_shown_price.toFixed(2)}
                 </p>
+                {clubMemberNo != null && (
+                  <Badge variant="secondary" className="mt-1" title={reservation.coupon_code ?? undefined}>
+                    חבר מועדון #{clubMemberNo}
+                  </Badge>
+                )}
               </div>
 
               <div>

@@ -48,6 +48,8 @@ export type PaxInfo = {
 };
 
 export type Reservation = {
+  /** The coupon the order redeemed (a MEGA CLUB member code starts with MEGA). */
+  coupon_code?: string | null;
   id: number;
   created_at: string;
   main_contact_first_name: string;

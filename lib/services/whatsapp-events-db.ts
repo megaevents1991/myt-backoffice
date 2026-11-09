@@ -461,3 +461,25 @@ export async function outboxOfReservation(reservationId: number): Promise<Outbox
     sentTo: r.sent_to,
   }));
 }
+
+/** MEGA CLUB (club spec D9): "הסר" on the Mega Events number unsubscribes the club member of this phone - every member
+ *  whose phone_key is these last 9 digits and who still gets updates. The member price stays. A missing table (the club
+ *  migration not applied yet) touches nobody. */
+export async function unsubscribeClubByPhone(phoneKey: string, at: string): Promise<number> {
+  const { data, error } = await db
+    .from("club_members")
+    .update({ marketing: "unsubscribed", unsubscribed_at: at, unsubscribe_source: "whatsapp", updated_at: new Date().toISOString() })
+    .eq("phone_key", phoneKey)
+    .eq("marketing", "subscribed")
+    .select("id");
+  if (error) {
+    if (missingTable(error as DbError)) return 0;
+    throw new Error(`club_members: ${error.message}`);
+  }
+  const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
+  if (ids.length) {
+    const log = await db.from("club_log").insert(ids.map((member_id) => ({ member_id, action: "unsubscribe", source: "whatsapp" })));
+    if (log.error && !missingTable(log.error as DbError)) console.error("club_log: whatsapp unsubscribe log failed", JSON.stringify(log.error));
+  }
+  return ids.length;
+}

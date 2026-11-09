@@ -22,6 +22,9 @@ export interface EventsInboundDeps {
   autoTexts(companyId: string): Promise<Set<string>>;
   addAutoTexts(companyId: string, texts: string[], source: "history" | "staff"): Promise<void>;
   recentEchoes(companyId: string, days: number, max: number): Promise<{ phoneKey: string; text: string | null }[]>;
+  /** MEGA CLUB: one consent covers mail, SMS and WhatsApp (club spec D9), so "הסר" here unsubscribes the member of this
+   *  number too. Returns how many members it touched. */
+  unsubscribeClubByPhone(phoneKey: string, at: string): Promise<number>;
 }
 
 type MessageEvent = Extract<WaEvent, { kind: "message" }>;
@@ -110,6 +113,12 @@ export async function handleEventsMessage(
   if (isOptOutWhole(ev.text)) {
     // the system answers it (the confirmation below): the chat does not wait for a rep
     await ed.markChat(chat.id, { optedOutAt: ev.sentAt, optedOutSource: "reply", answeredAt: ev.sentAt });
+    try {
+      await ed.unsubscribeClubByPhone(key, ev.sentAt);
+    } catch (e) {
+      // never holds back the reply: the chat is already marked opted out
+      deps.log.warn(`club unsubscribe for ${key} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
     const answer = await deps.sendServiceText(account, phone, OPT_OUT_REPLY);
     if (!answer.ok) deps.log.warn(`opt-out reply to ${key} not sent: ${answer.error ?? "unknown"}`);
     out.optOuts += 1;

@@ -2,7 +2,7 @@
 
 // MEGA CLUB - the actions of /marketing/club (spec §10). Each one: requireAdmin() first, input checked before any
 // read, `{ ok: false, kind }` instead of a throw (Next masks thrown action errors in production).
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { israelDayOf, previousWindow } from "@/lib/marketing/range";
 import { DEFAULT_CLUB_SETTINGS, validateClubSettings } from "@/lib/club/settings";
@@ -14,6 +14,7 @@ import {
   readClubSettings,
   readEventNames,
   readMemberById,
+  readMemberNoByCode,
   readMemberLog,
   readMemberOrders,
   readMembers,
@@ -185,5 +186,17 @@ export async function resendClubWelcome(id: string): Promise<{ ok: true } | Fail
     return { ok: true };
   } catch (e) {
     return failOf(e, "resend welcome");
+  }
+}
+
+/** The reservation page's "חבר מועדון #1041" chip: the member number behind an order's coupon code, else null. */
+export async function getClubMemberNoByCode(code: string | null | undefined): Promise<number | null> {
+  await requireStaff();
+  const c = (code ?? "").trim().toUpperCase();
+  if (!/^MEGA[A-Z0-9]{6}$/.test(c)) return null;
+  try {
+    return await readMemberNoByCode(c);
+  } catch {
+    return null;
   }
 }

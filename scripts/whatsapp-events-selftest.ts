@@ -233,8 +233,9 @@ const EV_ACCOUNT: WaAccount = {
 const TOURS_ACCOUNT: WaAccount = { ...EV_ACCOUNT, id: "acc-1", companyId: "co-1", phoneNumberId: "111", wabaId: "222" };
 const CUSTOMER = "972542002722";
 
-function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]; now?: string; upsertFailsOnce?: boolean } = {}) {
+function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]; now?: string; upsertFailsOnce?: boolean; clubThrows?: boolean } = {}) {
   let upsertFails = !!opts.upsertFailsOnce;
+  const clubUnsubs: { key: string; at: string }[] = [];
   const echoArgs: { days: number; max: number }[] = [];
   const messages: (WaMessageInsert & { id: string })[] = [];
   const chats = new Map<string, WaChat>();
@@ -326,9 +327,14 @@ function makeEventsDeps(opts: { orders?: EventsOrderLite[]; autoTexts?: string[]
         echoArgs.push({ days, max });
         return [1, 2, 3, 4, 5].map((i) => ({ phoneKey: `50000000${i}`, text: "שלום, נחזור אליכם" }));
       },
+      unsubscribeClubByPhone: async (key, at) => {
+        clubUnsubs.push({ key, at });
+        if (opts.clubThrows) throw new Error("club_members: a blip");
+        return 1;
+      },
     },
   };
-  return { deps, messages, chats, moves, marks, sent, calls, echoArgs, setNow: (t: string) => (now = t) };
+  return { deps, messages, chats, moves, marks, sent, calls, echoArgs, clubUnsubs, setNow: (t: string) => (now = t) };
 }
 
 type MsgEvent = Extract<WaEvent, { kind: "message" }>;
@@ -423,6 +429,21 @@ async function inboundSection(): Promise<void> {
     const t = makeEventsDeps();
     await handleWebhookEvents([evMsg("w1", "2026-11-08T09:00:00.000Z", "הסר")], t.deps);
     assert.ok(t.marks.some((m) => m.patch.answeredAt === "2026-11-08T09:00:00.000Z"), "an opt-out is answered");
+    // one consent for mail, SMS and WhatsApp (club spec D9): "הסר" here also unsubscribes the MEGA CLUB member
+    assert.deepEqual(t.clubUnsubs, [{ key: "542002722", at: "2026-11-08T09:00:00.000Z" }], "the club member of the number is unsubscribed");
+  }
+  // a club write that fails never holds back the opt-out reply
+  {
+    const t = makeEventsDeps({ clubThrows: true });
+    await handleWebhookEvents([evMsg("w1", "2026-11-08T09:00:00.000Z", "הסר")], t.deps);
+    assert.equal(t.clubUnsubs.length, 1);
+    assert.ok(t.sent.length >= 1, "the opt-out reply still goes out");
+  }
+  // a message that only mentions "הסר" is no opt-out and touches no member
+  {
+    const t = makeEventsDeps();
+    await handleWebhookEvents([evMsg("w1", "2026-11-08T09:00:00.000Z", "הסר את המלון מההזמנה")], t.deps);
+    assert.equal(t.clubUnsubs.length, 0);
   }
   // full-number binding: an order of another country whose last 9 digits are the same is not this customer's
   {

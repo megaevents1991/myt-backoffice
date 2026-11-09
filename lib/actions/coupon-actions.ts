@@ -1,6 +1,7 @@
 "use server";
 
 import { supabase } from "@/lib/supabase-server";
+import { fetchPaged } from "@/lib/supabase-paged";
 import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import type { Coupon } from "@/types/app.types";
 import { isCustomerRefundPartner } from "@/types/partner.types";
@@ -28,14 +29,20 @@ const normalizeCode = (code: string) => code.trim().toUpperCase();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const coupons = () => (supabase as any).from("coupons");
 
-export async function getCoupons() {
+/** MEGA CLUB member codes (`source = 'club'`, one per member) are left out unless asked for, so thousands of them never
+ *  bury the real coupons. Paged: a plain select stops at 1,000 rows. Before the club migration (no `source` column)
+ *  every coupon is a real one. */
+export async function getCoupons({ includeClub = false }: { includeClub?: boolean } = {}) {
   await requireStaff();
-  const { data, error } = await coupons()
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return data as Coupon[];
+  const query = (withFilter: boolean) => () => {
+    const q = coupons().select("*").order("created_at", { ascending: false }).order("id");
+    return withFilter && !includeClub ? q.or("source.is.null,source.neq.club") : q;
+  };
+  let res = await fetchPaged<Coupon>(query(true), 20_000);
+  const code = (res.error as { code?: string } | null)?.code;
+  if (code === "42703" || code === "PGRST204") res = await fetchPaged<Coupon>(query(false), 20_000);
+  if (res.error) throw res.error;
+  return res.rows;
 }
 
 export async function createCoupon(coupon: CouponInput) {

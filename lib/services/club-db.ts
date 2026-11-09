@@ -138,3 +138,9 @@ export async function insertClubLog(row: { member_id: string; action: string; so
   const { error } = await db.from("club_log").insert(row);
   check(error, "club log write");
 }
+
+export async function readMemberNoByCode(code: string): Promise<number | null> {
+  const { data, error } = await db.from("club_members").select("member_no").eq("coupon_code", code).maybeSingle();
+  check(error, "member by code read");
+  return (data?.member_no as number | undefined) ?? null;
+}

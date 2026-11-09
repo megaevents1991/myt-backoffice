@@ -389,6 +389,8 @@ export type Coupon = {
   influencer_partner_code: string | null;
   is_active: boolean;
   created_at: string;
+  /** null = a normal coupon; "club" = a MEGA CLUB member code (one per member). */
+  source?: string | null;
 };
 
 export type SortOptions = "price_asc" | "rating";

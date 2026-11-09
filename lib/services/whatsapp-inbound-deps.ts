@@ -32,6 +32,7 @@ import {
   markChat,
   moveToFollowUp,
   recentEchoes,
+  unsubscribeClubByPhone,
   reservationsByIds,
   reservationsByPhoneKeys,
   upsertChat,
@@ -76,7 +77,7 @@ export function realInboundDeps(): InboundDeps {
     async companyProducts(id) {
       return (await companyOf(id))?.productTypes ?? [];
     },
-    events: { chatByKey, upsertChat, markChat, reservationsByPhoneKeys, reservationsByIds, moveToFollowUp, autoTexts, addAutoTexts, recentEchoes },
+    events: { chatByKey, upsertChat, markChat, reservationsByPhoneKeys, reservationsByIds, moveToFollowUp, autoTexts, addAutoTexts, recentEchoes, unsubscribeClubByPhone },
     log: {
       info: (message) => console.info(message),
       warn: (message) => console.warn(`[whatsapp] ${message}`),

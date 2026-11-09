@@ -77,6 +77,7 @@ export function CouponsTable() {
   const [form, setForm] = useState<CouponInput>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Coupon | null>(null);
+  const [showClub, setShowClub] = useState(false);
   const { toast } = useToast();
   // Delete is a hard delete (usage history goes with it) - admins only, the
   // server action refuses anyone else. Everyone else stops a coupon with Active.
@@ -87,7 +88,7 @@ export function CouponsTable() {
     async function fetchData() {
       try {
         const [couponData, eventData, partnerData] = await Promise.all([
-          getCoupons(),
+          getCoupons({ includeClub: showClub }),
           getCouponEventOptions(),
           getCouponPartnerOptions(),
         ]);
@@ -107,7 +108,7 @@ export function CouponsTable() {
     }
 
     fetchData();
-  }, [toast]);
+  }, [toast, showClub]);
 
   const eventName = useCallback(
     (eventId: number | null) =>
@@ -370,10 +371,16 @@ export function CouponsTable() {
         searchColumn="code"
         searchPlaceholder="Search codes..."
         rightActions={
-          <Button onClick={openCreate}>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Add Coupon
-          </Button>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground" htmlFor="show-club-codes">
+              <Switch id="show-club-codes" checked={showClub} onCheckedChange={setShowClub} />
+              Show member codes
+            </label>
+            <Button onClick={openCreate}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Coupon
+            </Button>
+          </div>
         }
       />
 
