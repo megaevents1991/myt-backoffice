@@ -275,7 +275,7 @@ from the link in every message. (See §13 Q2.)
   log `left`, source `link`). A member who left and joins again is a member again (status active, code back on) but
   the join never changes the mail status (§8.3): their updates stay off. Lookup of a member who left answers
   "not found". Staff "Remove" stays `removed` and a join stays refused for it.
-- **D14 The popup comes at the end of the order (Dor: "עכשיו מילאתי הזמנה ולא נתקלתי בפופ אפ", then "לקפיץ את זה בסוף
+- **D14 (REPLACED by D16) The popup comes at the end of the order (Dor: "עכשיו מילאתי הזמנה ולא נתקלתי בפופ אפ", then "לקפיץ את זה בסוף
   ההזמנה לפני שעוברים לפיצול הזמנה או תשלום מאובטח").** The old trigger (idle only, cancelled by the first touch)
   never reached a visitor who fills the form. Now: when a visitor who is not a member yet clicks on to secure payment or
   to "לפצל תשלום / דברו עם נציג" (not the 24 h hold), and the form is valid, the popup opens instead - once per order
@@ -283,6 +283,19 @@ from the link in every message. (See §13 Q2.)
   join or a lookup (with the member price on). A clear X at the top right only closes. Not for a known member, not with
   a member price on, not on ticket-only / agent / partner. `popup_delay_seconds` stays stored and drives nothing; the
   backoffice no longer shows it. Today's discount popup (partner link, club off) keeps its old idle trigger.
+- **D16 One tick in the summary, no popup (Dor 09.11: "אני הולך עם השינויים שלך"; replaces D14).** The business case
+  (6 months, package orders): ~52 Paid a month, 2.13 tickets and $4,403 per order, 468 Lost against 313 Paid, 6 of 306
+  customers bought twice. A popup at the payment click delays the most decided buyer at the leakiest step and gives $107
+  per order to people who were paying anyway; the club's value is the recorded consent, not the next-order discount.
+  So: no club popup at all. A MEGA CLUB card inside the summary, above the payment button (where the coupon field is):
+  "הצטרפו בחינם וחסכו $X בהזמנה הזאת" (X = the amount x the order's tickets - **the amount is shown before joining
+  now**, reversing §5's "only after joining"), one box with the consent text (v1, unchanged), and "כבר חברים?" (the
+  lookup popup with the X). Ticking it joins with the first passenger's email and phone - at once when they are valid,
+  else as soon as they are (no extra field, no extra click); the price drops in place and nothing ever blocks the
+  payment button. If the payment button is clicked while a join is still running, the click stops once and says the
+  price changed. `club_members.source = 'checkout_inline'`. The amount stays $50 a ticket (Dor did not change it).
+  The /club page, leaving (D13) and the remembered member are unchanged. Today's discount popup (partner link, club
+  off) keeps its idle trigger.
 - **D15 A door in the main menu.** "הצטרפות למועדון" after "אודות" (desktop and phone) opens `/club`: the same join
   and "כבר חברים" forms outside an order (`source = 'site_page'`, no event). Joining there sets the device cookie, so
   the next order applies the price by itself. The amount is still shown only after joining.
