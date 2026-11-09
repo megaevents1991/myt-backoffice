@@ -1,0 +1,201 @@
+==== TAB: ETG APIv3 Certification Checklist
+# ETG API Pre-Certification Checklist 
+Necessary: Please create a copy of this document and return it once it is completed. 
+This document is the test checklist that starts the certification process. Given the nature of this document, the questions will contain correct and incorrect answers. To start, please cross-check your integration and provide answers and test order ids when required. 
+All the testing scenarios reasoning, and errors and statues logic can be found in the Best Practices. Please refer to this document for more details.
+General
+• Please map the hotel with “hid” 10004834 to start the certification. If you are using a Prebook with price change logic, please map the hotel with “hid” 8819557. 
+• Product Type for Certification: Please specify what partner’s product is going to be certified, and indicate if the necessary access / materials have been provided. 	1. Website OR Mobile App (provide ETG access to test search and booking functionalities to start the certification process. ETG should be activated as a Provider) 
+• Access to the website has been provided. 
+• Access to the website cannot be granted. Please find the video-recording attached to the e-mail 
+• The installation file of the mobile app is provided (optional). 
+2. API (partner provides its API to third parties for integration)
+• The API documentation is provided (mandatory).
+• The logs of response and request from the partner’s API and ETG API for 1 completed test booking (mandatory). 
+Choose test case applicable to your logic and create a test booking with below requirements | Specify the partner_order_id for the successfully tested scenarios
+Mandatory if you support multiroom booking feature / Hotel with hid 10004834 / 2 rooms / In 1 room - 2 adults and a child of 3 y.o / In 2nd rooms - 2 adults and 3 children with 1 y.o, 5 y.o and 17 y.o | 
+Mandatory if you work with citizenship / Create a successful booking with the following criteria: / Hotel with hid 10004834 / Citizenship (residency): Uzbekistan / 1 room / 2 adults | 
+Mandatory if you work with children / Create a successful booking with the below requirements: / Hotel with hid 10004834 / Citizenship: Monaco / 1 rooms / 2 adults and 2 child with 0 and 17 y.o | 
+Mandatory only if you allow price change during Prebook / Hotel with hid 8819557 / 1 rooms / 10% Prebook increase | 
+Create a successful booking with “unknown” error in the /booking/finish and /booking/finish/status endpoint in any hotel | 
+Create a failed booking with “unknown” error in /booking/finish and  the /booking/finish/status resulting in “soldout” error in any hotel | 
+Create a failed booking with “unknown” error in both /booking/finish and /booking/finish/status endpoints, resulting in “book_limit” error in any hotel | 
+
+• Workflow: Specify the ETG v3 API call sequence and logic. Please describe each step, from search to cancellation, and include details about the ETG API methods used at each step. 
+The name for your step | Your step logic (stating the action the user should perform for your system to initiate a call to the ETG endpoint/endpoints) | ETG endpoint/endpoints
+ |  | 
+ |  | 
+ |  | 
+ |  | 
+ |  | 
+ |  | 
+ |  | 
+ |  | 
+
+• IP Whitelisting on ETG end: Please provide the list of your IP addresses that need to be whitelisted. If you are using the dynamic IP addresses, please proxy them via static IP. This is mandatory.
+• Here are our IP addresses: provide the list of IP addresses here
+• Payment types: Please specify what payment type has been developed within the integration. Possible payment types:
+• “hotel” - payment at the hotel. This type is available for Affiliate API. 
+• “deposit” - the payment comes from a partner's deposit. This  type is available for  the B2B API
+• “now” - applicable when ETG is expected to be a merchant of record. If you are charging the customer card with Stripe or any other payment gateway, this payment type can be omitted. 
+• RPM Limits: Please specify the expected RPM for each endpoint specified, depending on the integration. 
+• /serp/hotels: provide expected RPM value
+• /serp/region: provide expected RPM value
+• /serp/geo: provide expected RPM value
+• /search/hp: provide expected RPM value
+• /hotel/prebook: provide expected RPM value
+• /serp/prebook: provide expected RPM value 
+# Static Data
+• Hotel static data Upload and Updates: Please specify how you receive and update hotel static data: 
+• We update the hotel static data using the /hotel/info/dump/ endpoint 
+• We update the hotel static data using the /hotel/info/incremental_dump/ endpoint
+• We update the hotel static data using both the /hotel/info/dump/ and /hotel/info/incremental_dump/ endpoints 
+• We don’t use any of the dumps
+• We use /hotel/info to get the static data 
+• We use third-party services (e.g., GIATA, Vervotech, etc.)
+• We have  implemented a different logic: indicate the logic
+• We use Content API
+• In case you use it, please indicate how you use it:
+• We use it to enrich the website with static data in real-time 
+• We use it to download the static data and store it in a database, and get the static data from the database 
+• Other: indicate the logic 
+• Please specify how often you will update static data 
+• Weekly 
+• Daily 
+• Other: indicate the logic
+If you work with /serp/region, how do you update the destinations? 
+• We use hotel/region/dump/and get region ids from this file 
+• We use /hotel/info/dump/ and get region ids from this file 
+• We use Content API 
+• Please specify how often you will update the region data 
+• Daily 
+• Weekly
+• Other: indicate the logic 
+## • Hotel and Region Mapping: Please specify if the hotel and region mapping has been executed?
+• Yes
+• Not yet If yes, please indicate the number of mapped hotels and regions.If not yet, please specify the planned number of mapped hotels and regions. The exact number of hotels and regions is appreciated, but an approximate number would also suffice. 
+• Number of hotels: indicate the number
+• Number of regions: indicate the number
+## • Room Static data: Please indicate if you work with room static data (images and amenities).
+• Yes, we show room images and amenities 
+• No, we do not show room images and amenities
+• If you work with room static data, please choose which parameter you use to match it with dynamic data. 
+• “room_name” 
+• “room_group_id” 
+• “room_name” and “room_group_id” 
+• “rg_ext”
+• Other: indicate the logic 
+# Search step
+• Match_hash usage: Please indicate if you use match_hash. If yes, expand on the logic. 
+• Yes, we use “match_hash”: indicate the logic
+• No, we do not use “match_hash” 
+• Prebook: Please specify the logic of how you work with Prebook. 
+• We don’t work with any of Prebook 
+• Describe the logic for using price_increase_percent, and let us know your default value for price_increase_percent. 
+• We do not send the “price_increase_parameter” in the /prebook/ requests
+• 0% 
+• 10%
+• 20%
+• Other: Please indicate your value of price_increase_percent  
+• “Prebook” is implemented according to ETG timeout limitation (60s).
+• Yes
+• Other: Please indicate your expected timeout
+• Multiroom booking: Specify if you work with multiroom booking and elaborate on the logic. 
+• No, we do not  work with multiroom-booking 
+• Yes, we work and support only multiroom-booking of the same room types
+• Yes, we work and support multiroom-booking of different room types 
+• Yes, we support multiroom-booking of both the same and different room types
+• Dynamic Search Timeouts: Please specify if you use dynamic timeouts in the integration 
+• Yes
+• No 
+• Expected Search Timeout: Please indicate what timeout you expect to get 
+• Answer: 
+• Maximum Search Timeout: Please indicate what maximum search timeout you would allow 
+• Answer: 
+## • Final price: Please specify what parameter you use to parse the price. 
+• “amount”
+• “show_amount” 
+• “commision_info.charge.amount_net”
+• “commission_info.charge.amount_gross” 
+• “daily_price” 
+• Commission: Please specify on whose side do you expect the commission to be calculated?
+• On the ETG end 
+• On the partner’s end 
+## • Rate name reflection: Please choose what parameter you use to parse the rate name.
+• “room_data_trans.main_room_type” from hotel search step
+• “room_data_trans.main_name” from hotel search step 
+• “room_name” from hotel search step 
+• “amenities_data” from hotel search step
+• “room_groups[n].name” from the hotel static data
+• “room_groups[n].name_struct.main_name” from the hotel static data
+• Other: indicate the logic
+Please choose if you map our rooms with rooms from other suppliers. 
+• We display ETG room names as they are
+• Yes, we map rooms
+# Booking Step
+## • Receiving the final booking status: Please choose the logic when you show the successful status to a user (only one indicator from ETG should be considered and selected as booking success). 
+• Status OK in “Start booking process” (/order/booking/finish/)
+• Status OK in “Check booking process”(/order/booking/finish/status/)
+• Status Completed via “Receive booking status webhook” 
+• After a successful “Retrieve bookings” (/order/info/) response 
+• Other: indicate the logic
+If you are working with webhooks, please specify if you have provided your webhook URL.
+• Yes
+• No
+## • Booking cut-off: Please specify your desired booking timeout.
+• Expected Booking Timeout: Please indicate what booking timeout you expect to get 
+• Answer: 
+• Maximum Booking Timeout: Please indicate what maximum booking timeout you would allow 
+• Answer: 
+## • Errors and Statuses Processing Logic: Please complete the table below. 
+* Note: In the column “The logic of how the partner processes this error on the backend”, if the method is called several times, with what frequency, for how long; or if the partner stops calling any API methods.
+Endpoint: /api/b2b/v3/hotel/order/booking/finish/ 
+ETG API | The status partner displays to the user / on the frontend | How the partner processes the response and interacts with the ETG API *
+Status "ok" |  | 
+5xx status code |  | 
+Error "timeout" |  | 
+Error "unknown" |  | 
+Error “booking_form_expired” |  | 
+Error “rate_not_found” |  | 
+Error “return_path_required” |  | 
+
+Endpoint: /api/b2b/v3/hotel/order/booking/finish/status/ 
+ETG API | The status partner displays to the user on the frontend | How the partner processes the response and interacts with the ETG API *
+Status "ok" |  | 
+Status "processing" |  | 
+Error "timeout" |  | 
+Error "unknown" |  | 
+5xx status code |  | 
+Error "block" |  | 
+Error "charge" |  | 
+Error "3ds" |  | 
+Error "soldout" |  | 
+Error "provider" |  | 
+Error "book_limit" |  | 
+Error "not_allowed" |  | 
+Error "booking_finish_did_not_succeed" |  | 
+
+## • Confirmation e-mails: Please specify what email you will send to ETG in the “user.email” parameter in the “Start booking process”(/order/booking/finish/) request.   
+• We send the guests' personal email address
+• We send our corporate email address
+• We do not  send an email address
+# Post-Booking 
+## • Retrieve bookings (/order/info): Please specify if you have this endpoint integrated.
+• Yes
+• No 
+## Please specify for what purpose you use this endpoint. 
+• To confirm the final booking status 
+• To allow users to get their booking details and check if the requested modifications are in place.
+If you use this endpoint, please specify the step at which you call it.
+• During the booking flow 
+• After the booking flow
+• Other: indicate the logic
+Have you implemented the time gap for this endpoint? 
+• Yes, here is our time gap: please write the time gap used to call this endpoint 
+• No 
+More integration-related information can be found in the:
+ETG v3 documentation;
+Integration and Certification Guidelines 
+Best Practices for APiv3 
+Should any of these points raise questions or concerns, please contact us. 
+Thank you! 
