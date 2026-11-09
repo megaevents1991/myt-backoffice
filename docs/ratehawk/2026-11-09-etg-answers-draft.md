@@ -168,42 +168,27 @@ keep checking `/finish/status/` and `/order/info/` until it is settled.
 
 ---
 
-## 3. Email 1 - questions (draft, Dor sends)
+## 3. Email 1 - questions (short version, Dor sends)
 
-**To:** apisupport@ratehawk.com  **Cc:** Inna  **Subject:** APIR-59328 - Mega Tourism - certification: questions before submission
+**To:** apisupport@ratehawk.com  **Cc:** Inna  **Subject:** APIR-59328 - Mega Tourism - 6 questions before certification
 
 > Hello,
 >
-> Thank you for the certification details. We are preparing our submission and would like to settle a few points
-> first so that it goes through in one round.
+> Before we submit our certification materials, please answer the following:
 >
-> Our integration: customers build event packages on mega-events.co.il (hotel search via `/serp/geo/`), pay us,
-> and our operations team then books the hotel through the B2B API from our back-office booking tool
-> (`/search/hp/` -> `/hotel/prebook/` -> `/booking/form/` -> `/booking/finish/` -> `/booking/finish/status/`,
-> payment type `deposit`, plus `/order/info/`, voucher and `/order/cancel/`).
+> 1. Is our current API key a test key, so that certification = the two test-key bookings on hotel 8473727
+>    (not the sandbox cases in the checklist)?
+> 2. Can you issue a separate test key for our booking tool, so certification does not affect the key our
+>    website uses?
+> 3. Is a static IP required? We use dynamic cloud IPs. Please do not enable IP whitelisting on our current key.
+> 4. Booking cut-off: we propose 10 minutes. Is that OK?
+> 5. We book from an internal tool used by our operations team. Is a video of the full flow (search, booking,
+>    cancellation) accepted instead of access?
+> 6. Can the /serp/geo limit be raised from 10 to 30 requests per minute after certification?
 >
-> 1. Please confirm that our current key is a **test key**, and that the certification bookings are the two
->    test-key cases on hid 8473727 (one room 2 adults + child 5 with Uzbekistan citizenship; two rooms).
-> 2. The checklist we received is the sandbox variant (hids 10004834 / 8819557 and the `unknown_*` scenarios).
->    On a test key, may we answer those scenarios with a description of our logic, and submit the two test-key
->    cases instead? If the sandbox scenarios are required, please issue a sandbox key.
-> 3. Please issue a **separate test key for our booking tool**, so that certification settings do not affect the
->    key our website searches with.
-> 4. **IP whitelisting:** our services run on a cloud platform with dynamic outbound IPs. Is a static IP required
->    for certification, or only for the production key? Please do not enable IP whitelisting on our current key
->    while our website uses it.
-> 5. **Booking cut-off:** which value will you configure for us? We propose 10 minutes.
-> 6. Our product for certification is our internal booking tool, which holds customer personal data. Is a video
->    of the full flow (search -> booking -> cancellation) accepted in place of access?
-> 7. May **children's names** be omitted in `/booking/finish/` (children sent only when named), without
->    `incorrect_children_data`?
-> 8. We call `/hotel/info/` for hotels that are not yet in our database and store the result. Is that acceptable,
->    or must we move to the hotel dumps?
-> 9. Is **`supplier_data`** required on our contract?
-> 10. Our current `/serp/geo/` limit is 10 requests a minute. Our website makes about 1,200 hotel searches a day
->     with peaks when campaigns land. Could it be raised to 30 after certification?
-> 11. Is `api.worldota.net` still served for production, and until when? We are moving to `api.ratehawk.com`.
->
-> Best regards,
+> Thank you,
 > Dor Azouri
 > CTO, Mega Tourism (Mega Events)
+
+Dropped from the short version (ask later only if they come up): children's names optional in
+`/booking/finish/`; `/hotel/info/` on cache misses vs dumps; `supplier_data` required; `api.worldota.net` sunset.
