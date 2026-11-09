@@ -16,7 +16,7 @@ import {
   restoreClubMember,
   unsubscribeClubMember,
 } from "@/lib/actions/club-actions";
-import { israelDateTime, membersCsv } from "@/lib/club/csv";
+import { exportableMembers, israelDateTime, membersCsv } from "@/lib/club/csv";
 import type { ClubLogRow, ClubMemberView } from "@/lib/club/types";
 import { PUBLIC_SITE_URL } from "@/lib/site";
 
@@ -195,12 +195,22 @@ export function MembersTab({ members, onChanged }: { members: ClubMemberView[]; 
         searchColumns={["name", "email", "phone", "coupon_code", "member_no"]}
         searchPlaceholder="Search name, email, phone, code or number…"
         defaultSorting={[{ id: "member_no", desc: true }]}
-        rightActions={
-          <Button variant="outline" size="sm" onClick={() => downloadCsv(rows)} disabled={rows.length === 0}>
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
-          </Button>
-        }
+        rightActions={({ filteredRows }) => {
+          // The rows the search leaves, and of them only who may be mailed (the file is for Zoho Campaigns).
+          const out = exportableMembers(filteredRows);
+          return (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => downloadCsv(out)}
+              disabled={out.length === 0}
+              title="The rows shown, subscribed and active members only"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV ({out.length} subscribed)
+            </Button>
+          );
+        }}
         emptyState={{ title: "No members yet", description: "People who join MEGA CLUB on the order summary show up here." }}
       />
       <Dialog open={log !== null} onOpenChange={(open) => !open && setLog(null)}>

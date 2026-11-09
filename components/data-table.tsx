@@ -101,7 +101,8 @@ interface DataTableProps<TData, TValue> {
   getRowId?: (row: TData) => string;
   bulkActions?: React.ReactNode;
   defaultPageSize?: number;
-  rightActions?: React.ReactNode;
+  /** Toolbar actions; a function gets the rows the search / filters leave (e.g. "export what you see"). */
+  rightActions?: React.ReactNode | ((ctx: { filteredRows: TData[] }) => React.ReactNode);
   pageSizeOptions?: number[];
   getRowClassName?: (
     row: Row<TData>,
@@ -743,7 +744,9 @@ export function DataTable<TData, TValue>({
         )}
         {filters}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {rightActions}
+          {typeof rightActions === "function"
+            ? rightActions({ filteredRows: table.getFilteredRowModel().rows.map((r) => r.original) })
+            : rightActions}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="h-9 gap-1.5">

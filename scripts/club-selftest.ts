@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { validateClubSettings } from "../lib/club/settings";
 import { clubOverview, clubWindow, memberViews } from "../lib/club/stats";
-import { membersCsv } from "../lib/club/csv";
+import { exportableMembers, membersCsv } from "../lib/club/csv";
 import type { ClubMemberRow, ClubOrderRow } from "../lib/club/types";
 
 // ---- settings
@@ -111,5 +111,10 @@ assert.ok(evilRow.startsWith("1001,\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\"")
 assert.ok(evilRow.includes(",'@sum,"), "a leading @ is neutralized");
 assert.ok(evilRow.includes(",'+cmd,") && evilRow.includes(",'-1,"), "leading + and - are neutralized");
 assert.ok(membersCsv([member({})]).slice(1).split("\r\n")[1].startsWith("1001,"), "member_no is left as a number");
+
+// the export is the file Zoho Campaigns will import: only members who may be mailed (subscribed, not removed)
+const exportable = exportableMembers(members);
+assert.deepEqual(exportable.map((m) => m.member_no), [1001, 1002], "unsubscribed (1003) and removed (1004) never reach the file");
+assert.deepEqual(exportableMembers([]), []);
 
 console.log("club-selftest: all assertions passed");

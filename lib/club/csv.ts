@@ -41,6 +41,14 @@ function cell(v: string | number | null | undefined): string {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * Who goes into the export: the file Zoho Campaigns will import (spec §10), so only members who may be mailed - an
+ * unsubscribed or removed member never reaches it (one consent covers every channel, D9).
+ */
+export function exportableMembers<T extends Pick<ClubMemberRow, "marketing" | "status">>(rows: T[]): T[] {
+  return rows.filter((m) => m.marketing === "subscribed" && m.status === "active");
+}
+
 export function membersCsv(rows: ClubMemberRow[]): string {
   const lines = [HEADER.join(",")];
   for (const m of rows) {
