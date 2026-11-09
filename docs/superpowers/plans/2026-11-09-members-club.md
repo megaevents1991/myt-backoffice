@@ -23,7 +23,7 @@
 - No CHECK constraints on columns main writes. RLS on, no policies, `anon`/`authenticated` revoked on the three new tables.
 - `.in()` lists ≤ 200 values. Paged reads over 1,000 rows (`fetchPaged`).
 - Backoffice: commit by explicit path (`git commit -- <paths>`), on master, no push until Dor says "push". Main: branch `feat/members-club` only. No AI attribution in commit messages.
-- Hebrew UI copy from the spec / the mockup version **Dor picks (still open, spec D11)** - M1's `CLUB_COPY` and M4's `ClubCard` wait for it; every other task does not; English code and commits.
+- Look and copy = mockup version **C, "MEGA CLUB"** (spec D11); English code and commits.
 
 ## Review Focus
 
@@ -99,7 +99,7 @@
 
 **Files:**
 - Create: `app/(dashboard)/marketing/club/page.tsx`, `club-client.tsx`, `overview-tab.tsx`, `members-tab.tsx`, `settings-tab.tsx`
-- Modify: `lib/nav.ts` (Marketing group: `{ name: "Members Club", href: "/marketing/club", icon: <lucide Ticket>, keywords: "club members newsletter מועדון חברים שורה ראשונה", roles: ADMIN_ROLES, productType: "events" }`)
+- Modify: `lib/nav.ts` (Marketing group: `{ name: "Members Club", href: "/marketing/club", icon: <lucide CreditCard>, keywords: "mega club members newsletter מועדון חברים", roles: ADMIN_ROLES, productType: "events" }`)
 - Modify: `app/(dashboard)/guide/guide-content.ts` (a section for `/marketing/club`, EN + HE, how the club works on the site, what each tab shows, what the switch does)
 
 **Interfaces:**
@@ -143,7 +143,7 @@
 
 **Interfaces:**
 - Produces:
-  - `copy.ts`: `CLUB_CONSENT_TEXT`, `CLUB_CONSENT_VERSION = "club-2026-11-09-v1"`, `CLUB_COPY` (version A strings from the mockup: title "רוצים לשבת בשורה הראשונה?", sub, three perks, cta "שריינו לי מקום", already-link, member title, welcome "ברוכים הבאים לשורה הראשונה", welcome-back "ברוכים השבים", row title "השורה הראשונה של מגה", row sub "חברים מקבלים מחיר חבר", applied "מחיר חבר הופעל", swap "להחליף למחיר חבר", ticket-only refusal "מחיר חבר תקף בהזמנת חבילה עם טיסה", not found "לא מצאנו את המייל הזה במועדון", error "משהו השתבש, נסו שוב").
+  - `copy.ts`: `CLUB_CONSENT_TEXT`, `CLUB_CONSENT_VERSION = "club-2026-11-09-v1"`, `CLUB_COPY` (version C strings from the mockup: title "הצטרפו ל-MEGA CLUB", sub "מועדון החברים של מגה איבנטס. ההצטרפות בחינם.", perks "ראשונים לשמוע על אירועים חדשים" / "מבצעים לחברים בלבד" / "מחיר חבר על ההזמנה הזאת ועל כל הזמנה הבאה", cta "הצטרפות למועדון", already-link "כבר חברי MEGA CLUB? היכנסו עם המייל", member title "כבר חברי MEGA CLUB?", member sub "הזינו את המייל שאיתו הצטרפתם, ונפעיל את מחיר החבר על ההזמנה.", member cta "הפעלת מחיר חבר", welcome "ברוכים הבאים ל-MEGA CLUB", welcome-back "ברוכים השבים", member tag "מס׳ חבר", row title "MEGA CLUB", row sub "חברים מקבלים מחיר חבר", applied "מחיר חבר הופעל", swap "להחליף למחיר חבר", ticket-only refusal "מחיר חבר תקף בהזמנת חבילה עם טיסה", not found "לא מצאנו את המייל הזה במועדון", error "משהו השתבש, נסו שוב").
   - `type ClubSettings = { enabled: boolean; discount_per_traveler_usd: number; popup_delay_seconds: number }`; `parseClubSettings(json: unknown): ClubSettings` - anything malformed ⇒ `{ enabled: false, discount_per_traveler_usd: 50, popup_delay_seconds: 22 }`.
   - `type ClubSurface = "club" | "legacy_popup" | "none"`; `clubSurface(v: { enabled: boolean; isAgentVisitor: boolean; arrivedViaPartner: boolean; flightSkipped: boolean; isPercentageAffiliateDiscount: boolean; isSpecialOfferAllowed: boolean }): ClubSurface` - order: agent / percentage / blocklisted / flightSkipped ⇒ `none`; partner ⇒ `legacy_popup`; `!enabled` ⇒ `legacy_popup`; else `club`.
   - `MEMBER_CODE_ALPHABET`; `newMemberCode(randomInt: (maxExclusive: number) => number): string`.
@@ -157,7 +157,7 @@
 - [ ] **Step 2:** `yarn vitest run lib/__tests__/club.test.ts` → FAIL.
 - [ ] **Step 3:** Implement `copy.ts` and `rules.ts`.
 - [ ] **Step 4:** Run → PASS.
-- [ ] **Step 5:** Commit: `feat(club): pure rules and version A copy`.
+- [ ] **Step 5:** Commit: `feat(club): pure rules and MEGA CLUB copy`.
 
 ### Task M2: Coupon path knows `source`
 
@@ -185,11 +185,11 @@
   - `db.ts` `insertCoupon` writes `code, discount_type: "fixed", discount_value: amount, per_person: true, is_active: true, source: "club", event_id: null, max_uses: null, valid_until: null` (spec §6).
   - `joinClub(input: unknown, ctx: ClubCtx, deps: ClubDeps): Promise<ClubAnswer>` - spec §8 steps 1-6; code clash ⇒ new code, ≤ 3 tries; member clash (same email, race) ⇒ delete the coupon, re-read, answer `returning: true`; welcome mail with a 4 s deadline, result recorded by `markWelcome`, never changes the answer.
   - `lookupClub(input: unknown, ctx: ClubCtx, deps: ClubDeps): Promise<ClubAnswer>` - no name; logs `lookup` / `lookup_miss`.
-  - `welcomeMail(m: { memberNo: number; code: string; firstName: string | null; unsubscribeUrl: string; siteUrl: string }): { subject: string; html: string; text: string }` - RTL, member card "שורה 1 · מושב <no>", the code large, "מחיר החבר מופעל לבד במכשיר הזה, או הקלידו את הקוד בהזמנה", site link, company address line, unsubscribe link.
+  - `welcomeMail(m: { memberNo: number; code: string; firstName: string | null; unsubscribeUrl: string; siteUrl: string }): { subject: string; html: string; text: string }` - RTL, the MEGA CLUB card (mint-to-teal, "MEGA CLUB", "מס׳ חבר <no>", the name when known), the code large, "מחיר החבר מופעל לבד במכשיר הזה, או הקלידו את הקוד בהזמנה", site link, company address line, unsubscribe link.
   - Routes read the IP as `x-forwarded-for` first entry, else `x-real-ip`; UTM via `readUtmCookieFromHeader`; set no cookie (the client sets `myt_club`).
 
 - [ ] **Step 1:** Write `clubJoin.test.ts` with fake deps: new email ⇒ `ok`, `returning:false`, one coupon + one member + one `join` log with `CLUB_CONSENT_TEXT`; consent missing ⇒ `invalid` and nothing written; honeypot filled ⇒ `invalid`; settings disabled ⇒ `off`; `deps.settings()` throws ⇒ `off` (never `error` to the page); 5 recent rows for the IP ⇒ `rate_limited`; existing active member ⇒ `returning:true`, `firstName:null`, no insert, `marketing` untouched, `rejoin` logged; removed member ⇒ `removed`; **race**: `insertMember` returns `{clash:true}` ⇒ `deleteCoupon` called with the new coupon id and the answer is the existing member's code with `returning:true`; **mail failure**: `sendWelcome` rejects ⇒ answer still `ok:true`, `markWelcome` got `{ok:false}`; `lookupClub` for an unknown email ⇒ `not_found` + `lookup_miss` log with no member id; for a known one ⇒ no `firstName`.
-- [ ] **Step 2:** Write `clubMail.test.ts`: html contains `dir="rtl"`, the code, `מושב 1001`, the unsubscribe URL; html and text contain none of `מבצעים`, `הנחה בלעדית`, `אירועים חדשים` (no perks).
+- [ ] **Step 2:** Write `clubMail.test.ts`: html contains `dir="rtl"`, the code, `MEGA CLUB`, `מס׳ חבר 1001`, the unsubscribe URL; html and text contain none of `מבצעים`, `הנחה בלעדית`, `אירועים חדשים` (no perks).
 - [ ] **Step 3:** `yarn vitest run lib/__tests__/clubJoin.test.ts lib/__tests__/clubMail.test.ts` → FAIL.
 - [ ] **Step 4:** Implement `join.ts`, `mail.ts`, `settings-server.ts`, `db.ts` and the six routes / page. Mail transport like `app/api/sendUserEmail.ts` (`EMAIL_SERVER_*`, `smtp.zeptomail.com:587`), headers `List-Unsubscribe: <{site}/api/club/unsubscribe?t=…>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`.
 - [ ] **Step 5:** Tests → PASS; `npx tsc --noEmit` clean for the new files.
@@ -198,7 +198,7 @@
 ### Task M4: The popup, the row, the order summary
 
 **Files:**
-- Create: `components/order/club/ClubModal.tsx` (Mantine `Modal` with a close X; states `join` | `member` | `joined` | `welcome_back`; consent checkbox gates the button), `components/order/club/ClubRow.tsx`, `components/order/club/ClubCard.tsx` (the ticket card of version A)
+- Create: `components/order/club/ClubModal.tsx` (Mantine `Modal` with a close X; states `join` | `member` | `joined` | `welcome_back`; consent checkbox gates the button), `components/order/club/ClubRow.tsx`, `components/order/club/ClubCard.tsx` (the MEGA CLUB member card of version C: mint `#5BFF95` to teal `#25D3B0`, wordmark, chip, number, name, "מאז MM/YY")
 - Modify: `app/order/OrderReview.tsx`
 
 **Interfaces:**

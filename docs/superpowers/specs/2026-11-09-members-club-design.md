@@ -29,7 +29,7 @@ price on every order. It should look and read like something a person is glad to
 | D8 | Site side in **myt-main on a branch** (new development, not a hotfix); backoffice changes on **master**. |
 | D9 | **One consent for mail, SMS and WhatsApp.** Any withdrawal (the mail link, or "הסר" on the Mega Events WhatsApp number) stops all marketing to that member; the member price stays. (09.11, §13 Q1) |
 | D10 | The privacy page's "double opt-in" line is replaced by the recorded single opt-in (§11). (09.11, Q2) |
-| D11 | Name and look: **OPEN - Dor picks** (09.11: "לא בחרתי איך זה יראה"). Mockups A / B / C on the page above; only the copy and the card art depend on it (`lib/club/copy.ts`, `ClubCard`). |
+| D11 | Name and look: version **C, "MEGA CLUB"** (Dor 09.11, after reopening the default): a mint-to-teal member card like a credit card - "MEGA CLUB" wordmark, chip, member number, name, "מאז 11/26". |
 | D12 | **No club on ticket-only orders**, as today's popup. (09.11, Q4) |
 
 ## 3. Goals, non-goals, anti-goals
@@ -71,8 +71,7 @@ Eligibility is one pure function in main (`lib/club/eligibility.ts`) over what t
 
 ## 5. The customer's path (site, myt-main)
 
-Look: version **A, "שורה ראשונה"**, from the mockup page (my default until Dor picks; every word lives in one file,
-`lib/club/copy.ts`, so B or C is a copy-and-art change, not a logic change).
+Look: version **C, "MEGA CLUB"**, from the mockup page (D11). Every word lives in one file, `lib/club/copy.ts`.
 
 1. **The popup.** Today's trigger, kept exactly (`OrderReview.tsx:1196-1250`): a one-shot timer of
    `popup_delay_seconds` (22, from settings) that starts when the first "almost there" modal closes, and that the first
@@ -84,10 +83,10 @@ Look: version **A, "שורה ראשונה"**, from the mockup page (my default u
    box (unticked, the button stays disabled until it is ticked), the join button, a "כבר חברים?" link.
    - Email and phone are prefilled from the lead passenger's fields when already typed (this mostly helps the row path,
      since typing cancels the popup); the first and last name are taken from there too (they are not asked).
-2. **The permanent row** under the coupon field (`couponRow`), shown whenever the club is eligible: "השורה הראשונה של
-   מגה · חברים מקבלים מחיר חבר" with "הצטרפות" and "כבר חברים" buttons that open the popup in that state. A returning
+2. **The permanent row** under the coupon field (`couponRow`), shown whenever the club is eligible: "MEGA CLUB ·
+   חברים מקבלים מחיר חבר" with "הצטרפות" and "כבר חברים" buttons that open the popup in that state. A returning
    member must never depend on idling 22 seconds.
-3. **Joining** calls `POST /api/club/join`. On success the popup turns into the member card (seat = member number),
+3. **Joining** calls `POST /api/club/join`. On success the popup turns into the member card (number, name, "מאז"),
    "מחיר חבר הופעל: $X פחות על ההזמנה הזאת", "$50 לכל נוסע, ככה בכל הזמנה שלכם", "שלחנו ל-<email> מייל עם קוד
    החבר", and a "חזרה להזמנה" button. The member code is applied through the existing coupon path (`appliedCoupon`),
    so the price summary, the no-stacking rule and confirm-order all work unchanged.
@@ -140,7 +139,7 @@ All new tables: RLS on, no policies, `anon` / `authenticated` revoked (service r
 constraints on columns main writes** (repo rule): values are validated in code.
 
 **`club_members`**: one row per email.
-- `id` uuid pk; `member_no` integer unique, from sequence `club_member_no_seq` starting 1001 (display only: the "seat").
+- `id` uuid pk; `member_no` integer unique, from sequence `club_member_no_seq` starting 1001 (display only: the card's number).
 - `email` text not null; unique index on `lower(btrim(email))`.
 - `phone` text; `phone_key` text = last 9 digits (indexed; the future WhatsApp / customer link).
 - `first_name`, `last_name` text null (from the lead passenger when typed).
@@ -204,7 +203,7 @@ stops all marketing to the member on every channel (§13 Q1 default); **the memb
 
 - Sent from main through the existing ZeptoMail transport (`EMAIL_SERVER_*`), From `"מגה איבנטס" <news@mega-events.co.il>`
   (the domain is verified in ZeptoMail with no sender restriction), Reply-To `SALES_REP_EMAIL`.
-- Hebrew, RTL, table layout like the site's other mails: the member card (name, "שורה 1 · מושב <member_no>"), the
+- Hebrew, RTL, table layout like the site's other mails: the MEGA CLUB member card (name, "מס׳ חבר <member_no>"), the
   member code in large type, "the member price applies by itself on this device, or type the code at checkout", a link
   to the site, the company address line, and the unsubscribe link.
 - It is a signup confirmation the customer asked for, and it stays one: **no perks list, no deals, no events.**
@@ -265,7 +264,7 @@ from the link in every message. (See §13 Q2.)
   `consent_version` v1 is stamped on every join from day one and members cannot be asked again, so this is settled
   before the first join. Final Hebrew text of the box comes with the answer.
 - **Q2 Privacy line:** replace the "double opt-in" promise with the recorded single opt-in (§11), yes / no.
-- **Q3 Name / look:** version A "שורה ראשונה" (default), B "Backstage של מגה" or C "MEGA CLUB".
+- **Q3 Name / look:** C "MEGA CLUB" (Dor picked it after the default A was reopened).
 - **Q4 Ticket-only orders:** no club, as today's popup (default), or the club with the member price there too.
 
 ## 14. My calls (Dor to check)
