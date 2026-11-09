@@ -29,6 +29,7 @@ const LOG_LABEL: Record<string, string> = {
   lookup_miss: "Email not found",
   unsubscribe: "Unsubscribed",
   removed: "Removed by staff",
+  left: "Left the club (unsubscribe page) - code switched off",
   restored: "Restored by staff",
 };
 
@@ -147,7 +148,16 @@ export function MembersTab({ members, onChanged }: { members: ClubMemberView[]; 
     {
       accessorKey: "status",
       header: "Status",
-      cell: ({ row }) => (row.original.status === "active" ? "Active" : <Badge variant="destructive">Removed</Badge>),
+      cell: ({ row }) =>
+        row.original.status === "active" ? (
+          "Active"
+        ) : row.original.status === "left" ? (
+          <Badge variant="outline" title="The member left the club from the unsubscribe page - their code is off">
+            Left
+          </Badge>
+        ) : (
+          <Badge variant="destructive">Removed</Badge>
+        ),
     },
     { accessorKey: "coupon_code", header: "Code", cell: ({ row }) => <code className="text-xs">{row.original.coupon_code}</code> },
     {

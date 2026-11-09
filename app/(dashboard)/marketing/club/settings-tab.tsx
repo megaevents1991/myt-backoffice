@@ -73,7 +73,7 @@ export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onS
             </p>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="club-delay">Popup after (seconds idle)</Label>
+            <Label htmlFor="club-delay">Popup after (seconds on the summary)</Label>
             <Input
               id="club-delay"
               type="number"
@@ -84,7 +84,8 @@ export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onS
               onChange={(e) => setDelay(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              {CLUB_DELAY_MIN} to {CLUB_DELAY_MAX}. The first click or keystroke on the page cancels it, as today.
+              {CLUB_DELAY_MIN} to {CLUB_DELAY_MAX}. Once per order, at the first pause in typing - a click no longer cancels
+              it, so people who fill the form see it too.
             </p>
           </div>
         </div>

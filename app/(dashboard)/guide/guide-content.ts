@@ -1413,8 +1413,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     adminOnly: true,
     title: t("Members Club (MEGA CLUB)", "מועדון החברים (MEGA CLUB)"),
     intro: t(
-      "MEGA CLUB replaces the old discount popup on the site's order summary. A customer leaves an email and a phone, ticks the consent box, and only then sees the member price - $50 per traveler by default - which applies on every package order they make from then on. Each member has a personal code (MEGA + 6 letters) that works like a coupon. This screen shows who joined, what they ordered, what the member price cost, and holds the club's switch and amount.",
-      "MEGA CLUB מחליף את פופאפ ההנחה הישן בסיכום ההזמנה באתר. לקוח משאיר מייל וטלפון, מסמן את תיבת ההסכמה, ורק אז רואה את מחיר החבר - 50$ לנוסע כברירת מחדל - שחל על כל הזמנת חבילה שלו מעכשיו. לכל חבר יש קוד אישי (MEGA ו-6 אותיות) שעובד כמו קופון. המסך הזה מציג מי הצטרף, מה הזמין, כמה עלה מחיר החבר, ומחזיק את המתג והסכום של המועדון.",
+      "MEGA CLUB replaces the old discount popup on the site's order summary. A customer leaves an email and a phone, ticks the consent box, and only then sees the member price - $50 per traveler by default - which applies on every package order they make from then on. Each member has a personal code (MEGA + 6 letters) that works like a coupon. The site's main menu also has a \"הצטרפות למועדון\" page (/club) with the same form. This screen shows who joined, what they ordered, what the member price cost, and holds the club's switch and amount.",
+      "MEGA CLUB מחליף את פופאפ ההנחה הישן בסיכום ההזמנה באתר. לקוח משאיר מייל וטלפון, מסמן את תיבת ההסכמה, ורק אז רואה את מחיר החבר - 50$ לנוסע כברירת מחדל - שחל על כל הזמנת חבילה שלו מעכשיו. לכל חבר יש קוד אישי (MEGA ו-6 אותיות) שעובד כמו קופון. בתפריט הראשי של האתר יש גם עמוד \"הצטרפות למועדון\" (/club) עם אותו טופס. המסך הזה מציג מי הצטרף, מה הזמין, כמה עלה מחיר החבר, ומחזיק את המתג והסכום של המועדון.",
     ),
     howTo: [
       {
@@ -1427,13 +1427,13 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Handle one member", "לטפל בחבר אחד"),
         steps: [
-          t("The \"⋯\" at the end of a member's row: \"Consent and activity log\" shows exactly what they agreed to, when and from which IP; \"Resend welcome mail\"; \"Unsubscribe from updates\" (they keep the member price); \"Remove member\" switches their code off - use it for abuse only; \"Restore member\" brings it back.", "ה-\"⋯\" בסוף שורת החבר: \"Consent and activity log\" מציג בדיוק למה הסכים, מתי ומאיזה IP; \"Resend welcome mail\" שולח שוב את המייל; \"Unsubscribe from updates\" מוריד אותו מהעדכונים (מחיר החבר נשאר); \"Remove member\" מכבה את הקוד שלו - רק לשימוש לרעה; \"Restore member\" מחזיר אותו."),
+          t("The \"⋯\" at the end of a member's row: \"Consent and activity log\" shows exactly what they agreed to, when and from which IP; \"Resend welcome mail\"; \"Unsubscribe from updates\" (they keep the member price); \"Remove member\" switches their code off - use it for abuse only; \"Restore member\" brings it back. A member can also leave by themselves from the mail's unsubscribe page (status \"Left\", their code is off); joining again brings them back with their updates still off.", "ה-\"⋯\" בסוף שורת החבר: \"Consent and activity log\" מציג בדיוק למה הסכים, מתי ומאיזה IP; \"Resend welcome mail\" שולח שוב את המייל; \"Unsubscribe from updates\" מוריד אותו מהעדכונים (מחיר החבר נשאר); \"Remove member\" מכבה את הקוד שלו - רק לשימוש לרעה; \"Restore member\" מחזיר אותו. חבר יכול גם לעזוב לבד מעמוד ההסרה שבמייל (סטטוס \"Left\", הקוד שלו כבוי); הצטרפות מחדש מחזירה אותו, והעדכונים נשארים כבויים."),
         ],
       },
       {
         title: t("Change the amount or switch the club off", "לשנות את הסכום או לכבות את המועדון"),
         steps: [
-          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; the popup delay in idle seconds (the first click or keystroke cancels it); and the switch. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; כמה שניות בלי תזוזה עד הפופאפ (הלחיצה או ההקלדה הראשונה מבטלת אותו); והמתג. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
+          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; the popup delay in seconds on the summary (once per order, at the first pause in typing - a click no longer cancels it); and the switch. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; כמה שניות בסיכום ההזמנה עד הפופאפ (פעם אחת בהזמנה, בהפסקה הראשונה בהקלדה - לחיצה כבר לא מבטלת אותו); והמתג. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
         ],
       },
     ],

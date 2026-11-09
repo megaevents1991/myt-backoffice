@@ -277,8 +277,8 @@ from the link in every message. (See §13 Q2.)
   "not found". Staff "Remove" stays `removed` and a join stays refused for it.
 - **D14 The popup opens in the order (Dor: "עכשיו מילאתי הזמנה ולא נתקלתי בפופ אפ").** The old trigger (idle only,
   cancelled by the first touch) never reached a visitor who fills the form. Now: once per order, `popup_delay_seconds`
-  after the summary is ready, and never while a field is being typed in - it waits for a 2-second pause (and for no
-  field to hold focus), so it never takes the keyboard mid-word. Not for a known member, not with a member price on,
+  after the summary is ready, and never while a field is being typed in - it waits for a pause in typing (2.5 s, or
+  6 s while the cursor is still in a field; `clubPopupDue`), so it never takes the keyboard mid-word. Not for a known member, not with a member price on,
   not on ticket-only / agent / partner. Today's discount popup (partner link, club off) keeps its old trigger.
 - **D15 A door in the main menu.** "הצטרפות למועדון" after "אודות" (desktop and phone) opens `/club`: the same join
   and "כבר חברים" forms outside an order (`source = 'site_page'`, no event). Joining there sets the device cookie, so
