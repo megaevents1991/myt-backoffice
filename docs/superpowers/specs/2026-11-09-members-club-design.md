@@ -267,6 +267,23 @@ from the link in every message. (See §13 Q2.)
 - **Q3 Name / look:** C "MEGA CLUB" (Dor picked it after the default A was reopened).
 - **Q4 Ticket-only orders:** no club, as today's popup (default), or the club with the member price there too.
 
+## 13b. Decided 09.11 afternoon, after the live test (D13-D15)
+
+- **D13 Leaving the club is its own choice.** The unsubscribe page offers first, and prominently, "הסרה מהעדכונים"
+  (stay a member, keep the price - D9 stands); under it, low-key and behind one confirmation, "עזיבת המועדון", which
+  stops the updates AND switches the member code off (`club_members.status = 'left'`, coupon `is_active = false`,
+  log `left`, source `link`). A member who left and joins again is a member again (status active, code back on) but
+  the join never changes the mail status (§8.3): their updates stay off. Lookup of a member who left answers
+  "not found". Staff "Remove" stays `removed` and a join stays refused for it.
+- **D14 The popup opens in the order (Dor: "עכשיו מילאתי הזמנה ולא נתקלתי בפופ אפ").** The old trigger (idle only,
+  cancelled by the first touch) never reached a visitor who fills the form. Now: once per order, `popup_delay_seconds`
+  after the summary is ready, and never while a field is being typed in - it waits for a 2-second pause (and for no
+  field to hold focus), so it never takes the keyboard mid-word. Not for a known member, not with a member price on,
+  not on ticket-only / agent / partner. Today's discount popup (partner link, club off) keeps its old trigger.
+- **D15 A door in the main menu.** "הצטרפות למועדון" after "אודות" (desktop and phone) opens `/club`: the same join
+  and "כבר חברים" forms outside an order (`source = 'site_page'`, no event). Joining there sets the device cookie, so
+  the next order applies the price by itself. The amount is still shown only after joining.
+
 ## 14. My calls (Dor to check)
 
 Coupon per member reusing the coupon path (§6) · code format `MEGA` + 6 · club codes count event tickets on both sides
