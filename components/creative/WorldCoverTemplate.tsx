@@ -11,7 +11,10 @@ import type { LogoImage } from "@/lib/creative/logo";
  *
  * The worlds' pictures keep their people in the left third and the view on the right (the site's title box sits on the
  * right), so a crop narrower than the picture is centred at FOCUS_X of its width, not in the middle - Satori has no
- * objectPosition, so the picture is placed by hand from its measured size. Rendered by lib/creative/render.tsx
+ * objectPosition, so the picture is placed by hand from its measured size. In the 4:5 cover the picture fills the top
+ * PORTRAIT_FILL of the height and the world's deep colour the rest (under the title, where the bottom gradient is anyway):
+ * a 16:9 picture then shows 50% of its width instead of 45%, enough for a whole family of four (Dor 09.11: the girl of
+ * the families picture was cut at the edge). Rendered by lib/creative/render.tsx
  * renderWorldCoverPng; drawn and stored by lib/creative/worlds.ts.
  */
 export type WorldCoverInput = {
@@ -32,15 +35,21 @@ export type WorldCoverInput = {
 };
 
 /** Where a crop narrower than the picture is centred, as a share of its width (the people stand in the left third). */
-export const FOCUS_X = 0.36;
+export const FOCUS_X = 0.3;
+/** The share of a portrait cover's height the picture covers, from the top. */
+export const PORTRAIT_FILL = 0.9;
 
-/** The picture's box inside a width x height frame: covers it, centred at FOCUS_X across and in the middle down. Pure. */
-export function coverBox(img: { width: number; height: number }, width: number, height: number) {
-  const scale = Math.max(width / img.width, height / img.height);
+/**
+ * The picture's box inside a width x height frame: covers the top `fill` of it, centred at FOCUS_X across and in the
+ * middle of that band down, never past an edge. Pure.
+ */
+export function coverBox(img: { width: number; height: number }, width: number, height: number, fill = 1) {
+  const band = height * fill;
+  const scale = Math.max(width / img.width, band / img.height);
   const w = Math.ceil(img.width * scale);
   const h = Math.ceil(img.height * scale);
   const left = Math.round(Math.min(0, Math.max(width - w, width / 2 - w * FOCUS_X)));
-  const top = Math.round((height - h) / 2);
+  const top = Math.round((band - h) / 2);
   return { left, top, width: w, height: h };
 }
 
@@ -55,7 +64,7 @@ export function WorldCoverTemplate(props: WorldCoverInput & { width: number; hei
   const portrait = height > width;
   const brand = hex(props.color, GROUP);
   const deep = hex(props.colorDeep, GROUP_DEEP);
-  const box = props.picture ? coverBox(props.picture, width, height) : { left: 0, top: 0, width, height };
+  const box = props.picture ? coverBox(props.picture, width, height, portrait ? PORTRAIT_FILL : 1) : { left: 0, top: 0, width, height };
   // a world with its own logo says its name under it; one without says its brand name, and its name under that
   const title = props.logos.world ? props.name : props.brandName;
   const sub = props.logos.world ? "" : props.name;

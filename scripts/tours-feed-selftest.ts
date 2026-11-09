@@ -7,7 +7,7 @@ import { ACTIVITIES_HEADERS, csvCell, toActivitiesCsv } from "../lib/feed/activi
 import { parseToursReport, toursActivityRows, type ToursReport, type ToursReportItem } from "../lib/feed/tours-feed";
 import { tourCreativeFile, tourCreativeHash, tourCreativeInput } from "../lib/creative/tours";
 import { worldCoverFile, worldCoverHash, worldCoverInput, worldCoverStablePath, worldFileKey } from "../lib/creative/worlds";
-import { FOCUS_X, coverBox, toursLine } from "../components/creative/WorldCoverTemplate";
+import { FOCUS_X, PORTRAIT_FILL, coverBox, toursLine } from "../components/creative/WorldCoverTemplate";
 import { fitBox, isPrivateAddress, logoSize } from "../lib/creative/logo";
 
 const item = (over: Partial<ToursReportItem> = {}): ToursReportItem => ({
@@ -150,6 +150,12 @@ const box = coverBox({ width: 1600, height: 900 }, 1080, 1350);
 assert.deepEqual([box.width, box.height, box.top], [2400, 1350, 0]);
 assert.equal(box.left, Math.round(540 - 2400 * FOCUS_X));
 assert.ok(box.left <= 0 && box.left + box.width >= 1080);
+/* the 4:5 cover's picture fills the top 90%: half the width of a 16:9 picture shows - a family of four spanning
+   7%-53% of it (the families world, 09.11) stays whole */
+const tall = coverBox({ width: 1600, height: 900 }, 1080, 1350, PORTRAIT_FILL);
+assert.deepEqual([tall.width, tall.height, tall.top], [2160, 1215, 0]);
+const shown = [-tall.left / tall.width, (1080 - tall.left) / tall.width];
+assert.ok(shown[0] <= 0.07 && shown[1] >= 0.53, `shows ${shown.map((x) => x.toFixed(3)).join("-")}`);
 assert.equal(coverBox({ width: 1600, height: 900 }, 1200, 628).left, 0, "a wide frame keeps the picture's left edge");
 assert.equal(coverBox({ width: 100, height: 1000 }, 1080, 1350).left, 0);
 assert.equal(toursLine(17), "17 טיולים");

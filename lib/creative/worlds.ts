@@ -17,7 +17,7 @@ import type { FeedCompany, ToursReport, ToursReportWorld, WorldCover } from "@/l
  */
 
 /** Bump when the template changes what it draws, so every cover is drawn again. */
-export const WORLD_COVER_VERSION = "w1";
+export const WORLD_COVER_VERSION = "w2";
 const BUCKET = "creatives";
 const SIZES: CreativeSize[] = ["square", "banner"];
 
