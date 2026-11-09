@@ -1407,6 +1407,44 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    id: "members-club",
+    nav: "/marketing/club",
+    productType: "events",
+    adminOnly: true,
+    title: t("Members Club (MEGA CLUB)", "מועדון החברים (MEGA CLUB)"),
+    intro: t(
+      "MEGA CLUB replaces the old discount popup on the site's order summary. A customer leaves an email and a phone, ticks the consent box, and only then sees the member price - $50 per traveler by default - which applies on every package order they make from then on. Each member has a personal code (MEGA + 6 letters) that works like a coupon. This screen shows who joined, what they ordered, what the member price cost, and holds the club's switch and amount.",
+      "MEGA CLUB מחליף את פופאפ ההנחה הישן בסיכום ההזמנה באתר. לקוח משאיר מייל וטלפון, מסמן את תיבת ההסכמה, ורק אז רואה את מחיר החבר - 50$ לנוסע כברירת מחדל - שחל על כל הזמנת חבילה שלו מעכשיו. לכל חבר יש קוד אישי (MEGA ו-6 אותיות) שעובד כמו קופון. המסך הזה מציג מי הצטרף, מה הזמין, כמה עלה מחיר החבר, ומחזיק את המתג והסכום של המועדון.",
+    ),
+    howTo: [
+      {
+        title: t("Read the club's numbers", "לקרוא את המספרים של המועדון"),
+        steps: [
+          t("Open [Members Club](/marketing/club) - \"Overview\" shows the active members, who joined in the period (against the previous period of the same length), member orders (Paid / all), the Paid revenue from members and the discount given on Paid orders. Days are Israel days; the period select is beside the tabs.", "פותחים את [Members Club](/marketing/club) - \"Overview\" מציג את החברים הפעילים, מי הצטרף בתקופה (מול התקופה הקודמת באותו אורך), הזמנות של חברים (Paid / הכול), ההכנסה מהזמנות Paid של חברים וההנחה שניתנה בהזמנות Paid. הימים בשעון ישראל; בחירת התקופה ליד הלשוניות."),
+          t("\"Members\" lists every member, newest first: number, name, email, phone, when and on which event they joined, orders and revenue, whether they still get updates, whether the welcome mail went out. \"Export CSV\" downloads the list (it opens in Excel with Hebrew intact).", "\"Members\" מציג את כל החברים, החדש ראשון: מספר, שם, מייל, טלפון, מתי ובאיזה אירוע הצטרפו, הזמנות והכנסה, אם הם עדיין מקבלים עדכונים, ואם מייל הברוכים הבאים יצא. \"Export CSV\" מוריד את הרשימה (נפתחת באקסל עם עברית תקינה)."),
+        ],
+      },
+      {
+        title: t("Handle one member", "לטפל בחבר אחד"),
+        steps: [
+          t("The \"⋯\" at the end of a member's row: \"Consent and activity log\" shows exactly what they agreed to, when and from which IP; \"Resend welcome mail\"; \"Unsubscribe from updates\" (they keep the member price); \"Remove member\" switches their code off - use it for abuse only; \"Restore member\" brings it back.", "ה-\"⋯\" בסוף שורת החבר: \"Consent and activity log\" מציג בדיוק למה הסכים, מתי ומאיזה IP; \"Resend welcome mail\" שולח שוב את המייל; \"Unsubscribe from updates\" מוריד אותו מהעדכונים (מחיר החבר נשאר); \"Remove member\" מכבה את הקוד שלו - רק לשימוש לרעה; \"Restore member\" מחזיר אותו."),
+        ],
+      },
+      {
+        title: t("Change the amount or switch the club off", "לשנות את הסכום או לכבות את המועדון"),
+        steps: [
+          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; the popup delay in idle seconds (the first click or keystroke cancels it); and the switch. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; כמה שניות בלי תזוזה עד הפופאפ (הלחיצה או ההקלדה הראשונה מבטלת אותו); והמתג. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
+        ],
+      },
+    ],
+    rules: [
+      t("Members join only by themselves on the site - the consent must be theirs. Nobody adds a member by hand.", "חברים מצטרפים רק בעצמם באתר - ההסכמה חייבת להיות שלהם. אף אחד לא מוסיף חבר ידנית."),
+      t("One consent covers mail, SMS and WhatsApp. An unsubscribe from the mail link, \"הסר\" on the Mega Events WhatsApp number or this screen stops all of them; the member price stays.", "הסכמה אחת מכסה מייל, SMS ווואטסאפ. הסרה מהקישור במייל, \"הסר\" במספר הוואטסאפ של מגה איבנטס או מהמסך הזה עוצרת את כולם; מחיר החבר נשאר."),
+      t("No club on ticket-only orders, agent orders or a visit from a partner link (they keep the old popup).", "אין מועדון בהזמנת כרטיס בלבד, בהזמנה של סוכן או בכניסה מלינק של שותף (שם נשאר הפופאפ הישן)."),
+      t("Member codes are hidden on [Coupons](/coupons) unless \"Show member codes\" is on.", "קודי חברים מוסתרים ב-[Coupons](/coupons) אלא אם \"Show member codes\" מסומן."),
+    ],
+  },
+  {
     id: "marketing",
     nav: "/marketing",
     productType: "events",

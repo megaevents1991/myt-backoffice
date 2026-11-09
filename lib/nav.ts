@@ -35,6 +35,7 @@ import {
   TrendingUp,
   BookOpen,
   Table2,
+  CreditCard,
 } from "lucide-react";
 import { ADMIN_ROLES, TOURS_AGENT_ROLE, type Role } from "@/types/auth.types";
 import { isToursAgentMenuPath } from "@/lib/auth/tours-agent";
@@ -261,6 +262,14 @@ const NAV: NavGroup[] = [
         href: "/marketing",
         icon: BarChart3,
         keywords: "spend revenue poas campaigns instagram שיווק קמפיינים",
+        roles: ADMIN_ROLES,
+        productType: "events",
+      },
+      {
+        name: "Members Club",
+        href: "/marketing/club",
+        icon: CreditCard,
+        keywords: "mega club members newsletter consent coupon מועדון חברים ניוזלטר",
         roles: ADMIN_ROLES,
         productType: "events",
       },
