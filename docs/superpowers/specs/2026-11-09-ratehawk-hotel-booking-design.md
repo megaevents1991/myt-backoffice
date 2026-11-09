@@ -426,7 +426,7 @@ works on it):**
 7. Our customers are Israeli residents: is a default residency `il` with a staff override acceptable?
 8. Multi-room with **different room types** for one party: separate bookings?
 9. Is `api.worldota.net` still served for production, and until when?
-10. Please do not enable IP whitelisting on our current key while our website searches with it.
+10. (Static IP: asked ETG on 09.11 to waive it - see the answers doc, email 1.)
 11. The checklist you sent is the sandbox variant (hids 10004834 / 8819557, `unknown_*` scenarios). On a test
     key, may we answer those scenarios with our logic only, and run the two test-key cases instead?
 12. We call `/hotel/info/` for hotels missing from our database and store the result. Acceptable, or must we

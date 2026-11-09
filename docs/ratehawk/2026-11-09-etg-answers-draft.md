@@ -168,17 +168,19 @@ keep checking `/finish/status/` and `/order/info/` until it is settled.
 
 ---
 
-## 3. Email 1 - questions (short version, Dor sends)
+## 3. Email 1 - SENT 09.11.2026 13:55 (Israel) from dorazouri24@gmail.com
 
-**To:** apisupport@ratehawk.com  **Cc:** Inna  **Subject:** APIR-59328 - Mega Tourism - 5 questions before certification
+**To:** apisupport@ratehawk.com  **Cc:** Inna.Gadasi@ratehawk.com
+**Subject:** APIR-59328 : API production key request for Mega Tourism (Inna's exact subject, a new thread)
 
 > Hello,
 >
 > Before we submit our certification materials, please answer the following:
 >
-> 1. Is our current API key a test key, so that certification = the two test-key bookings on hotel 8473727
->    (not the sandbox cases in the checklist)?
-> 2. Is a static IP required? We use dynamic cloud IPs. Please do not enable IP whitelisting on our current key.
+> 1. Is our current API key a test key? If so, does certification consist of the two test-key bookings on
+>    hotel 8473727, rather than the sandbox cases in the checklist?
+> 2. Static IP: we would like to ask you to waive the static IP requirement for us. It is an extra cost on our
+>    side, and you are the first of our suppliers to ask for it.
 > 3. Booking cut-off: we propose 10 minutes. Is that OK?
 > 4. We book from an internal tool used by our operations team. Is a video of the full flow (search, booking,
 >    cancellation) accepted instead of access?
@@ -188,5 +190,7 @@ keep checking `/finish/status/` and `/order/info/` until it is settled.
 > Dor Azouri
 > CTO, Mega Tourism (Mega Events)
 
-Dropped from the short version (ask later only if they come up): children's names optional in
-`/booking/finish/`; `/hotel/info/` on cache misses vs dumps; `supplier_data` required; `api.worldota.net` sunset.
+Not asked (raise only if they come up): children's names optional in `/booking/finish/`; `/hotel/info/` on
+cache misses vs dumps; `supplier_data` required; `api.worldota.net` sunset. If ETG refuses the static-IP
+waiver: the cheapest path is one small fixed-IP proxy (~$5/month) for all ETG calls, not Vercel Static IPs
+($100/month per project).
