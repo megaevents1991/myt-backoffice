@@ -1433,7 +1433,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Change the amount or switch the club off", "לשנות את הסכום או לכבות את המועדון"),
         steps: [
-          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; the popup delay in seconds on the summary (once per order, at the first pause in typing - a click no longer cancels it); and the switch. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; כמה שניות בסיכום ההזמנה עד הפופאפ (פעם אחת בהזמנה, בהפסקה הראשונה בהקלדה - לחיצה כבר לא מבטלת אותו); והמתג. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
+          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; and the switch. The popup itself opens when a customer who is not a member yet clicks on to secure payment or to \"talk to a rep\" - once per order, with \"פעם הבאה\" to carry straight on. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; והמתג. הפופאפ עצמו קופץ כשלקוח שעוד לא חבר לוחץ להמשיך לתשלום מאובטח או ל\"דברו עם נציג\" - פעם אחת בהזמנה, עם \"פעם הבאה\" שממשיך ישר. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
         ],
       },
     ],

@@ -275,11 +275,14 @@ from the link in every message. (See §13 Q2.)
   log `left`, source `link`). A member who left and joins again is a member again (status active, code back on) but
   the join never changes the mail status (§8.3): their updates stay off. Lookup of a member who left answers
   "not found". Staff "Remove" stays `removed` and a join stays refused for it.
-- **D14 The popup opens in the order (Dor: "עכשיו מילאתי הזמנה ולא נתקלתי בפופ אפ").** The old trigger (idle only,
-  cancelled by the first touch) never reached a visitor who fills the form. Now: once per order, `popup_delay_seconds`
-  after the summary is ready, and never while a field is being typed in - it waits for a pause in typing (2.5 s, or
-  6 s while the cursor is still in a field; `clubPopupDue`), so it never takes the keyboard mid-word. Not for a known member, not with a member price on,
-  not on ticket-only / agent / partner. Today's discount popup (partner link, club off) keeps its old trigger.
+- **D14 The popup comes at the end of the order (Dor: "עכשיו מילאתי הזמנה ולא נתקלתי בפופ אפ", then "לקפיץ את זה בסוף
+  ההזמנה לפני שעוברים לפיצול הזמנה או תשלום מאובטח").** The old trigger (idle only, cancelled by the first touch)
+  never reached a visitor who fills the form. Now: when a visitor who is not a member yet clicks on to secure payment or
+  to "לפצל תשלום / דברו עם נציג" (not the 24 h hold), and the form is valid, the popup opens instead - once per order
+  (this tab, this event). The click is kept: "פעם הבאה" carries it straight on, and so does the card's button after a
+  join or a lookup (with the member price on). A clear X at the top right only closes. Not for a known member, not with
+  a member price on, not on ticket-only / agent / partner. `popup_delay_seconds` stays stored and drives nothing; the
+  backoffice no longer shows it. Today's discount popup (partner link, club off) keeps its old idle trigger.
 - **D15 A door in the main menu.** "הצטרפות למועדון" after "אודות" (desktop and phone) opens `/club`: the same join
   and "כבר חברים" forms outside an order (`source = 'site_page'`, no event). Joining there sets the device cookie, so
   the next order applies the price by itself. The amount is still shown only after joining.

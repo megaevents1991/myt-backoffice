@@ -8,22 +8,26 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { saveClubSettings } from "@/lib/actions/club-actions";
-import { CLUB_AMOUNT_MAX, CLUB_AMOUNT_MIN, CLUB_DELAY_MAX, CLUB_DELAY_MIN } from "@/lib/club/settings";
+import { CLUB_AMOUNT_MAX, CLUB_AMOUNT_MIN } from "@/lib/club/settings";
 import type { ClubSettings } from "@/lib/club/types";
 
 export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onSaved: () => void }) {
   const { toast } = useToast();
   const [enabled, setEnabled] = useState(settings.enabled);
   const [amount, setAmount] = useState(String(settings.discount_per_traveler_usd));
-  const [delay, setDelay] = useState(String(settings.popup_delay_seconds));
   const [busy, setBusy] = useState(false);
 
   const changed =
-    enabled !== settings.enabled || Number(amount) !== settings.discount_per_traveler_usd || Number(delay) !== settings.popup_delay_seconds;
+    enabled !== settings.enabled || Number(amount) !== settings.discount_per_traveler_usd;
 
   async function save() {
     setBusy(true);
-    const res = await saveClubSettings({ enabled, discount_per_traveler_usd: Number(amount), popup_delay_seconds: Number(delay) });
+    // popup_delay_seconds stays stored as it is: the popup no longer waits on a timer (spec D14), the key stays valid.
+    const res = await saveClubSettings({
+      enabled,
+      discount_per_traveler_usd: Number(amount),
+      popup_delay_seconds: settings.popup_delay_seconds,
+    });
     setBusy(false);
     if (!res.ok) {
       toast({ variant: "destructive", title: "Not saved", description: res.message ?? res.kind });
@@ -34,7 +38,6 @@ export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onS
     if (res.settings.discount_per_traveler_usd !== settings.discount_per_traveler_usd) {
       parts.push(`$${res.settings.discount_per_traveler_usd} per traveler on ${res.codesUpdated} member codes`);
     }
-    if (res.settings.popup_delay_seconds !== settings.popup_delay_seconds) parts.push(`popup after ${res.settings.popup_delay_seconds} s`);
     toast({ title: "Saved", description: parts.join(" · ") || "Nothing changed." });
     onSaved();
   }
@@ -72,21 +75,9 @@ export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onS
               Whole dollars, {CLUB_AMOUNT_MIN} to {CLUB_AMOUNT_MAX}. Saving updates every member&apos;s code at once.
             </p>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="club-delay">Popup after (seconds on the summary)</Label>
-            <Input
-              id="club-delay"
-              type="number"
-              inputMode="numeric"
-              min={CLUB_DELAY_MIN}
-              max={CLUB_DELAY_MAX}
-              value={delay}
-              onChange={(e) => setDelay(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              {CLUB_DELAY_MIN} to {CLUB_DELAY_MAX}. Once per order, at the first pause in typing - a click no longer cancels
-              it, so people who fill the form see it too.
-            </p>
+          <div className="space-y-1 text-sm text-muted-foreground sm:pt-6">
+            The club popup opens when a customer who is not a member yet clicks on to secure payment or to &quot;talk to
+            a rep&quot; - once per order, with &quot;פעם הבאה&quot; to carry straight on.
           </div>
         </div>
         <Button onClick={save} disabled={busy || !changed}>
