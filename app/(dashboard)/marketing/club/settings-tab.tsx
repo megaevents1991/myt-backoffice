@@ -22,7 +22,7 @@ export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onS
 
   async function save() {
     setBusy(true);
-    // popup_delay_seconds stays stored as it is: the popup no longer waits on a timer (spec D14), the key stays valid.
+    // popup_delay_seconds stays stored as it is: the club has no popup any more (spec D16), the key stays valid.
     const res = await saveClubSettings({
       enabled,
       discount_per_traveler_usd: Number(amount),
@@ -76,8 +76,8 @@ export function SettingsTab({ settings, onSaved }: { settings: ClubSettings; onS
             </p>
           </div>
           <div className="space-y-1 text-sm text-muted-foreground sm:pt-6">
-            The club popup opens when a customer who is not a member yet clicks on to secure payment or to &quot;talk to
-            a rep&quot; - once per order, with &quot;פעם הבאה&quot; to carry straight on.
+            On the order summary the club is a card above the payment button: &quot;join free and save $X on this
+            order&quot; with one consent box - no popup. The amount shown is this one times the order&apos;s tickets.
           </div>
         </div>
         <Button onClick={save} disabled={busy || !changed}>

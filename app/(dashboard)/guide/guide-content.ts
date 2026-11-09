@@ -1413,8 +1413,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     adminOnly: true,
     title: t("Members Club (MEGA CLUB)", "מועדון החברים (MEGA CLUB)"),
     intro: t(
-      "MEGA CLUB replaces the old discount popup on the site's order summary. A customer leaves an email and a phone, ticks the consent box, and only then sees the member price - $50 per traveler by default - which applies on every package order they make from then on. Each member has a personal code (MEGA + 6 letters) that works like a coupon. The site's main menu also has a \"הצטרפות למועדון\" page (/club) with the same form. This screen shows who joined, what they ordered, what the member price cost, and holds the club's switch and amount.",
-      "MEGA CLUB מחליף את פופאפ ההנחה הישן בסיכום ההזמנה באתר. לקוח משאיר מייל וטלפון, מסמן את תיבת ההסכמה, ורק אז רואה את מחיר החבר - 50$ לנוסע כברירת מחדל - שחל על כל הזמנת חבילה שלו מעכשיו. לכל חבר יש קוד אישי (MEGA ו-6 אותיות) שעובד כמו קופון. בתפריט הראשי של האתר יש גם עמוד \"הצטרפות למועדון\" (/club) עם אותו טופס. המסך הזה מציג מי הצטרף, מה הזמין, כמה עלה מחיר החבר, ומחזיק את המתג והסכום של המועדון.",
+      "MEGA CLUB replaces the old discount popup on the site's order summary. Above the payment button a card says \"join free and save $X on this order\" with one consent box; ticking it joins with the first passenger's email and phone and the member price - $50 per ticket by default - drops in place and applies on every package order from then on. No popup interrupts the purchase. Each member has a personal code (MEGA + 6 letters) that works like a coupon. The site's main menu also has a \"הצטרפות למועדון\" page (/club) with the same form. This screen shows who joined, what they ordered, what the member price cost, and holds the club's switch and amount.",
+      "MEGA CLUB מחליף את פופאפ ההנחה הישן בסיכום ההזמנה באתר. מעל כפתור התשלום יש כרטיס \"הצטרפו בחינם וחסכו $X בהזמנה הזאת\" עם תיבת הסכמה אחת; סימון מצרף עם המייל והטלפון של הנוסע הראשון, ומחיר החבר - 50$ לכרטיס כברירת מחדל - יורד במקום וחל על כל הזמנת חבילה מעכשיו. שום פופאפ לא עוצר את הרכישה. לכל חבר יש קוד אישי (MEGA ו-6 אותיות) שעובד כמו קופון. בתפריט הראשי של האתר יש גם עמוד \"הצטרפות למועדון\" (/club) עם אותו טופס. המסך הזה מציג מי הצטרף, מה הזמין, כמה עלה מחיר החבר, ומחזיק את המתג והסכום של המועדון.",
     ),
     howTo: [
       {
@@ -1433,7 +1433,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         title: t("Change the amount or switch the club off", "לשנות את הסכום או לכבות את המועדון"),
         steps: [
-          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; and the switch. The popup itself opens when a customer who is not a member yet clicks on to secure payment or to \"talk to a rep\" - once per order, with \"פעם הבאה\" to carry straight on. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; והמתג. הפופאפ עצמו קופץ כשלקוח שעוד לא חבר לוחץ להמשיך לתשלום מאובטח או ל\"דברו עם נציג\" - פעם אחת בהזמנה, עם \"פעם הבאה\" שממשיך ישר. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
+          t("\"Settings\": the member price in whole dollars per traveler (1 to 500) - saving updates every member's code at once; and the switch. Off = the old discount popup comes back and the club leaves the site; member codes typed into the coupon field keep working.", "\"Settings\": מחיר החבר בדולרים שלמים לנוסע (1 עד 500) - השמירה מעדכנת את הקוד של כל החברים בבת אחת; והמתג. כבוי = פופאפ ההנחה הישן חוזר והמועדון יורד מהאתר; קוד חבר שמקלידים בשדה הקופון ממשיך לעבוד."),
         ],
       },
     ],
