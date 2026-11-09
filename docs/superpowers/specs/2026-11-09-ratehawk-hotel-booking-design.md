@@ -128,6 +128,7 @@ this work.
    touched at all.** The swap is surgical: the production key goes in under **separate env var names**, and the
    site moves to it only once everything works (so going back is removing/turning off env, not a code revert).
 8. Today's (test) key stays as the fallback for every non-booking use; a booking never falls back.
+11. No separate test key: the backoffice tests on today's key.
 9. Reservations from before the panel opens: Book needs an explicit "not booked by hand yet" tick.
 10. Fix the backoffice's existing cancellation-deadline display to ETG's UTC (backoffice only).
 
@@ -303,10 +304,9 @@ maximum 10 min"). Until ETG confirms the value, `cutoff_at` = finish time + 10 m
   `api-sandbox.ratehawk.com`) could be added as config if ETG insists on the sandbox checklist cases.
 - **Booking never falls back** to another key (Dor, 09.11: the test key cannot book, so there is nothing to
   fall back to).
-- **A separate test key for the backoffice** (our call): we ask ETG for one, so that whatever ETG sets on a key
-  during certification (cut-off, IP whitelist, a stop-list after test names) never lands on the key the live site
-  searches with. Until it arrives the backoffice uses today's key; the booking endpoints do not share the site's
-  quotas.
+- **The backoffice tests on today's key** (Dor, 09.11: "use the key we have, no need for another key"). The
+  TEST pair holds the same key the site searches with; the booking endpoints do not share the site's quotas.
+  We still ask ETG not to enable IP whitelisting on it while the site uses it.
 - **The booking flow never calls a SERP endpoint** (`serp/geo`, `serp/hotels`, `serp/region`): it uses
   `search/hp`, `prebook`, the booking endpoints, order info, cancel and voucher, each with its own per-endpoint
   limit. So it does not spend the 10-a-minute `serp/geo` quota the site's customers share. (ETG limits are per
@@ -398,7 +398,7 @@ works on it):**
 16. An Amadeus sandbox PNR never unlocks a production hotel booking.
 17. Hotel manual marks are per hotel part; own-stock parts need their mark.
 18. Euro Trip rows: manual marks only in this work.
-19. Ask ETG for a separate test key for the backoffice.
+19. (dropped - Dor: test on today's key)
 20. Build for test + production only; the env module can take ETG's sandbox later as config.
 
 ## 9. Left to the builder
@@ -426,8 +426,7 @@ works on it):**
 7. Our customers are Israeli residents: is a default residency `il` with a staff override acceptable?
 8. Multi-room with **different room types** for one party: separate bookings?
 9. Is `api.worldota.net` still served for production, and until when?
-10. Please issue a **separate test key** for our booking tool, and do not enable IP whitelisting on our current
-    key while our website searches with it.
+10. Please do not enable IP whitelisting on our current key while our website searches with it.
 11. The checklist you sent is the sandbox variant (hids 10004834 / 8819557, `unknown_*` scenarios). On a test
     key, may we answer those scenarios with our logic only, and run the two test-key cases instead?
 12. We call `/hotel/info/` for hotels missing from our database and store the result. Acceptable, or must we

@@ -170,7 +170,7 @@ keep checking `/finish/status/` and `/order/info/` until it is settled.
 
 ## 3. Email 1 - questions (short version, Dor sends)
 
-**To:** apisupport@ratehawk.com  **Cc:** Inna  **Subject:** APIR-59328 - Mega Tourism - 6 questions before certification
+**To:** apisupport@ratehawk.com  **Cc:** Inna  **Subject:** APIR-59328 - Mega Tourism - 5 questions before certification
 
 > Hello,
 >
@@ -178,13 +178,11 @@ keep checking `/finish/status/` and `/order/info/` until it is settled.
 >
 > 1. Is our current API key a test key, so that certification = the two test-key bookings on hotel 8473727
 >    (not the sandbox cases in the checklist)?
-> 2. Can you issue a separate test key for our booking tool, so certification does not affect the key our
->    website uses?
-> 3. Is a static IP required? We use dynamic cloud IPs. Please do not enable IP whitelisting on our current key.
-> 4. Booking cut-off: we propose 10 minutes. Is that OK?
-> 5. We book from an internal tool used by our operations team. Is a video of the full flow (search, booking,
+> 2. Is a static IP required? We use dynamic cloud IPs. Please do not enable IP whitelisting on our current key.
+> 3. Booking cut-off: we propose 10 minutes. Is that OK?
+> 4. We book from an internal tool used by our operations team. Is a video of the full flow (search, booking,
 >    cancellation) accepted instead of access?
-> 6. Can the /serp/geo limit be raised from 10 to 30 requests per minute after certification?
+> 5. Can the /serp/geo limit be raised from 10 to 30 requests per minute after certification?
 >
 > Thank you,
 > Dor Azouri
