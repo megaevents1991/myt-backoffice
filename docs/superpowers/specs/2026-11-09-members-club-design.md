@@ -27,6 +27,10 @@ price on every order. It should look and read like something a person is glad to
 | D6 | On joining, a welcome mail goes out. No newsletter sending in this round. Zoho Campaigns comes once there are enough members. |
 | D7 | **Full support in our backoffice**: see the members, the numbers, change the amount, export. |
 | D8 | Site side in **myt-main on a branch** (new development, not a hotfix); backoffice changes on **master**. |
+| D9 | **One consent for mail, SMS and WhatsApp.** Any withdrawal (the mail link, or "הסר" on the Mega Events WhatsApp number) stops all marketing to that member; the member price stays. (09.11, §13 Q1) |
+| D10 | The privacy page's "double opt-in" line is replaced by the recorded single opt-in (§11). (09.11, Q2) |
+| D11 | Name and look: version **A, "שורה ראשונה"**. (09.11, Q3) |
+| D12 | **No club on ticket-only orders**, as today's popup. (09.11, Q4) |
 
 ## 3. Goals, non-goals, anti-goals
 
@@ -253,7 +257,7 @@ from the link in every message. (See §13 Q2.)
    backoffice row; then a test member removed from the backoffice.
 3. Merge to main. The club starts on. The switch in the backoffice turns it off.
 
-## 13. Open for Dor
+## 13. Questions - decided 09.11 (Dor took every default; now D9-D12)
 
 - **Q1 What the consent covers.** The mockup's box names mail, SMS and WhatsApp. Default: **one consent for all three
   channels; any withdrawal (the mail link, or "הסר" on the Mega Events WhatsApp number) stops all marketing to that
