@@ -102,3 +102,27 @@ export async function publishSite(): Promise<ActionResult<SitePublishRecord>> {
     return failure(e, "Failed to revalidate the site");
   }
 }
+
+/**
+ * When the build that now serves the company's site was made - the site's own `/api/build/` (mega-family
+ * app/api/build/route.ts) - or null when the company has no site address or the site does not say. "Revalidate
+ * Pages" asks it after a press until the answer is newer than the press, and then says the site is updated (Liz,
+ * 09.11.2026: "שהאתר יתעדכן יותר מהר" - a build takes about 30 s, and nobody could tell when it was live).
+ */
+export async function getSiteBuiltAt(): Promise<ActionResult<{ builtAt: string | null }>> {
+  try {
+    const { company } = await requireCompany("tours");
+    if (!company.siteUrl) return { success: true, data: { builtAt: null } };
+    const res = await fetch(`${company.siteUrl.replace(/\/$/, "")}/api/build/`, {
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return { success: true, data: { builtAt: null } };
+    const body = (await res.json()) as { builtAt?: unknown };
+    const builtAt = typeof body.builtAt === "string" && !Number.isNaN(Date.parse(body.builtAt)) ? body.builtAt : null;
+    return { success: true, data: { builtAt } };
+  } catch (e) {
+    return failure(e, "Failed to read the site's build");
+  }
+}

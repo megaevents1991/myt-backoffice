@@ -319,6 +319,17 @@ function VariantDates({
  * reversed route; a season opens it with its own name and the same route
  * (`suggest`), so the season gets its itinerary without leaving its tab.
  */
+/** An itinerary variant's ID as typed, made one: lowercase English, a space or underscore a hyphen, nothing else kept. */
+function idOf(typed: string): string {
+  return typed
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function NewVariantDialog({
   packageId,
   sources,
@@ -350,11 +361,13 @@ export function NewVariantDialog({
   const [isPending, startTransition] = useTransition();
   const run = useActionToast();
 
-  const cleanKey = key.trim().toLowerCase();
+  // the ID as staff type it, made an ID: "NO DISNEY PASSOVER" -> "no-disney-passover" (Liz, 09.11.2026: the button stayed
+  // grey on capitals and spaces, and only a hover over it said why)
+  const cleanKey = idOf(key);
   const problem = !sourceId
     ? "Choose a variant to copy from"
     : !/^[a-z0-9][a-z0-9-]{0,39}$/.test(cleanKey)
-      ? "ID in English: lowercase letters, digits and hyphens"
+      ? "ID in English: letters, digits and hyphens"
       : takenKeys.includes(cleanKey)
         ? "A variant with this ID already exists"
         : !label.trim()
@@ -419,7 +432,7 @@ export function NewVariantDialog({
           <Field label="Variant name">
             <Input dir="auto" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="מסלול הפוך" />
           </Field>
-          <Field label="ID" hint="In English, e.g. reverse">
+          <Field label="ID" hint={cleanKey && cleanKey !== key.trim() ? `Saved as ${cleanKey}` : "In English, e.g. reverse"}>
             <Input
               dir="ltr"
               className="font-mono"
@@ -447,6 +460,12 @@ export function NewVariantDialog({
             />
           </Field>
         </div>
+        {/* what still stops the button, in words beside it - not only on a hover */}
+        {problem && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {problem}
+          </p>
+        )}
         <DialogFooter className="gap-2">
           <Button type="button" variant="ghost" onClick={onClose} disabled={isPending}>
             Cancel

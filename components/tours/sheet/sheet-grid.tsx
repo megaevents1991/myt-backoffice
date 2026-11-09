@@ -1032,7 +1032,9 @@ function SetForSelected({
             Every column listed here is set on every ticked row. The change is marked in the sheet; nothing is saved until you press Save.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
+        {/* min-w-0 down the column: a native <select> is as wide as its longest option ("Season - The season of the tour
+            this date belongs to - ..."), and a grid let it push the fields past the dialog's edge (Liz, 09.11.2026) */}
+        <div className="grid min-w-0 gap-3">
           {entries.map((entry, i) => {
             const col = columns.find((c) => c.key === entry.key);
             const numeric = !!col && NUMERIC_KINDS.has(col.kind);
@@ -1040,21 +1042,23 @@ function SetForSelected({
             const picker = col?.kind === "date" ? "date" : col?.kind === "datetime" || col?.kind === "localtime" ? "datetime-local" : "text";
             const problem = problems[i];
             return (
-              <div key={i} className="grid gap-2 rounded-md border p-3">
+              <div key={i} className="grid min-w-0 gap-2 rounded-md border p-3">
                 <div className="flex items-center gap-2">
                   <label className="grid min-w-0 flex-1 gap-1 text-sm">
                     Column
                     <select
-                      className={selectClass}
+                      className={cn(selectClass, "w-full min-w-0")}
                       value={entry.key}
                       onChange={(e) => patch(i, { key: e.target.value, mode: "set", text: "" })}
                     >
                       {columns.map((c) => (
                         <option key={c.key} value={c.key} disabled={c.key !== entry.key && taken.has(c.key)}>
-                          {c.title ? `${c.label} - ${c.title}` : c.label}
+                          {c.label}
                         </option>
                       ))}
                     </select>
+                    {/* what the chosen column is, under the list instead of inside every option */}
+                    {col?.title && <span className="text-xs font-normal text-muted-foreground">{col.title}</span>}
                   </label>
                   {entries.length > 1 && (
                     <Button
@@ -1089,10 +1093,10 @@ function SetForSelected({
                     ))}
                   </div>
                 )}
-                <label className="grid gap-1 text-sm">
+                <label className="grid min-w-0 gap-1 text-sm">
                   {entry.mode === "set" ? "Value" : entry.mode === "add" ? "Amount to add (negative lowers)" : "Percent to add (negative lowers)"}
                   {list && entry.mode === "set" ? (
-                    <select className={selectClass} value={entry.text} onChange={(e) => patch(i, { text: e.target.value })} dir="auto">
+                    <select className={cn(selectClass, "w-full min-w-0")} value={entry.text} onChange={(e) => patch(i, { text: e.target.value })} dir="auto">
                       <option value="">{col?.nullable ? (col.nullLabel ?? "- (empty)") : "Choose…"}</option>
                       {list.map((o) => (
                         <option key={o.value} value={o.value}>
@@ -1110,6 +1114,9 @@ function SetForSelected({
                     />
                   )}
                   {problem && (entry.text !== "" || entry.mode !== "set") && <span className="text-xs text-destructive">{problem}</span>}
+                  {col?.kind === "choice" && !col.options && list?.length === 0 && entry.mode === "set" && (
+                    <span className="text-xs text-warning">The tours of the ticked rows have no {col.label.toLowerCase()} to choose yet - add one on the tour first.</span>
+                  )}
                   {col?.kind === "choice" && !col.options && (
                     <span className="text-xs text-muted-foreground">A row that has no such choice turns red and is not saved.</span>
                   )}
