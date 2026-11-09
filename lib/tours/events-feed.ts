@@ -135,7 +135,70 @@ export type EventsFeedDoc = {
    * site's artist slider set to "From Mega Events" (Liz, 06.11). Missing on a document written before.
    */
   artists?: EventsFeedArtist[];
+  /**
+   * The football leagues and the destinations Mega Events sells now, as its own menu lists them (buildFeedMenu) -
+   * for the sport & music menu of a company site (Liz, 09.11). Missing on a document written before.
+   */
+  menu?: EventsFeedMenu;
 };
+
+/** One link of a company site's sport & music menu: a node of Mega Events' category tree. */
+export type EventsFeedLink = { name: string; href: string };
+
+/** What the sport & music menu of a company site lists under "כדורגל" and "יעדים". */
+export type EventsFeedMenu = { leagues: EventsFeedLink[]; destinations: EventsFeedLink[] };
+
+/** A node of Mega Events' category tree (public.categories), as the cron reads it - active, not deleted. */
+export type FeedCategoryRow = { id: number; parent_id: number | null; slug: string; name: string; display_order: number | null };
+
+/** Where the two lists hang in Mega Events' tree: /c/football/leagues and /c/destinations. */
+const MENU_PARENTS = { leagues: ["football", "leagues"], destinations: ["destinations"] } as const;
+
+/**
+ * The leagues and the destinations of Mega Events' own menu (myt-main lib/taxonomy.ts getNavCategories): the
+ * children of /c/football/leagues and of /c/destinations that hold at least one event a listing may show
+ * (`listedIds`; event_category_links derives an event's categories from its tags), in the tree's order, each
+ * linking to its /c/ page on mega-events.co.il. A league with no event left (last season's ליגת האלופות) is left
+ * out, as Mega Events leaves it out of its own menu (Liz, 09.11.2026: "בכדורגל שיפתחו כל הליגות הזמינות כרגע").
+ */
+export function buildFeedMenu(input: {
+  categories: FeedCategoryRow[];
+  links: { category_id: number; event_id: number }[];
+  listedIds: ReadonlySet<number>;
+}): EventsFeedMenu {
+  const { categories } = input;
+  const live = new Set<number>();
+  for (const l of input.links) if (input.listedIds.has(l.event_id)) live.add(l.category_id);
+  const childrenOf = (id: number | null) =>
+    categories
+      .filter((c) => c.parent_id === id)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || a.name.localeCompare(b.name, "he"));
+  // the node at a slug path from the root, and its path for the link
+  const nodeAt = (path: readonly string[]): FeedCategoryRow | null => {
+    let node: FeedCategoryRow | null = null;
+    for (const slug of path) {
+      node = childrenOf(node ? node.id : null).find((c) => c.slug === slug) ?? null;
+      if (!node) return null;
+    }
+    return node;
+  };
+  const listOf = (path: readonly string[]): EventsFeedLink[] => {
+    const parent = nodeAt(path);
+    if (!parent) return [];
+    return childrenOf(parent.id)
+      .filter((c) => live.has(c.id) && c.name.trim())
+      .map((c) => ({ name: c.name.trim(), href: `${PUBLIC_SITE_URL}/c/${[...path, c.slug].map(encodeURIComponent).join("/")}` }));
+  };
+  return { leagues: listOf(MENU_PARENTS.leagues), destinations: listOf(MENU_PARENTS.destinations) };
+}
+
+/** The menu of a stored document; null = a document written before it existed. */
+export function storedFeedMenu(data: unknown): EventsFeedMenu | null {
+  const menu = data && typeof data === "object" ? (data as { menu?: unknown }).menu : null;
+  if (!menu || typeof menu !== "object") return null;
+  const { leagues, destinations } = menu as { leagues?: unknown; destinations?: unknown };
+  return Array.isArray(leagues) && Array.isArray(destinations) ? (menu as EventsFeedMenu) : null;
+}
 
 /** Mega Events' homepage row of artists ("אמנים מובילים"). */
 export const ARTISTS_ROW_KEY = "artists";

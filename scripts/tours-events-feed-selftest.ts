@@ -39,6 +39,9 @@ import {
   sameFeedItems,
   storedFeedIndex,
   storedFeedItems,
+  buildFeedMenu,
+  storedFeedMenu,
+  type FeedCategoryRow,
   type FeedEventRow,
   type FeedLightRow,
   type SiteHotRow,
@@ -539,6 +542,51 @@ async function testPagedRead(): Promise<void> {
   assert.equal(feedArtistOf({ ...artists[0], image_url: "http://insecure/x.jpg" }), null, "only an https picture");
   assert.equal(storedFeedArtists({ items: [] }), null, "a document written before has no artists");
   assert.deepEqual(storedFeedArtists({ artists: [] }), []);
+}
+
+// The sport & music menu of a company site (Liz, 09.11.2026): the leagues and destinations Mega Events' own
+// menu lists - the children of /c/football/leagues and /c/destinations holding a listed event, in tree order.
+{
+  const cat = (id: number, parent_id: number | null, slug: string, name: string, display_order = 0): FeedCategoryRow => ({ id, parent_id, slug, name, display_order });
+  const categories = [
+    cat(1, null, "football", "כדורגל"),
+    cat(2, 1, "leagues", "ליגות"),
+    cat(3, 1, "teams", "הקבוצות שלנו"),
+    cat(10, 2, "premier-league", "פרמייר ליג", 2),
+    cat(11, 2, "champions-league", "ליגת האלופות", 1),
+    cat(12, 2, "la-liga", "לה ליגה", 3),
+    cat(13, 3, "arsenal", "ארסנל"),
+    cat(20, null, "destinations", "יעדים"),
+    cat(21, 20, "london", "לונדון", 1),
+    cat(22, 20, "paris", "פריז", 2),
+    cat(30, null, "music", "הופעות מוזיקה"),
+  ];
+  const links = [
+    { category_id: 10, event_id: 501 },
+    { category_id: 11, event_id: 502 }, // a past season: its event is not listed
+    { category_id: 12, event_id: 503 },
+    { category_id: 13, event_id: 501 },
+    { category_id: 21, event_id: 501 },
+    { category_id: 22, event_id: 504 },
+  ];
+  const menu = buildFeedMenu({ categories, links, listedIds: new Set([501, 503, 504]) });
+  assert.deepEqual(
+    menu.leagues.map((l) => l.name),
+    ["פרמייר ליג", "לה ליגה"],
+    "the leagues with a listed event, in the tree's order - a league whose events are gone is left out",
+  );
+  assert.equal(menu.leagues[0].href, `${PUBLIC_SITE_URL}/c/football/leagues/premier-league`, "the league's page on Mega Events");
+  assert.deepEqual(
+    menu.destinations.map((d) => [d.name, d.href]),
+    [
+      ["לונדון", `${PUBLIC_SITE_URL}/c/destinations/london`],
+      ["פריז", `${PUBLIC_SITE_URL}/c/destinations/paris`],
+    ],
+  );
+  assert.ok(!menu.leagues.some((l) => l.name === "ארסנל"), "a team is not a league");
+  assert.deepEqual(buildFeedMenu({ categories: categories.filter((c) => c.slug !== "leagues"), links, listedIds: new Set([501]) }).leagues, [], "no leagues node = no leagues");
+  assert.equal(storedFeedMenu({ items: [] }), null, "a document written before has no menu");
+  assert.deepEqual(storedFeedMenu({ menu: { leagues: [], destinations: [] } }), { leagues: [], destinations: [] });
 }
 
 testPagedRead()
