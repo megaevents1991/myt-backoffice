@@ -53,6 +53,8 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 
 ## 4. Anti-goals - failure even if it "works"
 
+- **Above everything (Dor, 09.11): no flow that works today is harmed** - not one of the ~400 products running
+  with real customers. See 7.13.
 - **A ticket bought twice**: double click, two tabs, a retry after a timeout, or the site and the button on the
   same reservation. Real money, and Approved is final.
 - **A real customer's reservation booked on the sandbox** (the customer paid, no ticket exists), or a **test
@@ -200,6 +202,8 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 6. After TixStock approves, the backoffice side books real orders.
 7. The Italian attendee signal is `venue.country_code` = `IT`.
 8. Base currency USD (told to TixStock).
+9. **The most important rule:** "הכי חשוב זה שלא יפגע בשום flow שעובד כרגע ולא יפגע בשום דבר וכול ה 400 מוצרים
+   שרצים מול לקוחות אמיתיים" - no working flow and none of the ~400 live products may be harmed (7.13).
 
 ## 7. The design
 
@@ -465,6 +469,36 @@ The switch generalises `sandbox_site` to real events. Sale on Hold gives a 2-hou
 the ticket at payment and approve after the flight and the hotel are confirmed. It works only if they are nearly
 always confirmed within 2 hours, and cancelling from Sale on Hold stays rare (TixStock 09.11). That needs the
 Amadeus and RateHawk bookings automatic first. It gets its own design.
+
+### 7.13 Nothing that works today changes (Dor's rule 9)
+
+**The rule:** every new path on the site runs only when the event is `is_test` **and** has `tixstock_booking`.
+Real events never reach new code, so a mistake in it can break at most the hidden test event.
+
+| Where | Change | Guard |
+|---|---|---|
+| Ticket step (`app/order/TicketSelection.tsx`) | An early branch to a separate component for test events | The existing render path is not edited. The listing rules (`lib/tixstock-quantity.ts`, `lib/supplier-offers.ts`) are not edited; `display_quantity` lives in the new branch's own module. |
+| TixStock listings | A **new** route for sandbox events | `app/api/tixstock/tickets/route.ts` is not edited: no extra DB lookup on its hot path, no change to its price writes or cache invalidation. |
+| Summary (`app/order/OrderReview.tsx`) | Italian fields + the listing id in the pay request, test events only | Behind the flag. The existing fields and validation are untouched. |
+| `confirm-order` | One call to a new module after the reservation insert, test events only | Any error in it can fail only a test order. Every other order's behaviour and response are unchanged. `TICKET_UNAVAILABLE` exists only for test events. |
+| `validateAndRecordPayment` | One call after Paid and after the email, test events only | try/catch, non-fatal. It never delays or changes the Paid write or the email. |
+| Confirmation page + email | Extra lines | Only when the order has a `source = site` booking row. |
+| Shared types | `Event.tixstock_booking?` | Optional and additive, in both repos. |
+| DB | A nullable `events` column, three new tables, a private bucket | No column added to or changed on `reservations`. Nothing the site's existing queries select changes. |
+| Backoffice price sync / purge cron | Skip events with `tixstock_booking` | One filter. Verified by running the sync's selection before and after: the same real events in, only the test events out. |
+| Backoffice reservation page | The ticket row and card | Behind the gate (superadmin only until `NEXT_SECRET_FULFILMENT_OPEN`). Production booking stays off until its own switch. |
+| Env | New names only | The existing TixStock, CreditGuard and Supabase env are untouched. |
+
+**Verification before every push** (part of the plan, not optional):
+- `tsc --noEmit`, the existing tests, and the production build in both repos.
+- **Before/after on real events:**
+  - the TixStock tickets route's JSON for a sample of live `tx_event`s: identical;
+  - the order pages of live events of every type: the same ticket cards;
+  - `confirm-order` with a non-test payload: an unchanged response (unit test, with the new module stubbed).
+- **Small stages** through the push lock. Each stage is checked live on production before the next: the Vercel
+  status, plus a real event's order page.
+- **Kill switch:** removing `NEXT_SECRET_TIXSTOCK_SANDBOX_*` from the site turns every new site path off (the test
+  event then shows no tickets). Real events never depend on it.
 
 ## 8. Calls Claude made (for Dor to check)
 
