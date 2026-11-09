@@ -296,6 +296,19 @@ from the link in every message. (See §13 Q2.)
   price changed. `club_members.source = 'checkout_inline'`. The amount stays $50 a ticket (Dor did not change it).
   The /club page, leaving (D13) and the remembered member are unchanged. Today's discount popup (partner link, club
   off) keeps its idle trigger.
+- **D17 The card comes back in the order and after it (Dor 09.11, from the mockups: "1 + 2").** D16 dropped the popup
+  and with it the member card. (1) **Summary:** when the tick joins, the box turns into the member card itself (number,
+  name, "מאז MM/YY") with one sheen across it, "מחיר חבר הופעל: $X פחות על ההזמנה הזאת" under it and the mail line;
+  still nothing in the way of the payment button. A remembered member keeps the plain line. (2) **Confirmation page**
+  (paid or sent to a rep; never on a 24 h hold or a failed payment): a visitor who joined in this order gets "ברוכים
+  הבאים ל-MEGA CLUB" with the full card and what the price saved (a returning email: "ברוכים השבים"); a remembered
+  member whose price went in gets the card with what it saved; a visitor the club was offered to who did not join gets
+  a calm offer under the order's details - "בהזמנה הבאה: מחיר חבר", the same consent tick (v1) and "הצטרפות בחינם", joining
+  with the first passenger's email and phone (`club_members.source = 'checkout_confirmation'`, no discount on this
+  order). Not for agents, partner-link visits, ticket-only orders or anyone the summary did not show the club to. The
+  confirmation page knows only what this tab carried over the payment page (`sessionStorage`, keyed by the order id):
+  the order read (`/api/confirm-order/[id]`) still returns no contact details, so the offer never shows on another
+  device or after the tab closed, and the stored details are dropped once the visitor joins.
 - **D15 A door in the main menu.** "הצטרפות למועדון" after "אודות" (desktop and phone) opens `/club`: the same join
   and "כבר חברים" forms outside an order (`source = 'site_page'`, no event). Joining there sets the device cookie, so
   the next order applies the price by itself. The amount is still shown only after joining.
