@@ -23,7 +23,7 @@
 - No CHECK constraints on columns main writes. RLS on, no policies, `anon`/`authenticated` revoked on the three new tables.
 - `.in()` lists ≤ 200 values. Paged reads over 1,000 rows (`fetchPaged`).
 - Backoffice: commit by explicit path (`git commit -- <paths>`), on master, no push until Dor says "push". Main: branch `feat/members-club` only. No AI attribution in commit messages.
-- Hebrew UI copy from the spec / mockup version A; English code and commits.
+- Hebrew UI copy from the spec / the mockup version **Dor picks (still open, spec D11)** - M1's `CLUB_COPY` and M4's `ClubCard` wait for it; every other task does not; English code and commits.
 
 ## Review Focus
 

@@ -29,7 +29,7 @@ price on every order. It should look and read like something a person is glad to
 | D8 | Site side in **myt-main on a branch** (new development, not a hotfix); backoffice changes on **master**. |
 | D9 | **One consent for mail, SMS and WhatsApp.** Any withdrawal (the mail link, or "הסר" on the Mega Events WhatsApp number) stops all marketing to that member; the member price stays. (09.11, §13 Q1) |
 | D10 | The privacy page's "double opt-in" line is replaced by the recorded single opt-in (§11). (09.11, Q2) |
-| D11 | Name and look: version **A, "שורה ראשונה"**. (09.11, Q3) |
+| D11 | Name and look: **OPEN - Dor picks** (09.11: "לא בחרתי איך זה יראה"). Mockups A / B / C on the page above; only the copy and the card art depend on it (`lib/club/copy.ts`, `ClubCard`). |
 | D12 | **No club on ticket-only orders**, as today's popup. (09.11, Q4) |
 
 ## 3. Goals, non-goals, anti-goals
