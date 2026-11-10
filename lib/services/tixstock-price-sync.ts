@@ -269,6 +269,9 @@ export async function syncTixStockPrices(
         .select(columns)
         .eq("type", "tx_event")
         .is("is_deleted", null)
+        // A sandbox test event (is_test AND tixstock_booking set) sells TixStock's SANDBOX listings: the
+        // production feed has none of them, so this sync would switch it off. A real event never leaves.
+        .or("tixstock_booking.is.null,is_test.is.false")
         .gte("date", today);
       return eventIds ? query.in("id", eventIds) : query;
     };
