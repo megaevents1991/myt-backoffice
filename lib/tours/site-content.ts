@@ -184,6 +184,15 @@ export function readFooterTiles(stored: unknown): FooterTiles {
   return parsed.success ? parsed.data : DEFAULT_FOOTER_TILES;
 }
 
+/**
+ * The cancellation terms every tour page opens its "תנאי ביטול" with (Daniel, 10.11.2026: "בתנאי ביטול צריך להופיע גורף
+ * בטיולים" - his text word for word). A tour's own cancellation text shows under it. Edited in Website > Header & Footer
+ * > Contact details; until staff save that tab the site shows this same text (mega-family `components/package/terms.ts`
+ * `DEFAULT_TOUR_CANCELLATION_HTML` - change both together).
+ */
+export const DEFAULT_TOUR_CANCELLATION_HTML =
+  "<p><strong>לקוח יקר,</strong></p><p>דמי ביטול אלו כפופים להוראות חוק הגנת הצרכן התשמ\"א 1981, לפיהם נוסע ישלם דמי ביטול של 100 ₪ או 5% ממחיר העסקה, הנמוך מבניהם במידה וביטל את השתתפותו בכתב בתוך 14 יום מיום ההזמנה ולא פחות מ-7 ימי עבודה לפני תחילת הטיול. בכל מקרה אחר דמי הביטול כמפורט בהמשך.</p><p><strong>דמי ביטול לטיולים מאורגנים (סדיר או שכר) – שירותי קרקע וטיסות בינלאומיות.</strong></p><ul><li>ממועד ההרשמה ועד 45 ימי עבודה לפני מועד יציאת הטיול – 100$ לנוסע דמי רישום וטיפול שלא יוחזרו בכל מקרה.</li><li>מ-44 ימי עבודה ועד 30 ימי עבודה לפני מועד יציאת הטיול – 40% לנוסע</li><li>מ-29 ימי עבודה ועד 15 ימי עבודה לפני מועד יציאת הטיול – 80% לנוסע</li><li>פחות מ-14 ימי עבודה לפני מועד היציאה – דמי ביטול מלאים.</li></ul><p><strong>בטיולים בהם משולבות טיסות פנימיות ו/או שייט חופים יחולו בנוסף דמי ביטול הבאים בגין הטיסות הפנימיות ו/או השייט:</strong></p><ul><li>45 ימי עבודה לפני יום הטיסה – 100% ממחיר הטיסות ו/או השייט.</li></ul><p><strong>דמי ביטול אלו הם בנוסף לדמי הביטול עבור שירותי הקרקע וטיסות בינלאומיות.</strong></p><p>חשוב מאד! תאריך הביטול לכל המוצרים הינו תאריך קבלת ההודעה בכתב במשרדנו על פי המפורט בדרכי ההודעה על ביטול עסקה. <strong>באחריות הלקוח לוודא כי הודעת הביטול התקבלה וטופלה.</strong></p><p><strong>מעבר בין טיולים:</strong></p><p>נוסע שעובר מטיול לטיול פחות מ-30 ימי עבודה לפני מועד יציאת הטיול ו/או לאחר כרטוס כרטיסי הטיסה, יחויב בדמי ביטול המפורטים מעלה כאילו וביטל השתתפות בטיול.</p>";
+
 export const generalSchema = z.object({
   name: label("The site name", 120),
   tagline: text(240),
@@ -211,6 +220,12 @@ export const generalSchema = z.object({
     .max(80)
     .refine((v) => v === "" || /^[A-Za-z0-9_-]{16,80}$/.test(v), "A Google Place ID is letters, digits, - and _ (it usually starts with ChIJ)")
     .default(""),
+  /** HTML; empty = a tour shows its own cancellation text alone. */
+  tourCancellation: z
+    .string()
+    .max(20000, "Up to 20,000 characters")
+    .transform((v) => stripActiveHtml(v).trim())
+    .default(DEFAULT_TOUR_CANCELLATION_HTML),
 });
 export type SiteGeneral = z.infer<typeof generalSchema>;
 
@@ -752,6 +767,7 @@ export const EMPTY_SITE_DOCS: SiteDocs = {
     leadTitle: "",
     leadOptions: [],
     googlePlaceId: "",
+    tourCancellation: DEFAULT_TOUR_CANCELLATION_HTML,
   },
   header: { menus: [], links: [], mobile: [], aboutMenu: [] },
   footer: {

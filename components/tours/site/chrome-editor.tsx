@@ -18,6 +18,7 @@ import { PageHeader } from "@/components/page-header";
 import { StickySaveBar } from "@/components/sticky-save-bar";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { Field, Notice, Section } from "@/components/tours/ui";
+import { HtmlField } from "@/components/tours/content/html-field";
 import { ImageUrlField, StringListEditor, moved } from "@/components/tours/content/fields";
 import { PublishSiteButton } from "@/components/tours/content/publish-site-button";
 import { CONTENT_SAVED_NOTE, CONTENT_UNSAVED_NOTE, ViewOnSiteButton } from "@/components/tours/content/save-bar";
@@ -387,6 +388,12 @@ export function ChromeEditor({ initial, options }: { initial: Saved; options: Si
           <Section title="Lead form" description={'The "did not find what you were looking for" form on the home page, the tour pages and the category pages.'}>
             <TextInput label="Title" value={general.leadTitle} onChange={(leadTitle) => setGeneral({ leadTitle })} />
             <StringListEditor label="Options of the trip type list" value={general.leadOptions} onChange={(leadOptions) => setGeneral({ leadOptions: leadOptions.slice(0, 12) })} addLabel="Add Option" />
+          </Section>
+          <Section
+            title="Cancellation terms of every tour"
+            description={'Every tour page opens its "תנאי ביטול" with this text; a tour\'s own cancellation text (tour editor > Description) shows under it. The same text is in the checkout\'s terms window, on the printed tour and in the order mails. Empty = each tour shows its own text alone.'}
+          >
+            <HtmlField label="Cancellation terms" value={general.tourCancellation} onChange={(tourCancellation) => setGeneral({ tourCancellation })} siteUrl={saved.general.siteUrl} rows={14} />
           </Section>
           <Section title="Bottom line of the footer">
             <div className="grid gap-3 md:grid-cols-3">

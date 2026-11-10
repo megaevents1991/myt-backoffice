@@ -33,6 +33,7 @@ import { PackageGeneralFields, PackageTermsPicker } from "@/components/tours/con
 import { TourDates } from "@/components/tours/content/tour-dates";
 import { TourSeasons } from "@/components/tours/content/tour-seasons";
 import { TourSeriesField } from "@/components/tours/content/tour-series-field";
+import { AttractionsEditor } from "@/components/tours/content/attractions-editor";
 import { TourHotelsEditor } from "@/components/tours/content/tour-hotels-editor";
 import { TourLeadersPicker } from "@/components/tours/content/tour-leaders-picker";
 import { TourReadinessStrip, tourReadiness } from "@/components/tours/content/tour-readiness";
@@ -479,12 +480,7 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
             />
           </Section>
           <Section>
-            <StringListEditor
-              label="Attractions"
-              value={form.attractions}
-              onChange={(value) => set("attractions", value)}
-              addLabel="Add Attraction"
-            />
+            <AttractionsEditor label="Attractions" value={form.attractions} onChange={(value) => set("attractions", value)} />
           </Section>
           <div className="grid gap-4 xl:grid-cols-2">
             <Section>

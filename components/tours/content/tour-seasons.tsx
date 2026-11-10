@@ -24,6 +24,8 @@ import { cn } from "@/lib/utils";
 import { todayIso } from "@/lib/tours/format";
 import { Field, LoadError, Notice, Section, selectClass } from "@/components/tours/ui";
 import { ImageListEditor, ImageUrlField, SiteImage, StringListEditor } from "@/components/tours/content/fields";
+import { AttractionsEditor } from "@/components/tours/content/attractions-editor";
+import { attractionLabel } from "@/lib/tours/attractions";
 import { HtmlField } from "@/components/tours/content/html-field";
 import { DatesChecklist } from "@/components/tours/content/dates-checklist";
 import { BulkOutcomeDialog, BulkPromotionDialog } from "@/components/tours/departures/board-dialogs";
@@ -569,13 +571,8 @@ function SeasonEditor({
             rows={8}
           />
         )}
-        {inherited("attractions", `Attractions (${tour.attractions.length})`, listBody(tour.attractions)) ?? (
-          <StringListEditor
-            label="Attractions (empty = the tour's)"
-            value={draft.attractions}
-            onChange={(value) => set("attractions", value)}
-            addLabel="Add Attraction"
-          />
+        {inherited("attractions", `Attractions (${tour.attractions.length})`, listBody(tour.attractions.map(attractionLabel))) ?? (
+          <AttractionsEditor label="Attractions (empty = the tour's)" value={draft.attractions} onChange={(value) => set("attractions", value)} />
         )}
         <div className="grid gap-4 xl:grid-cols-2">
           {inherited("included", `Included (${tour.included.length})`, listBody(tour.included)) ?? (
