@@ -69,7 +69,9 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
   `tixstock_booking` test events (7.8). That includes the ticket step, the listing rules and the Italian form.
 - Passport numbers anywhere the partner portal or the flight-pax export read (`more_pax_info`).
 - The sandbox test event broken by backoffice crons that assume production TixStock ids (the price sync
-  auto-deactivates events whose categories it cannot match; the purge cron).
+  auto-deactivates events whose categories it cannot match).
+- A partner offered a test event in the portal. Its event lists filter `is_hidden` / `is_deleted` only, not
+  `is_test` (found in the review of 10.11; true for the test events that already exist).
 - A Sale on Hold order left more than 2 hours.
 - Any user seeing the button before Dor opens it.
 
@@ -93,8 +95,13 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 - **orders/add body:** `order_status`, `datetime` (ISO-8601 like `2026-05-23T20:45:00+0000`; a wrong format
   answers 200 with `[]`), one `customer` (the buyer: `first_name`, `last_name`, `email_address`,
   `contact_number`, addresses), `items[]` **one per ticket** (`general_admission`, `row`, `seat`, `price`,
-  `customer` = the attendee). orders/add carries no id of ours: `orders/update` / `orders/get` take the order id
-  TixStock returns. **A lost orders/add answer cannot be looked up by an id of ours** (7.4).
+  `customer` = the attendee). orders/add carries no id of ours in the guide (the only id field is `customer.id`),
+  yet the guide names the path parameter of `orders/update` / `orders/get` `{external_order_id}`, "Your external
+  order id.", and TixStock said on 10.11 that `external_id` is "your own internal order ID". Which id those two
+  paths take, and where ours is sent, is open (asked 10.11); until then we pass the id orders/add returns.
+- **A lost orders/add answer cannot be looked up** (7.4). TixStock 10.11: check their Request Logs by hand;
+  "retrying the same order is not safe, as it may result in duplicate orders"; an expired hold answers "Resource
+  Not Found", and then a new hold is needed.
 - **orders/update** accepts `order_status`, `ticket_type`, `customer`, `shipping_address`, `items` - attendee
   changes after the sale go through it.
 - **Statuses.**
@@ -111,25 +118,43 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
   `venue.country_code` = `IT`. Italian attendee details, per attendee (09.11): full name, passport number (complete,
   as on the ID), nationality, place of birth (if Italian), date of birth. TixStock tells us when other
   events/leagues change their requirements.
+  - **10.11, their fuller list:** first name, last name, email, citizenship (country code), date of birth,
+    gender, place of birth, national id. So gender is new, and place of birth is for everyone.
+  - **Open (asked 10.11):** `gender` is not in the guide's `Attendee` schema, and the guide's `nationality`
+    example is "British" where their answer says a country code.
+  - **By event, not by customer.** The 10.11 answer opens with "For Italian customers"; 09.11 said "italian
+    events". We keep the event's country until they say otherwise: 58 of our 438 TixStock products on sale
+    (10.11) are at an Italian venue, sold to Israeli customers.
+  - **Dor, 10.11:** minimal Italian handling for now. The attendee's e-mail we send is the buyer's; no field.
 - **External transfers** (e.g. EPL): "our suppliers would be sending / transferring tickets to the end customer
   directly ... we would be requiring you to send name, email and phone number of the customer", with proof of
   delivery via the API. So the buyer we send is **the real customer**, never the office mailbox.
 - **Currency:** we pull listings with `target_currency=USD`; payouts follow the currency the sale was made in
   (base currency USD, told to TixStock 09.11).
+- **Price (10.11).** TixStock: "The price received from Tixstock will already include the Tixstock fee". Measured
+  on the live feed the same day (57 listings, 3 events): there is one price field, `proceed_price` - no
+  `display_price`. It is in the seller's currency by default and in USD, at TixStock's own rate, with
+  `target_currency=USD`. So it is our full cost, and it is the amount we send as `items[].price`. The currency an
+  order is registered in is open (asked 10.11; the guide's example order is in GBP).
 - **Every listing in the partner feed is bookable** (some are hidden from TX Trade by TixStock's own decision).
 - **Ticket types we must handle:** E-Ticket (PDF), Mobile Link (URL), External Transfer (proof only), Mobile
   Screenshot (PDF).
-- **Split types** (exact strings): None, Single Seats, Sell in Multiples (`split_quantity`), Avoid Leaving One,
-  All Together. Plus `display_quantity`.
+- **Split types** (the guide's and the Seller Portal's names): None, Single Seats, Sell in Multiples
+  (`split_quantity`), Avoid Leaving One, All Together. Plus `display_quantity`. The LIVE feed spells them
+  differently - "No Preferences", "Avoid Leaving One Ticket", "Sell Together", "Multiples"
+  (`myt-main/lib/tixstock-quantity.ts`) - so they are read through the site's helpers, never compared as strings.
 - **Webhooks:** registered in the Reseller Admin Area per environment, versioned (`Tixstock-Version`), signed
-  (`X-Tixstock-Signature`; the guide does not say how to verify it - question 10.1).
+  (`X-Tixstock-Signature`). TixStock 10.11: "hashed using sha256 and the data set is the payload of the webhook
+  JSON encoded ... The key is set to your Bearer Token". Read as HMAC-SHA256 of the raw body; there is no
+  separate webhook secret. Hex or base64 was not said.
   - **Types:** `ticket.hold`, `ticket.release`, `order.update` (we answer with the order status),
     `ticket.fullfillment` (listing level), `order.eticket_fulfilment` (base64 PDF `file`),
     `order.mobile_ticket_fulfilment`, `order.mobile_link_ticket_fulfilment` (`mobile_links[{seat, link}]`),
     `order.paper_ticket_fulfilment`.
   - **Common fields:** `order_id`, `id` (listing), `row`, `seat`, `file`, `proof_file_url[]`, `additional_file`
     (instruction letter).
-  - **Required answer:** `{external_id, order_status, message, success}`.
+  - **Required answer:** `{external_id, order_status, message, success}`. `external_id` is OUR order id, not
+    TixStock's (their answer of 10.11).
   - **Count:** an e-ticket order of quantity n fires n webhooks (the last one carries Commissionable); a mobile
     order fires one.
 - **TixStock does not email e-tickets to the buyer** ("you deliver those to your customer"); external transfers
@@ -182,8 +207,14 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 - **Confirmation page:** `app/confirmation/[...params]` (client), reads the order through
   `/api/confirm-order/{orderId}`.
 - **TixStock env today** (both apps, production feed): `NEXT_SECRET_TIXSTOCK_API_URL` / `NEXT_SECRET_TIXSTOCK_TOKEN`.
-- **Backoffice TixStock crons:** `lib/services/tixstock-sync.ts` (the price sync, which auto-deactivates on
-  category mismatch) and `app/api/cron/purgeTixstockEvents`. Both act on every TixStock event.
+- **Backoffice TixStock crons** (corrected in the review of 10.11):
+  - `lib/services/tixstock-price-sync.ts` is the price sync that auto-deactivates on a category mismatch. Its
+    `loadEvents` (266-274) selects every future `tx_event`; the cron, admin-sync, the editor's "check now" and
+    the uploader's recheck all go through it.
+  - `lib/services/tixstock-sync.ts` is the catalog sync, and `app/api/cron/purgeTixstockEvents` purges the
+    `tixstock_events` catalog table. Neither touches an `events` row, so neither needs a change.
+- **The partner portal's event lists** (`lib/actions/portal-package-actions.ts`,
+  `portal-dashboard-actions.ts`, `quote-actions.ts`) filter `is_deleted`, `is_hidden` and the date only.
 - **Shared DB:** shared types `lib/app.types.ts` <-> `types/app.types.ts`. `is_test` events exist (1130) and are
   kept off the catalog.
 - **Git:** shared checkouts, commit by explicit path, no `git merge`, push only when Dor says so.
@@ -264,18 +295,20 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 **`ticket_bookings`**, one row per attempt:
 - `id`, `reservation_id` (FK), `env` (`sandbox` | `production`), `source` (`office` | `site`).
 - `tixstock_event_id`, `listing_id`, `hold_id`, `tixstock_order_id`, `quantity`.
-- `status`: `holding` | `on_hold` | `sale_on_hold` | `approved` | `commissionable` | `failed` | `released` |
-  `uncertain` | `cancelled`.
+- `status`: `holding` | `on_hold` | `ordering` | `sale_on_hold` | `approved` | `commissionable` | `failed` |
+  `released` | `uncertain` | `cancelled`. `ordering` (added 10.11) = the orders/add call is in flight: the row is
+  claimed by a one-way move from `on_hold`, so two callers can never both order.
 - **The listing as booked:** category, section, row, ticket type, split type, benefits & restrictions, delivery
   date, instant download.
-- **Money:** price per ticket + currency (USD), total, `cost_sold_usd` (from the reservation), `gap_accepted_by`.
+- **Money:** price per ticket + currency (USD), total, `cost_sold_usd` (from the reservation), `gap_accepted_by`;
+  and what TixStock's answer registered (`order_currency`, `order_total`), to catch a difference.
 - **Sent to TixStock:** `buyer`, `attendees` (jsonb).
 - `last_error`, `created_by`, `created_at`, `approved_at`, `commissionable_at`.
 - **Delivery:** `checked_by/at`, `sent_to_customer_at/by`, `sent_channels`, `released_to_customer_at`.
 - `customer_token`: random, 32+ bytes, for the ticket page (7.7).
 
-**Partial unique index** on `reservation_id` where status in (`holding`, `on_hold`, `sale_on_hold`, `approved`,
-`commissionable`, `uncertain`). It covers the site and the button alike: one live booking per reservation.
+**Partial unique index** on `reservation_id` where status in (`holding`, `on_hold`, `ordering`, `sale_on_hold`,
+`approved`, `commissionable`, `uncertain`). It covers the site and the button alike: one live booking per reservation.
 
 **`ticket_booking_files`:** one row per ticket / link / proof / instruction file:
 - `booking_id`, `kind` (`pdf` | `mobile_link` | `proof` | `additional`);
@@ -295,24 +328,32 @@ orders/add with no answer may still have created the order, and there is no id o
 An `uncertain` row blocks any new booking for the reservation. It is resolved by:
 - **an order webhook** for that listing and quantity soon after (`order.update` / fulfilment carry `order_id`
   and the listing id) -> `approved` with that id;
-- **TixStock's answer to question 10.2** (a lookup by `hold_id`, if it exists) - the builder adds it then;
-- **staff**, after checking TixStock / TX Trade: "בדקתי - נוצרה הזמנה <id>" or "בדקתי - לא נוצרה", with a
+- **staff**, after checking TixStock's Request Logs: "בדקתי - נוצרה הזמנה <id>" or "בדקתי - לא נוצרה", with a
   note, audited.
+
+There is no lookup (TixStock 10.11): the Request Logs are read by hand, and orders/add must never be repeated.
+Two rules follow (review of 10.11):
+- A new hold is placed only when orders/add answers "Resource Not Found", and only on the row's first orders/add.
+  A used hold may answer Not Found too, so a re-hold after an unanswered call could order twice.
+- A row whose orders/add was started and never answered - the process died mid-call - is `uncertain` as well.
+  The sweep moves a stale `ordering` row there.
 
 The card shows it in amber: "לא ודאי - לא להזמין שוב עד שיתברר".
 
 ### 7.5 The webhook receiver (backoffice)
 
 `POST /api/tixstock/webhook/[env]`. It is public, because TixStock calls it.
-- **Signature:** `X-Tixstock-Signature` is verified with that environment's secret (10.1). A bad or missing
-  signature answers 401 and is logged.
-- **Idempotent** on (order id, type, listing, row, seat): a repeat stores nothing new and answers the same.
+- **Signature:** `X-Tixstock-Signature` is verified as HMAC-SHA256 of the raw body, keyed with that environment's
+  API token (TixStock 10.11). A bad or missing signature answers 401 and is logged.
+- **Idempotent** on (order id, kind, row, seat): a repeat stores nothing new and answers the same. The webhook
+  type is not part of it, so a refresh of the same order does not store a file twice.
 - **Fulfilment types:** the file goes to the private bucket, or the link / proof URL is stored, and the
   instruction letter goes in as `additional`. The booking takes the status the payload carries (Approved /
-  Commissionable). The answer is `{external_id: <TixStock order id>, order_status: <the status we now hold>,
-  message, success: true}`.
+  Commissionable). The answer is `{external_id: <our reservation id>, order_status: <the status we now hold>,
+  message, success: true}` (corrected 10.11: TixStock wants our own order id there).
 - **`order.update`:** answers with our row's status.
-- **`ticket.hold` / `ticket.release`:** logged only.
+- **`ticket.hold` / `ticket.release` / `ticket.fullfillment`:** logged only, and answered `success: true` - they
+  carry no order, and TixStock fires them for every hold we place ourselves.
 - **An unknown order id** is logged and answered `success: false`.
 - **Staff see** "כרטיסים התקבלו - לבדוק ולשלוח" on the card, and a reservations-list filter for "התקבלו ולא
   נשלחו" (builder: reuse the list's existing filters).
@@ -360,7 +401,8 @@ The card shows it in amber: "לא ודאי - לא להזמין שוב עד שי�
     purpose is to rehearse the button before approval.
 - **Honoured only when `is_test` is true.** On any other event it is ignored and logged.
 - Added to the shared `Event` type (both repos, `/sync-types`).
-- **Kept out of the backoffice price sync and purge crons**, and out of every feed and catalog list the builder
+- **Kept out of the backoffice price sync** (the purge cron never touches an `events` row), **out of the partner
+  portal's event lists** (10.11: they did not read `is_test`), and out of every feed and catalog list the builder
   finds still reading `is_test` events.
 
 **The flow (`sandbox_site`):**
@@ -374,8 +416,8 @@ The card shows it in amber: "לא ודאי - לא להזמין שוב עד שי�
    - **The order carries the listing id** of the card the customer picked, from the ticket step to
      `confirm-order` (request field, stored only on the booking row).
 2. **Summary, travellers' form:** when the TixStock event's venue is in Italy (`venue.country_code` from the
-   sandbox feed), every traveller adds passport number, nationality and date of birth, plus place of birth when
-   the nationality is Italian. Names already exist. The fields are required and validated, and sent with the pay
+   sandbox feed), every traveller adds passport number, nationality, date of birth, gender and place of birth
+   (TixStock's list of 10.11; the attendee e-mail we send is the buyer's). Names already exist. The fields are required and validated, and sent with the pay
    click. They are stored **only on the booking row** (`attendees`), never in `more_pax_info` or another
    reservation column, so no shared type changes for them.
 3. **Pay click (`confirm-order`):**
@@ -400,9 +442,11 @@ The card shows it in amber: "לא ודאי - לא להזמין שוב עד שי�
    This step is non-fatal for the payment record, like the email. It is idempotent: two callers reach
    `validateAndRecordPayment`, and the row's status is changed by compare-and-swap.
 6. **Confirmation page:** for such orders it adds benefits & restrictions, delivery date and ticket type, and
-   says "קישור לכרטיסים נשלח אליכם במייל". **The ticket page link is never returned by the order-read route**
+   says "קישור לכרטיסים נשלח אליכם במייל" - only once the link really was sent; before that it says the tickets
+   are being ordered. **The ticket page link is never returned by the order-read route**
    (`/api/confirm-order/{orderId}` is keyed by the sequential id, and the txId gate is not real - 5). It goes
-   **only in the confirmation email**: the booking row and its token exist from the pay click, before the email.
+   **only by email, in a short email of its own, sent once the order is Approved** (changed 10.11 with Dor's
+   approval of the review: the confirmation email and its template stay untouched).
    The open order-read issue itself is not fixed in this work.
 7. **Webhook** -> files (7.5). For `sandbox_site` bookings the tickets are released to the ticket page as they
    arrive (that is what TixStock tests), with no staff step.
@@ -457,8 +501,11 @@ which is signed). The site's sandbox flow needs no gate: it exists only on the h
    benefits & restrictions values; categories / sections that match our venue map (`data-zones`, set in the
    event editor).
 3. **Price:** a low listing price and a low `ticket_only_markup`, so a test costs a few shekels. The builder
-   checks `confirm-order`'s price-floor guard. Test reservations stay out of every dashboard / partner /
-   marketing number (the same builder item as the RateHawk design).
+   checks `confirm-order`'s price-floor guard. **Changed 10.11:** nothing in either repo reads `is_test` on a
+   reservation, so the test reservations ARE in the dashboards and the marketing numbers while the testing runs,
+   and each attempt sends the usual mails. Filtering them by code means edits in many live files; instead they
+   are soft-deleted after the health check, and the team is told that "TEST ·" mails are not leads. The partner
+   portal is the one place filtered by code.
 4. **A second event with `sandbox_office`,** to rehearse the button end to end before approval.
 5. **Our answers:** a copy of TixStock's validation document with a screenshot per item. Claude drafts, Dor sends.
 6. **Dor refunds** the testers' charges in CreditGuard.
@@ -480,12 +527,13 @@ Real events never reach new code, so a mistake in it can break at most the hidde
 | Ticket step (`app/order/TicketSelection.tsx`) | An early branch to a separate component for test events | The existing render path is not edited. The listing rules (`lib/tixstock-quantity.ts`, `lib/supplier-offers.ts`) are not edited; `display_quantity` lives in the new branch's own module. |
 | TixStock listings | A **new** route for sandbox events | `app/api/tixstock/tickets/route.ts` is not edited: no extra DB lookup on its hot path, no change to its price writes or cache invalidation. |
 | Summary (`app/order/OrderReview.tsx`) | Italian fields + the listing id in the pay request, test events only | Behind the flag. The existing fields and validation are untouched. |
-| `confirm-order` | One call to a new module after the reservation insert, test events only | Any error in it can fail only a test order. Every other order's behaviour and response are unchanged. `TICKET_UNAVAILABLE` exists only for test events. |
-| `validateAndRecordPayment` | One call after Paid and after the email, test events only | try/catch, non-fatal. It never delays or changes the Paid write or the email. |
+| `confirm-order` | One block right before the reservation insert (the hold) and one after it (the booking row), test events only | Any error in it can fail only a test order. Every other order's behaviour and response are unchanged. `TICKET_UNAVAILABLE` exists only for test events. |
+| `validateAndRecordPayment` | One block after Paid and after the email, test events only | Registered only when the reservation carries `event_order_info.tixstock_sandbox`; a real payment reaches one boolean. try/catch, non-fatal. It never delays or changes the Paid write or the email, and no existing line of the file changes. |
 | Confirmation page + email | Extra lines | Only when the order has a `source = site` booking row. |
 | Shared types | `Event.tixstock_booking?` | Optional and additive, in both repos. |
 | DB | A nullable `events` column, three new tables, a private bucket | No column added to or changed on `reservations`. Nothing the site's existing queries select changes. |
-| Backoffice price sync / purge cron | Skip events with `tixstock_booking` | One filter. Verified by running the sync's selection before and after: the same real events in, only the test events out. |
+| Backoffice price sync | Skip events that are `is_test` AND have `tixstock_booking` | One filter, `.or("tixstock_booking.is.null,is_test.is.false")`: a real event stays in even if the column is ever set on it. Verified by running the sync's selection before and after against production: the same real events in, only the test events out. |
+| Partner portal event lists | `.eq("is_test", false)` on each list | One line per query. `is_test` is `not null default false`, so no real event is dropped; a read of one event by id is not touched. |
 | Backoffice reservation page | The ticket row and card | Behind the gate (superadmin only until `NEXT_SECRET_FULFILMENT_OPEN`). Production booking stays off until its own switch. |
 | Env | New names only | The existing TixStock, CreditGuard and Supabase env are untouched. |
 
@@ -534,8 +582,8 @@ Real events never reach new code, so a mistake in it can break at most the hidde
 20. On the test event the cards stay one per category, each priced by one listing, and show that listing's
     details. The customer's card carries that listing id to the pay click, and exactly that listing is held (no
     re-pick of the cheapest). `display_quantity` is honoured in that branch only.
-21. The ticket page link goes only in the confirmation email, never through the order-read route. The open
-    sequential-id issue stays open.
+21. The ticket page link goes only by email - a short email of its own, sent at Approved (10.11) - never through
+    the order-read route. The open sequential-id issue stays open.
 22. Real events: nothing on the site changes in this work.
 
 ## 9. Left to the builder
@@ -554,6 +602,11 @@ Real events never reach new code, so a mistake in it can break at most the hidde
   depend on it).
 
 ## 10. Questions for TixStock (for the CS alignment call; answers change details, not the shape)
+
+**10.11:** questions 1 and 2 below were answered (the signature key is our Bearer token; no lookup, never repeat
+orders/add, an expired hold answers "Resource Not Found"), together with the price and the Italian attendee
+list. Questions 3-6, and everything the answers left open, went into ONE consolidated message. The answers, the
+message and what each answer changed: `docs/tixstock/2026-11-10-questions-to-tixstock.md`.
 
 1. How do we verify `X-Tixstock-Signature`: which algorithm, and which secret?
 2. If orders/add gets no answer (timeout), how do we find whether the order was created? Can an order be looked up
@@ -575,3 +628,23 @@ check (8.20-8.22):
    7.8.6: email only.
 3. The Italian form on real events had no clear signal and a conversion cost. Settled: it is out of this work.
    Staff type the details in the dialog, and passports never go into `more_pax_info`.
+
+## 12. Review of 10.11.2026
+
+Dor asked for a check of the plan against this design and the code in both repos, with rule 9 as the lens. The
+shape of the design did not change. What did, each marked "10.11" where it sits above:
+
+- **Facts corrected:** which backoffice file is the price sync (5); what the purge cron touches (5, 7.8, 7.13);
+  the split-type spellings of the live feed (5); `external_id` is our order id (5, 7.5).
+- **TixStock's answers of 10.11:** the signature (5, 7.5); no lookup and no retry of orders/add, "Resource Not
+  Found" for an expired hold (5, 7.4); the price already includes their fee, one price field (5); the Italian
+  attendee list with gender (5, 7.8).
+- **Decisions, Dor 10.11:**
+  - the ticket link goes in an email of its own (7.8.6, 8.21);
+  - test reservations are cleaned up after the health check, not filtered by code (7.11.3);
+  - the partner portal's lists skip test events - new code in three live portal files (4, 7.8, 7.13);
+  - the Italian form stays on the test event as designed, with the buyer's e-mail for every attendee (5).
+- **New in the data:** the status `ordering`, and what TixStock's answer registered for an order (7.3).
+
+The task-level detail is in the plan's "Review amendments". The evidence per finding is in the review's session
+note; the questions still open with TixStock are in `docs/tixstock/2026-11-10-questions-to-tixstock.md`.
