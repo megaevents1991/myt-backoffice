@@ -17,6 +17,7 @@ import {
   canMoveTo,
   isBookingStatus,
   isSandboxBookingEvent,
+  ourOrderId,
   siteBooksAfterPayment,
   statusFromTixstock,
   ticketLinkEmail,
@@ -152,7 +153,7 @@ describe("tixstock booking rules", () => {
 
   it("order body, plain", () => {
     const r = buildOrderRequest({
-      status: "Approved", at: AT, buyer: BUYER, quantity: 2, italian: false, listing: LISTING,
+      status: "Approved", at: AT, reservationId: 2233, buyer: BUYER, quantity: 2, italian: false, listing: LISTING,
       attendees: [BASE, { first_name: " Noa ", last_name: "Levi" }],
     });
     assert.equal(r.ok, true);
@@ -174,7 +175,7 @@ describe("tixstock booking rules", () => {
   it("order body, italian", () => {
     const second: AttendeeInput = { ...BASE, first_name: "Marco", last_name: "Rossi", passport: "YA1234567", nationality: "it", gender: "M", birth_place: "Roma" };
     const r = buildOrderRequest({
-      status: "Sale on Hold", at: AT, buyer: BUYER, quantity: 2, italian: true, listing: LISTING, attendees: [BASE, second],
+      status: "Sale on Hold", at: AT, reservationId: 2233, buyer: BUYER, quantity: 2, italian: true, listing: LISTING, attendees: [BASE, second],
     });
     assert.equal(r.ok, true);
     if (!r.ok) return;
@@ -182,25 +183,37 @@ describe("tixstock booking rules", () => {
     assert.equal(body.order_status, "Sale on Hold");
     assert.deepEqual(body.items[0].customer, {
       first_name: "Dana", last_name: "Levi", email_address: "dana@example.com", national_id: "12345678",
-      nationality: "IL", dob: "1990-01-31", gender: "F", birth_place: "Tel Aviv",
+      nationality: "IL", dob: "1990-01-31", gender: "Female", birth_place: "Tel Aviv",
     });
     assert.deepEqual(body.items[1].customer, {
       first_name: "Marco", last_name: "Rossi", email_address: "dana@example.com", national_id: "YA1234567",
-      nationality: "IT", dob: "1990-01-31", gender: "M", birth_place: "Roma",
-    }, "every attendee gets the buyer's e-mail; the nationality goes out upper-case");
+      nationality: "IT", dob: "1990-01-31", gender: "Male", birth_place: "Roma",
+    }, "every attendee gets the buyer's e-mail; the nationality goes out upper-case; M / F go out as Male / Female");
   });
 
-  it("no id of ours in the body", () => {
-    const r = buildOrderRequest({ status: "Approved", at: AT, buyer: BUYER, quantity: 1, italian: false, listing: LISTING, attendees: [BASE] });
+  it("our reservation id goes out as order_id", () => {
+    const r = buildOrderRequest({ status: "Approved", at: AT, reservationId: 2233, buyer: BUYER, quantity: 1, italian: false, listing: LISTING, attendees: [BASE] });
     assert.equal(r.ok, true);
     if (!r.ok) return;
+    assert.equal(r.body.order_id, "2233", "TixStock 10.11: our own order id, in the body, as a string");
+    assert.equal(ourOrderId(2233), "2233", "the same value the webhook answers as external_id");
     assert.equal("external_id" in r.body, false);
     assert.equal("id" in (r.body.customer as object), false);
   });
 
+  it("an order is never built without a real reservation id", () => {
+    for (const reservationId of [0, -5, 1.5, Number.NaN]) {
+      assert.deepEqual(
+        buildOrderRequest({ status: "Approved", at: AT, reservationId, buyer: BUYER, quantity: 1, italian: false, listing: LISTING, attendees: [BASE] }),
+        { ok: false, kind: "reservation_id" },
+        String(reservationId),
+      );
+    }
+  });
+
   it("a shipping address rides on the buyer", () => {
     const r = buildOrderRequest({
-      status: "Approved", at: AT, buyer: BUYER, quantity: 1, italian: false, listing: LISTING, attendees: [BASE],
+      status: "Approved", at: AT, reservationId: 2233, buyer: BUYER, quantity: 1, italian: false, listing: LISTING, attendees: [BASE],
       shippingAddress: { address_line_1: "Hotel Roma", town: "Rome" },
     });
     assert.equal(r.ok, true);
@@ -210,14 +223,14 @@ describe("tixstock booking rules", () => {
 
   it("attendee count", () => {
     assert.deepEqual(
-      buildOrderRequest({ status: "Approved", at: AT, buyer: BUYER, quantity: 2, italian: false, listing: LISTING, attendees: [BASE] }),
+      buildOrderRequest({ status: "Approved", at: AT, reservationId: 2233, buyer: BUYER, quantity: 2, italian: false, listing: LISTING, attendees: [BASE] }),
       { ok: false, kind: "attendee_count" },
     );
   });
 
   it("issues block the body", () => {
     assert.deepEqual(
-      buildOrderRequest({ status: "Approved", at: AT, buyer: BUYER, quantity: 1, italian: true, listing: LISTING, attendees: [without("passport")] }),
+      buildOrderRequest({ status: "Approved", at: AT, reservationId: 2233, buyer: BUYER, quantity: 1, italian: true, listing: LISTING, attendees: [without("passport")] }),
       { ok: false, kind: "attendee_issues" },
     );
   });

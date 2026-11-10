@@ -163,13 +163,26 @@ export function attendeeIssues(a: AttendeeInput, italian: boolean): AttendeeIssu
 }
 
 /**
- * The body of `POST /orders/add/{hold_id}/{quantity}`: the buyer once, and one item per ticket with its attendee.
- * The ONE place that names TixStock's attendee fields.
+ * Our order id as TixStock knows it: the reservation id, as a string. It is sent as `order_id` in orders/add and
+ * answered as `external_id` to every order webhook (TixStock, 10.11.2026: both are "your own internal order ID").
+ * A reservation that is booked a second time (after a cancelled or failed attempt) sends the same id again; whether
+ * TixStock refuses a repeat is asked - if it does, this is the one function to change.
+ */
+export function ourOrderId(reservationId: number): string {
+  return String(reservationId);
+}
+
+/** TixStock's spelling of the gender our forms keep as `M` / `F` (their answer of 10.11.2026). */
+const GENDER_TO_TIXSTOCK = { M: "Male", F: "Female" } as const;
+
+/**
+ * The body of `POST /orders/add/{hold_id}/{quantity}`: our order id, the buyer once, and one item per ticket with
+ * its attendee. The ONE place that names TixStock's order and attendee fields.
  *
- * PROVISIONAL until TixStock answers the follow-up of 10.11.2026 (backoffice
- * docs/tixstock/2026-11-10-questions-to-tixstock.md): the field name `gender` with `M` / `F`, the ISO alpha-2 code
- * in `nationality`, and the empty `seat` (a listing names a row, not seats). No id of ours is sent: the guide's body
- * has no field for it.
+ * Settled by TixStock's answers of 10.11.2026 (backoffice docs/tixstock/2026-11-10-questions-to-tixstock.md):
+ * `order_id` carries our own order id; `gender` is `Male` / `Female`; `nationality` is a country code;
+ * `national_id` takes a passport number. Still ours to see in the sandbox: the empty `seat` (a listing names a row,
+ * not seats).
  *
  * `pricePerTicket` is the feed's `proceed_price` exactly as received - never rounded, never the customer's price.
  * An Italian attendee's `email_address` is the buyer's (no per-attendee e-mail is collected).
@@ -177,13 +190,18 @@ export function attendeeIssues(a: AttendeeInput, italian: boolean): AttendeeIssu
 export function buildOrderRequest(input: {
   status: "Sale on Hold" | "Approved";
   at: Date;
+  reservationId: number;
   buyer: Buyer;
   attendees: AttendeeInput[];
   quantity: number;
   italian: boolean;
   listing: { generalAdmission: boolean; row: string; pricePerTicket: number };
   shippingAddress?: Record<string, string>;
-}): { ok: true; body: Record<string, unknown> } | { ok: false; kind: "attendee_count" | "attendee_issues" } {
+}):
+  | { ok: true; body: Record<string, unknown> }
+  | { ok: false; kind: "reservation_id" | "attendee_count" | "attendee_issues" } {
+  // An order at TixStock is final: it never goes out under an id that is not a reservation of ours.
+  if (!Number.isInteger(input.reservationId) || input.reservationId < 1) return { ok: false, kind: "reservation_id" };
   if (input.quantity < 1 || input.attendees.length !== input.quantity) return { ok: false, kind: "attendee_count" };
   if (input.attendees.some((a) => attendeeIssues(a, input.italian).length > 0)) {
     return { ok: false, kind: "attendee_issues" };
@@ -205,7 +223,7 @@ export function buildOrderRequest(input: {
       attendee.national_id = (a.passport ?? "").trim();
       attendee.nationality = (a.nationality ?? "").trim().toUpperCase();
       attendee.dob = a.dob ?? "";
-      attendee.gender = a.gender ?? "";
+      attendee.gender = a.gender ? GENDER_TO_TIXSTOCK[a.gender] : "";
       attendee.birth_place = (a.birth_place ?? "").trim();
     }
     return {
@@ -219,7 +237,13 @@ export function buildOrderRequest(input: {
 
   return {
     ok: true,
-    body: { order_status: input.status, datetime: tixstockDatetime(input.at), customer, items },
+    body: {
+      order_id: ourOrderId(input.reservationId),
+      order_status: input.status,
+      datetime: tixstockDatetime(input.at),
+      customer,
+      items,
+    },
   };
 }
 
