@@ -603,7 +603,8 @@ async function loadPackageEditor(company: Company, id: string): Promise<PackageE
         .order("id")
         .range(from, to),
     ),
-    db.from("series").select("code").eq("company_id", company.id).eq("package_id", id).order("code"),
+    // active series only: one switched off in Series no longer names the tour (its dates keep their codes)
+    db.from("series").select("code").eq("company_id", company.id).eq("package_id", id).eq("is_active", true).order("code"),
     fetchAll((from, to) =>
       db
         .from("departures")
@@ -710,7 +711,7 @@ export async function listTourPackages(): Promise<ActionResult<PackageList>> {
           .range(from, to),
       ),
       fetchAll((from, to) =>
-        db.from("series").select("package_id, code").eq("company_id", company.id).order("code").order("id").range(from, to),
+        db.from("series").select("package_id, code").eq("company_id", company.id).eq("is_active", true).order("code").order("id").range(from, to),
       ),
       fetchAll((from, to) =>
         db

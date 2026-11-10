@@ -147,7 +147,8 @@ export function PackageEditor({ initial }: { initial: PackageEditorData }) {
   const problem = !form.name.trim() ? "Tour name is required" : !form.slug.trim() ? "Slug is required" : null;
   // the dates tab keeps these current; the loaded page only until it answers
   const dateCount = dates.data ? dates.data.rows.length : saved.departures;
-  const seriesCodes = dates.data ? dates.data.series.map((s) => s.code) : saved.seriesCodes;
+  // the tour's codes are its active series: a series switched off in Series stops naming the tour (Liz, 10.11)
+  const seriesCodes = dates.data ? dates.data.series.filter((s) => s.is_active !== false).map((s) => s.code) : saved.seriesCodes;
   const slugLocked = saved.slugLocked || dateCount > 0;
   const readiness = tourReadiness({
     form: saved.form,

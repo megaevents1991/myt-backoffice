@@ -41,7 +41,11 @@ export function TourSeriesField({
   const [busy, setBusy] = useState(false);
   const code = text.trim().toUpperCase();
   const valid = CODE.test(code);
-  const none = series ? series.length === 0 : fallbackCodes.length === 0;
+  // a series switched off in Series no longer names the tour (Liz, 10.11: "כיביתי את אקטיב סיריס... עדיין כתוב את
+  // אותו קוד"): it is listed apart, its dates keep their code; switching it back on brings it back
+  const active = series ? series.filter((s) => s.is_active !== false) : null;
+  const inactive = series ? series.filter((s) => s.is_active === false) : [];
+  const none = active ? active.length === 0 : fallbackCodes.length === 0;
 
   const save = async (seriesId: string | null) => {
     if (!valid || busy) return;
@@ -98,7 +102,7 @@ export function TourSeriesField({
         editor(null)
       ) : (
         <ul className="flex flex-wrap items-start gap-3">
-          {(series ?? fallbackCodes.map((c) => ({ id: c, code: c }) as Pick<BoardSeries, "id" | "code"> & Partial<BoardSeries>)).map((s) => (
+          {(active ?? fallbackCodes.map((c) => ({ id: c, code: c }) as Pick<BoardSeries, "id" | "code"> & Partial<BoardSeries>)).map((s) => (
             <li key={s.id} className="rounded-lg border bg-card px-4 py-3">
               {editing === s.id ? (
                 editor(s.id)
@@ -112,9 +116,9 @@ export function TourSeriesField({
                       size="sm"
                       variant="ghost"
                       className="h-7 px-2"
-                      disabled={hasDates && series.length === 1}
+                      disabled={hasDates && (active?.length ?? 0) === 1}
                       title={
-                        hasDates && series.length === 1
+                        hasDates && (active?.length ?? 0) === 1
                           ? "Dates were built from this code, so it can't change"
                           : "Change the code (possible while no date carries it)"
                       }
@@ -136,15 +140,23 @@ export function TourSeriesField({
                   ) : (
                     "route from its first flight"
                   )}
-                  {s.is_active === false ? " · inactive" : ""}
                 </span>
               )}
             </li>
           ))}
         </ul>
       )}
+      {inactive.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Switched off: <Ltr className="font-mono font-semibold">{inactive.map((s) => s.code).join(" · ")}</Ltr> - no longer a code of this tour; its dates keep their codes. Switch it back on in{" "}
+          <Link href={`/tours/series?q=${encodeURIComponent(inactive[0].code)}`} className={linkClass}>
+            Series
+          </Link>
+          .
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
-        {none ? "This tour has no series yet - type its code. " : ""}
+        {none ? (inactive.length ? "No active series - type a new code, or switch one back on. " : "This tour has no series yet - type its code. ") : ""}
         Route, weekdays, ages and a second series (a tour sold in both directions):{" "}
         <Link href="/tours/series" className={linkClass}>
           Series
