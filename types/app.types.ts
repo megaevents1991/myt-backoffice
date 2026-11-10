@@ -74,6 +74,9 @@ export type Event = {
   // QA-only events: main keeps them orderable by direct /order/{id} link but
   // filters them from every listing, search, category and feed surface.
   is_test?: boolean;
+  // Which TixStock environment a test event books in - honoured only with is_test
+  // (2026-11-09 TixStock booking design). Synced with main lib/app.types.ts.
+  tixstock_booking?: "sandbox_site" | "sandbox_office" | null;
   // Uploaded by the tour uploader, not yet approved - main lists nothing hidden;
   // `updateEvent` never writes it. Synced with main lib/app.types.ts.
   is_hidden?: boolean;
@@ -530,6 +533,9 @@ export type OrderTicket = Omit<EventTicket, "description" | "colorOnTheMap"> & {
   // The customer picked between "all together" and "pairs + a triple" for the
   // same zone (two suppliers, main lib/supplier-offers.ts `zoneOffers`).
   seatingChoice?: "together" | "split";
+  // Set only by the sandbox ticket step of a TixStock test event (main
+  // app/order/sandbox): the exact listing the customer's card showed.
+  tixstock?: { listingId: string; italian: boolean; singleSeats: boolean };
 };
 
 export type Log = {

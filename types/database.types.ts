@@ -2325,6 +2325,7 @@ export type Database = {
           tags: string | null
           ticket_only_markup: number | null
           tickets_and_rates: Json[]
+          tixstock_booking: string | null
           tx_excluded_sections: string[] | null
           type: string
           usual_price: number
@@ -2389,6 +2390,7 @@ export type Database = {
           tags?: string | null
           ticket_only_markup?: number | null
           tickets_and_rates: Json[]
+          tixstock_booking?: string | null
           tx_excluded_sections?: string[] | null
           type?: string
           usual_price: number
@@ -2453,6 +2455,7 @@ export type Database = {
           tags?: string | null
           ticket_only_markup?: number | null
           tickets_and_rates?: Json[]
+          tixstock_booking?: string | null
           tx_excluded_sections?: string[] | null
           type?: string
           usual_price?: number
@@ -4871,6 +4874,190 @@ export type Database = {
           },
         ]
       }
+      ticket_booking_files: {
+        Row: {
+          booking_id: string
+          content_type: string | null
+          dedupe_key: string
+          id: string
+          kind: string
+          received_at: string
+          row: string | null
+          seat: string | null
+          storage_path: string | null
+          url: string | null
+          webhook_event_id: string | null
+        }
+        Insert: {
+          booking_id: string
+          content_type?: string | null
+          dedupe_key: string
+          id?: string
+          kind: string
+          received_at?: string
+          row?: string | null
+          seat?: string | null
+          storage_path?: string | null
+          url?: string | null
+          webhook_event_id?: string | null
+        }
+        Update: {
+          booking_id?: string
+          content_type?: string | null
+          dedupe_key?: string
+          id?: string
+          kind?: string
+          received_at?: string
+          row?: string | null
+          seat?: string | null
+          storage_path?: string | null
+          url?: string | null
+          webhook_event_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_booking_files_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "ticket_bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ticket_bookings: {
+        Row: {
+          approved_at: string | null
+          attempt_started_at: string | null
+          attendees: Json | null
+          buyer: Json | null
+          checked_at: string | null
+          checked_by: string | null
+          commissionable_at: string | null
+          cost_sold_usd: number | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          customer_token: string
+          env: string
+          gap_accepted_by: string | null
+          hold_id: string | null
+          id: string
+          last_error: string | null
+          last_refresh_at: string | null
+          link_email_sent_at: string | null
+          listing: Json
+          listing_id: string
+          order_currency: string | null
+          order_total: number | null
+          prerequisites_ack: Json | null
+          price_per_ticket: number | null
+          quantity: number
+          released_to_customer_at: string | null
+          reservation_id: number
+          sent_channels: string[]
+          sent_to_customer_at: string | null
+          sent_to_customer_by: string | null
+          shipping_address: Json | null
+          source: string
+          status: string
+          tixstock_event_id: string
+          tixstock_order_id: string | null
+          total: number | null
+          uncertain_resolution: Json | null
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          attempt_started_at?: string | null
+          attendees?: Json | null
+          buyer?: Json | null
+          checked_at?: string | null
+          checked_by?: string | null
+          commissionable_at?: string | null
+          cost_sold_usd?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          customer_token: string
+          env: string
+          gap_accepted_by?: string | null
+          hold_id?: string | null
+          id?: string
+          last_error?: string | null
+          last_refresh_at?: string | null
+          link_email_sent_at?: string | null
+          listing: Json
+          listing_id: string
+          order_currency?: string | null
+          order_total?: number | null
+          prerequisites_ack?: Json | null
+          price_per_ticket?: number | null
+          quantity: number
+          released_to_customer_at?: string | null
+          reservation_id: number
+          sent_channels?: string[]
+          sent_to_customer_at?: string | null
+          sent_to_customer_by?: string | null
+          shipping_address?: Json | null
+          source: string
+          status: string
+          tixstock_event_id: string
+          tixstock_order_id?: string | null
+          total?: number | null
+          uncertain_resolution?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          attempt_started_at?: string | null
+          attendees?: Json | null
+          buyer?: Json | null
+          checked_at?: string | null
+          checked_by?: string | null
+          commissionable_at?: string | null
+          cost_sold_usd?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          customer_token?: string
+          env?: string
+          gap_accepted_by?: string | null
+          hold_id?: string | null
+          id?: string
+          last_error?: string | null
+          last_refresh_at?: string | null
+          link_email_sent_at?: string | null
+          listing?: Json
+          listing_id?: string
+          order_currency?: string | null
+          order_total?: number | null
+          prerequisites_ack?: Json | null
+          price_per_ticket?: number | null
+          quantity?: number
+          released_to_customer_at?: string | null
+          reservation_id?: number
+          sent_channels?: string[]
+          sent_to_customer_at?: string | null
+          sent_to_customer_by?: string | null
+          shipping_address?: Json | null
+          source?: string
+          status?: string
+          tixstock_event_id?: string
+          tixstock_order_id?: string | null
+          total?: number | null
+          uncertain_resolution?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ticket_bookings_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "reservations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tixstock_events: {
         Row: {
           category_name: string | null
@@ -4928,6 +5115,39 @@ export type Database = {
           venue_data?: Json | null
           venue_map_url?: string | null
           venue_name?: string | null
+        }
+        Relationships: []
+      }
+      tixstock_webhook_events: {
+        Row: {
+          env: string | null
+          id: string
+          payload: Json | null
+          received_at: string
+          result: Json | null
+          signature_valid: boolean
+          tixstock_order_id: string | null
+          type: string | null
+        }
+        Insert: {
+          env?: string | null
+          id?: string
+          payload?: Json | null
+          received_at?: string
+          result?: Json | null
+          signature_valid: boolean
+          tixstock_order_id?: string | null
+          type?: string | null
+        }
+        Update: {
+          env?: string | null
+          id?: string
+          payload?: Json | null
+          received_at?: string
+          result?: Json | null
+          signature_valid?: boolean
+          tixstock_order_id?: string | null
+          type?: string | null
         }
         Relationships: []
       }
