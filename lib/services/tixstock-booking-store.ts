@@ -1,7 +1,8 @@
 /**
  * The database and storage boundary of TixStock ticket bookings: the real dependencies of the webhook
- * (tixstock-webhook.ts `WebhookDeps`) and of applying an order update (tixstock-order-apply.ts `ApplyDeps`). The
- * logic itself lives in those two files and runs over stubs in scripts/tixstock-webhook-selftest.ts. Server only.
+ * (tixstock-webhook.ts `WebhookDeps`), of applying an order update (tixstock-order-apply.ts `ApplyDeps`) and of
+ * the sweep (tixstock-booking-sweep.ts `SweepDeps`). The logic itself lives in those files and runs over stubs in
+ * scripts/tixstock-webhook-selftest.ts and scripts/tixstock-booking-sweep-selftest.ts. Server only.
  *
  * Tables `ticket_bookings`, `ticket_booking_files`, `tixstock_webhook_events` and the private bucket `ticket-files`
  * come from supabase/migrations/20261110100000_tixstock_ticket_booking.sql. `status`, `env` and `source` are plain
@@ -12,6 +13,9 @@ import type { Json } from "@/types/database.types";
 import { isBookingStatus, type BookingEnv, type BookingStatus } from "@/lib/tixstock-booking/rules";
 import { ticketFileStoragePath, type ApplyDeps, type BookingRow, type FileToSave } from "@/lib/services/tixstock-order-apply";
 import type { WebhookDeps } from "@/lib/services/tixstock-webhook";
+import type { SweepDeps, SweepReservation, SweepRow } from "@/lib/services/tixstock-booking-sweep";
+import { tixstockClientFor } from "@/lib/services/tixstock-booking-env";
+import { sendMail } from "@/lib/email";
 
 export const TICKET_FILES_BUCKET = "ticket-files";
 
@@ -151,6 +155,152 @@ export async function markReleased(id: string, atIso: string): Promise<void> {
 
 export function realApplyDeps(): ApplyDeps {
   return { now: () => new Date(), loadBooking, fileExists, saveFile, setStatus, markReleased };
+}
+
+// ---- The sweep (tixstock-booking-sweep.ts) ----
+
+const SWEEP_COLUMNS = `${BOOKING_COLUMNS}, hold_id, updated_at, attempt_started_at, last_refresh_at, link_email_sent_at, customer_token`;
+
+type RawSweepRow = RawBooking & {
+  hold_id: string | null;
+  updated_at: string;
+  attempt_started_at: string | null;
+  last_refresh_at: string | null;
+  link_email_sent_at: string | null;
+  customer_token: string | null;
+};
+
+const toSweepRow = (r: RawSweepRow): SweepRow | null => {
+  const base = toBookingRow(r);
+  if (!base) return null;
+  return {
+    ...base,
+    hold_id: r.hold_id,
+    updated_at: r.updated_at,
+    attempt_started_at: r.attempt_started_at,
+    last_refresh_at: r.last_refresh_at,
+    link_email_sent_at: r.link_email_sent_at,
+    customer_token: r.customer_token,
+  };
+};
+
+const OPEN_STATUSES: BookingStatus[] = ["holding", "on_hold", "ordering", "sale_on_hold"];
+
+export async function listOpenBookings(limit: number): Promise<SweepRow[]> {
+  const { data, error } = await supabaseTyped
+    .from("ticket_bookings")
+    .select(SWEEP_COLUMNS)
+    .in("status", OPEN_STATUSES)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`ticket_bookings open read failed: ${error.message}`);
+  return ((data ?? []) as unknown as RawSweepRow[]).map(toSweepRow).filter((r): r is SweepRow => r !== null);
+}
+
+/**
+ * Orders past approval that still have no ticket stored. "No ticket" is an anti-join: the embedded
+ * `ticket_booking_files` filtered `is null` keeps only bookings with no file row (PostgREST embed filter over
+ * ticket_booking_files_booking_id_fkey). The untyped client: the typed one does not know an embed as a filter.
+ * Should that filter ever be ignored, the sweep still stamps each row it looks at, so the cost is one extra
+ * orders/get a day for a booking that has its tickets - nothing is stored twice (dedupe key).
+ */
+export async function listRefreshDueBookings(
+  cutoffs: { createdBeforeIso: string; staleBeforeIso: string },
+  limit: number,
+): Promise<SweepRow[]> {
+  const { data, error } = await supabase
+    .from("ticket_bookings")
+    .select(`${SWEEP_COLUMNS}, ticket_booking_files(id)`)
+    .in("status", ["approved", "commissionable"])
+    .not("tixstock_order_id", "is", null)
+    .is("ticket_booking_files", null)
+    .lt("created_at", cutoffs.createdBeforeIso)
+    .or(`last_refresh_at.is.null,last_refresh_at.lt."${cutoffs.staleBeforeIso}"`)
+    .order("last_refresh_at", { ascending: true, nullsFirst: true })
+    .limit(limit);
+  if (error) throw new Error(`ticket_bookings refresh read failed: ${error.message}`);
+  return ((data ?? []) as unknown as RawSweepRow[]).map(toSweepRow).filter((r): r is SweepRow => r !== null);
+}
+
+/** `paid` = the reservation says Paid and is not deleted. A reservation that is gone reads as null. */
+export async function loadSweepReservation(id: number): Promise<SweepReservation | null> {
+  const { data, error } = await supabaseTyped
+    .from("reservations")
+    .select("id, status, is_deleted, main_contact_email, event_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`reservations read failed: ${error.message}`);
+  if (!data) return null;
+  const { data: event, error: eventError } = await supabaseTyped.from("events").select("name, date").eq("id", data.event_id).maybeSingle();
+  if (eventError) throw new Error(`events read failed: ${eventError.message}`);
+  return {
+    paid: data.status === "Paid" && data.is_deleted === null,
+    email: data.main_contact_email?.trim() || null,
+    eventName: event?.name ?? null,
+    eventDate: event?.date ?? null,
+  };
+}
+
+/** `setStatus` that also records why the row was closed. Compare-and-set on the status it was read with. */
+export async function setStatusWithError(
+  id: string,
+  from: BookingStatus,
+  to: BookingStatus,
+  atIso: string,
+  lastError: string,
+): Promise<boolean> {
+  const { data, error } = await supabaseTyped
+    .from("ticket_bookings")
+    .update({ status: to, updated_at: atIso, last_error: lastError })
+    .eq("id", id)
+    .eq("status", from)
+    .select("id");
+  if (error) throw new Error(`ticket_bookings status change failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+/** `updated_at` is left alone: it is the clock of the row's last status change. */
+export async function markRefreshChecked(id: string, atIso: string): Promise<void> {
+  const { error } = await supabaseTyped.from("ticket_bookings").update({ last_refresh_at: atIso }).eq("id", id);
+  if (error) throw new Error(`ticket_bookings refresh stamp failed: ${error.message}`);
+}
+
+export async function claimLinkEmail(id: string, atIso: string): Promise<boolean> {
+  const { data, error } = await supabaseTyped
+    .from("ticket_bookings")
+    .update({ link_email_sent_at: atIso })
+    .eq("id", id)
+    .is("link_email_sent_at", null)
+    .select("id");
+  if (error) throw new Error(`ticket_bookings link email claim failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+export async function unclaimLinkEmail(id: string, atIso: string): Promise<void> {
+  const { error } = await supabaseTyped
+    .from("ticket_bookings")
+    .update({ link_email_sent_at: null })
+    .eq("id", id)
+    .eq("link_email_sent_at", atIso);
+  if (error) throw new Error(`ticket_bookings link email unclaim failed: ${error.message}`);
+}
+
+export function realSweepDeps(): SweepDeps {
+  return {
+    ...realApplyDeps(),
+    listOpen: listOpenBookings,
+    listRefreshDue: listRefreshDueBookings,
+    loadReservation: loadSweepReservation,
+    setStatusWithError,
+    markRefreshChecked,
+    claimLinkEmail,
+    unclaimLinkEmail,
+    clientFor(env) {
+      const resolved = tixstockClientFor(env);
+      return resolved.ok ? resolved.client : null;
+    },
+    sendMail,
+  };
 }
 
 export function realWebhookDeps(): WebhookDeps {
