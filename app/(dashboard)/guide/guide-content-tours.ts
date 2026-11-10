@@ -568,11 +568,15 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
-        title: t("Add or remove a tour slider (e.g. around \"מוצרים במבצע\")", "להוסיף או להוריד סליידר טיולים (למשל סביב \"מוצרים במבצע\")"),
+        title: t("\"מוצרים במבצע\" fills itself; add or remove a tour slider", "\"מוצרים במבצע\" מתמלא לבד; להוסיף או להוריד סליידר טיולים"),
         steps: [
           t(
-            "\"מוצרים במבצע\" itself is not a slider: it is the tour grid of the \"Tour finder\" section, always there. Its title is \"Title of the tour grid\" in that section (a tile can have its own in \"Title of the grid\"). A title with the word \"מבצע\" lists only the tours on sale; any other title lists all the tile's tours.",
-            "\"מוצרים במבצע\" עצמו הוא לא סליידר: זו רשת הטיולים של הסקשן \"Tour finder\", והיא תמיד שם. הכותרת שלה היא \"Title of the tour grid\" באותו סקשן (לכפתור יכולה להיות כותרת משלו ב-\"Title of the grid\"). כותרת עם המילה \"מבצע\" מציגה רק טיולים במבצע; כל כותרת אחרת מציגה את כל הטיולים של הכפתור.",
+            "\"מוצרים במבצע\" is not a slider and has nothing to add or remove: it is the tour grid of the \"Tour finder\" section, and it lists by itself every tour whose card shows a crossed-out price. A tour joins it when its date gets a \"Discount\" in [Departures](/tours/departures) (the date its card prints - its cheapest open date), and leaves it when the discount is cleared; \"Revalidate Pages\" updates the site.",
+            "\"מוצרים במבצע\" הוא לא סליידר ואין בו מה להוסיף או להוריד: זו רשת הטיולים של הסקשן \"Tour finder\", והיא מציגה לבד כל טיול שהכרטיס שלו מראה מחיר מחוק. טיול נכנס אליה כשהמועד שלו מקבל \"Discount\" ב[יציאות](/tours/departures) (המועד שהכרטיס מציג - המועד הפתוח הזול שלו), ויוצא ממנה כשמוחקים את ההנחה; \"Revalidate Pages\" מעדכן את האתר.",
+          ),
+          t(
+            "It lists the sale only while its title holds the word \"מבצע\": \"Title of the tour grid\" in \"Tour finder\" (a tile can have its own in \"Title of the grid\"). Any other title lists all the tile's tours. Once the customer searches or picks a pill, or when no tour is on sale, it lists all the tile's tours anyway.",
+            "היא מציגה רק מבצעים כל עוד בכותרת שלה יש את המילה \"מבצע\": \"Title of the tour grid\" ב-\"Tour finder\" (לכפתור יכולה להיות כותרת משלו ב-\"Title of the grid\"). כל כותרת אחרת מציגה את כל הטיולים של הכפתור. ברגע שהלקוח מחפש או בוחר פיל, או כשאין אף טיול במבצע, היא מציגה ממילא את כל הטיולים של הכפתור.",
           ),
           t(
             "A slider ABOVE the grid, for one tile: open \"Tour finder\" → open the tile → \"Rows of this tile\" → \"Add Row\". Type the \"Row title\" and choose \"Which tours\". Up to 4 tours show as one line, more slide. Rows step aside once the customer searches or picks a pill.",
