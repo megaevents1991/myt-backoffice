@@ -34,6 +34,21 @@ const MODES: TixstockBookingMode[] = ["sandbox_site", "sandbox_office"];
 
 type ExistingRow = { id: number; is_test: boolean; tixstock_booking: string | null; tickets_and_rates: SandboxTicket[] | null };
 
+// The shared client carries no table types, so a write through it is typed `never` (lib/supabase-server.ts). The
+// two writes of this script go through this narrow shape instead of an `any`.
+type WriteError = { message: string } | null;
+type UpdateFilter = {
+  eq(column: string, value: unknown): UpdateFilter;
+  select(columns: string): PromiseLike<{ data: { id: number }[] | null; error: WriteError }>;
+};
+type EventsWriter = {
+  from(table: "events"): {
+    insert(row: Record<string, unknown>): { select(columns: string): { single(): PromiseLike<{ data: { id: number } | null; error: WriteError }> } };
+    update(patch: Record<string, unknown>): UpdateFilter;
+  };
+};
+const writer = supabase as unknown as EventsWriter;
+
 async function main(): Promise<number> {
   console.log(APPLY ? "APPLY - this run WRITES to production" : "DRY RUN - nothing is written (add --apply to write)");
 
@@ -104,7 +119,7 @@ async function main(): Promise<number> {
     if (existing) {
       console.log(`exists as event ${existing.id}: only its tickets are refreshed`);
       if (!APPLY) continue;
-      const updated = await supabase.from("events").update({ tickets_and_rates: tickets }).eq("id", existing.id).eq("is_test", true).eq("tixstock_booking", mode).select("id");
+      const updated = await writer.from("events").update({ tickets_and_rates: tickets }).eq("id", existing.id).eq("is_test", true).eq("tixstock_booking", mode).select("id");
       if (updated.error || (updated.data ?? []).length !== 1) {
         console.error(`update of event ${existing.id} failed: ${updated.error?.message ?? "no row matched"}`);
         return 1;
@@ -117,12 +132,12 @@ async function main(): Promise<number> {
     console.log("the row:");
     console.log(JSON.stringify(row, null, 2));
     if (!APPLY) continue;
-    const inserted = await supabase.from("events").insert(row).select("id").single();
-    if (inserted.error) {
-      console.error(`insert failed: ${inserted.error.message}`);
+    const inserted = await writer.from("events").insert(row).select("id").single();
+    if (inserted.error || !inserted.data) {
+      console.error(`insert failed: ${inserted.error?.message ?? "no row came back"}`);
       return 1;
     }
-    console.log(`created event ${(inserted.data as { id: number }).id}`);
+    console.log(`created event ${inserted.data.id}`);
   }
 
   console.log(
