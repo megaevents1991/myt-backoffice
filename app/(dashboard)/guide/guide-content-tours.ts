@@ -568,11 +568,29 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         ],
       },
       {
-        title: t("Add an automatic tour slider", "להוסיף סליידר טיולים אוטומטי"),
+        title: t("Add or remove a tour slider (e.g. around \"מוצרים במבצע\")", "להוסיף או להוריד סליידר טיולים (למשל סביב \"מוצרים במבצע\")"),
         steps: [
-          t("\"Add Section\" → \"Automatic tour slider\". Type the \"Section title\".", "\"Add Section\" ← \"Automatic tour slider\". מקלידים \"Section title\"."),
-          t("In \"Which tours\" choose the rule: the tours of a world, a tag, a destination or a category, tours on sale, all tours, or \"Tours I pick\".", "ב-\"Which tours\" בוחרים את הכלל: הטיולים של עולם, תגית, יעד או קטגוריה, טיולים במבצע, כל הטיולים, או \"Tours I pick\"."),
-          t("Move the section to its place with the arrows, \"Save\", \"Revalidate Pages\".", "מזיזים את הסקשן למקומו בחצים, \"Save\", \"Revalidate Pages\"."),
+          t(
+            "\"מוצרים במבצע\" itself is not a slider: it is the tour grid of the \"Tour finder\" section, always there. Its title is \"Title of the tour grid\" in that section (a tile can have its own in \"Title of the grid\"). A title with the word \"מבצע\" lists only the tours on sale; any other title lists all the tile's tours.",
+            "\"מוצרים במבצע\" עצמו הוא לא סליידר: זו רשת הטיולים של הסקשן \"Tour finder\", והיא תמיד שם. הכותרת שלה היא \"Title of the tour grid\" באותו סקשן (לכפתור יכולה להיות כותרת משלו ב-\"Title of the grid\"). כותרת עם המילה \"מבצע\" מציגה רק טיולים במבצע; כל כותרת אחרת מציגה את כל הטיולים של הכפתור.",
+          ),
+          t(
+            "A slider ABOVE the grid, for one tile: open \"Tour finder\" → open the tile → \"Rows of this tile\" → \"Add Row\". Type the \"Row title\" and choose \"Which tours\". Up to 4 tours show as one line, more slide. Rows step aside once the customer searches or picks a pill.",
+            "סליידר מעל הרשת, לכפתור אחד: פותחים \"Tour finder\" ← פותחים את הכפתור ← \"Rows of this tile\" ← \"Add Row\". מקלידים \"Row title\" ובוחרים \"Which tours\". עד 4 טיולים מוצגים בשורה אחת, יותר - נגללים. השורות נעלמות ברגע שהלקוח מחפש או בוחר פיל.",
+          ),
+          t(
+            "A slider BELOW the grid (or anywhere on the page): \"Add Section\" → \"Automatic tour slider\". Type the \"Section title\" and choose \"Which tours\": the tours of a world, a tag, a destination or a category, tours on sale, all tours, or \"Tours I pick\". Move it with the arrows - right under \"Tour finder\" puts it under the grid.",
+            "סליידר מתחת לרשת (או בכל מקום בעמוד): \"Add Section\" ← \"Automatic tour slider\". מקלידים \"Section title\" ובוחרים \"Which tours\": הטיולים של עולם, תגית, יעד או קטגוריה, טיולים במבצע, כל הטיולים, או \"Tours I pick\". מזיזים בחצים - מיד מתחת ל-\"Tour finder\" שם אותו מתחת לרשת.",
+          ),
+          t(
+            "For one tile only (e.g. only under \"כל המבחר\"): first click that tile's chip under \"The page as a tile shows it\", then \"Add Section\" - the section shows for that tile alone.",
+            "רק לכפתור אחד (למשל רק תחת \"כל המבחר\"): קודם לוחצים על הצ'יפ של הכפתור תחת \"The page as a tile shows it\", ואז \"Add Section\" - הסקשן יופיע רק לכפתור הזה.",
+          ),
+          t(
+            "To remove: a row of a tile - the bin beside it in \"Rows of this tile\". A slider section - the bin on its row in the list; the switch only hides it and keeps it for later.",
+            "להוריד: שורה של כפתור - הפח לידה ב-\"Rows of this tile\". סקשן סליידר - הפח בשורה שלו ברשימה; המתג רק מסתיר אותו ושומר אותו להמשך.",
+          ),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
       {
@@ -593,6 +611,32 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
             "\"Trip-type pills\" stays automatic unless you pick tags there. A pill none of the tile's tours carries hides by itself; tick \"Show without tours\" to keep it with a \"tell me when tours open\" form. A tile with no tour shows only that form.",
             "\"Trip-type pills\" נשאר אוטומטי, אלא אם בוחרים שם תגיות. פיל שאף טיול של הכפתור לא נושא נעלם מעצמו; מסמנים \"Show without tours\" כדי להשאיר אותו עם טופס \"עדכנו אותי כשיעלו טיולים\". כפתור בלי טיולים בכלל מציג רק את הטופס הזה.",
           ),
+        ],
+      },
+      {
+        title: t("Add or remove a trip-type pill (\"חמישיות\", \"טיולי כוכב\"...)", "להוסיף או להוריד פיל של סוג טיול (\"חמישיות\", \"טיולי כוכב\"...)"),
+        steps: [
+          t(
+            "Each pill under the tiles is a tag from [Categories & Tags](/tours/terms). Each tile has its own pills: open \"Tour finder\" → open the tile → \"Trip-type pills\".",
+            "כל פיל מתחת לכפתורים הוא תגית מ[קטגוריות ותגיות](/tours/terms). לכל כפתור יש פילים משלו: פותחים \"Tour finder\" ← פותחים את הכפתור ← \"Trip-type pills\".",
+          ),
+          t(
+            "\"Automatic\" (nothing picked): the tile shows a pill for every tag its tours on the site carry, in ABC order. A new pill = give the tag to a tour: on the tour's page, \"Categories & Tags\" → tick the tag, or type a new one and \"Add\". The pill shows once that tour is on the site (an open, priced date).",
+            "\"Automatic\" (לא נבחר כלום): הכפתור מציג פיל לכל תגית שהטיולים שלו באתר נושאים, לפי א-ב. פיל חדש = נותנים את התגית לטיול: בעמוד הטיול, \"Categories & Tags\" ← מסמנים את התגית, או מקלידים חדשה ו-\"Add\". הפיל מופיע כשהטיול באתר (מועד פתוח עם מחיר).",
+          ),
+          t(
+            "To choose the pills and their order yourself: \"Add Pill\" and pick a tag, one per pill. Once one is picked the tile shows ONLY the picked ones, so add every pill you want, not just the new one. The arrows move a pill, the bin removes it.",
+            "כדי לבחור בעצמכם את הפילים ואת הסדר: \"Add Pill\" ובוחרים תגית, אחת לכל פיל. מרגע שנבחר אחד, הכפתור מציג רק את הנבחרים - אז מוסיפים את כל הפילים שרוצים, לא רק את החדש. החצים מזיזים פיל, הפח מוריד אותו.",
+          ),
+          t(
+            "A pill none of the tile's tours carries hides by itself, and comes back with the first tour. \"Show without tours\" keeps it on, with a \"tell me when tours open\" form under it.",
+            "פיל שאף טיול של הכפתור לא נושא נעלם מעצמו, וחוזר עם הטיול הראשון. \"Show without tours\" משאיר אותו, עם טופס \"עדכנו אותי כשיעלו טיולים\" מתחתיו.",
+          ),
+          t(
+            "The bar / bat mitzvah pill follows the dates, not the tag: it shows on a tour that has an open date ticked \"Bar/Bat Mitzvah\".",
+            "הפיל של בר / בת מצווה הולך לפי המועדים, לא לפי התגית: הוא מופיע על טיול שיש לו מועד פתוח מסומן \"Bar/Bat Mitzvah\".",
+          ),
+          t("\"Save\", then \"Revalidate Pages\".", "\"Save\", ואז \"Revalidate Pages\"."),
         ],
       },
       {
