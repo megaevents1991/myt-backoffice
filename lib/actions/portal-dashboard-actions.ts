@@ -257,6 +257,8 @@ export async function getPortalDashboard(
       .is("is_deleted", null)
       // Hidden = uploader event nobody approved yet: not on a partner's "what's new" rail.
       .eq("is_hidden", false)
+      // A test event (staff QA, the TixStock sandbox event) is never offered to a partner.
+      .eq("is_test", false)
       .gte("date", today)
       .gte("created_at", newSince)
       .order("created_at", { ascending: false })
@@ -673,6 +675,8 @@ export async function getPortalDashboard(
       .is("is_deleted", null)
       // Hidden = uploader event nobody approved yet: not offered a tracking link.
       .eq("is_hidden", false)
+      // A test event is never offered to a partner (same rule as the rail above).
+      .eq("is_test", false)
       .gte("date", today)
       .gte("created_at", olderSince)
       .lt("created_at", newSince)

@@ -119,6 +119,8 @@ export async function getQuoteEvents(): Promise<QuoteEventOption[]> {
         .is("is_deleted", null)
         // Hidden = uploader event nobody approved yet: not quotable.
         .eq("is_hidden", false)
+        // A test event (staff QA, the TixStock sandbox event) is never offered for a quote.
+        .eq("is_test", false)
         .gte("date", today)
         .order("date", { ascending: true })
         .order("id", { ascending: true }),
