@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * The departure card: a side sheet with five tabs (general, prices, promotions,
- * flights, sales). Opened from a board row or straight from `?code=`.
+ * The departure card: a side sheet with six tabs (general, content, prices,
+ * promotions, flights, sales). Opened from a board row or straight from `?code=`.
  *
  * It owns one piece of data - the card payload - and reloads it after every
  * change, then tells the board which departure to refresh. The sheet, the
@@ -27,6 +27,7 @@ import {
   updateDeparture,
 } from "@/lib/actions/tours-departure-actions";
 import type { CardTab } from "./board-row";
+import { CardContentTab } from "./card-content-tab";
 import { CardFlightsTab } from "./card-flights-tab";
 import { CardGeneralTab } from "./card-general-tab";
 import { CardPricesTab } from "./card-prices-tab";
@@ -195,8 +196,10 @@ function StaffCard({
       </DepartureSheetHeader>
 
       <Tabs value={tab} onValueChange={(v) => onTabChange(v as CardTab)} className="flex min-h-0 flex-1 flex-col">
-        <TabsList className="mx-6 mt-3 grid h-9 grid-cols-5">
+        <TabsList className="mx-6 mt-3 grid h-9 grid-cols-6">
           <TabsTrigger value="general">General</TabsTrigger>
+          {/* what this date says instead of its season and its tour page (Alon 10.11) */}
+          <TabsTrigger value="content">Content</TabsTrigger>
           <TabsTrigger value="prices">Prices</TabsTrigger>
           <TabsTrigger value="promotions">
             Promotions{derived.activePromotions.length ? ` (${derived.activePromotions.length})` : ""}
@@ -207,6 +210,9 @@ function StaffCard({
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-2">
           <TabsContent value="general">
             <CardGeneralTab key={d.updated_at} data={data} onSaved={refresh} />
+          </TabsContent>
+          <TabsContent value="content">
+            <CardContentTab data={data} />
           </TabsContent>
           <TabsContent value="prices" className="pb-8">
             <CardPricesTab key={d.updated_at} data={data} onSaved={refresh} />

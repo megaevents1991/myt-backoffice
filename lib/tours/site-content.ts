@@ -247,7 +247,7 @@ export const TOUR_SOURCE_LABELS: Record<TourSource, string> = {
   tag: "The tours of a tag",
   destination: "The tours of a destination",
   category: "The tours of a category",
-  sale: "Tours on sale",
+  sale: "Tours on sale (a discount or a gift)",
   all: "All tours",
   manual: "Tours I pick",
 };

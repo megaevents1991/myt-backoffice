@@ -72,6 +72,14 @@ import {
   waitingForOf,
   closeBlockedBy,
   parseOffer,
+  parseOffers,
+  storedOffers,
+  liveOffers,
+  primaryOffer,
+  otherTour,
+  offersMessage,
+  offersState,
+  OFFERS_MAX,
   offerSent,
   isOfferChannel,
   type CaseRow,
@@ -454,7 +462,7 @@ assert.equal(closeBlockedBy("done", S, [{ ref: "T9", status: "new" }]), null);
 
 // A2 (Alon 18.10): the offer a case was sent
 const offer = { departureId: "d1", departureCode: "FDUA1204", startDate: "2026-12-04", tourName: "תמרים", rooms: ["double_room"], roomTitles: ["זוגי"], total: 6600, currency: "USD", url: "https://x/y", followUpDate: "2026-10-20", createdAt: "2026-10-18T10:00:00Z", sentAt: null, sentVia: null };
-assert.deepEqual(parseOffer(offer), { ...offer, bookingRef: null, itineraryUrl: null });
+assert.deepEqual(parseOffer(offer), { ...offer, id: "o0", packageId: null, bookingRef: null, itineraryUrl: null, cancelledAt: null });
 // the itinerary PDF rides on the offer (Alon 10.11) - an https address only, it goes to a customer
 assert.equal(parseOffer({ ...offer, itineraryUrl: "https://x.supabase.co/a.pdf?v=1" })?.itineraryUrl, "https://x.supabase.co/a.pdf?v=1");
 assert.equal(parseOffer({ ...offer, itineraryUrl: "javascript:alert(1)" })?.itineraryUrl, null);
@@ -466,6 +474,52 @@ assert.equal(offerSent(parseOffer(offer)), false);
 assert.equal(offerSent(parseOffer({ ...offer, sentAt: "2026-10-18T10:05:00Z", sentVia: "whatsapp" })), true);
 assert.equal(isOfferChannel("email"), true);
 assert.equal(isOfferChannel("copy"), false, "a copied link is not a sent offer");
+
+// Alon 10.11: up to three offers on one card - the first booked cancels the others (the database marks them)
+assert.equal(OFFERS_MAX, 3);
+const opt = (id: string, extra: Record<string, unknown> = {}) => ({ ...offer, id, departureId: `d-${id}`, packageId: `p-${id}`, url: `https://x/${id}`, ...extra });
+assert.deepEqual(parseOffers(null), []);
+assert.deepEqual(parseOffers(offer).map((o) => o.id), ["o0"], "an offer saved before 10.11 is the card's one offer");
+assert.deepEqual(parseOffers([opt("a"), opt("b"), { broken: true }, opt("a")]).map((o) => o.id), ["a", "b"], "broken and repeated entries leave");
+assert.deepEqual(parseOffers([{ ...offer }, { ...offer, departureId: "d2" }]).map((o) => o.id), ["o0", "o1"], "an array without ids gets them by place");
+const [oa, ob] = parseOffers([opt("a"), opt("b")]);
+assert.equal(storedOffers([]), null);
+assert.equal(Array.isArray(storedOffers([oa])), false, "one offer is stored as the object every older reader knows");
+assert.equal((storedOffers([oa, ob]) as unknown[]).length, 2, "two or more as an array");
+assert.deepEqual(parseOffers(storedOffers([oa, ob])).map((o) => o.id), ["a", "b"], "what is stored reads back");
+const trio = parseOffers([
+  opt("a", { createdAt: "2026-11-10T10:00:00Z" }),
+  opt("b", { createdAt: "2026-11-10T11:00:00Z" }),
+  opt("c", { createdAt: "2026-11-10T09:00:00Z", cancelledAt: "2026-11-10T12:00:00Z" }),
+]);
+assert.deepEqual(liveOffers(trio).map((o) => o.id), ["a", "b"]);
+assert.equal(primaryOffer(trio)?.id, "b", "the newest standing offer speaks for the card");
+assert.equal(primaryOffer(parseOffers([opt("a", { bookingRef: "T1" }), opt("b", { createdAt: "2026-11-11T00:00:00Z" })]))?.id, "a", "the booked one first");
+assert.equal(primaryOffer(parseOffers([opt("a", { cancelledAt: "2026-11-10T12:00:00Z" })]))?.id, "a", "all cancelled: still the newest");
+assert.equal(primaryOffer([]), null);
+// a lone cancelled offer stays an array, so the database's one-object path never marks it booked
+assert.equal(Array.isArray(storedOffers(parseOffers([opt("a", { cancelledAt: "2026-11-10T12:00:00Z" })]))), true);
+// the card's link state reads every offer (review 10.11)
+assert.equal(offersState([]).state, "");
+assert.equal(offersState(parseOffers([opt("a", { sentAt: "2026-11-10T10:00:00Z", sentVia: "whatsapp" }), opt("b")])).state, "ready", "one not sent yet: ready");
+assert.equal(offersState(parseOffers([opt("a", { sentAt: "2026-11-10T10:00:00Z", sentVia: "whatsapp" }), opt("b")])).unsent, 1);
+assert.equal(offersState(parseOffers([opt("a", { sentAt: "2026-11-10T10:00:00Z", sentVia: "email" }), opt("b", { sentAt: "2026-11-10T11:00:00Z", sentVia: "whatsapp" })])).sentAt, "2026-11-10T11:00:00Z");
+assert.equal(offersState(parseOffers([opt("a", { bookingRef: "T1" }), opt("b", { cancelledAt: "2026-11-10T12:00:00Z" })])).state, "booked");
+assert.equal(offersState(parseOffers([opt("a", { cancelledAt: "2026-11-10T12:00:00Z" }), opt("b", { cancelledAt: "2026-11-10T12:00:00Z" })])).state, "cancelled");
+// "תזכורת אם המסלול שונה": only when both tours are known and differ
+assert.equal(otherTour({ packageId: "p1" }, "p2"), true);
+assert.equal(otherTour({ packageId: "p1" }, "p1"), false);
+assert.equal(otherTour({ packageId: null }, "p1"), false, "an offer saved before 10.11 has no tour to compare");
+assert.equal(otherTour({ packageId: "p1" }, null), false, "a card with no tour yet");
+// one message for the options sent together
+const both = offersMessage("דנה", [
+  { tourName: "באגט צרפתי", departureCode: "FPAR415", startDate: "2027-04-15", url: "https://s/1", itineraryUrl: null },
+  { tourName: "תמרים", departureCode: "FDUA1204", startDate: "2026-12-04", url: "https://s/2", itineraryUrl: "https://x.supabase.co/a.pdf" },
+]);
+assert.match(both, /^היי דנה, מצרפים 2 הצעות/);
+assert.match(both, /1\. באגט צרפתי · 15\.04\.27: https:\/\/s\/1/);
+assert.match(both, /2\. תמרים · 04\.12\.26: https:\/\/s\/2\nהמסלול המלא להורדה \(PDF\): https:\/\/x\.supabase\.co\/a\.pdf/);
+assert.equal(offersMessage("דנה", [{ tourName: "תמרים", departureCode: "X", startDate: "2026-12-04", url: "https://s/2", itineraryUrl: null }]).includes("מצרפים קישור להזמנה לתמרים"), true, "one offer = the usual message");
 
 // ---- Alon's rejects 15.10
 // 5. closing as not relevant asks why; Done and Spam do not

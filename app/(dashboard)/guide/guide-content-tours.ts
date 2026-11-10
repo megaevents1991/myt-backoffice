@@ -571,8 +571,12 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("\"מוצרים במבצע\" fills itself; add or remove a tour slider", "\"מוצרים במבצע\" מתמלא לבד; להוסיף או להוריד סליידר טיולים"),
         steps: [
           t(
-            "\"מוצרים במבצע\" is not a slider and has nothing to add or remove: it is the tour grid of the \"Tour finder\" section, and it lists by itself every tour whose card shows a crossed-out price. A tour joins it when its date gets a \"Discount\" in [Departures](/tours/departures) (the date its card prints - its cheapest open date), and leaves it when the discount is cleared; \"Revalidate Pages\" updates the site.",
-            "\"מוצרים במבצע\" הוא לא סליידר ואין בו מה להוסיף או להוריד: זו רשת הטיולים של הסקשן \"Tour finder\", והיא מציגה לבד כל טיול שהכרטיס שלו מראה מחיר מחוק. טיול נכנס אליה כשהמועד שלו מקבל \"Discount\" ב[יציאות](/tours/departures) (המועד שהכרטיס מציג - המועד הפתוח הזול שלו), ויוצא ממנה כשמוחקים את ההנחה; \"Revalidate Pages\" מעדכן את האתר.",
+            "\"מוצרים במבצע\" is the tour grid of the \"Tour finder\" section, and it lists by itself every tour with the deals tag \"מבצעים\" (Alon 10.11). A tour carries the tag by itself while one of its open dates has a \"Discount\" or a gift in [Departures](/tours/departures), and leaves it when they are cleared. To add a tour with no discount, tick the tag \"מבצעים\" on it in the tour editor (Tags). \"Revalidate Pages\" updates the site.",
+            "\"מוצרים במבצע\" היא רשת הטיולים של הסקשן \"Tour finder\", והיא מציגה לבד כל טיול עם תגית המבצעים \"מבצעים\" (אלון 10.11). טיול מקבל את התגית לבד כל עוד לאחד המועדים הפתוחים שלו יש \"Discount\" או מתנה ב[יציאות](/tours/departures), ומאבד אותה כשמוחקים אותם. כדי להוסיף טיול בלי הנחה - מסמנים עליו את התגית \"מבצעים\" בעורך הטיול (Tags). \"Revalidate Pages\" מעדכן את האתר.",
+          ),
+          t(
+            "A slider of the deals anywhere - a row of a tile or an \"Automatic tour slider\" section: \"Which tours\" → \"The tours of a tag\" → \"מבצעים\" (or \"Tours on sale\", the same tours).",
+            "סליידר של המבצעים בכל מקום - שורה של כפתור או סקשן \"Automatic tour slider\": \"Which tours\" ← \"The tours of a tag\" ← \"מבצעים\" (או \"Tours on sale\", אותם טיולים).",
           ),
           t(
             "It lists the sale only while its title holds the word \"מבצע\": \"Title of the tour grid\" in \"Tour finder\" (a tile can have its own in \"Title of the grid\"). Any other title lists all the tile's tours. Once the customer searches or picks a pill, or when no tour is on sale, it lists all the tile's tours anyway.",

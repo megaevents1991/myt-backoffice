@@ -32,7 +32,7 @@ import type { CardTab } from "./board-row";
 import { DepartureCard } from "./departure-card";
 import type { CardTarget } from "./departure-sheet";
 
-const CARD_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights", "sales"];
+const CARD_TABS: readonly CardTab[] = ["general", "content", "prices", "promotions", "flights", "sales"];
 const QUERY_KEYS = ["code", "tab", "view", "tour", "page", "series", "season", "status", "q"] as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

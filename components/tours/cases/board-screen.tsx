@@ -49,6 +49,7 @@ import {
   TODAY_REASON_LABELS,
   caseMatches,
   caseName,
+  offersState,
   customerLabel,
   followUpDue,
   isClosedStatus,
@@ -125,9 +126,10 @@ const customerText = (c: CaseRow): string => [caseName(c), customerLabel(c.custo
 const tourText = (c: CaseRow): string => c.tourName ?? (c.waitingFor ? `Waiting for: ${c.waitingFor}` : "");
 const tourLabel = (value: string): string => value || "Tour not chosen";
 /** Where the card's booking link stands. */
-type LinkState = "booked" | "sent" | "ready" | "";
-const linkStateOf = (c: CaseRow): LinkState => (!c.offer ? "" : c.offer.bookingRef ? "booked" : c.offer.sentAt ? "sent" : "ready");
-const LINK_STATE_LABELS: Record<LinkState, string> = { booked: "Booked", sent: "Sent", ready: "Ready, not sent", "": "No link" };
+type LinkState = "booked" | "sent" | "ready" | "cancelled" | "";
+// every offer of the card read (up to three - Alon 10.11): one waiting to be sent makes the card "ready"
+const linkStateOf = (c: CaseRow): LinkState => offersState(c.offers ?? (c.offer ? [c.offer] : [])).state;
+const LINK_STATE_LABELS: Record<LinkState, string> = { booked: "Booked", sent: "Sent", ready: "Ready, not sent", cancelled: "Cancelled", "": "No link" };
 const SEATS_LABELS: Record<string, string> = { held: "Seats held", missing: "No seats", "": "Nothing to hold" };
 /** An order row's status: the card's, or - on a cancelled order - the order's own. */
 const ORDER_STATUS_LABELS: Record<string, string> = { "order:failed": "Payment failed", "order:cancelled": "Cancelled" };
@@ -192,7 +194,8 @@ export function BoardScreen() {
   const [leadSelection, setLeadSelection] = useState<Record<string, boolean>>({});
   const [waitSelection, setWaitSelection] = useState<Record<string, boolean>>({});
   // the card whose booking link is being built in the window over the list (Alon 29.10)
-  const [buildingFor, setBuildingFor] = useState<string | null>(null);
+  // the card whose booking-link window is open, and which offer it opens on (an id, "new", or none = the card's own)
+  const [buildingFor, setBuildingFor] = useState<{ id: string; start?: string } | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const today = todayIso();
 
@@ -270,11 +273,11 @@ export function BoardScreen() {
     (card: CaseRow): CardActionHost => ({
       apply: (action, done) => apply(card, action, done),
       openCard: (section) => router.push(`/tours/reservations/${card.id}?focus=${section}`),
-      buildOffer: () => setBuildingFor(card.id),
+      buildOffer: (start?: string) => setBuildingFor({ id: card.id, start }),
     }),
     [apply, router],
   );
-  const buildingCard = buildingFor ? cardById.get(buildingFor) : undefined;
+  const buildingCard = buildingFor ? cardById.get(buildingFor.id) : undefined;
   // a card that left the list (handed to another rep) closes its window for good - it never reopens on a later reload
   useEffect(() => {
     if (buildingFor && data && !buildingCard) setBuildingFor(null);
@@ -1077,11 +1080,14 @@ export function BoardScreen() {
                   key={buildingCard.id}
                   bare
                   startBuilding
+                  startWith={buildingFor?.start}
                   caseId={buildingCard.id}
                   defaultDepartureId={buildingCard.departureId}
                   hasSite={data.hasSite}
                   whatsappApi={data.whatsappApi}
-                  offer={buildingCard.offer ?? null}
+                  offers={buildingCard.offers ?? (buildingCard.offer ? [buildingCard.offer] : [])}
+                  cardPackageId={buildingCard.packageId}
+                  cardTourName={buildingCard.tourName}
                   phone={buildingCard.phone}
                   email={buildingCard.email}
                   firstName={buildingCard.firstName}

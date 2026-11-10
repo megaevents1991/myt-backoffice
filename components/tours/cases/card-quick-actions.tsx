@@ -22,12 +22,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/confirm-provider";
 import { isFollowUpDate } from "@/lib/reservations/follow-up";
-import { markOfferSent, updateCase, withdrawOffer } from "@/lib/actions/tours-cases-actions";
+import { markOfferSent, restoreOffer, updateCase, withdrawOffer } from "@/lib/actions/tours-cases-actions";
 import type { ActionResult } from "@/lib/tours/action-kit";
-import { addDaysIso, canTakeCard, caseName, type CaseRow, type OfferChannel } from "@/lib/tours/cases";
+import { addDaysIso, canTakeCard, caseName, offersState, otherTour, type CaseOffer, type CaseRow, type OfferChannel } from "@/lib/tours/cases";
 import { EMPTY, fmtDate, isoToJerusalemLocal } from "@/lib/tours/format";
 import { noteLine, writtenToday } from "@/lib/tours/board";
-import { OfferSummary } from "@/components/tours/cases/booking-link-card";
+import { OffersList } from "@/components/tours/cases/booking-link-card";
 
 /** How a screen takes the row an action answered, and how it opens the card when a body needs the whole thing. */
 export interface CardActionHost {
@@ -35,8 +35,9 @@ export interface CardActionHost {
   apply: (action: () => Promise<ActionResult<CaseRow>>, done: string) => Promise<boolean>;
   /** Opens the card at a section - the customer page unfolds it, the board navigates to it. */
   openCard: (section: "link" | "notes") => void;
-  /** Builds or edits the offer where the reader is (the board's window); without it the card opens at its link. */
-  buildOffer?: () => void;
+  /** Builds or edits an offer where the reader is (the board's window): an offer's id rewrites it, "new" adds another
+   * option, none = the card's offer, else a new one. Without it the card opens at its link. */
+  buildOffer?: (start?: string) => void;
 }
 
 /** The notes column's limit (updateCase NOTES_MAX). */
@@ -76,54 +77,59 @@ export function NotesEditor({ card, host, onDone }: { card: Pick<CaseRow, "id" |
   );
 }
 
+/** The card's offers: every one it holds (Alon 10.11: up to OFFERS_MAX), or the one before 10.11. */
+const offersOfCard = (card: Pick<CaseRow, "offer" | "offers">): CaseOffer[] => card.offers ?? (card.offer ? [card.offer] : []);
+
+type OfferCard = Pick<CaseRow, "id" | "offer" | "offers" | "phone" | "email" | "firstName" | "packageId" | "tourName">;
+
 /**
- * The offer as it stands, with its send buttons, Send again and Withdraw; "Edit and resend" - and "Build an
- * offer" when there is none - open the card (the builder needs the date picker and the quote).
+ * The card's offers as they stand, each with its send buttons, Send again and Withdraw - and the unsent ones in one
+ * message; "Edit and resend", "Add another option" and "Build an offer" open the builder (it needs the date picker and
+ * the quote) - in the board's window, else on the card.
  */
-export function OfferPanel({
-  card,
-  host,
-  onDone,
-}: {
-  card: Pick<CaseRow, "id" | "offer" | "phone" | "email" | "firstName">;
-  host: CardActionHost;
-  onDone: () => void;
-}) {
+export function OfferPanel({ card, host, onDone }: { card: OfferCard; host: CardActionHost; onDone: () => void }) {
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
-  const offer = card.offer ?? null;
+  const offers = offersOfCard(card);
   // the link itself opens WhatsApp / the mail app; this records that it went out
-  const sent = (via: OfferChannel) => {
+  const sent = (via: OfferChannel, ids: string[]) => {
     void (async () => {
       setBusy(true);
-      await host.apply(() => markOfferSent(card.id, via), 'Recorded as sent - the case is "Offer sent"');
+      await host.apply(() => markOfferSent(card.id, via, ids), 'Recorded as sent - the case is "Offer sent"');
       setBusy(false);
     })();
   };
-  const withdraw = async () => {
+  const withdraw = async (offer: CaseOffer) => {
     const agreed = await confirm({
-      title: "Withdraw the offer?",
+      title: offer.cancelledAt ? "Remove the cancelled offer?" : "Withdraw the offer?",
       description:
-        "It leaves the case, and its link no longer lands bookings here (a booking through it is matched by phone like any other). The status stays as it is.",
-      confirmLabel: "Withdraw",
+        offers.length > 1
+          ? "It leaves the card. The other offers stay, with the same link."
+          : "It leaves the case, and its link no longer lands bookings here (a booking through it is matched by phone like any other). The status stays as it is.",
+      confirmLabel: offer.cancelledAt ? "Remove" : "Withdraw",
       destructive: true,
     });
     if (!agreed) return;
     setBusy(true);
-    const ok = await host.apply(() => withdrawOffer(card.id), "Offer withdrawn");
+    const ok = await host.apply(() => withdrawOffer(card.id, offer.id), offer.cancelledAt ? "Offer removed" : "Offer withdrawn");
     setBusy(false);
-    if (ok) onDone();
+    if (ok && offers.length <= 1) onDone();
   };
-  const openBuilder = () => {
+  const restore = async (offer: CaseOffer) => {
+    setBusy(true);
+    await host.apply(() => restoreOffer(card.id, offer.id), "Offer restored");
+    setBusy(false);
+  };
+  const openBuilder = (start?: string) => {
     onDone();
-    if (host.buildOffer) host.buildOffer();
+    if (host.buildOffer) host.buildOffer(start);
     else host.openCard("link");
   };
-  if (!offer) {
+  if (!offers.length) {
     return (
       <div className="space-y-3 text-sm">
         <p className="text-muted-foreground">No booking link on this card yet.</p>
-        <Button size="sm" variant="outline" onClick={openBuilder}>
+        <Button size="sm" variant="outline" onClick={() => openBuilder("new")}>
           <Link2 className="h-4 w-4" />
           Build an offer
         </Button>
@@ -131,16 +137,22 @@ export function OfferPanel({
     );
   }
   return (
-    <OfferSummary
-      offer={offer}
-      phone={card.phone}
-      email={card.email}
-      firstName={card.firstName}
-      busy={busy}
-      onSent={sent}
-      onEdit={openBuilder}
-      onWithdraw={() => void withdraw()}
-    />
+    <div className="max-h-[70svh] overflow-y-auto">
+      <OffersList
+        offers={offers}
+        cardPackageId={card.packageId}
+        cardTourName={card.tourName}
+        phone={card.phone}
+        email={card.email}
+        firstName={card.firstName}
+        busy={busy}
+        onSent={sent}
+        onEdit={(offer) => openBuilder(offer.id)}
+        onWithdraw={(offer) => void withdraw(offer)}
+        onRestore={(offer) => void restore(offer)}
+        onAdd={() => openBuilder("new")}
+      />
+    </div>
   );
 }
 
@@ -375,19 +387,34 @@ export function NotesCell({ card, host, today }: { card: Pick<CaseRow, "id" | "n
 }
 
 /** Where the card's booking link stands - booked, sent (the day), ready (not sent) - a click works it. */
-export function OfferCell({ card, host }: { card: Pick<CaseRow, "id" | "offer" | "phone" | "email" | "firstName">; host: CardActionHost }) {
+export function OfferCell({ card, host }: { card: OfferCard; host: CardActionHost }) {
   const offer = card.offer ?? null;
-  const sentDay = offer?.sentAt ? isoToJerusalemLocal(offer.sentAt).slice(0, 10) : "";
-  const state = !offer ? null : offer.bookingRef ? (
-    <span className="font-medium text-emerald-700 dark:text-emerald-300">Booked</span>
-  ) : sentDay ? (
-    <span>Sent {fmtDate(sentDay)}</span>
-  ) : (
-    <span className="font-medium text-amber-700 dark:text-amber-300">Ready, not sent</span>
+  const offers = offersOfCard(card);
+  // every offer of the card read, not the newest alone (review 10.11)
+  const where = offersState(offers);
+  const sentDay = where.sentAt ? isoToJerusalemLocal(where.sentAt).slice(0, 10) : "";
+  // several options on the card, and an offer of another tour than the card's (Alon 10.11) - said beside the state
+  const extra = [
+    where.state !== "booked" && where.standing > 1 ? (where.state === "ready" && where.unsent < where.standing ? `${where.unsent} of ${where.standing} not sent` : `${where.standing} options`) : "",
+    offers.some((o) => !o.cancelledAt && otherTour(o, card.packageId)) ? "other tour" : "",
+  ].filter(Boolean);
+  const state = !offer ? null : (
+    <>
+      {where.state === "booked" ? (
+        <span className="font-medium text-emerald-700 dark:text-emerald-300">Booked</span>
+      ) : where.state === "cancelled" ? (
+        <span className="text-muted-foreground">Cancelled</span>
+      ) : where.state === "sent" ? (
+        <span>Sent {sentDay ? fmtDate(sentDay) : ""}</span>
+      ) : (
+        <span className="font-medium text-amber-700 dark:text-amber-300">Ready, not sent</span>
+      )}
+      {extra.length > 0 && <span className="ms-1 text-xs text-amber-700 dark:text-amber-300">· {extra.join(" · ")}</span>}
+    </>
   );
   // nothing to send or withdraw yet: the click opens the builder's window at once (Alon 10.11), no menu in between
   if (!offer && host.buildOffer) {
-    const build = host.buildOffer;
+    const build = () => host.buildOffer?.("new");
     return (
       <button
         type="button"

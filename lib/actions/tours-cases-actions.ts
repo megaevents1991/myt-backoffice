@@ -63,7 +63,13 @@ import {
   isOfferChannel,
   knownFrom,
   owedSeatRefs,
-  parseOffer,
+  OFFERS_MAX,
+  liveOffers,
+  offerSent,
+  offersMessage,
+  parseOffers,
+  primaryOffer,
+  storedOffers,
   paymentAnswerOf,
   caseName,
   checkCloseReason,
@@ -492,7 +498,8 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     seatsMissing: seatGap(r.status, statuses, x.seatBookings.get(r.id) ?? [], x.seatHolds.get(r.id) ?? [])?.missing ?? 0,
     closeReason: r.close_reason ?? null,
     relatedCaseNo: r.related_lead_id ? (x.related.get(r.related_lead_id) ?? null) : null,
-    offer: parseOffer(r.offer),
+    offer: primaryOffer(parseOffers(r.offer)),
+    offers: parseOffers(r.offer),
     dateOpened: parseDateOpened(r.date_opened),
   };
 }
@@ -1283,7 +1290,8 @@ export async function getCase(id: string): Promise<ActionResult<CaseDetail>> {
       linkSentAt: record.link_sent_at,
       relatedCase: relatedCase ?? null,
       whatsappApi: await whatsappApiReady(company),
-      offer: parseOffer(record.offer),
+      offer: primaryOffer(parseOffers(record.offer)),
+      offers: parseOffers(record.offer),
       inquiries: inquiriesOf(payload, { name: customerName(row), email: row.email }),
       known,
     });
@@ -1482,6 +1490,7 @@ type LinkDepartureRow = {
   id: string;
   code: string;
   start_date: string;
+  package_id: string;
   legacy_product_id: number | null;
   site_id: number;
   sale_status: string;
@@ -1490,14 +1499,20 @@ type LinkDepartureRow = {
   packages: { name: string; slug: string; data: unknown; updated_at: string | null } | null;
 };
 
-/** Departures a link can point at - published, from today on, still selling - with the rooms each prices. */
+/**
+ * Departures a link can point at - published, from today on, still selling - with the rooms each prices. Only of a tour
+ * the site shows (Alon 10.11: "זה טיולים לא אקטיבים באתר יותר לא צריכים להופיע"): active and not deleted, the rule of
+ * the site's own `packages` view (provision_company) - a published date of a switched-off tour has no page to open.
+ */
 async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDeparture[]> {
   let query = toursDb()
     .from("departures")
-    .select("id, code, start_date, legacy_product_id, site_id, sale_status, currency, updated_at, packages(name, slug, data, updated_at)")
+    .select("id, code, start_date, package_id, legacy_product_id, site_id, sale_status, currency, updated_at, packages!inner(name, slug, data, updated_at)")
     .eq("company_id", company.id)
     .eq("is_published", true)
     .is("is_deleted", null)
+    .eq("packages.is_active", true)
+    .is("packages.is_deleted", null)
     .gte("start_date", todayIso())
     .not("sale_status", "in", "(sold_out,closed)");
   if (onlyId) query = query.eq("id", onlyId);
@@ -1528,6 +1543,7 @@ async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDe
         id: d.id,
         code: d.code,
         startDate: d.start_date,
+        packageId: d.package_id,
         tourName: pkg.name,
         siteId: departureSiteId(d),
         packagePath: packagePathOf(pkg.slug, (asObject(pkg.data as never).path as string | undefined) ?? null),
@@ -1587,16 +1603,30 @@ export async function quoteLink(input: { departureId: string; rooms: string[] })
   }
 }
 
-/** The patch that marks the case's offer as SENT: "Offer sent" (statusAfterLink), its follow-up day, the time. */
-function sentPatch(record: CaseRecord, offer: CaseOffer, via: OfferChannel, statuses: readonly CaseStatus[]): { patch: LeadUpdate; status: string } {
+/**
+ * The patch that marks offers of the card as SENT: "Offer sent" (statusAfterLink), the follow-up day, the time. `ids` = the
+ * offers that went out (one, or several in one message - Alon 10.11); the follow-up is the nearest day of the offers out.
+ */
+function sentPatch(
+  record: CaseRecord,
+  offers: readonly CaseOffer[],
+  ids: readonly string[],
+  via: OfferChannel,
+  statuses: readonly CaseStatus[],
+): { patch: LeadUpdate; status: string } {
   const now = new Date().toISOString();
   const status = statusAfterLink(record.status, statuses);
-  const patch: LeadUpdate = {
-    offer: { ...offer, sentAt: now, sentVia: via } as unknown as Json,
-    link_sent_at: now,
-  };
-  if (DAY.test(offer.followUpDate) && offer.followUpDate >= todayIso()) {
-    patch.follow_up_date = offer.followUpDate;
+  const next = offers.map((o) => (ids.includes(o.id) ? { ...o, sentAt: now, sentVia: via } : o));
+  const patch: LeadUpdate = { offer: storedOffers(next) as Json, link_sent_at: now };
+  // the nearest follow-up of every offer out with the customer and not booked - a later one never hides an earlier
+  // reminder (review 10.11)
+  const days = liveOffers(next)
+    .filter((o) => !o.bookingRef && (ids.includes(o.id) || offerSent(o)))
+    .map((o) => o.followUpDate)
+    .filter((d) => DAY.test(d) && d >= todayIso())
+    .sort();
+  if (days.length) {
+    patch.follow_up_date = days[0];
     patch.follow_up_set_at = now;
   }
   if (status !== record.status) {
@@ -1608,15 +1638,46 @@ function sentPatch(record: CaseRecord, offer: CaseOffer, via: OfferChannel, stat
 }
 
 /**
- * Prepares the booking link for the case: the tour page on the site, the date, the rooms and the case's
+ * What a rep may do to the card's offers: rewrite one still standing and not booked; add one while none was booked
+ * (a later booking would not mark it - the first decided) and fewer than OFFERS_MAX stand. The builder hides the rest,
+ * this holds for a stale tab too (review 10.11).
+ */
+function checkOfferChange(offers: readonly CaseOffer[], replacing: CaseOffer | undefined): void {
+  if (replacing?.bookingRef) throw new UserError("The customer already booked through this offer - it cannot be changed.");
+  if (replacing?.cancelledAt) throw new UserError("This offer was cancelled when another offer of the card was booked - restore it first.");
+  if (replacing) return;
+  if (offers.some((o) => o.bookingRef)) throw new UserError("The customer already booked through an offer of this card - start a new card for another deal.");
+  if (liveOffers(offers).length >= OFFERS_MAX) throw new UserError(`A card holds up to ${OFFERS_MAX} offers - withdraw one first.`);
+}
+
+/** The card's offers as they are now (read again right before a write). */
+async function freshOffers(company: Company, caseId: string): Promise<CaseOffer[]> {
+  const { data, error } = await supabaseTyped.from("leads").select("offer").eq("company_id", company.id).eq("id", caseId).maybeSingle();
+  if (error) throw new Error(`leads: ${error.message}`);
+  return parseOffers(data?.offer ?? null);
+}
+
+/** A new offer's place on the card: short, and never one the card already holds. */
+function newOfferId(offers: readonly CaseOffer[]): string {
+  for (;;) {
+    const id = randomBytes(4).toString("hex");
+    if (!offers.some((o) => o.id === id)) return id;
+  }
+}
+
+/**
+ * Prepares a booking link for the case: the tour page on the site, the date, the rooms and the case's
  * token (`lr`) - a booking sent through it lands on this case. It is an OFFER (Alon 18.10): kept on the
  * case (leads.offer) with the site's price and the follow-up day, and it counts as sent only once it goes
  * out on WhatsApp or e-mail (markOfferSent) - preparing changes no status. `sendWhatsApp` sends it at once
  * from the company's own number when the Cloud API is connected. The token is minted once per case.
+ *
+ * A card holds up to OFFERS_MAX offers (Alon 10.11): `offerId` rewrites that one ("Edit and resend"), none adds another.
+ * All of them carry the same token; the first booked cancels the others (tours.case_offers_booked).
  */
 export async function prepareOffer(
   caseId: string,
-  input: { departureId: string; rooms: string[]; followUpDate: string; sendWhatsApp?: boolean },
+  input: { departureId: string; rooms: string[]; followUpDate: string; sendWhatsApp?: boolean; offerId?: string | null },
 ): Promise<ActionResult<BookingLinkResult>> {
   try {
     const { company, session } = await requireCompanyRep("tours");
@@ -1626,8 +1687,12 @@ export async function prepareOffer(
     if (!UUID.test(input.departureId)) throw new UserError("Choose a departure.");
     if (!input.followUpDate || !DAY.test(input.followUpDate)) throw new UserError("Pick the day to follow up with the customer.");
     if (input.followUpDate < todayIso()) throw new UserError("The follow-up day cannot be in the past.");
+    const existing = parseOffers(record.offer);
+    const replacing = input.offerId ? existing.find((o) => o.id === input.offerId) : undefined;
+    if (input.offerId && !replacing) throw new UserError("That offer is no longer on the card - reload it.");
+    checkOfferChange(existing, replacing);
     const [departure] = await linkDepartures(company, input.departureId);
-    if (!departure) throw new UserError("This departure is not open on the site (unpublished, past, sold out or closed).");
+    if (!departure) throw new UserError("This departure is not open on the site (unpublished, past, sold out or closed, or its tour is off the site).");
     if (departure.rooms.length === 0) throw new UserError("This date has no price table yet, so the site cannot take a booking for it.");
     if ((input.rooms ?? []).length > LINK_ROOMS_MAX) throw new UserError(`A booking holds up to ${LINK_ROOMS_MAX} rooms.`);
     const rooms = cleanRoomKeys(Array.isArray(input.rooms) ? input.rooms : [], departure.rooms.map((r) => r.key));
@@ -1646,7 +1711,9 @@ export async function prepareOffer(
     const url = bookingLink({ siteUrl: company.siteUrl, packagePath: departure.packagePath, productId: departure.siteId, rooms, token });
     const titles = new Map(departure.rooms.map((r) => [r.key, r.title]));
     const offer: CaseOffer = {
+      id: replacing?.id ?? newOfferId(existing),
       departureId: departure.id,
+      packageId: departure.packageId,
       departureCode: departure.code,
       startDate: departure.startDate,
       tourName: departure.tourName,
@@ -1661,8 +1728,17 @@ export async function prepareOffer(
       sentVia: null,
       bookingRef: null,
       itineraryUrl: itinerary.ok ? itinerary.url : null,
+      cancelledAt: null,
     };
-    let patch: LeadUpdate = { link_token: token, offer: offer as unknown as Json };
+    // the quote and the PDF took a while: the offers are read again right before the write, so a booking that landed
+    // meanwhile (booking_create marks bookingRef / cancelledAt) or another rep's change is never written over (review 10.11)
+    const fresh = await freshOffers(company, caseId);
+    const stillThere = replacing ? fresh.find((o) => o.id === replacing.id) : undefined;
+    if (replacing && !stillThere) throw new UserError("That offer is no longer on the card - reload it.");
+    checkOfferChange(fresh, stillThere);
+    // a rewritten offer keeps its place; a new one joins after the others (an offer cancelled by a booking stays on view)
+    const offers = replacing ? fresh.map((o) => (o.id === replacing.id ? offer : o)) : [...fresh, offer];
+    let patch: LeadUpdate = { link_token: token, offer: storedOffers(offers) as Json };
     if (!record.departure_id) {
       const own = await companyDeparture(company, departure.id);
       patch.departure_id = own.id;
@@ -1688,7 +1764,7 @@ export async function prepareOffer(
           })
         : ({ ok: false, error: "The case has no phone number WhatsApp can use." } as const);
       if (answer.ok) {
-        const applied = sentPatch(record, offer, "whatsapp_api", await statusesOf(company));
+        const applied = sentPatch(record, offers, [offer.id], "whatsapp_api", await statusesOf(company));
         patch = { ...patch, ...applied.patch };
         sent = true;
       } else {
@@ -1702,13 +1778,20 @@ export async function prepareOffer(
       action: sent ? "offer_sent" : "offer_prepared",
       entityType: "tours_case",
       entityId: caseId,
-      changes: { departure: departure.code, rooms, total: offer.total, follow_up_date: input.followUpDate, ...(sent ? { via: "whatsapp_api" } : {}) },
+      changes: {
+        departure: departure.code,
+        rooms,
+        total: offer.total,
+        follow_up_date: input.followUpDate,
+        offer: replacing ? `rewrote ${offer.id}` : `added ${offer.id} (${offers.length} on the card)`,
+        ...(sent ? { via: "whatsapp_api" } : {}),
+      },
       metadata: { ...companyAudit(company), case_no: record.case_no },
     });
     revalidatePath("/tours/reservations");
     return actionOk(
       {
-        offer: (parseOffer(patch.offer) ?? offer) as CaseOffer,
+        offer: parseOffers(patch.offer).find((o) => o.id === offer.id) ?? offer,
         message,
         whatsapp: waLink(record.phone, message),
         whatsappApp: whatsappAppLink(record.phone, message),
@@ -1721,16 +1804,27 @@ export async function prepareOffer(
   }
 }
 
-/** The rep sent the prepared offer on WhatsApp or by e-mail: the case moves to "Offer sent" with its follow-up day. */
-export async function markOfferSent(caseId: string, via: OfferChannel): Promise<ActionResult<CaseRow>> {
+/**
+ * The rep sent offers on WhatsApp or by e-mail: the case moves to "Offer sent" with its follow-up day. `offerIds` = the
+ * offers that went out (each on its own, or several in one message - offersMessage); none = every offer still standing.
+ */
+export async function markOfferSent(caseId: string, via: OfferChannel, offerIds?: string[]): Promise<ActionResult<CaseRow>> {
   try {
     const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     if (!isOfferChannel(via) || via === "whatsapp_api") throw new UserError("Send the link on WhatsApp or by e-mail.");
     const record = await caseRecord(company, caseId, viewer);
-    const offer = parseOffer(record.offer);
-    if (!offer) throw new UserError("Prepare the booking link first.");
-    const { patch, status } = sentPatch(record, offer, via, await statusesOf(company));
+    const offers = parseOffers(record.offer);
+    const standing = liveOffers(offers).filter((o) => !o.bookingRef);
+    const going = offerIds?.length ? standing.filter((o) => offerIds.includes(o.id)) : standing;
+    if (!going.length) throw new UserError(offers.length ? "That offer is no longer on the card - reload it." : "Prepare the booking link first.");
+    const { patch, status } = sentPatch(
+      record,
+      offers,
+      going.map((o) => o.id),
+      via,
+      await statusesOf(company),
+    );
     const { error } = await updateLeadRow(company, caseId, patch);
     if (error) throw new Error(`leads: ${error.message}`);
     await logAudit({
@@ -1739,8 +1833,8 @@ export async function markOfferSent(caseId: string, via: OfferChannel): Promise<
       entityId: caseId,
       changes: {
         via,
-        departure: offer.departureCode,
-        rooms: offer.rooms,
+        departure: going.map((o) => o.departureCode).join(", "),
+        rooms: going.flatMap((o) => o.rooms),
         ...(status !== record.status ? { status: { from: record.status, to: status } } : {}),
         follow_up_date: { from: record.follow_up_date, to: patch.follow_up_date ?? record.follow_up_date },
       },
@@ -1754,30 +1848,76 @@ export async function markOfferSent(caseId: string, via: OfferChannel): Promise<
 }
 
 /**
- * Withdraws the offer: it leaves the case and its link stops landing here - the case's token is dropped, so
- * a booking through the old link is matched like any other (by phone / e-mail). The next offer mints a new
- * token. The status stays the rep's call.
+ * Withdraws an offer (`offerId`), or every offer of the card (none). An offer withdrawn leaves the card; once none is
+ * left the card's link stops landing here - the token is dropped, so a booking through an old link is matched like any
+ * other (by phone / e-mail), and the next offer mints a new token. While other offers stand, the token stays: they share
+ * it. The status stays the rep's call.
  */
-export async function withdrawOffer(caseId: string): Promise<ActionResult<CaseRow>> {
+export async function withdrawOffer(caseId: string, offerId?: string): Promise<ActionResult<CaseRow>> {
   try {
     const { company, session } = await requireCompanyRep("tours");
     const viewer = await boardViewerFor(session, company);
     const record = await caseRecord(company, caseId, viewer);
-    const offer = parseOffer(record.offer);
-    if (!offer && !record.link_token) throw new UserError("This case has no offer to withdraw.");
-    const { error } = await supabaseTyped.from("leads").update({ offer: null, link_token: null }).eq("company_id", company.id).eq("id", caseId);
+    const offers = parseOffers(record.offer);
+    if (!offers.length && !record.link_token) throw new UserError("This case has no offer to withdraw.");
+    const leaving = offerId ? offers.filter((o) => o.id === offerId) : offers;
+    if (offerId && !leaving.length) throw new UserError("That offer is no longer on the card - reload it.");
+    const left = offerId ? offers.filter((o) => o.id !== offerId) : [];
+    const patch: LeadUpdate = left.length ? { offer: storedOffers(left) as Json } : { offer: null, link_token: null };
+    const { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", caseId);
     if (error) throw new Error(`leads: ${error.message}`);
     await logAudit({
       action: "offer_withdrawn",
       entityType: "tours_case",
       entityId: caseId,
-      changes: offer ? { departure: offer.departureCode, rooms: offer.rooms, total: offer.total, sent: offer.sentVia } : { link: "token dropped" },
+      changes: leaving.length
+        ? {
+            departure: leaving.map((o) => o.departureCode).join(", "),
+            rooms: leaving.flatMap((o) => o.rooms),
+            total: leaving.length === 1 ? leaving[0].total : null,
+            sent: leaving.map((o) => o.sentVia).filter(Boolean).join(", ") || null,
+            left: left.length,
+          }
+        : { link: "token dropped" },
       metadata: { ...companyAudit(company), case_no: record.case_no },
     });
     revalidatePath("/tours/reservations");
     return actionOk(await freshRow(company, caseId));
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to withdraw the offer");
+  }
+}
+
+/**
+ * Brings back an offer another offer's booking cancelled, when that booking fell through (a card payment that failed,
+ * an order the customer called off - review 10.11: it left the other options cancelled for good). The rep decides;
+ * the booked offer stays as it is, and while it stays a new booking through the link marks no offer (the first booking
+ * decided) - withdraw it too when the deal starts over.
+ */
+export async function restoreOffer(caseId: string, offerId: string): Promise<ActionResult<CaseRow>> {
+  try {
+    const { company, session } = await requireCompanyRep("tours");
+    const viewer = await boardViewerFor(session, company);
+    const record = await caseRecord(company, caseId, viewer);
+    const offers = parseOffers(record.offer);
+    const offer = offers.find((o) => o.id === offerId);
+    if (!offer) throw new UserError("That offer is no longer on the card - reload it.");
+    if (!offer.cancelledAt) throw new UserError("This offer is not cancelled.");
+    if (liveOffers(offers).length >= OFFERS_MAX) throw new UserError(`A card holds up to ${OFFERS_MAX} offers - withdraw one first.`);
+    const next = offers.map((o) => (o.id === offerId ? { ...o, cancelledAt: null } : o));
+    const { error } = await updateLeadRow(company, caseId, { offer: storedOffers(next) as Json });
+    if (error) throw new Error(`leads: ${error.message}`);
+    await logAudit({
+      action: "offer_restored",
+      entityType: "tours_case",
+      entityId: caseId,
+      changes: { departure: offer.departureCode, rooms: offer.rooms },
+      metadata: { ...companyAudit(company), case_no: record.case_no },
+    });
+    revalidatePath("/tours/reservations");
+    return actionOk(await freshRow(company, caseId));
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to restore the offer");
   }
 }
 

@@ -25,7 +25,7 @@ import type { BoardRow, BoardSeries } from "./types";
 import { OpenJawMark, SaleStatusBadge, SaleStatusSelect } from "./ui-bits";
 import { SALE_STATUS_LABELS } from "@/types/tours.types";
 
-export type CardTab = "general" | "prices" | "promotions" | "flights" | "sales";
+export type CardTab = "general" | "content" | "prices" | "promotions" | "flights" | "sales";
 
 export interface BoardRowProps {
   row: BoardRow;

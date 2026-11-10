@@ -77,7 +77,7 @@ import { doublePricePerPerson, periodLabel, periodsOverlapping } from "./departu
 import type { BoardData, BoardRow, BulkOutcome } from "./types";
 import { STICKY_TH, usePublishToast } from "./ui-bits";
 
-const CARD_TABS: readonly CardTab[] = ["general", "prices", "promotions", "flights", "sales"];
+const CARD_TABS: readonly CardTab[] = ["general", "content", "prices", "promotions", "flights", "sales"];
 /** Everything the board keeps in the query string: the filters, and the open card (`code`, `tab`). */
 const QUERY_KEYS = [
   "year",

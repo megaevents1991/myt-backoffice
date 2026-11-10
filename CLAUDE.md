@@ -181,6 +181,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > `markOfferSent` (a click on WhatsApp / e-mail - copying is not sending) moves the case to `offer_sent` with its
 > follow-up day; "Edit and resend" / "Withdraw" (`withdrawOffer` drops the token). (e) `booking_create` sets the
 > case's follow-up day to today (Israel) and marks the offer `bookingRef`.
+> **Up to three offers on a card (Alon 10.11, road map tab "בק אופיס לידים והזמנות", migration `20261110170000_tours_case_offers.sql`).**
+> `leads.offer` is one object while the card has one offer, an ARRAY from two on (`parseOffers` / `storedOffers`, `OFFERS_MAX` = 3,
+> each offer has an `id`); `CaseRow.offer` = `primaryOffer` (the booked one, else the newest standing), `CaseRow.offers` = all.
+> They share the card's one token, so a booking through any of them lands on the card; `tours.case_offers_booked` (called by
+> `booking_create`) marks the offer of the booked date (else of its tour) `bookingRef` and every other standing offer
+> `cancelledAt` (a date no offer names: none booked, all cancelled); a second booking changes nothing; `restoreOffer` brings a
+> cancelled one back (a failed card payment). `prepareOffer` re-reads the offers right before its write and refuses to
+> rewrite a booked / cancelled offer or to add one after a booking. `prepareOffer({ offerId })` rewrites that offer, none adds one;
+> `markOfferSent(caseId, via, offerIds?)` (none = every standing offer: "Send the N together" = `offersMessage`, one message);
+> `withdrawOffer(caseId, offerId?)` drops the token only when no offer is left. An offer stores its tour (`packageId`): one of
+> another tour than the card's says so (`otherTour`) in the builder, on the offer, in the board's Link cell and the card's
+> shortcut. The builder lists only dates of tours the site shows (`packages.is_active`, not deleted). SQL test:
+> `PGLITE_PATH=<pglite dir> node scripts/tours-case-offers-sql-pglite-test.mjs`. **A date's own content** (same day, note 5):
+> departure card > Content (`card-content-tab.tsx`, `lib/actions/tours-departure-content-actions.ts`,
+> `lib/tours/departure-content.ts`) = `departures.data.ownContent` - description, attractions, included / not included, top
+> picture, gallery; the site shows the date's field, else its season's, else the tour's (mega-family `contentOf`). **The deals
+> tag "מבצעים"** (note 8, migration `20261110171000_tours_deals_tag.sql` creates it for Mega Family): the site gives it to every
+> tour with a discount or a gift on an open date, plus tours staff tick it on (mega-family `lib/sale-tag.ts`).
 > **Customers + deal cards (2026-10-19, Nir Azulay - the end user; spec `docs/superpowers/specs/2026-10-19-tours-customer-cards-design.md`,
 > migration `20261019180000_tours_customers.sql`, mockup https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).** `public.customers`
 > = one per phone (`phone_keys` = last 9 digits, kept by a trigger; `customer_no` shown `C-1041`; `not_same`, `merged_into`); every

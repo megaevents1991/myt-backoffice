@@ -32,6 +32,8 @@ import {
   followUpDue,
   isClosedStatus,
   isPaidStatus,
+  offersState,
+  otherTour,
   senderDiffers,
   statusOf,
   todayReason,
@@ -215,7 +217,8 @@ function CardRow({
   const [focus, setFocus] = useState<CardFocus | null>(initialFocus ? { section: initialFocus, at: Date.now() } : null);
   const [sheet, setSheet] = useState<"link" | "notes" | null>(null);
   // the booking link builder in a window over the page, as on a board row (Alon 10.11: "צריך להיפתח אוטומטית בחוץ כמו בטודיי")
-  const [building, setBuilding] = useState(false);
+  // the booking-link window, and which offer it opens on (an id, "new", or none = the card's own) - Alon 10.11
+  const [building, setBuilding] = useState<{ start?: string } | null>(null);
   const offer = offerLine(card);
   const firstNote = card.notes?.trim().split("\n")[0] ?? "";
   const notesLine = firstNote ? (firstNote.length > 48 ? `${firstNote.slice(0, 47)}…` : firstNote) : "Add a note";
@@ -237,7 +240,7 @@ function CardRow({
     },
     openCard: go,
     // with no site address there is nothing to build: the card opens at its link section, which says so
-    ...(data.hasSite ? { buildOffer: () => setBuilding(true) } : {}),
+    ...(data.hasSite ? { buildOffer: (start?: string) => setBuilding({ start }) } : {}),
   };
   const saveAcc = async (next: string) => {
     if (next === (card.accNum ?? "")) return;
@@ -291,7 +294,7 @@ function CardRow({
         <div className="flex flex-wrap gap-2 px-4 pb-3 ps-11">
           {!card.offer && host.buildOffer ? (
             // nothing to send or withdraw yet: straight into the builder
-            <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} onClick={host.buildOffer} />
+            <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} onClick={() => host.buildOffer?.("new")} />
           ) : (
             <Popover open={sheet === "link"} onOpenChange={(next) => setSheet(next ? "link" : null)}>
               <PopoverTrigger asChild>
@@ -346,7 +349,7 @@ function CardRow({
         <CollapsibleContent className="border-t bg-muted/20 p-4">{open && <CasePage id={card.id} embedded focus={focus} onChanged={onChanged} />}</CollapsibleContent>
         {/* mounted only while open - it starts in the builder, from the card's offer when there is one */}
         {building && (
-          <Dialog open onOpenChange={(next) => !next && setBuilding(false)}>
+          <Dialog open onOpenChange={(next) => !next && setBuilding(null)}>
             <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Booking link</DialogTitle>
@@ -355,11 +358,14 @@ function CardRow({
               <BookingLinkCard
                 bare
                 startBuilding
+                startWith={building.start}
                 caseId={card.id}
                 defaultDepartureId={card.departureId}
                 hasSite={data.hasSite}
                 whatsappApi={data.whatsappApi}
-                offer={card.offer ?? null}
+                offers={card.offers ?? (card.offer ? [card.offer] : [])}
+                cardPackageId={card.packageId}
+                cardTourName={card.tourName}
                 phone={card.phone}
                 email={card.email}
                 firstName={card.firstName}
@@ -412,9 +418,18 @@ function offerLine(card: CaseRow): { text: string; tone: ShortcutTone } {
   const offer = card.offer;
   if (!offer) return { text: "None yet", tone: "muted" };
   if (offer.bookingRef) return { text: `Booked · ${offer.bookingRef}`, tone: "default" };
-  const price = offer.total !== null && offer.currency ? ` · ${fmtPrice(offer.total, offer.currency)}` : "";
-  if (offer.sentAt) return { text: `Sent ${fmtDate(offer.sentAt.slice(0, 10))}${price}`, tone: "default" };
-  return { text: `Prepared, not sent${price}`, tone: "warning" };
+  const offers = card.offers ?? [offer];
+  // every offer read (review 10.11); several options, and an offer of another tour than the card's (Alon 10.11:
+  // "תזכורת אם המסלול שונה")
+  const where = offersState(offers);
+  if (where.state === "cancelled") return { text: "Cancelled - another offer was booked", tone: "muted" };
+  const standing = offers.filter((o) => !o.cancelledAt);
+  const other = standing.some((o) => otherTour(o, card.packageId));
+  const parts = [where.state === "sent" && where.sentAt ? `Sent ${fmtDate(where.sentAt.slice(0, 10))}` : "Prepared, not sent"];
+  if (standing.length === 1 && offer.total !== null && offer.currency) parts.push(fmtPrice(offer.total, offer.currency));
+  if (standing.length > 1) parts.push(where.state === "ready" && where.unsent < standing.length ? `${where.unsent} of ${standing.length} not sent` : `${standing.length} options`);
+  if (other) parts.push("other tour");
+  return { text: parts.join(" · "), tone: where.state === "ready" || other ? "warning" : "default" };
 }
 
 /**

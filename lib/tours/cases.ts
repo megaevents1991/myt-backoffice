@@ -753,6 +753,23 @@ export function linkMessage(
   return itineraryUrl ? `${message}\n${itineraryLine(itineraryUrl)}` : message;
 }
 
+/** "2027-04-15" -> "15.04.27", as a WhatsApp line reads a date. */
+const shortDate = (iso: string): string => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(2, 4)}` : iso);
+
+/**
+ * One message for the card's offers sent together (Alon 10.11: a customer who asked for three routes gets the three
+ * links at once): each option on its own lines, numbered, with its itinerary PDF. One offer = linkMessage.
+ */
+export function offersMessage(firstName: string | null | undefined, offers: readonly Pick<CaseOffer, "tourName" | "departureCode" | "startDate" | "url" | "itineraryUrl">[]): string {
+  if (offers.length === 1) return linkMessage(firstName, offers[0].tourName, offers[0].url, offers[0].itineraryUrl);
+  const hello = firstName?.trim() ? `היי ${firstName.trim()},` : "היי,";
+  const lines = offers.map((o, i) => {
+    const head = `${i + 1}. ${[o.tourName?.trim(), shortDate(o.startDate)].filter(Boolean).join(" · ")}: ${o.url}`;
+    return o.itineraryUrl ? `${head}\n${itineraryLine(o.itineraryUrl)}` : head;
+  });
+  return `${hello} מצרפים ${offers.length} הצעות עם ההרכב שדיברנו עליו. בוחרים אחת, ממלאים את פרטי הנוסעים ושולחים - ההזמנה הראשונה שנשלחת סוגרת את האחרות:\n\n${lines.join("\n\n")}`;
+}
+
 // ---------------------------------------------------------------- the row
 /** One row of the Reservations screen. */
 export interface CaseRow {
@@ -814,8 +831,11 @@ export interface CaseRow {
   closeReason: string | null;
   /** The customer's earlier case a site booking named (booking_create) - same rep, offered for a merge. */
   relatedCaseNo: number | null;
-  /** The booking link prepared on the card (leads.offer) - the card's outside shortcut says where it stands. */
+  /** The booking link prepared on the card (leads.offer) - the card's outside shortcut says where it stands. The one
+   * that speaks for the card when it has several (primaryOffer). */
   offer?: CaseOffer | null;
+  /** Every offer on the card, up to OFFERS_MAX (Alon 10.11). */
+  offers?: CaseOffer[];
   /** What happened when the card's date opened (leads.date_opened); null when it never did. */
   dateOpened?: DateOpenedNote | null;
 }
@@ -1104,8 +1124,10 @@ export interface CaseDetail {
   relatedCase: CaseCandidate | null;
   /** The company can send from its own WhatsApp number (Cloud API configured). */
   whatsappApi: boolean;
-  /** The booking link prepared for the customer (leads.offer), sent or not yet. */
+  /** The booking link prepared for the customer (leads.offer), sent or not yet - the one that speaks for the card. */
   offer: CaseOffer | null;
+  /** Every offer on the card (Alon 10.11: up to OFFERS_MAX, the first booked cancels the others). */
+  offers: CaseOffer[];
   /** Site forms that joined this card - the customer came back on it. */
   inquiries: CardInquiry[];
   /** The customer's earlier deal (closed or paid) this card should know about. */
@@ -1255,6 +1277,8 @@ export interface LinkDeparture {
   id: string;
   code: string;
   startDate: string;
+  /** The date's tour - an offer of another tour than the card's says so (Alon 10.11). */
+  packageId: string;
   tourName: string | null;
   siteId: number;
   packagePath: string;
@@ -1556,9 +1580,18 @@ export const isOfferChannel = (value: unknown): value is OfferChannel => OFFER_C
 /**
  * leads.offer: the booking link the rep prepared for the customer. It counts as sent only once it went out
  * on WhatsApp or e-mail - copying it is not sending (Alon: "force me to send it").
+ *
+ * A card may carry up to OFFERS_MAX of them (Alon 10.11: "לקוח מבקש שלושה מסלולים / הצעות מחיר... הלינק הראשון
+ * שנרשם מבטל את האחרים אוטומטית"). They share the card's token, so a booking through any of them lands on the card;
+ * the database (tours.case_offers_booked, migration 20261110170000) marks the one booked and the others cancelled.
+ * Stored as one object while the card has one offer (what every reader before 10.11 knew), an array from two on.
  */
 export interface CaseOffer {
+  /** Its place on the card ("o0" for an offer saved before 10.11). */
+  id: string;
   departureId: string;
+  /** The date's tour, so a card can say the offer is of another tour than the one asked (Alon 10.11); null before 10.11. */
+  packageId: string | null;
   departureCode: string;
   startDate: string;
   tourName: string | null;
@@ -1576,11 +1609,16 @@ export interface CaseOffer {
   bookingRef: string | null;
   /** The date's itinerary as a PDF (lib/tours/itinerary-pdf.ts, Alon 10.11) - null when it could not be printed. */
   itineraryUrl: string | null;
+  /** Another offer of the card was booked first: this one is off (the database sets it, Alon 10.11). */
+  cancelledAt: string | null;
 }
+
+/** How many offers a card holds at once (Alon 10.11: "שלושה מסלולים"). */
+export const OFFERS_MAX = 3;
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
 
-export function parseOffer(value: unknown): CaseOffer | null {
+export function parseOffer(value: unknown, index = 0): CaseOffer | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const o = value as Record<string, unknown>;
   const departureId = str(o.departureId);
@@ -1588,7 +1626,9 @@ export function parseOffer(value: unknown): CaseOffer | null {
   if (!departureId || !url || !Array.isArray(o.rooms) || !o.rooms.every((r) => typeof r === "string")) return null;
   const sentVia = isOfferChannel(o.sentVia) ? o.sentVia : null;
   return {
+    id: str(o.id) ?? `o${index}`,
     departureId,
+    packageId: str(o.packageId),
     departureCode: str(o.departureCode) ?? "",
     startDate: str(o.startDate) ?? "",
     tourName: str(o.tourName),
@@ -1604,7 +1644,57 @@ export function parseOffer(value: unknown): CaseOffer | null {
     bookingRef: str(o.bookingRef),
     // an https address only: the message hands it to a customer
     itineraryUrl: str(o.itineraryUrl)?.startsWith("https://") ? str(o.itineraryUrl) : null,
+    cancelledAt: str(o.cancelledAt),
   };
 }
+
+/** Every offer of a card (leads.offer): one object before 10.11 / with one offer, an array from two on. */
+export function parseOffers(value: unknown): CaseOffer[] {
+  const list = Array.isArray(value) ? value : value ? [value] : [];
+  const seen = new Set<string>();
+  return list.flatMap((v, i) => {
+    const offer = parseOffer(v, i);
+    if (!offer || seen.has(offer.id)) return [];
+    seen.add(offer.id);
+    return [offer];
+  });
+}
+
+/**
+ * How the card stores its offers: none = null, one = the object every older reader knows, two or more = an array. A lone
+ * offer another one's booking cancelled stays an array, so the object path of the database (one offer = booked by any
+ * booking through the link) never revives it.
+ */
+export const storedOffers = (offers: readonly CaseOffer[]): unknown =>
+  offers.length === 0 ? null : offers.length === 1 && !offers[0].cancelledAt ? offers[0] : [...offers];
+
+/** Offers still standing: not cancelled by another offer's booking. */
+export const liveOffers = (offers: readonly CaseOffer[]): CaseOffer[] => offers.filter((o) => !o.cancelledAt);
+
+/**
+ * The offer that speaks for the card (its Link cell, the board's link state): the one booked, else the newest still
+ * standing, else the newest.
+ */
+export function primaryOffer(offers: readonly CaseOffer[]): CaseOffer | null {
+  const newest = (list: readonly CaseOffer[]) => [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+  return offers.find((o) => o.bookingRef) ?? newest(liveOffers(offers)) ?? newest(offers);
+}
+
+/**
+ * Where the card's offers stand, all of them read (review 10.11: the newest one alone hid an older one not sent):
+ * booked when one was booked; else "ready" while a standing offer waits to be sent; else "sent" (the last send);
+ * "cancelled" when every offer was cancelled; "" with none.
+ */
+export function offersState(offers: readonly CaseOffer[]): { state: "booked" | "ready" | "sent" | "cancelled" | ""; sentAt: string | null; unsent: number; standing: number } {
+  const standing = liveOffers(offers);
+  const unsent = standing.filter((o) => !o.bookingRef && !offerSent(o)).length;
+  const sentAt = standing.map((o) => o.sentAt ?? "").filter(Boolean).sort().pop() ?? null;
+  const state = !offers.length ? "" : offers.some((o) => o.bookingRef) ? "booked" : !standing.length ? "cancelled" : unsent ? "ready" : "sent";
+  return { state, sentAt, unsent, standing: standing.length };
+}
+
+/** The offer is of another tour than the card's (Alon 10.11: "תזכורת אם המסלול שונה") - both known, and different. */
+export const otherTour = (offer: Pick<CaseOffer, "packageId">, cardPackageId: string | null | undefined): boolean =>
+  !!offer.packageId && !!cardPackageId && offer.packageId !== cardPackageId;
 
 export const offerSent = (offer: CaseOffer | null): boolean => !!offer?.sentAt && !!offer.sentVia;

@@ -664,7 +664,9 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
             defaultDepartureId={row.departureId}
             hasSite={!!data.siteUrl}
             whatsappApi={data.whatsappApi}
-            offer={data.offer}
+            offers={data.offers ?? (data.offer ? [data.offer] : [])}
+            cardPackageId={row.packageId}
+            cardTourName={row.tourName}
             phone={row.phone}
             email={row.email}
             firstName={row.firstName}
