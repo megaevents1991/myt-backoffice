@@ -227,13 +227,13 @@ export function dateOpenedParams(firstName: string | null | undefined, tourName:
 }
 
 /**
- * The same words as the template, for a rep who sends it from their own WhatsApp while the number is not connected. The
+ * The same words as the template (Alon's wording, 10.11), for a rep who sends it from their own WhatsApp while the number is not connected. The
  * link stands on its own line: a full stop right after it can end up inside it, and Meta refuses a template that ends on
  * a variable.
  */
 export function dateOpenedMessage(firstName: string | null | undefined, tourName: string | null | undefined, url: string): string {
   const [name, tour, link] = dateOpenedParams(firstName, tourName, url);
-  return `היי ${name}, מה שחיכיתם לו עלה!\nנפתח תאריך ל${tour}.\nאפשר להציץ כאן: ${link}\nנציג שלנו יחזור אליכם בקרוב.`;
+  return `היי ${name}, נפתח תאריך ל${tour}.\nאפשר להציץ כאן: ${link}\nאנא עיינו ונציג שלנו יחזור בהקדם האפשרי.`;
 }
 
 export type DateOpenedSend = "pending" | "sent" | "failed" | "skipped";
