@@ -159,13 +159,34 @@ Decided on our side, and what it costs if wrong:
   start carrying OUR `order_id` instead, they are answered "unknown order" and the files arrive only through the
   refresh. Every webhook is logged with its payload, so the first sandbox webhook shows which id it carries.
 
-## 5. Follow-up (drafted 10.11, Dor sends it)
+## 5. Follow-up (drafted 10.11, updated the same evening; Dor sends it)
+
+Two points joined it in the evening:
+
+- **The Seller Portal user.** Dor has no user on `sandbox-new.tixstock.com`, so the seven test listings
+  (`2026-11-09-sandbox-listings-checklist-he.md`) cannot be created yet.
+- **What the sandbox showed once the webhooks were registered.** The Reseller Admin takes one webhook row per
+  type; ten rows now point at `https://backoffice-app-six.vercel.app/api/tixstock/webhook/sandbox`
+  (`ticket.hold`, `ticket.release`, `order.update`, `order.eticket_fulfilment`, `order.mobile_ticket_fulfilment`,
+  `order.mobile_link_ticket_fulfilment`, `order.paper_ticket_fulfilment`, `ticket.fulfillment`,
+  `order.season_cards_ticket_fulfilment`, `order.local_delivery_ticket_fulfilment` - their spellings). A hold and
+  a release placed by our client (both 200, listed in their Request Log) sent us no webhook: their Webhook Log
+  stayed empty. So TixStock's real signature is proven only by the first order webhook.
 
 ```
 Thanks, very clear. A few points are still open:
-1. order_id: do /orders/get and /orders/update take our order_id, or the id that orders/add returns? Is it unique on your side - would a second orders/add with the same order_id be rejected? And in your webhooks, is order_id still your own order id?
-2. What does requires_lead_booker = true on a listing require from us?
-3. Fulfilment webhook: do the PDF files arrive inside the JSON or as links? Our platform accepts requests up to 4.5 MB - can we fetch the same files from /orders/get?
-4. ticket.fullfillment webhooks: the same { "ok": true } response?
+1. Seller Portal (sandbox): we have no user on sandbox-new.tixstock.com. Could you open one for us, so we can create the test listings for the health check and fulfil them ourselves? Or should we use the listings already in the sandbox, and you fulfil the test orders?
+2. order_id: do /orders/get and /orders/update take our order_id, or the id that orders/add returns? Is it unique on your side - would a second orders/add with the same order_id be rejected? And in your webhooks, is order_id still your own order id?
+3. What does requires_lead_booker = true on a listing require from us?
+4. Fulfilment webhook: do the PDF files arrive inside the JSON or as links? Our platform accepts requests up to 4.5 MB - can we fetch the same files from /orders/get?
+5. Webhooks: we registered all ten types in the sandbox Reseller Admin. A hold and a release we placed through the API sent us no ticket.hold / ticket.release webhook (the Webhook Log is empty) - is that expected? And for ticket.fulfillment, is the response also { "ok": true }?
 @Abdullah - can the Serie A attendee step of the health check be shown from our back office instead of the website checkout?
+```
+
+If the first version of this follow-up already went out, only these two are new:
+
+```
+Two more things:
+1. We have no user on the sandbox Seller Portal (sandbox-new.tixstock.com). Could you open one for us, so we can create the test listings for the health check and fulfil them ourselves? Or should we use the listings already in the sandbox, and you fulfil the test orders?
+2. We registered all ten webhook types in the sandbox Reseller Admin. A hold and a release we placed through the API sent us no ticket.hold / ticket.release webhook (the Webhook Log is empty) - is that expected?
 ```

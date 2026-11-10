@@ -6,6 +6,9 @@
 ## איפה
 
 - **הפורטל:** https://sandbox-new.tixstock.com (ה-Seller Portal של הסנדבוקס, לא ה-Reseller Admin).
+  **10.11 בערב:** אין לנו שם משתמש. הפורטל דורש שם משתמש, סיסמה ו-MFA, והמשתמש של ה-Reseller Admin לא נכנס אליו.
+  צריך לבקש מ-TixStock לפתוח אחד. הנוסח נמצא במסמך השאלות, סעיף 5 (`2026-11-10-questions-to-tixstock.md`).
+  עד אז שני אירועי הבדיקה נבנים על ה-listings שכבר קיימים בסנדבוקס.
 - **האירוע:** Juventus FC vs Como, ‏11.06.2027, Allianz Stadium.
   המזהה שלו ב-TixStock: `01kja2n8zk31zyv0z7zxkzf8vd`.
 
