@@ -258,6 +258,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > The card moves FIRST with a condition on `status = 'waitlist'` (`claim`): a rep who got there first wins and nothing goes out, a crash leaves a moved card with no message, never a message sent twice. **The message:** one approved template `waitlist_date_open`
 > (`NEXT_SECRET_WHATSAPP_WAITLIST_TEMPLATE`; Tom's step 15 in `docs/superpowers/specs/2026-10-21-whatsapp-meta-setup-tom-he.md`), origin `automation`, to everyone on the list but an opt-out (**Dor 30.10: an exception to "marketing needs opted_in / customer", for this one message the customer asked for** - both site forms now say "בוואטסאפ"). `whatsappBlock` holds it for: an opt-out BY NUMBER (`customers.phone_keys` with `wa_consent = 'opted_out'`, deleted rows too: a merge or a card move would hide it), a bad phone, a phone that is no longer the customer's as a WHOLE number (a card keeps the phone it came with, and a form joins a customer by the last 9 digits, so another country's number can land on the card), another open or paid card of the customer on this tour, a card from a burst of forms (below); one number on one tour gets one message a tick. The link = `bookingLink` on the date with no rooms and the card's `lr` token, so a booking lands on the card; the name goes out only as one word of letters (`NAME_ALLOWED`, else "חברים") because a visitor typed it and it goes from our verified number to a phone they typed - never a link. Moves only inside `isSendWindow` (Israel: Sunday-Thursday 09-20, Friday 09-13, never Shabbat), the oldest wait first, `MAX_CARDS_PER_TICK` 30 per company per hour counted in the database (`movedLastHour`). Several waiting on one date all get it (Dor: reps call by arrival). `approvedTemplateBlock` demands an APPROVED row in the cache; `TOURS_WAITLIST_WHATSAPP=off` stops the sends and leaves the cards moving. **Whatever stops the WhatsApp, the card still moves:** `leads.date_opened` (`DateOpenedNote`: date, url, `whatsapp` pending / sent / failed / skipped, `why`) prints as `DateOpenedLine` on the board and the card, with `WhatsAppButton` on `dateOpenedMessage` (the same words) for the rep's own app - never for an opt-out. That is today's state: `wa_accounts` and `wa_templates` are empty. A rep who puts a card back on the list starts a new wait (a new date messages again). Problems mail `NEXT_SECRET_ADMIN_EMAIL` on the 09:35 tick only (`isMorningTick`). **The limits on a public form (Dor 30.10, migration `20261030183500_tours_waitlist_form_burst.sql`), because anyone can type someone else's phone:** (1) per address on the site, 5 waiting-list / notify-me forms an hour (mega-family `lib/form-limit.ts`, `x-real-ip`, in memory per server instance - a speed bump; over it the route answers as if it worked and stores nothing; a missing header is never refused); (2) per company in the database, past 20 such forms an hour `leads_fill` keeps the card and marks `leads.no_auto_message` (`burstHeld`: it moves, no message, a rep's move onto the list clears it); (3) `FIRST_CONTACT_MAX_PER_DAY` 20 messages per company per rolling 24 hours to numbers we never spoke to (`isKnownContact` = `opted_in` / `customer` / wrote to us on WhatsApp; `DateOpenedNote.firstContact` is what it counts; a failed send does not use it up, a failed count holds new numbers back). Measured 30.10: `leads` held 19 rows since 03.10, busiest hour 3. Not built: messaging by seats left, holidays in the window, holding a large batch. UI checked by `tsc` + selftests only until it runs on prod; check with `?dry_run=1`.
 >
+> **Alon + Nir's board notes (10.11.2026, ROAD MAP MEGATR tab `t.kw44n12anc02`; notes + pictures in mega-family
+> `docs/alon-requests/2026-11-10-board-notes/`; migration `20261110113703_tours_follow_up_set_at.sql`). Dor took every
+> recommended answer.** (1) **Bulk edit for every rep** (`components/tours/cases/bulk-card-bar.tsx`, on TODAY, LEADS,
+> WAITING LIST and ALL): "Set status…" (Future / Deposit are not offered - `bulkStatusBlocker`; a closing status asks one
+> reason), "Set follow-up…" (Today / Tomorrow / 2 days / a week / a day / Clear; `bulkUpdateCases({ followUpDate })`, one
+> change at a time, `bulkFollowUpProblem` refuses a past or impossible day and a clear on a deposit card), "Set rep…"
+> stays the manager's. (2) The four progress dashes (`StageBar`, `cardStage`) are gone everywhere. (3) **A New card leaves
+> TODAY once a rep set or cleared its follow-up day:** `leads.follow_up_set_at` is stamped by `updateCase` (a changed
+> day), the bulk bar, a sent offer (`sentPatch`) and `createCase` (a day after today); `todayReason` gives "new" only
+> while it is null, then the day rules apply (late / today / nothing). Site forms, joins and the waiting-list cron never
+> stamp it. Reads fall back without it (`CASE_COLUMNS_NO_SET_AT`), writes retry without it (`updateLeadRow`). (4) The
+> builder prints every room kind's price before it is counted (`LinkDeparture.rooms[].price` from the date's matrix,
+> `currency`). (5) **Columns move by drag:** `DataTable` `columnReorder` (opt-in; the board's four tables and ALL) - a header
+> dragged sideways (pointer only, so a click still sorts and a double-click still filters), the order per table in
+> localStorage (`myt:column-order:<table key>`), the grip / tick box / `actions` never move, "Reset column order" in
+> Columns; pure rules `lib/table-column-order.ts` (in `scripts/table-filters-selftest.ts`). (6) **The itinerary PDF goes
+> with an offer:** headless Chromium (`withPrintPage` in `lib/services/browser.ts` - local Chromium, nothing blocked)
+> prints the SITE's own print sheet (mega-family `PrintSheet.tsx`) of the date with the offer's rooms
+> (`?product_id=&rooms=` - the sheet prints the rooms and their total) into
+> `public_resources/itineraries/<slug>/<code>-<id8>-<roomsKey>.pdf`, reused for 30 minutes and printed again after an edit
+> the site may not show yet (`lib/tours/itinerary-pdf.ts`, selftest `scripts/tours-itinerary-pdf-selftest.ts`; I/O
+> `lib/services/tours-itinerary-pdf.ts`, ~3 s a print, ~560 KB). The builder asks `POST /api/tours/itinerary-pdf` as soon
+> as a date and rooms are picked - a ROUTE with its own time and memory (a tab runs its actions one at a time, and a print
+> would hold the room quotes); "Prepare offer" first waits for that print, or asks it, and `prepareOffer` only LOOKS the
+> file up (`storedItineraryPdf` - never Chromium inside an action, review 10.11), stores `CaseOffer.itineraryUrl` and
+> `linkMessage` adds "המסלול המלא להורדה (PDF): <url>" on its own line. A failed print sends the offer without it and
+> says so. The route takes only the rooms the date prices and 60 PDFs per person per 10 minutes; old files are not
+> cleaned yet (~0.5 MB each). The Cloud API template
+> `booking_link` carries the link alone until Tom adds a document header. Site: "הורד מסלול" on the summary's מסלול row
+> (`ReviewSummary.tsx`) = `window.print()` of the same sheet. (7) New case: no e-mail, national id or notes (they live on
+> the customer page); phone required; follow-up starts on today. (8) A booking link with nothing yet opens the builder's
+> window straight from an empty Link cell and from the folded card on the customer page (`CustomerPageData.hasSite` /
+> `whatsappApi`); "Today" joins the quick days. Checked by `tsc` + selftests + a real print of FDUA1204 against the live
+> site; the screens are unseen in a browser.
+>
 > **Card payment links (28.10.2026, Alon's note "סליקה אשראי לחבר"; spec `docs/superpowers/specs/2026-10-28-tours-card-payments-design.md`,
 > migration `20261028140806_tours_payment_links.sql`).** Dor: the terminal is the one the Mega Family site already uses (today = Mega
 > Events' CreditGuard terminal, same company; Family's own one later = the site's `CG_*` env only); the rep types the amount, a deposit

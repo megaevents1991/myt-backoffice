@@ -33,6 +33,7 @@ import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
 import { readPaymentLinks } from "@/lib/tours/payment-link-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
+import { storedItineraryPdf } from "@/lib/services/tours-itinerary-pdf";
 import { parseDateOpened } from "@/lib/tours/waitlist-dates";
 import { countUnseen, relinkCardCustomer, relinkCaseMessages, relinkCustomerMessages } from "@/lib/services/whatsapp-db";
 import { threadOf } from "@/lib/services/whatsapp-thread";
@@ -49,6 +50,7 @@ import {
   bookingBlocksDelete,
   bookingPhase,
   DEPOSIT_NEEDS_DAY,
+  bulkFollowUpProblem,
   bulkStatusBlocker,
   canClearFollowUp,
   checkFuture,
@@ -134,14 +136,15 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NATIONAL_ID = /^\d{5,9}$/;
 
 const CASE_COLUMNS =
-  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at, wa_seen_at, date_opened";
+  "id, case_no, created_at, updated_at, type, kind, status, name, first_name, last_name, phone, email, id_number, acc_num, notes, message, assigned_to, follow_up_date, source, utm, source_path, departure_id, package_id, link_token, link_sent_at, payload, close_reason, related_lead_id, offer, customer_id, to_file, season, notes_at, wa_seen_at, date_opened, follow_up_set_at";
 
-/** The same without date_opened (20261030182000), without wa_seen_at (20261021172647), without notes_at (20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
-const CASE_COLUMNS_NO_DATE_OPENED = CASE_COLUMNS.replace(", date_opened", "");
+/** The same without follow_up_set_at (20261110113703), without date_opened (20261030182000), without wa_seen_at (20261021172647), without notes_at (20261021164145), then without the customer columns (20261019180000): a deploy that beat its migration still reads. */
+const CASE_COLUMNS_NO_SET_AT = CASE_COLUMNS.replace(", follow_up_set_at", "");
+const CASE_COLUMNS_NO_DATE_OPENED = CASE_COLUMNS_NO_SET_AT.replace(", date_opened", "");
 const CASE_COLUMNS_NO_WA = CASE_COLUMNS_NO_DATE_OPENED.replace(", wa_seen_at", "");
 const CASE_COLUMNS_NO_NOTES_AT = CASE_COLUMNS_NO_WA.replace(", notes_at", "");
 const LEGACY_CASE_COLUMNS = CASE_COLUMNS_NO_NOTES_AT.replace(", customer_id, to_file, season", "");
-const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_DATE_OPENED, CASE_COLUMNS_NO_WA, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
+const CASE_COLUMN_SETS = [CASE_COLUMNS, CASE_COLUMNS_NO_SET_AT, CASE_COLUMNS_NO_DATE_OPENED, CASE_COLUMNS_NO_WA, CASE_COLUMNS_NO_NOTES_AT, LEGACY_CASE_COLUMNS];
 /** Reads with the full column list, then without each column set a missing migration would lack. */
 async function readCaseColumns<T extends { error: { code?: string; message?: string } | null | undefined }>(read: (columns: string) => PromiseLike<T>): Promise<T> {
   let answer = await read(CASE_COLUMN_SETS[0]);
@@ -151,7 +154,7 @@ async function readCaseColumns<T extends { error: { code?: string; message?: str
 const missingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
   error?.code === "42703" ||
   error?.code === "PGRST204" ||
-  /(close_reason|related_lead_id|offer|customer_id|to_file|season|notes_at|wa_seen_at).*does not exist/.test(error?.message ?? "");
+  /(close_reason|related_lead_id|offer|customer_id|to_file|season|notes_at|wa_seen_at|follow_up_set_at).*does not exist/.test(error?.message ?? "");
 /** public.customers is not there yet (the migration runs on the push to master). */
 const missingTable = (error: { code?: string; message?: string } | null | undefined): boolean =>
   error?.code === "42P01" || error?.code === "PGRST205" || /relation .*customers.* does not exist/.test(error?.message ?? "");
@@ -195,6 +198,7 @@ type CaseRecord = Pick<
   | "notes_at"
   | "wa_seen_at"
   | "date_opened"
+  | "follow_up_set_at"
 >;
 type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
 type CustomerRecord = Database["public"]["Tables"]["customers"]["Row"];
@@ -459,6 +463,7 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     accNum: r.acc_num,
     notes: r.notes,
     notesAt: r.notes_at ?? null,
+    followUpSetAt: r.follow_up_set_at ?? null,
     message: r.message,
     assignedTo: r.assigned_to,
     followUpDate: r.follow_up_date,
@@ -521,7 +526,17 @@ const withDefaults = (record: CaseRecord): CaseRecord => ({
   season: record.season ?? null,
   notes_at: record.notes_at ?? null,
   wa_seen_at: record.wa_seen_at ?? null,
+  follow_up_set_at: record.follow_up_set_at ?? null,
 });
+
+/** One card's update; a deploy that beat the follow_up_set_at migration (20261110113703) writes the rest without the stamp. */
+async function updateLeadRow(company: Company, id: string, patch: LeadUpdate) {
+  const { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", id);
+  if (!missingColumn(error) || patch.follow_up_set_at === undefined) return { error };
+  const rest = { ...patch };
+  delete rest.follow_up_set_at;
+  return supabaseTyped.from("leads").update(rest).eq("company_id", company.id).eq("id", id);
+}
 
 /** Every case of the company (not deleted), newest first - tolerant of the close_reason migration. */
 async function allCaseRecords(company: Company) {
@@ -671,6 +686,8 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
       // a deposit card's day may move, never go - whatever button sent the null (review 22.10)
       if (followUpDate === null && !canClearFollowUp((patch.status as string | undefined) ?? before.status)) throw new UserError(DEPOSIT_NEEDS_DAY);
       set("follow_up_date", before.follow_up_date, followUpDate);
+      // a rep handled the day (set or cleared): a New card leaves TODAY's "New" reason (Alon 10.11)
+      if (patch.follow_up_date !== undefined) patch.follow_up_set_at = new Date().toISOString();
     }
     if (change.notes !== undefined) {
       const notes = change.notes.trim();
@@ -748,10 +765,11 @@ export async function updateCase(id: string, change: CaseChange): Promise<Action
 
     if (Object.keys(patch).length) {
       let { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", id);
-      if (missingColumn(error) && patch.notes_at !== undefined) {
-        // a deploy that beat the notes_at migration: the note saves, the stamp waits
+      if (missingColumn(error) && (patch.notes_at !== undefined || patch.follow_up_set_at !== undefined)) {
+        // a deploy that beat the notes_at / follow_up_set_at migration: the note and the day save, the stamps wait
         const rest = { ...patch };
         delete rest.notes_at;
+        delete rest.follow_up_set_at;
         ({ error } = await supabaseTyped.from("leads").update(rest).eq("company_id", company.id).eq("id", id));
       }
       if (missingColumn(error)) throw new UserError("A closing reason can be saved after the system update - try again in a few minutes.");
@@ -779,7 +797,7 @@ const seatsHeldNote = (held: { ref: string; pax: number; departureCode: string |
 /** The status or the rep of several cases at once (the screen's bulk bar). */
 export async function bulkUpdateCases(
   ids: string[],
-  change: { status?: string; assignedTo?: string | null; closeReason?: string },
+  change: { status?: string; assignedTo?: string | null; closeReason?: string; followUpDate?: string | null },
 ): Promise<ActionResult<{ updated: number }>> {
   try {
     const { company, session } = await requireCompanyRep("tours");
@@ -819,13 +837,38 @@ export async function bulkUpdateCases(
       }
       patch.assigned_to = change.assignedTo;
     }
+    if (change.followUpDate !== undefined) {
+      // one change at a time: a status names its own day rules (paid clears it, a deposit needs one)
+      if (patch.status !== undefined) throw new UserError("Change the status and the follow-up day one at a time.");
+      patch.follow_up_date = change.followUpDate;
+      // a rep handled the day: a New card leaves TODAY's "New" reason, as with one card (Alon 10.11)
+      patch.follow_up_set_at = new Date().toISOString();
+    }
     if (Object.keys(patch).length === 0) throw new UserError("Nothing to change.");
-    if (!viewer.manager) {
+    // the selection as it stands: a rep touches only their own + unassigned cards, a day never leaves a deposit card
+    const selected: { id: string; case_no: number; status: string; assigned_to: string | null }[] = [];
+    if (!viewer.manager || change.followUpDate !== undefined) {
       for (const part of chunk(unique, IN_CHUNK)) {
-        const { data, error } = await supabaseTyped.from("leads").select("id, assigned_to").eq("company_id", company.id).in("id", part);
+        const { data, error } = await supabaseTyped
+          .from("leads")
+          .select("id, case_no, status, assigned_to")
+          .eq("company_id", company.id)
+          .is("is_deleted", null)
+          .in("id", part);
         if (error) throw new Error(`leads: ${error.message}`);
-        if ((data ?? []).some((row) => !canSeeCard({ assignedTo: row.assigned_to }, viewer))) throw new UserError("A selected card belongs to another rep - reload the screen.");
+        selected.push(...(data ?? []));
       }
+    }
+    if (!viewer.manager && selected.some((row) => !canSeeCard({ assignedTo: row.assigned_to }, viewer))) {
+      throw new UserError("A selected card belongs to another rep - reload the screen.");
+    }
+    if (change.followUpDate !== undefined) {
+      const problem = bulkFollowUpProblem(
+        change.followUpDate,
+        todayIso(),
+        selected.map((row) => ({ caseNo: row.case_no, status: row.status })),
+      );
+      if (problem) throw new UserError(problem);
     }
 
     const before: { id: string; case_no: number; status: string; assigned_to: string | null }[] = [];
@@ -842,13 +885,15 @@ export async function bulkUpdateCases(
           .neq("status", "paid");
         if (dayError) throw new Error(`leads: ${dayError.message}`);
       }
-      const { data, error } = await supabaseTyped
-        .from("leads")
-        .update(patch)
-        .eq("company_id", company.id)
-        .is("is_deleted", null)
-        .in("id", part)
-        .select("id, case_no, status, assigned_to");
+      const write = (values: LeadUpdate) =>
+        supabaseTyped.from("leads").update(values).eq("company_id", company.id).is("is_deleted", null).in("id", part).select("id, case_no, status, assigned_to");
+      let { data, error } = await write(patch);
+      if (missingColumn(error) && patch.follow_up_set_at !== undefined) {
+        // a deploy that beat the follow_up_set_at migration: the day saves, the stamp waits
+        const rest = { ...patch };
+        delete rest.follow_up_set_at;
+        ({ data, error } = await write(rest));
+      }
       if (missingColumn(error)) throw new UserError("A closing reason can be saved after the system update - try again in a few minutes.");
       if (error) throw new Error(`leads: ${error.message}`);
       before.push(...(data ?? []));
@@ -858,7 +903,11 @@ export async function bulkUpdateCases(
         action: "update",
         entityType: "tours_case",
         entityId: row.id,
-        changes: Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, { to: v }])),
+        changes: Object.fromEntries(
+          Object.entries(patch)
+            .filter(([k]) => k !== "follow_up_set_at")
+            .map(([k, v]) => [k, { to: v }]),
+        ),
         metadata: { ...companyAudit(company), case_no: row.case_no, bulk: true },
       });
     }
@@ -923,16 +972,20 @@ export async function createCase(input: NewCaseInput): Promise<ActionResult<{ id
         notes: notes || null,
         notes_at: notes ? new Date().toISOString() : null,
         follow_up_date: input.followUpDate || null,
+        // a new card the rep scheduled for a later day is handled already: it waits for that day, not on TODAY as New (10.11)
+        follow_up_set_at: input.followUpDate && input.followUpDate > todayIso() ? new Date().toISOString() : null,
         departure_id: departure?.id ?? null,
         package_id: departure?.package_id ?? null,
         ...(customer ? { customer_id: customer.id } : {}),
     };
-    const insert = (row: typeof values | Omit<typeof values, "notes_at">) => supabaseTyped.from("leads").insert(row).select("id, case_no").single();
+    const insert = (row: typeof values | Omit<typeof values, "notes_at" | "follow_up_set_at">) =>
+      supabaseTyped.from("leads").insert(row).select("id, case_no").single();
     let { data: created, error } = await insert(values);
     if (missingColumn(error)) {
-      // a deploy that beat the notes_at migration: the card is created, the stamp waits
-      const { notes_at: _stamp, ...rest } = values;
+      // a deploy that beat the notes_at / follow_up_set_at migration: the card is created, the stamps wait
+      const { notes_at: _stamp, follow_up_set_at: _setAt, ...rest } = values;
       void _stamp;
+      void _setAt;
       ({ data: created, error } = await insert(rest));
     }
     if (error || !created) throw new Error(`leads: ${error?.message ?? "no row"}`);
@@ -1432,14 +1485,16 @@ type LinkDepartureRow = {
   legacy_product_id: number | null;
   site_id: number;
   sale_status: string;
-  packages: { name: string; slug: string; data: unknown } | null;
+  currency: string | null;
+  updated_at: string | null;
+  packages: { name: string; slug: string; data: unknown; updated_at: string | null } | null;
 };
 
 /** Departures a link can point at - published, from today on, still selling - with the rooms each prices. */
 async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDeparture[]> {
   let query = toursDb()
     .from("departures")
-    .select("id, code, start_date, legacy_product_id, site_id, sale_status, packages(name, slug, data)")
+    .select("id, code, start_date, legacy_product_id, site_id, sale_status, currency, updated_at, packages(name, slug, data, updated_at)")
     .eq("company_id", company.id)
     .eq("is_published", true)
     .is("is_deleted", null)
@@ -1467,7 +1522,8 @@ async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDe
     .filter((d) => d.packages)
     .map((d) => {
       const matrix = toPriceMatrix(prices.get(d.id) ?? []);
-      const pkg = d.packages as { name: string; slug: string; data: unknown };
+      const pkg = d.packages as { name: string; slug: string; data: unknown; updated_at: string | null };
+      const changed = [d.updated_at, pkg.updated_at].filter((t): t is string => !!t).sort();
       return {
         id: d.id,
         code: d.code,
@@ -1475,7 +1531,13 @@ async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDe
         tourName: pkg.name,
         siteId: departureSiteId(d),
         packagePath: packagePathOf(pkg.slug, (asObject(pkg.data as never).path as string | undefined) ?? null),
-        rooms: ROOM_COMPOSITIONS.filter((c) => roomPrice(c.key, matrix) !== null).map((c) => ({ key: c.key, title: c.title })),
+        currency: d.currency || "USD",
+        changedAt: changed[changed.length - 1] ?? null,
+        // every room kind the date prices, with its price before discounts - printed beside each kind, chosen or not (Alon 10.11)
+        rooms: ROOM_COMPOSITIONS.flatMap((c) => {
+          const price = roomPrice(c.key, matrix);
+          return price === null ? [] : [{ key: c.key, title: c.title, price }];
+        }),
       };
     });
 }
@@ -1533,7 +1595,10 @@ function sentPatch(record: CaseRecord, offer: CaseOffer, via: OfferChannel, stat
     offer: { ...offer, sentAt: now, sentVia: via } as unknown as Json,
     link_sent_at: now,
   };
-  if (DAY.test(offer.followUpDate) && offer.followUpDate >= todayIso()) patch.follow_up_date = offer.followUpDate;
+  if (DAY.test(offer.followUpDate) && offer.followUpDate >= todayIso()) {
+    patch.follow_up_date = offer.followUpDate;
+    patch.follow_up_set_at = now;
+  }
   if (status !== record.status) {
     patch.status = status;
     // an offer reopens a lead closed as not relevant: its reason no longer holds
@@ -1568,10 +1633,15 @@ export async function prepareOffer(
     const rooms = cleanRoomKeys(Array.isArray(input.rooms) ? input.rooms : [], departure.rooms.map((r) => r.key));
     if (rooms.length === 0) throw new UserError("Choose at least one room this date sells.");
 
-    const quote = await quoteRooms(company, departure.siteId, rooms).catch((e) => {
-      console.error(`${SCOPE}: quote for case ${record.case_no} failed:`, e instanceof Error ? e.message : e);
-      return null;
-    });
+    // the price and the itinerary PDF side by side; the builder printed the PDF through its route before calling this,
+    // so it waits in Storage - never printed here (no Chromium inside an action); missing = the offer goes without it
+    const [quote, itinerary] = await Promise.all([
+      quoteRooms(company, departure.siteId, rooms).catch((e) => {
+        console.error(`${SCOPE}: quote for case ${record.case_no} failed:`, e instanceof Error ? e.message : e);
+        return null;
+      }),
+      storedItineraryPdf(company, departure, rooms),
+    ]);
     const token = record.link_token ?? randomBytes(24).toString("base64url");
     const url = bookingLink({ siteUrl: company.siteUrl, packagePath: departure.packagePath, productId: departure.siteId, rooms, token });
     const titles = new Map(departure.rooms.map((r) => [r.key, r.title]));
@@ -1590,6 +1660,7 @@ export async function prepareOffer(
       sentAt: null,
       sentVia: null,
       bookingRef: null,
+      itineraryUrl: itinerary.ok ? itinerary.url : null,
     };
     let patch: LeadUpdate = { link_token: token, offer: offer as unknown as Json };
     if (!record.departure_id) {
@@ -1599,9 +1670,10 @@ export async function prepareOffer(
     }
 
     const first = record.first_name ?? splitName(record.name).first;
-    const message = linkMessage(first, departure.tourName, url);
-    // from the company's own number, when connected; a refusal never loses the prepared offer
-    let warning: string | undefined;
+    const message = linkMessage(first, departure.tourName, url, offer.itineraryUrl);
+    // from the company's own number, when connected; a refusal never loses the prepared offer. The approved template
+    // carries the link alone (no document header yet), so the PDF reaches a template send only once Tom adds one.
+    let warning: string | undefined = itinerary.ok ? undefined : `${itinerary.error} The offer goes without it.`;
     let sent = false;
     if (input.sendWhatsApp) {
       const to = whatsappPhone(record.phone);
@@ -1620,10 +1692,10 @@ export async function prepareOffer(
         patch = { ...patch, ...applied.patch };
         sent = true;
       } else {
-        warning = `The offer is ready but was not sent on WhatsApp: ${answer.error}`;
+        warning = [`The offer is ready but was not sent on WhatsApp: ${answer.error}`, warning].filter(Boolean).join(" ");
       }
     }
-    const { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", caseId);
+    const { error } = await updateLeadRow(company, caseId, patch);
     if (missingColumn(error)) throw new UserError("Offers can be saved after the system update - try again in a few minutes.");
     if (error) throw new Error(`leads: ${error.message}`);
     await logAudit({
@@ -1659,7 +1731,7 @@ export async function markOfferSent(caseId: string, via: OfferChannel): Promise<
     const offer = parseOffer(record.offer);
     if (!offer) throw new UserError("Prepare the booking link first.");
     const { patch, status } = sentPatch(record, offer, via, await statusesOf(company));
-    const { error } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", caseId);
+    const { error } = await updateLeadRow(company, caseId, patch);
     if (error) throw new Error(`leads: ${error.message}`);
     await logAudit({
       action: "offer_sent",
@@ -1842,7 +1914,7 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
     if (!customerId) throw new UserError("The customer was not found.");
     const customer = await customerRecord(company, customerId);
 
-    const [cardsAnswer, statuses, reps, viewer] = await Promise.all([
+    const [cardsAnswer, statuses, reps, viewer, whatsappApi] = await Promise.all([
       readCaseColumns((columns) =>
         fetchPaged<CaseRecord>(
           () =>
@@ -1859,6 +1931,8 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
       statusesOf(company),
       repsOf(company),
       boardViewerFor(session, company),
+      // a folded card's "Booking link" opens the builder in a window, as a board row does (Alon 10.11; never throws)
+      whatsappApiReady(company),
     ]);
     if (cardsAnswer.error) throw new Error(`leads: ${cardsAnswer.error.message}`);
     const records = cardsAnswer.rows.map(withDefaults);
@@ -1919,6 +1993,8 @@ export async function getCustomerPage(input: { customerId?: string; cardId?: str
       hiddenCards: all.length - cards.length,
       travelled,
       whatsapp,
+      hasSite: !!company.siteUrl,
+      whatsappApi,
     });
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the customer");

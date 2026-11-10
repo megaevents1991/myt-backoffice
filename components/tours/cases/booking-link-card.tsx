@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarClock,
   Check,
   ChevronsUpDown,
   Copy,
   ExternalLink,
+  FileText,
   Link2,
   Loader2,
   Mail,
@@ -48,12 +49,16 @@ function inDays(n: number): string {
   const [y, m, d] = todayIso().split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
+// "Today" too (Alon 10.11): an offer the rep will chase this very afternoon
 const QUICK_DAYS = [
+  { label: "Today", days: 0 },
   { label: "Tomorrow", days: 1 },
   { label: "In 2 days", days: 2 },
   { label: "In a week", days: 7 },
 ];
 const QUOTE_DELAY_MS = 350;
+/** The rep stops counting rooms for this long before the PDF is printed. */
+const PDF_DELAY_MS = 1200;
 
 const roomsOf = (counts: Record<string, number>, d: LinkDeparture | undefined) =>
   d ? d.rooms.flatMap((r) => Array<string>(counts[r.key] ?? 0).fill(r.key)) : [];
@@ -71,7 +76,7 @@ export interface SendProps {
 /** The ways to send an offer. A click on WhatsApp or e-mail records it as sent (markOfferSent) - copying does not. */
 export function SendButtons({ offer, phone, email, firstName, busy, onSent }: SendProps) {
   const { toast } = useToast();
-  const message = linkMessage(firstName, offer.tourName, offer.url);
+  const message = linkMessage(firstName, offer.tourName, offer.url, offer.itineraryUrl);
   const app = whatsappAppLink(phone, message);
   const web = waLink(phone, message);
   const mailto = email ? `mailto:${email}?subject=${encodeURIComponent("קישור להזמנה")}&body=${encodeURIComponent(message)}` : null;
@@ -183,6 +188,20 @@ export function OfferSummary(props: SendProps & { onEdit: () => void; onWithdraw
         <p className="text-xs text-muted-foreground">
           Follow-up {offer.followUpDate ? fmtDate(offer.followUpDate) : "-"} · prepared {fmtInstant(offer.createdAt)}
         </p>
+        {/* the itinerary goes with the link, on its own line of the message (Alon 10.11) */}
+        {offer.itineraryUrl ? (
+          <a
+            href={offer.itineraryUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            <FileText className="h-3 w-3" />
+            Itinerary PDF (in the message)
+          </a>
+        ) : (
+          <p className="text-xs text-muted-foreground">No itinerary PDF in this offer.</p>
+        )}
         {offer.bookingRef && <p className="text-xs font-medium text-success">The customer booked through it: {offer.bookingRef}</p>}
       </div>
       {sent ? (
@@ -263,6 +282,9 @@ export function BookingLinkCard({
   const [quoting, setQuoting] = useState(false);
   const [busy, setBusy] = useState(false);
   const quoteSeq = useRef(0);
+  // the itinerary PDF of the date + rooms on screen, printed while the rep still picks (Alon 10.11)
+  const [pdf, setPdf] = useState<{ key: string; state: "printing" | "ready" | "failed"; url?: string; error?: string } | null>(null);
+  const pdfJobs = useRef(new Map<string, Promise<void>>());
 
   const chosen = useMemo(() => departures?.find((d) => d.id === departureId), [departures, departureId]);
   const rooms = roomsOf(counts, chosen);
@@ -289,6 +311,43 @@ export function BookingLinkCard({
     }, QUOTE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [chosen, roomsKey]);
+
+  const pdfKey = chosen && roomsKey ? `${chosen.id}|${[...rooms].sort().join(",")}` : "";
+  // a route, not an action: a print must not hold the room quotes (actions of one tab run one at a time)
+  const printPdf = useCallback((departureId: string, key: string, picked: string[]) => {
+    const running = pdfJobs.current.get(key);
+    if (running) return running;
+    const job = (async () => {
+      setPdf((current) => (current?.key === key && current.state === "ready" ? current : { key, state: "printing" }));
+      try {
+        const answer = await fetch("/api/tours/itinerary-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ departureId, rooms: picked }),
+        });
+        const body = (await answer.json().catch(() => ({}))) as { url?: string; error?: string };
+        setPdf((current) =>
+          current?.key !== key ? current : body.url ? { key, state: "ready", url: body.url } : { key, state: "failed", error: body.error ?? "The PDF could not be made." },
+        );
+      } catch {
+        setPdf((current) => (current?.key !== key ? current : { key, state: "failed", error: "The PDF could not be made." }));
+      } finally {
+        pdfJobs.current.delete(key);
+      }
+    })();
+    pdfJobs.current.set(key, job);
+    return job;
+  }, []);
+  useEffect(() => {
+    if (!building || !chosen || !pdfKey) {
+      setPdf(null);
+      return;
+    }
+    const picked = roomsKey.split(",");
+    // the rep is still counting rooms: print once they pause
+    const timer = setTimeout(() => void printPdf(chosen.id, pdfKey, picked), PDF_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [building, chosen, pdfKey, roomsKey, printPdf]);
 
   const open = async (from?: CaseOffer | null) => {
     setBuilding(true);
@@ -326,6 +385,11 @@ export function BookingLinkCard({
   const prepare = async (sendWhatsApp: boolean) => {
     if (!chosen || !ready) return;
     setBusy(true);
+    // the offer only LOOKS the PDF up (no Chromium inside an action): a print still running for this choice lands
+    // first, and a choice the timer has not printed yet is printed now, through the route (review 10.11)
+    const printed = pdf?.key === pdfKey && pdf.state === "ready";
+    const job = pdfJobs.current.get(pdfKey) ?? (printed || !pdfKey ? undefined : printPdf(chosen.id, pdfKey, roomsKey.split(",")));
+    if (job) await job;
     const answer = await run(
       () => prepareOffer(caseId, { departureId: chosen.id, rooms, followUpDate: followUp, sendWhatsApp }),
       sendWhatsApp ? "Offer sent" : "Offer ready - now send it",
@@ -458,12 +522,17 @@ export function BookingLinkCard({
                       <span className="block truncate" dir="auto">
                         {room.title}
                       </span>
-                      {n > 0 && line && (
-                        <span className="block text-xs tabular text-muted-foreground">
-                          {fmtPrice(line.price, quote?.currency)} a room
-                          {line.discount ? ` · −${fmtPrice(line.discount, quote?.currency)}` : ""}
-                        </span>
-                      )}
+                      {/* every room says what it costs before the rep counts it (Alon 10.11); a chosen one shows the site's quote with its discount */}
+                      <span className="block text-xs tabular text-muted-foreground">
+                        {n > 0 && line ? (
+                          <>
+                            {fmtPrice(line.price, quote?.currency)} a room
+                            {line.discount ? ` · −${fmtPrice(line.discount, quote?.currency)}` : ""}
+                          </>
+                        ) : (
+                          `${fmtPrice(room.price, chosen.currency)} a room`
+                        )}
+                      </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`One ${room.title} less`} disabled={!n} onClick={() => bump(room.key, -1)}>
@@ -503,6 +572,25 @@ export function BookingLinkCard({
               )}
               {quote?.reason && (
                 <Notice tone="warning">The site would not take this booking now ({quote.reason.replace(/_/g, " ")}) - check the date&apos;s seats.</Notice>
+              )}
+              {pdf && pdf.key === pdfKey && (
+                <p className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground" aria-live="polite">
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  {pdf.state === "printing" ? (
+                    <>
+                      Preparing the itinerary PDF… <Loader2 className="h-3 w-3 animate-spin" />
+                    </>
+                  ) : pdf.state === "ready" ? (
+                    <>
+                      The itinerary PDF goes with the link ·{" "}
+                      <a href={pdf.url} target="_blank" rel="noreferrer" className="underline-offset-4 hover:text-foreground hover:underline">
+                        open it
+                      </a>
+                    </>
+                  ) : (
+                    <span>{pdf.error} The offer goes without it.</span>
+                  )}
+                </p>
               )}
             </div>
           )}

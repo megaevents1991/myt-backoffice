@@ -16,7 +16,6 @@ import {
   bookingBlocksDelete,
   bookingLink,
   caseMatches,
-  cardStage,
   checkFuture,
   cleanPhones,
   customerLabel,
@@ -42,6 +41,7 @@ import {
   suggestDepositFollowUp,
   followUpAfterStatus,
   bulkStatusBlocker,
+  bulkFollowUpProblem,
   canClearFollowUp,
   canTakeCard,
   htmlToText,
@@ -133,6 +133,15 @@ assert.equal(todayReason(facts({ status: "paid", confirmationPending: true }), S
 assert.equal(todayReason(facts({ status: "paid" }), S, TODAY), null);
 assert.equal(todayReason(facts({ status: "not_relevant", followUpDate: "2026-10-01" }), S, TODAY), null, "closed = nothing, even a late day");
 assert.equal(todayReason(facts({ status: "future", followUpDate: "2027-03-01" }), S, TODAY), null, "a future lead waits for its season");
+// Alon 10.11: a New card a rep handled - its day set or cleared - reads its day like any other card
+const HANDLED = "2026-10-14T09:00:00.000Z";
+assert.equal(todayReason(facts({ followUpDate: "2026-10-28" }), S, TODAY), "new", "untouched: New wins over a day ahead (the site's card)");
+assert.equal(todayReason(facts({ followUpDate: null, followUpSetAt: HANDLED }), S, TODAY), null, "day cleared by a rep: off TODAY");
+assert.equal(todayReason(facts({ followUpDate: "2026-10-28", followUpSetAt: HANDLED }), S, TODAY), null, "day moved ahead: off TODAY until it");
+assert.equal(todayReason(facts({ followUpDate: TODAY, followUpSetAt: HANDLED }), S, TODAY), "today", "its day came: back as Follow-up today");
+assert.equal(todayReason(facts({ followUpDate: "2026-10-10", followUpSetAt: HANDLED }), S, TODAY), "late");
+assert.equal(todayReason(facts({ followUpSetAt: HANDLED, waUnseen: 2 }), S, TODAY), "whatsapp", "a message still brings it back");
+assert.equal(todayReason(facts({ status: "returned", followUpSetAt: HANDLED }), S, TODAY), "returned", "a customer who came back still does");
 assert.deepEqual(
   (["today", "returned", "file", "late", "payment", "new"] as TodayReason[]).sort((a, b) => todayRank(a) - todayRank(b)),
   ["returned", "payment", "file", "new", "late", "today"],
@@ -182,6 +191,21 @@ assert.equal(bulkStatusBlocker("paid", "שולם"), null);
 assert.equal(canClearFollowUp("deposit_paid"), false);
 assert.equal(canClearFollowUp("paid"), true);
 assert.equal(canClearFollowUp("offer_sent"), true);
+// one follow-up day for many cards (Alon 10.11): a real day from today on, or none - never off a deposit card
+assert.equal(bulkFollowUpProblem(TODAY, TODAY, []), null);
+assert.equal(bulkFollowUpProblem("2026-10-20", TODAY, [{ caseNo: 1003, status: "deposit_paid" }]), null, "a deposit card's day may move");
+assert.equal(bulkFollowUpProblem("2026-10-13", TODAY, []), "The follow-up day cannot be in the past.");
+assert.equal(bulkFollowUpProblem("2026-02-30", TODAY, []), "The follow-up date is not a valid day.");
+assert.equal(bulkFollowUpProblem("tomorrow", TODAY, []), "The follow-up date is not a valid day.");
+assert.equal(bulkFollowUpProblem(null, TODAY, [{ caseNo: 1001, status: "new" }, { caseNo: 1002, status: "paid" }]), null, "clearing is fine on the rest");
+assert.equal(
+  bulkFollowUpProblem(null, TODAY, [{ caseNo: 1001, status: "new" }, { caseNo: 1003, status: "deposit_paid" }]),
+  "Card #1003 holds a deposit - its follow-up day may move, never go. Leave it out of the selection.",
+);
+assert.match(
+  bulkFollowUpProblem(null, TODAY, [1, 2, 3, 4, 5, 6].map((n) => ({ caseNo: 1000 + n, status: "deposit_paid" }))) ?? "",
+  /^Cards #1001, #1002, #1003, #1004, #1005… hold a deposit/,
+);
 assert.equal(canTakeCard({ assignedTo: null }), true);
 assert.equal(canTakeCard({ assignedTo: "rep-1" }), false);
 
@@ -430,7 +454,11 @@ assert.equal(closeBlockedBy("done", S, [{ ref: "T9", status: "new" }]), null);
 
 // A2 (Alon 18.10): the offer a case was sent
 const offer = { departureId: "d1", departureCode: "FDUA1204", startDate: "2026-12-04", tourName: "תמרים", rooms: ["double_room"], roomTitles: ["זוגי"], total: 6600, currency: "USD", url: "https://x/y", followUpDate: "2026-10-20", createdAt: "2026-10-18T10:00:00Z", sentAt: null, sentVia: null };
-assert.deepEqual(parseOffer(offer), { ...offer, bookingRef: null });
+assert.deepEqual(parseOffer(offer), { ...offer, bookingRef: null, itineraryUrl: null });
+// the itinerary PDF rides on the offer (Alon 10.11) - an https address only, it goes to a customer
+assert.equal(parseOffer({ ...offer, itineraryUrl: "https://x.supabase.co/a.pdf?v=1" })?.itineraryUrl, "https://x.supabase.co/a.pdf?v=1");
+assert.equal(parseOffer({ ...offer, itineraryUrl: "javascript:alert(1)" })?.itineraryUrl, null);
+assert.equal(parseOffer({ ...offer, itineraryUrl: 7 })?.itineraryUrl, null);
 assert.equal(parseOffer({ ...offer, rooms: "x" }), null, "a broken offer is no offer");
 assert.equal(parseOffer(null), null);
 assert.equal(parseOffer({ ...offer, sentVia: "fax" })?.sentVia, null, "an unknown channel reads as not sent");
@@ -609,15 +637,6 @@ assert.ok(
   assert.equal(todayReason({ ...facts, followUpDate: "2020-01-01" }, S, TODAY), "late");
   assert.equal(isWaitingListCard({ status: "date_opened" }), false);
 }
-
-// the card's step: lead -> offer -> order -> paid
-assert.equal(cardStage("new", false, S), 0);
-assert.equal(cardStage("offer_sent", false, S), 1);
-assert.equal(cardStage("new", true, S), 2, "a site request is an order");
-assert.equal(cardStage("pending_payment", false, S), 2);
-assert.equal(cardStage("deposit_paid", true, S), 2.5);
-assert.equal(cardStage("paid", true, S), 3);
-assert.equal(cardStage("not_relevant", true, S), null);
 
 // a deposit counts as paid
 assert.equal(statusAfterLink("deposit_paid", S), "deposit_paid", "a link never writes over money taken");

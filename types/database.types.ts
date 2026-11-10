@@ -3631,6 +3631,7 @@ export type Database = {
           name: string | null
           notes: string | null
           notes_at: string | null
+          follow_up_set_at: string | null
           package_id: string | null
           payload: Json
           phone: string | null
@@ -3673,6 +3674,7 @@ export type Database = {
           name?: string | null
           notes?: string | null
           notes_at?: string | null
+          follow_up_set_at?: string | null
           package_id?: string | null
           payload?: Json
           phone?: string | null
@@ -3715,6 +3717,7 @@ export type Database = {
           name?: string | null
           notes?: string | null
           notes_at?: string | null
+          follow_up_set_at?: string | null
           package_id?: string | null
           payload?: Json
           phone?: string | null

@@ -30,7 +30,6 @@ import {
   caseName,
   followUpDue,
   followUpTone,
-  needsCloseReason,
   sourceLabel,
   todayReason,
   waLink,
@@ -41,20 +40,18 @@ import {
 } from "@/lib/tours/cases";
 import {
   CardWhat,
-  BulkAssignSelect,
   CardWho,
-  CloseReasonDialog,
   FollowUpInput,
   InRow,
   NOBODY,
   PhoneCell,
   RepSelect,
-  StageBar,
   StatusSelect,
   TodayBadge,
   TypeBadge,
   WhatsAppButton,
 } from "@/components/tours/cases/case-ui";
+import { BulkCardBar, type BulkCardChange } from "@/components/tours/cases/bulk-card-bar";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
 
@@ -93,8 +90,6 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
   const [selection, setSelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
-  // a closing status picked in the bulk bar waits here for its reason
-  const [bulkClosing, setBulkClosing] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editingStatuses, setEditingStatuses] = useState(false);
@@ -177,7 +172,7 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
   const shown = useMemo(() => filtered.filter((r) => inView(r, view)), [filtered, inView, view]);
   const selectedIds = Object.keys(selection).filter((id) => selection[id]);
 
-  const bulk = async (change: { status?: string; assignedTo?: string | null; closeReason?: string }) => {
+  const bulk = async (change: BulkCardChange) => {
     setBulkBusy(true);
     const result = await run(() => bulkUpdateCases(selectedIds, change), (answer) => `${answer.data.updated} updated`);
     setBulkBusy(false);
@@ -252,7 +247,6 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
                 void save(row.original, { status, closeReason, ...(pick ? { packageId: pick.packageId, season: pick.season } : {}), ...(followUpDate ? { followUpDate } : {}) })
               }
             />
-            <StageBar status={row.original.status} hasOrder={!!row.original.bookingRef || row.original.travelers > 0} statuses={statuses} className="flex" />
           </InRow>
         ),
       },
@@ -428,6 +422,7 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
       {error && !loading && <LoadError message={error} onRetry={() => void reload()} />}
       {data ? (
         <DataTable
+          columnReorder
           columns={columns}
           data={shown}
           dense
@@ -441,29 +436,14 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
           rowSelection={selection}
           onRowSelectionChange={setSelection}
           bulkActions={
-            <>
-              <Select
-                disabled={bulkBusy}
-                value=""
-                onValueChange={(status) => (needsCloseReason(status, statuses) ? setBulkClosing(status) : void bulk({ status }))}
-              >
-                <SelectTrigger className="h-8 w-40 text-foreground" aria-label="Set status">
-                  <SelectValue placeholder="Set status…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {statuses
-                    .filter((s) => s.isActive)
-                    .map((s) => (
-                      <SelectItem key={s.key} value={s.key}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              {/* handing out cards in bulk is the manager's (Dor 21.10) */}
-              {data?.viewer.manager && <BulkAssignSelect reps={reps} disabled={bulkBusy} onAssign={(id) => void bulk({ assignedTo: id })} />}
-              {bulkBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-            </>
+            <BulkCardBar
+              statuses={statuses}
+              reps={reps}
+              manager={!!data?.viewer.manager}
+              busy={bulkBusy}
+              count={selectedIds.length}
+              onChange={(change) => void bulk(change)}
+            />
           }
           views={VIEWS.map((v) => ({ id: v, label: VIEW_LABELS[v], count: filtered.filter((r) => inView(r, v)).length }))}
           activeView={view}
@@ -516,17 +496,6 @@ export function CasesScreen({ embedded }: { embedded?: boolean } = {}) {
             onOpenChange={setEditingStatuses}
             statuses={statuses}
             onSaved={(next) => setData((current) => current && { ...current, statuses: next })}
-          />
-          <CloseReasonDialog
-            status={bulkClosing}
-            statuses={statuses}
-            count={selectedIds.length}
-            onCancel={() => setBulkClosing(null)}
-            onConfirm={(closeReason) => {
-              const status = bulkClosing;
-              setBulkClosing(null);
-              if (status) void bulk({ status, closeReason });
-            }}
           />
         </>
       )}

@@ -6,14 +6,13 @@ import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { formatDateShort } from "@/lib/tours/format";
+import { formatDateShort, todayIso } from "@/lib/tours/format";
 import { createCase } from "@/lib/actions/tours-cases-actions";
 import { listReservationDepartures } from "@/lib/actions/tours-reservation-actions";
 import { Field } from "@/components/tours/ui";
@@ -70,14 +69,11 @@ export function NewCaseDialog({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [idNumber, setIdNumber] = useState("");
   const [source, setSource] = useState<CaseSource>("phone");
   const [departureId, setDepartureId] = useState("");
   const [travelers, setTravelers] = useState("2");
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
   const [followUpDate, setFollowUpDate] = useState("");
-  const [notes, setNotes] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,14 +85,12 @@ export function NewCaseDialog({
     setFirstName("");
     setLastName("");
     setPhone("");
-    setEmail("");
-    setIdNumber("");
     setSource("phone");
     setDepartureId("");
     setTravelers("2");
     setAssignedTo(reps.some((p) => p.id === currentUserId) ? currentUserId : null);
-    setFollowUpDate("");
-    setNotes("");
+    // the rep follows up today, of course (Alon 10.11) - changed here when it is another day
+    setFollowUpDate(todayIso());
     setError(null);
   }, [open, reps, currentUserId]);
 
@@ -105,7 +99,7 @@ export function NewCaseDialog({
   const save = async () => {
     setError(null);
     if (!customer && !firstName.trim()) return setError("Enter the customer's first name.");
-    if (!customer && !phone.trim() && !email.trim()) return setError("Enter a phone number or an e-mail address.");
+    if (!customer && !phone.trim()) return setError("Enter the customer's phone number.");
     if (type === "reservation" && !departureId) return setError("A reservation needs a departure.");
     setSaving(true);
     const result = await run(
@@ -115,13 +109,10 @@ export function NewCaseDialog({
           firstName,
           lastName,
           phone,
-          email,
-          idNumber,
           source,
           departureId: departureId || null,
           travelers: type === "reservation" ? Number(travelers) : null,
           assignedTo,
-          notes,
           followUpDate: followUpDate || null,
           customerId: customer?.id ?? null,
         }),
@@ -198,12 +189,6 @@ export function NewCaseDialog({
             </Field>
             <Field label="Phone" htmlFor="case-phone">
               <Input id="case-phone" dir="ltr" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </Field>
-            <Field label="Email" htmlFor="case-email">
-              <Input id="case-email" dir="ltr" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </Field>
-            <Field label="National id (ת״ז)" htmlFor="case-id-number">
-              <Input id="case-id-number" dir="ltr" inputMode="numeric" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} />
             </Field>
             <Field label="Came through" htmlFor="case-source">
               <Select value={source} onValueChange={(v) => setSource(v as CaseSource)}>
@@ -289,9 +274,6 @@ export function NewCaseDialog({
               <Input id="case-follow-up" type="date" dir="ltr" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
             </Field>
           </div>
-          <Field label="Notes" htmlFor="case-notes">
-            <Textarea id="case-notes" dir="auto" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What the customer asked for." />
-          </Field>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 

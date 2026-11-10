@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useActionData } from "@/hooks/use-action-data";
 import { useActionToast } from "@/hooks/use-action-toast";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +26,7 @@ import { dismissCustomerSuggestion, fileInquiry, getCustomerPage, updateCase, up
 import { LEAD_KIND_LABELS } from "@/types/tours.types";
 import { Chip, LoadError, Notice } from "@/components/tours/ui";
 import {
+  caseName,
   customerLabel,
   customerName,
   followUpDue,
@@ -38,9 +40,10 @@ import {
   type CustomerChange,
   type CustomerPageData,
 } from "@/lib/tours/cases";
-import { FollowUpInput, GHOST_FIELD, MailButton, StageBar, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
+import { FollowUpInput, GHOST_FIELD, MailButton, StatusTag, TodayBadge, WhatsAppButton } from "@/components/tours/cases/case-ui";
 import { NotesEditor, OfferPanel, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
 import { CasePage, type CardFocus } from "@/components/tours/cases/case-page";
+import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
 import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { MergeCustomerDialog } from "@/components/tours/cases/customer-dialogs";
 import { WhatsappThread } from "@/components/tours/cases/whatsapp-thread";
@@ -211,6 +214,8 @@ function CardRow({
   const closed = isClosedStatus(card.status, statuses);
   const [focus, setFocus] = useState<CardFocus | null>(initialFocus ? { section: initialFocus, at: Date.now() } : null);
   const [sheet, setSheet] = useState<"link" | "notes" | null>(null);
+  // the booking link builder in a window over the page, as on a board row (Alon 10.11: "צריך להיפתח אוטומטית בחוץ כמו בטודיי")
+  const [building, setBuilding] = useState(false);
   const offer = offerLine(card);
   const firstNote = card.notes?.trim().split("\n")[0] ?? "";
   const notesLine = firstNote ? (firstNote.length > 48 ? `${firstNote.slice(0, 47)}…` : firstNote) : "Add a note";
@@ -231,6 +236,8 @@ function CardRow({
       return result.success;
     },
     openCard: go,
+    // with no site address there is nothing to build: the card opens at its link section, which says so
+    ...(data.hasSite ? { buildOffer: () => setBuilding(true) } : {}),
   };
   const saveAcc = async (next: string) => {
     if (next === (card.accNum ?? "")) return;
@@ -274,7 +281,6 @@ function CardRow({
             </span>
           )}
           <span className="flex-1" />
-          <StageBar status={card.status} hasOrder={orders.length > 0} statuses={statuses} />
           {reason && <TodayBadge reason={reason} followUpDate={card.followUpDate} today={today} />}
           {card.followUpDate && !closed && reason !== "late" && reason !== "today" && (
             <span className="tabular text-xs text-muted-foreground">Follow-up {fmtDate(card.followUpDate)}</span>
@@ -283,14 +289,19 @@ function CardRow({
         </CollapsibleTrigger>
         {/* shortcuts on the card's outside (Alon 20.10): where the offer stands and what the team wrote - worked right here (22.10) */}
         <div className="flex flex-wrap gap-2 px-4 pb-3 ps-11">
-          <Popover open={sheet === "link"} onOpenChange={(next) => setSheet(next ? "link" : null)}>
-            <PopoverTrigger asChild>
-              <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} />
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[22rem] max-w-[calc(100vw-2rem)]">
-              <OfferPanel card={card} host={host} onDone={() => setSheet(null)} />
-            </PopoverContent>
-          </Popover>
+          {!card.offer && host.buildOffer ? (
+            // nothing to send or withdraw yet: straight into the builder
+            <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} onClick={host.buildOffer} />
+          ) : (
+            <Popover open={sheet === "link"} onOpenChange={(next) => setSheet(next ? "link" : null)}>
+              <PopoverTrigger asChild>
+                <CardShortcut icon={Link2} label="Booking link" value={offer.text} tone={offer.tone} />
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-[22rem] max-w-[calc(100vw-2rem)]">
+                <OfferPanel card={card} host={host} onDone={() => setSheet(null)} />
+              </PopoverContent>
+            </Popover>
+          )}
           <Popover open={sheet === "notes"} onOpenChange={(next) => setSheet(next ? "notes" : null)}>
             <PopoverTrigger asChild>
               <CardShortcut icon={StickyNote} label="Notes" value={notesLine} tone={card.notes?.trim() ? "default" : "muted"} />
@@ -333,6 +344,30 @@ function CardRow({
           <TakeCardButton card={card} host={host} currentUserId={data.currentUserId} className="h-7" />
         </div>
         <CollapsibleContent className="border-t bg-muted/20 p-4">{open && <CasePage id={card.id} embedded focus={focus} onChanged={onChanged} />}</CollapsibleContent>
+        {/* mounted only while open - it starts in the builder, from the card's offer when there is one */}
+        {building && (
+          <Dialog open onOpenChange={(next) => !next && setBuilding(false)}>
+            <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Booking link</DialogTitle>
+                <DialogDescription dir="auto">{[caseName(card) || card.phone, card.tourName].filter(Boolean).join(" · ") || "Card"}</DialogDescription>
+              </DialogHeader>
+              <BookingLinkCard
+                bare
+                startBuilding
+                caseId={card.id}
+                defaultDepartureId={card.departureId}
+                hasSite={data.hasSite}
+                whatsappApi={data.whatsappApi}
+                offer={card.offer ?? null}
+                phone={card.phone}
+                email={card.email}
+                firstName={card.firstName}
+                onChanged={onChanged}
+              />
+            </DialogContent>
+          </Dialog>
+        )}
       </article>
     </Collapsible>
   );

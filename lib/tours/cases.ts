@@ -11,6 +11,7 @@
  * 20261014220000_tours_unified_cases.sql (public.leads_fill,
  * public.lead_status_closed) - change both together.
  */
+import { itineraryLine } from "./itinerary-pdf";
 import { matchesSearch } from "@/lib/search";
 import type { BoardViewer } from "@/lib/tours/board";
 import type { BookingRow } from "@/components/tours/bookings/shared";
@@ -323,6 +324,8 @@ export interface TodayFacts {
   confirmationPending: boolean;
   /** Inbound WhatsApp messages since the rep last opened the card's thread (leads.wa_seen_at). */
   waUnseen: number;
+  /** When a rep last set or cleared the follow-up day by hand (leads.follow_up_set_at); null / absent = never. */
+  followUpSetAt?: string | null;
 }
 
 /** Why the card waits for a rep today, or null. First match wins. */
@@ -332,7 +335,8 @@ export function todayReason(c: TodayFacts, statuses: readonly CaseStatus[], toda
   if (c.status === "returned") return "returned";
   if (c.waUnseen > 0) return "whatsapp";
   if (c.paymentAnswer) return "payment";
-  if (c.status === "new") return "new";
+  // a New card waits until a rep handles its day: set or cleared, it reads like any other card (Alon 10.11)
+  if (c.status === "new" && !c.followUpSetAt) return "new";
   if (c.followUpDate && /^\d{4}-\d{2}-\d{2}$/.test(c.followUpDate)) {
     if (c.followUpDate < today) return "late";
     if (c.followUpDate === today) return "today";
@@ -347,21 +351,9 @@ export function daysLate(day: string, today: string): number {
 }
 
 // ---------------------------------------------------------------- the card: where the deal stands
-/** Statuses of a deal that has an order and its money. Deposit counts as paid (the seats are held). */
-const ORDER_KEYS = new Set(["pending_payment", "deposit_paid", "paid"]);
+/** Deposit counts as paid (the seats are held). The four progress dashes that read these statuses left the screens (Alon 10.11). */
 const PAID_KEYS = new Set(["deposit_paid", "paid"]);
 export const isPaidStatus = (status: string): boolean => PAID_KEYS.has(status);
-
-/** Lead -> Offer -> Order -> Paid: the step the card reached (0..3), 3.5 = a deposit; null = closed. */
-export function cardStage(status: string, hasOrder: boolean, statuses: readonly CaseStatus[]): number | null {
-  if (isClosedStatus(status, statuses)) return null;
-  if (status === "paid") return 3;
-  if (status === "deposit_paid") return 2.5;
-  if (ORDER_KEYS.has(status) || hasOrder) return 2;
-  if (status === "offer_sent") return 1;
-  return 0;
-}
-export const CARD_STAGES = ["Lead", "Offer", "Order", "Paid"] as const;
 
 /** A card a new inquiry may land on: not closed, not waiting to be filed, not a paid trip that already left. */
 export interface RouteCard {
@@ -645,6 +637,23 @@ export function bulkStatusBlocker(key: string, label: string): string | null {
   return null;
 }
 
+/**
+ * One follow-up day for many cards at once (Alon 10.11, "עריכה מרובה"): a real day from today on, or none - and none
+ * never on a deposit card (it owes its balance a call; `canClearFollowUp`). Null = the day is fine.
+ */
+export function bulkFollowUpProblem(day: string | null, today: string, cards: readonly { caseNo: number; status: string }[]): string | null {
+  if (day !== null) {
+    // a calendar day that exists: 2026-02-30 rolls over in Date, so the day must read back as itself
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(`${day}T00:00:00Z`) : null;
+    if (!parsed || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day) return "The follow-up date is not a valid day.";
+    return day < today ? DAY_IN_PAST : null;
+  }
+  const deposits = cards.filter((c) => !canClearFollowUp(c.status)).map((c) => `#${c.caseNo}`);
+  if (deposits.length === 0) return null;
+  const named = deposits.length === 1 ? `Card ${deposits[0]} holds` : `Cards ${deposits.slice(0, 5).join(", ")}${deposits.length > 5 ? "…" : ""} hold`;
+  return `${named} a deposit - its follow-up day may move, never go. Leave ${deposits.length === 1 ? "it" : "them"} out of the selection.`;
+}
+
 /** "Take it": a card nobody holds yet. The server's viewer gate keeps another rep's card out of reach. */
 export const canTakeCard = (card: { assignedTo: string | null }): boolean => card.assignedTo === null;
 
@@ -731,11 +740,17 @@ export function whatsappAppLink(phone: string | null | undefined, message: strin
   return number ? `whatsapp://send?phone=${number}&text=${encodeURIComponent(message)}` : null;
 }
 
-/** The message that goes with a booking link. */
-export function linkMessage(firstName: string | null | undefined, tourName: string | null | undefined, url: string): string {
+/** The message that goes with a booking link - and the tour's itinerary PDF on its own line when there is one (Alon 10.11). */
+export function linkMessage(
+  firstName: string | null | undefined,
+  tourName: string | null | undefined,
+  url: string,
+  itineraryUrl?: string | null,
+): string {
   const hello = firstName?.trim() ? `היי ${firstName.trim()},` : "היי,";
   const tour = tourName?.trim() ? ` ל${tourName.trim()}` : "";
-  return `${hello} מצרפים קישור להזמנה${tour} עם ההרכב שדיברנו עליו. ממלאים את פרטי הנוסעים ושולחים: ${url}`;
+  const message = `${hello} מצרפים קישור להזמנה${tour} עם ההרכב שדיברנו עליו. ממלאים את פרטי הנוסעים ושולחים: ${url}`;
+  return itineraryUrl ? `${message}\n${itineraryLine(itineraryUrl)}` : message;
 }
 
 // ---------------------------------------------------------------- the row
@@ -763,6 +778,8 @@ export interface CaseRow {
   message: string | null;
   assignedTo: string | null;
   followUpDate: string | null;
+  /** When a rep last set or cleared the follow-up day (leads.follow_up_set_at, 10.11); null = never, or before the migration. */
+  followUpSetAt: string | null;
   source: string;
   utm: Record<string, unknown>;
   sourcePath: string | null;
@@ -990,6 +1007,10 @@ export interface CustomerPageData {
   travelled: boolean;
   /** The customer's WhatsApp thread (2026-10-21). */
   whatsapp: WaThread;
+  /** The company has a site address - a folded card builds its booking link in a window (Alon 10.11). */
+  hasSite: boolean;
+  /** The company's own WhatsApp number is connected (Cloud API) - the builder offers "Send on WhatsApp". */
+  whatsappApi: boolean;
 }
 
 /** A customer as the merge / move pickers show it. */
@@ -1237,7 +1258,12 @@ export interface LinkDeparture {
   tourName: string | null;
   siteId: number;
   packagePath: string;
-  rooms: { key: string; title: string }[];
+  /** The date's own currency (departures.currency) - the price table's. */
+  currency: string;
+  /** The newest edit of the date or its tour - an itinerary PDF printed before the site showed it is printed again. */
+  changedAt: string | null;
+  /** The rooms its price table prices, each with the room's price before any discount. */
+  rooms: { key: string; title: string; price: number }[];
 }
 
 /** A prepared offer and the ways to send it. It counts as sent only through markOfferSent. */
@@ -1548,6 +1574,8 @@ export interface CaseOffer {
   sentVia: OfferChannel | null;
   /** The site booking that came through this offer's link (booking_create). */
   bookingRef: string | null;
+  /** The date's itinerary as a PDF (lib/tours/itinerary-pdf.ts, Alon 10.11) - null when it could not be printed. */
+  itineraryUrl: string | null;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
@@ -1574,6 +1602,8 @@ export function parseOffer(value: unknown): CaseOffer | null {
     sentAt: sentVia ? str(o.sentAt) : null,
     sentVia,
     bookingRef: str(o.bookingRef),
+    // an https address only: the message hands it to a customer
+    itineraryUrl: str(o.itineraryUrl)?.startsWith("https://") ? str(o.itineraryUrl) : null,
   };
 }
 

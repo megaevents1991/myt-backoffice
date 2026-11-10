@@ -8,12 +8,13 @@
  * - TODAY: every card a rep has to touch, coloured by its reason (todayReason), numbered `#` in the VIEWER'S OWN
  *   order - the default is arrival (the oldest first, the newest lead last), a drag or a typed place keeps it
  *   (lib/tours/board.ts orderBoard / moveInOrder / placeInOrder, saved by saveBoardOrder). Phone, Notes (bold when
- *   written today) and a mail shortcut sit on the row. A manager ticks rows and hands them out in bulk. A "⋯" menu
+ *   written today) and a mail shortcut sit on the row. Any rep ticks rows and sets their status or follow-up day at once
+ *   (BulkCardBar, Alon 10.11); handing them out stays the manager's. A "⋯" menu
  *   (card-quick-actions.tsx) works the card from the row - Notes, Booking link, Follow-up - and "Take it" gives an
  *   unassigned card to the viewer (Alon 22.10); the same two sit on a LEADS row.
  * - RESERVATIONS: one row per order (a site booking or one a rep typed, each with its T number); a customer with two
  *   orders shows twice. Live / Past / Cancelled.
- * - LEADS: the cards with no order yet. Open / Closed. Bulk assign for a manager.
+ * - LEADS: the cards with no order yet. Open / Closed. The same bulk bar.
  * - WAITING LIST: the cards in the status "Waiting list" - a waiting-list / notify-me form from the site waits here, off
  *   TODAY and LEADS, until a rep moves its status (Alon 29.10). First in line first.
  * - ALL: the old table - bulk changes, export.
@@ -66,7 +67,6 @@ import {
 } from "@/lib/tours/cases";
 import { afterSave, canSeeCard, moveInOrder, noteLine, orderBoard, placeInOrder, type BoardViewer } from "@/lib/tours/board";
 import {
-  BulkAssignSelect,
   CardWhat,
   CardWho,
   FollowUpInput,
@@ -76,7 +76,6 @@ import {
   MailButton,
   PhoneCell,
   RepSelect,
-  StageBar,
   StatusSelect,
   StatusTag,
   TODAY_ROW_CLASSES,
@@ -89,6 +88,7 @@ import { NewCaseDialog } from "@/components/tours/cases/new-case-dialog";
 import { StatusesDialog } from "@/components/tours/cases/statuses-dialog";
 import { CardActionsMenu, NotesCell, OfferCell, TakeCardButton, type CardActionHost } from "@/components/tours/cases/card-quick-actions";
 import { BookingLinkCard } from "@/components/tours/cases/booking-link-card";
+import { BulkCardBar, type BulkCardChange } from "@/components/tours/cases/bulk-card-bar";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -305,15 +305,21 @@ export function BoardScreen() {
   const onMove = useCallback((activeId: string, overId: string) => commitOrder(moveInOrder(fullIds, activeId, overId)), [commitOrder, fullIds]);
   const onPlace = useCallback((id: string, place: number) => commitOrder(placeInOrder(fullIds, id, place)), [commitOrder, fullIds]);
 
-  // a manager hands out cards in bulk (Dor 21.10); the server refuses anyone else
-  const bulkAssign = useCallback(
-    async (selection: Record<string, boolean>, clear: () => void, assignedTo: string | null) => {
+  // the ticked rows in one move (Alon 10.11): a status or a follow-up day for anyone's own cards; handing them out stays
+  // the manager's (Dor 21.10) - the server holds every rule
+  const bulkChange = useCallback(
+    async (selection: Record<string, boolean>, clear: () => void, change: BulkCardChange) => {
       const ids = selectedOf(selection);
       if (ids.length === 0) return;
       setBulkBusy(true);
       const result = await run(
-        () => bulkUpdateCases(ids, { assignedTo }),
-        (answer) => `${answer.data.updated} ${answer.data.updated === 1 ? "card" : "cards"} handed to ${assignedTo ? repName(assignedTo) : "nobody"}`,
+        () => bulkUpdateCases(ids, change),
+        (answer) => {
+          const n = `${answer.data.updated} ${answer.data.updated === 1 ? "card" : "cards"}`;
+          if (change.assignedTo !== undefined) return `${n} handed to ${change.assignedTo ? repName(change.assignedTo) : "nobody"}`;
+          if (change.followUpDate !== undefined) return change.followUpDate ? `${n} to follow up on ${fmtDate(change.followUpDate)}` : `${n} with no follow-up day`;
+          return `${n} set to ${statusOf(change.status ?? "", statuses)?.label ?? change.status}`;
+        },
       );
       setBulkBusy(false);
       if (result.success) {
@@ -321,7 +327,7 @@ export function BoardScreen() {
         void reload({ quiet: true });
       }
     },
-    [reload, repName, run],
+    [reload, repName, run, statuses],
   );
 
   // the row's own editors (Alon 28.10: "לערוך את כל השדות כבר במסך רזרויישן") - the card's fields only; the person's
@@ -446,16 +452,8 @@ export function BoardScreen() {
         meta: { filter: { kind: "values", label: "Status", valueLabel: statusLabel } },
         cell: ({ row }) => {
           const { card, reason } = row.original;
-          const stage = <StageBar status={card.status} hasOrder={!!ordersByCard.get(card.id)?.length} statuses={statuses} className="flex" />;
-          // an inquiry with no tour is filed first (its row has one action: File it)
-          return reason === "file" ? (
-            <div className="space-y-1">
-              <StatusTag status={card.status} statuses={statuses} />
-              {stage}
-            </div>
-          ) : (
-            statusCell(card, stage)
-          );
+          // an inquiry with no tour is filed first (its row has one action: File it); no progress dashes (Alon 10.11)
+          return reason === "file" ? <StatusTag status={card.status} statuses={statuses} /> : statusCell(card);
         },
       },
       {
@@ -859,13 +857,16 @@ export function BoardScreen() {
       </Button>
     </div>
   );
-  const bulkBar = (selection: Record<string, boolean>, clear: () => void) =>
-    viewer.manager ? (
-      <>
-        <BulkAssignSelect reps={reps} disabled={bulkBusy} onAssign={(id) => void bulkAssign(selection, clear, id)} />
-        {bulkBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-      </>
-    ) : undefined;
+  const bulkBar = (selection: Record<string, boolean>, clear: () => void) => (
+    <BulkCardBar
+      statuses={statuses}
+      reps={reps}
+      manager={viewer.manager}
+      busy={bulkBusy}
+      count={selectedOf(selection).length}
+      onChange={(change) => void bulkChange(selection, clear, change)}
+    />
+  );
 
   return (
     <div className="space-y-6">
@@ -917,6 +918,7 @@ export function BoardScreen() {
         <TabsContent value="today" className="space-y-3">
           {data ? (
             <DataTable
+              columnReorder
               columns={todayColumns}
               data={todayRows}
               dense
@@ -928,7 +930,7 @@ export function BoardScreen() {
               defaultSorting={[{ id: "place", desc: false }]}
               stateKey="tours-board-today-v2"
               rowReorder={{ enabled: !q.trim() && !mine, orderColumnId: "place", onMove }}
-              enableRowSelection={viewer.manager}
+              enableRowSelection
               rowSelection={todaySelection}
               onRowSelectionChange={setTodaySelection}
               bulkActions={bulkBar(todaySelection, () => setTodaySelection({}))}
@@ -945,6 +947,7 @@ export function BoardScreen() {
         <TabsContent value="reservations" className="space-y-3">
           {data ? (
             <DataTable
+              columnReorder
               columns={orderColumns}
               data={orderRows.filter((r) => r.order.phase === phase)}
               dense
@@ -978,6 +981,7 @@ export function BoardScreen() {
         <TabsContent value="leads" className="space-y-3">
           {data ? (
             <DataTable
+              columnReorder
               columns={leadColumns}
               data={leadRows}
               dense
@@ -986,7 +990,7 @@ export function BoardScreen() {
               defaultPageSize={50}
               pageSizeOptions={[25, 50, 100]}
               defaultSorting={[{ id: "created", desc: true }]}
-              enableRowSelection={viewer.manager}
+              enableRowSelection
               rowSelection={leadSelection}
               onRowSelectionChange={setLeadSelection}
               bulkActions={bulkBar(leadSelection, () => setLeadSelection({}))}
@@ -1011,6 +1015,7 @@ export function BoardScreen() {
         <TabsContent value="waitlist" className="space-y-3">
           {data ? (
             <DataTable
+              columnReorder
               columns={waitColumns}
               data={waitRows}
               dense
@@ -1020,7 +1025,7 @@ export function BoardScreen() {
               pageSizeOptions={[25, 50, 100]}
               // first in line first: when a date opens, the rep calls them in the order they asked
               defaultSorting={[{ id: "created", desc: false }]}
-              enableRowSelection={viewer.manager}
+              enableRowSelection
               rowSelection={waitSelection}
               onRowSelectionChange={setWaitSelection}
               bulkActions={bulkBar(waitSelection, () => setWaitSelection({}))}

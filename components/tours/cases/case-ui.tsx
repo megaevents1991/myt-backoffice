@@ -19,7 +19,6 @@ import { isFollowUpDate } from "@/lib/reservations/follow-up";
 import { listFutureTours } from "@/lib/actions/tours-cases-actions";
 import {
   BOOKING_PHASE_LABELS,
-  CARD_STAGES,
   CASE_TYPE_LABELS,
   CLOSE_REASON_MAX,
   CLOSE_REASON_MIN,
@@ -29,7 +28,6 @@ import {
   TODAY_REASON_LABELS,
   addDaysIso,
   caseName,
-  cardStage,
   checkCloseReason,
   checkFuture,
   DATE_OPENED_STATUS,
@@ -289,37 +287,6 @@ export function TodayBadge({ reason, followUpDate, today }: { reason: TodayReaso
     </span>
   );
 }
-
-/** Lead -> Offer -> Order -> Paid: four short bars in the status's own colour, the step named after them. */
-export function StageBar({ status, hasOrder, statuses, className }: { status: string; hasOrder: boolean; statuses: readonly CaseStatus[]; className?: string }) {
-  const stage = cardStage(status, hasOrder, statuses);
-  if (stage === null) return null;
-  const color = statusOf(status, statuses)?.color ?? "gray";
-  const fill = STAGE_FILL[color] ?? "bg-foreground/60";
-  const label = stage === 2.5 ? "Deposit" : CARD_STAGES[Math.floor(stage)];
-  return (
-    <span className={cn("inline-flex items-center gap-1", className)} title="Lead → Offer → Order → Paid">
-      {CARD_STAGES.map((name, i) => (
-        <span key={name} className={cn("h-1 w-5 rounded-full bg-border", i <= stage && fill, stage === 2.5 && i === 3 && cn(fill, "opacity-40"))} />
-      ))}
-      <span className="ms-1 text-[11px] font-medium text-muted-foreground">{label}</span>
-    </span>
-  );
-}
-const STAGE_FILL: Record<string, string> = {
-  blue: "bg-blue-500",
-  slate: "bg-slate-500",
-  amber: "bg-amber-500",
-  violet: "bg-violet-500",
-  indigo: "bg-indigo-500",
-  cyan: "bg-cyan-500",
-  orange: "bg-orange-500",
-  red: "bg-red-500",
-  rose: "bg-rose-500",
-  teal: "bg-teal-500",
-  green: "bg-green-600",
-  gray: "bg-muted-foreground",
-};
 
 /** What a future lead names besides its status (Nir 19.10): the tour and the season. */
 export interface FuturePick {

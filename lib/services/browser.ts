@@ -122,3 +122,36 @@ export async function withBrowser<T>(fn: (page: Page) => Promise<T>): Promise<T>
     await browser.close().catch(() => undefined);
   }
 }
+
+/**
+ * A page for printing OUR OWN pages to PDF (the tour itinerary of a booking-link offer, Alon 10.11) - not a crawl:
+ * always the local Chromium (never the remote stealth provider, never the scraping proxy), and nothing is blocked -
+ * the print needs the page's stylesheets, fonts and pictures. Hebrew locale, Israel time, a desktop viewport.
+ */
+export async function withPrintPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
+  const { chromium: playwright } = await import("playwright-core");
+  const localChrome = process.env.NODE_ENV !== "production" ? process.env.LOCAL_CHROME_PATH : undefined;
+  let executablePath = localChrome;
+  let args: string[] = [];
+  if (!executablePath) {
+    const { default: chromium } = await import("@sparticuz/chromium");
+    executablePath = await chromium.executablePath();
+    args = chromium.args;
+  }
+  const browser = await playwright.launch({ args, executablePath, headless: true });
+  try {
+    const context = await withBrowserClosedOnFailure(browser, () =>
+      browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "he-IL", timezoneId: "Asia/Jerusalem" }),
+    );
+    const page = await context.newPage();
+    page.setDefaultTimeout(PAGE_TIMEOUT_MS);
+    page.setDefaultNavigationTimeout(PAGE_TIMEOUT_MS);
+    try {
+      return await fn(page);
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  } finally {
+    await browser.close().catch(() => undefined);
+  }
+}

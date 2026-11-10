@@ -57,8 +57,11 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { arrangeColumns, isDefaultOrder, moveColumn, parseStoredOrder } from "@/lib/table-column-order";
 import {
   Table,
   TableBody,
@@ -78,7 +81,13 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -151,6 +160,12 @@ interface DataTableProps<TData, TValue> {
     orderColumnId: string;
     onMove: (activeId: string, overId: string) => void;
   };
+  /**
+   * The reader drags a header sideways to put its column elsewhere (Alon 10.11). The order is kept per table in this
+   * browser (localStorage - a preference that outlives the tab), "Reset column order" in the Columns menu forgets it.
+   * The grip, the tick box and a trailing `actions` column never move (lib/table-column-order.ts).
+   */
+  columnReorder?: boolean;
 }
 
 /** The id TanStack gives a column: its own `id`, else the accessor key. */
@@ -362,6 +377,25 @@ export function DataTableSkeleton({
 }
 
 const REORDER_COLUMN_ID = "reorder";
+/** The tool columns a dragged column never passes. */
+const FIXED_COLUMNS = { start: [REORDER_COLUMN_ID, "select"], end: [PINNED_COLUMN_ID] };
+
+/** A header the reader drags sideways: only the pointer moves it, so a click still sorts and a double-click still filters. */
+function SortableHead({ sortId, className, style, children, ...rest }: React.ComponentProps<typeof TableHead> & { sortId: string }) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: sortId });
+  return (
+    <TableHead
+      ref={setNodeRef}
+      {...rest}
+      {...listeners}
+      title="Drag to move the column"
+      className={cn(className, "cursor-grab active:cursor-grabbing", isDragging && "relative z-20 opacity-90 shadow-md")}
+      style={{ ...style, transform: transform ? CSS.Translate.toString({ ...transform, y: 0 }) : undefined, transition }}
+    >
+      {children}
+    </TableHead>
+  );
+}
 
 /** What the row hands its drag handle: the sortable bits of useSortable, and whether dragging is live. */
 type RowDrag = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners" | "setActivatorNodeRef"> & { live: boolean };
@@ -455,6 +489,7 @@ export function DataTable<TData, TValue>({
   renderExpandedRow,
   stateKey,
   rowReorder,
+  columnReorder = false,
 }: DataTableProps<TData, TValue>) {
   // Search, sort, page and hidden columns are remembered for the browser tab
   // (hooks/use-view-state.ts) - a refresh used to throw you back to page 1 of
@@ -573,6 +608,40 @@ export function DataTable<TData, TValue>({
   });
   const allColumns = [...reorderColumns, ...selectionColumns, ...filterableColumns];
 
+  // The reader's own column order (Alon 10.11), kept in this browser per table. The dashboard mounts after the session
+  // check, so storage is read on the first render, as useSessionState does.
+  const orderStoreKey = `myt:column-order:${memory}`;
+  const [storedOrder, setStoredOrder] = useState<string[]>(() => {
+    if (!columnReorder || typeof window === "undefined") return [];
+    try {
+      return parseStoredOrder(window.localStorage.getItem(orderStoreKey));
+    } catch {
+      return [];
+    }
+  });
+  const allColumnIds = allColumns.map(columnIdOf);
+  const columnOrder = columnReorder ? arrangeColumns(storedOrder, allColumnIds, FIXED_COLUMNS) : undefined;
+  const saveColumnOrder = (next: string[]) => {
+    const keep = isDefaultOrder(next, allColumnIds, FIXED_COLUMNS) ? [] : next;
+    setStoredOrder(keep);
+    try {
+      if (keep.length) window.localStorage.setItem(orderStoreKey, JSON.stringify(keep));
+      else window.localStorage.removeItem(orderStoreKey);
+    } catch {
+      // private window / blocked storage: the order holds until the page closes
+    }
+  };
+  const headSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
+  );
+  const onHeaderDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!columnOrder || !over || active.id === over.id) return;
+    saveColumnOrder(moveColumn(columnOrder, String(active.id), String(over.id), FIXED_COLUMNS));
+  };
+  const movableColumn = (id: string) => !!columnReorder && !FIXED_COLUMNS.start.includes(id) && !FIXED_COLUMNS.end.includes(id);
+
   const table = useReactTable({
     data,
     columns: allColumns,
@@ -606,6 +675,7 @@ export function DataTable<TData, TValue>({
       rowSelection,
       pagination,
       globalFilter,
+      ...(columnOrder ? { columnOrder } : {}),
     },
     enableRowSelection,
     autoResetPageIndex: false,
@@ -769,6 +839,12 @@ export function DataTable<TData, TValue>({
                     {column.id.replace(/[._]/g, " ")}
                   </DropdownMenuCheckboxItem>
                 ))}
+              {columnReorder && storedOrder.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => saveColumnOrder([])}>Reset column order</DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -817,49 +893,44 @@ export function DataTable<TData, TValue>({
         <Table ref={tableRef} containerClassName="md:max-h-[calc(100svh-9rem)]">
           {/* Solid card under the tint - rows scroll beneath a sticky header. */}
           <TableHeader className="sticky top-0 z-10 bg-card [&_tr]:border-b-0">
-            {table.getHeaderGroups().map((headerGroup) => (
+            {table.getHeaderGroups().map((headerGroup) => {
+              const headerRow = (
               <TableRow key={headerGroup.id} className="bg-muted/60 hover:bg-muted/60">
                 {headerGroup.headers.map((header) => {
                   const sorted = header.column.getIsSorted();
                   const filterSpec = header.isPlaceholder ? undefined : filterSpecs.get(header.column.id);
-                  return (
-                    <TableHead
-                      key={header.id}
-                      aria-sort={
-                        sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined
-                      }
-                      // Alon's gesture: a double-click on the header opens its filter. Only clicks on the header
-                      // itself count - React bubbles the popover's own clicks (a portal) up to here.
-                      onMouseDown={
-                        filterSpec
-                          ? (event) => {
-                              if (event.detail === 1 && event.currentTarget.contains(event.target as Node)) {
-                                sortBeforeClick.current = sorting;
-                              }
-                            }
-                          : undefined
-                      }
-                      onDoubleClick={
-                        filterSpec
-                          ? (event) => {
-                              if (!event.currentTarget.contains(event.target as Node)) return;
-                              setSorting(sortBeforeClick.current);
-                              setOpenFilter(header.column.id);
-                            }
-                          : undefined
-                      }
-                      className={cn(
-                        filterSpec && "group/th select-none",
-                        "h-10 whitespace-nowrap px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
-                        // A collapsed border does not travel with a sticky cell.
-                        "shadow-[inset_0_-1px_0_hsl(var(--border))]",
-                        "aria-[sort]:text-foreground",
-                        HEADER_BUTTON,
-                        dense && "px-2",
-                        grid && "border-e border-border last:border-e-0 bg-muted",
-                        pinsActions && header.column.id === PINNED_COLUMN_ID && PINNED_HEAD,
-                      )}
-                    >
+                  const headProps: React.ComponentProps<typeof TableHead> = {
+                    "aria-sort": sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined,
+                    // Alon's gesture: a double-click on the header opens its filter. Only clicks on the header
+                    // itself count - React bubbles the popover's own clicks (a portal) up to here.
+                    onMouseDown: filterSpec
+                      ? (event) => {
+                          if (event.detail === 1 && event.currentTarget.contains(event.target as Node)) {
+                            sortBeforeClick.current = sorting;
+                          }
+                        }
+                      : undefined,
+                    onDoubleClick: filterSpec
+                      ? (event) => {
+                          if (!event.currentTarget.contains(event.target as Node)) return;
+                          setSorting(sortBeforeClick.current);
+                          setOpenFilter(header.column.id);
+                        }
+                      : undefined,
+                    className: cn(
+                      filterSpec && "group/th select-none",
+                      "h-10 whitespace-nowrap px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+                      // A collapsed border does not travel with a sticky cell.
+                      "shadow-[inset_0_-1px_0_hsl(var(--border))]",
+                      "aria-[sort]:text-foreground",
+                      HEADER_BUTTON,
+                      dense && "px-2",
+                      grid && "border-e border-border last:border-e-0 bg-muted",
+                      pinsActions && header.column.id === PINNED_COLUMN_ID && PINNED_HEAD,
+                    ),
+                  };
+                  const content = (
+                    <>
                       {header.isPlaceholder
                         ? null
                         : flexRender(header.column.columnDef.header, header.getContext())}
@@ -874,11 +945,41 @@ export function DataTable<TData, TValue>({
                           />
                         </span>
                       )}
+                    </>
+                  );
+                  return movableColumn(header.column.id) && !header.isPlaceholder ? (
+                    <SortableHead key={header.id} sortId={header.column.id} {...headProps}>
+                      {content}
+                    </SortableHead>
+                  ) : (
+                    <TableHead key={header.id} {...headProps}>
+                      {content}
                     </TableHead>
                   );
                 })}
               </TableRow>
-            ))}
+              );
+              // a header dragged sideways moves its column (Alon 10.11); its own context, apart from the rows' drag
+              return columnReorder ? (
+                <DndContext
+                  key={headerGroup.id}
+                  sensors={headSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={onHeaderDragEnd}
+                  // its hidden announcer would land inside <thead> (invalid nesting): put it on the page instead
+                  accessibility={typeof document === "undefined" ? undefined : { container: document.body }}
+                >
+                  <SortableContext
+                    items={headerGroup.headers.filter((h) => movableColumn(h.column.id) && !h.isPlaceholder).map((h) => h.column.id)}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    {headerRow}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                headerRow
+              );
+            })}
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (

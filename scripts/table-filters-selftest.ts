@@ -2,6 +2,7 @@
 // The pure rules of a table's header filters (lib/table-filters.ts; Alon 28.10: "לפלטר לפי דברים שיש שם, בהקלדה /
 // בגלילה, סינון מרובה"). The popover and the chips are checked in the browser.
 import assert from "node:assert/strict";
+import { arrangeColumns, isDefaultOrder, moveColumn, parseStoredOrder } from "../lib/table-column-order";
 import {
   cleanStoredFilters,
   distinctValues,
@@ -111,5 +112,34 @@ assert.deepEqual(filterChips({ kind: "date", from: "2026-10-01", to: null }), [{
 // a row an edit took out of the filtered list (it is still in the data) - not one that left the data
 assert.deepEqual(rowsLeftFilter(["a", "b", "c"], ["a"], ["a", "b"]), ["b"]);
 assert.deepEqual(rowsLeftFilter(["a"], ["a", "d"], ["a", "d"]), [], "a row that came in is no news");
+
+// the columns in the viewer's own order (Alon 10.11): the tool columns never move
+{
+  const FIXED = { start: ["reorder", "select"], end: ["actions"] };
+  const ids = ["reorder", "select", "place", "why", "customer", "phone", "status", "actions"];
+  assert.deepEqual(arrangeColumns([], ids, FIXED), ids, "nothing stored = the definition");
+  assert.deepEqual(
+    arrangeColumns(["phone", "customer", "why", "place", "status"], ids, FIXED),
+    ["reorder", "select", "phone", "customer", "why", "place", "status", "actions"],
+  );
+  assert.deepEqual(
+    arrangeColumns(["status", "gone", "status", "actions", "select", "phone"], ids, FIXED),
+    ["reorder", "select", "status", "phone", "place", "why", "customer", "actions"],
+    "a removed column is forgotten, a repeat counts once, fixed ids in storage are ignored, new columns come after",
+  );
+  assert.deepEqual(arrangeColumns(["b", "a"], ["a", "b"], { start: ["select"], end: ["actions"] }), ["b", "a"], "a table with no tool columns");
+  const order = arrangeColumns([], ids, FIXED);
+  assert.deepEqual(moveColumn(order, "status", "why", FIXED), ["reorder", "select", "place", "status", "why", "customer", "phone", "actions"]);
+  assert.deepEqual(moveColumn(order, "place", "phone", FIXED), ["reorder", "select", "why", "customer", "phone", "place", "status", "actions"]);
+  assert.deepEqual(moveColumn(order, "status", "actions", FIXED), order, "nothing passes the pinned actions");
+  assert.deepEqual(moveColumn(order, "select", "phone", FIXED), order, "the tick box stays put");
+  assert.deepEqual(moveColumn(order, "nope", "phone", FIXED), order);
+  assert.equal(isDefaultOrder(order, ids, FIXED), true);
+  assert.equal(isDefaultOrder(moveColumn(order, "status", "why", FIXED), ids, FIXED), false);
+  assert.deepEqual(parseStoredOrder('["a","b",3,""]'), ["a", "b"]);
+  assert.deepEqual(parseStoredOrder("{"), []);
+  assert.deepEqual(parseStoredOrder('{"a":1}'), []);
+  assert.deepEqual(parseStoredOrder(null), []);
+}
 
 console.log("table-filters selftest: ok");

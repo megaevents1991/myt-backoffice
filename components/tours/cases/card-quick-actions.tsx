@@ -145,6 +145,7 @@ export function OfferPanel({
 }
 
 const QUICK_DAYS = [
+  { label: "Today", days: 0 },
   { label: "Tomorrow", days: 1 },
   { label: "In 2 days", days: 2 },
   { label: "In a week", days: 7 },
@@ -384,6 +385,27 @@ export function OfferCell({ card, host }: { card: Pick<CaseRow, "id" | "offer" |
   ) : (
     <span className="font-medium text-amber-700 dark:text-amber-300">Ready, not sent</span>
   );
+  // nothing to send or withdraw yet: the click opens the builder's window at once (Alon 10.11), no menu in between
+  if (!offer && host.buildOffer) {
+    const build = host.buildOffer;
+    return (
+      <button
+        type="button"
+        aria-label="Build a booking link"
+        title="Build a booking link"
+        onClick={(e) => {
+          e.stopPropagation();
+          build();
+        }}
+        className="group/cell -mx-1 rounded px-1 py-0.5 text-start text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="text-muted-foreground">
+          <span className="group-hover/cell:hidden">{EMPTY}</span>
+          <span className="hidden group-hover/cell:inline">+ Link</span>
+        </span>
+      </button>
+    );
+  }
   return (
     <CellPopover
       label="Booking link"

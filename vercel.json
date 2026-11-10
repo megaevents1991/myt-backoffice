@@ -141,6 +141,10 @@
       "memory": 1024,
       "maxDuration": 30
     },
+    "app/api/tours/itinerary-pdf/route.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
     "app/portal/api/quotes/[id]/pdf/route.ts": {
       "memory": 1024,
       "maxDuration": 30
