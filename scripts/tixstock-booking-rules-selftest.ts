@@ -11,9 +11,11 @@ const it = (name: string, run: () => void): void => {
 import {
   ACTIVE_STATUSES,
   attendeeIssues,
+  BOOKING_STATUSES,
   bookingEnvFor,
   buildOrderRequest,
   canMoveTo,
+  isBookingStatus,
   isSandboxBookingEvent,
   siteBooksAfterPayment,
   statusFromTixstock,
@@ -121,6 +123,14 @@ describe("tixstock booking rules", () => {
 
   it("the live statuses are the seven of the unique index", () => {
     assert.deepEqual([...ACTIVE_STATUSES].sort(), ["approved", "commissionable", "holding", "on_hold", "ordering", "sale_on_hold", "uncertain"]);
+  });
+
+  it("a status read from the database is narrowed, never trusted", () => {
+    assert.deepEqual([...BOOKING_STATUSES].sort(), [...STATUSES].sort());
+    assert.equal(isBookingStatus("ordering"), true);
+    assert.equal(isBookingStatus("Approved"), false, "TixStock's spelling is not ours");
+    assert.equal(isBookingStatus(null), false);
+    assert.equal(isBookingStatus(7), false);
   });
 
   it("italian issues", () => {

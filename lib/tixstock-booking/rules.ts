@@ -27,6 +27,24 @@ export type BookingStatus =
   | "uncertain"
   | "cancelled";
 
+export const BOOKING_STATUSES: readonly BookingStatus[] = [
+  "holding",
+  "on_hold",
+  "ordering",
+  "sale_on_hold",
+  "approved",
+  "commissionable",
+  "failed",
+  "released",
+  "uncertain",
+  "cancelled",
+];
+
+/** `ticket_bookings.status` is plain text with no CHECK: a value read from the database is narrowed with this. */
+export function isBookingStatus(v: unknown): v is BookingStatus {
+  return typeof v === "string" && BOOKING_STATUSES.some((s) => s === v);
+}
+
 /** The statuses of the unique index `ticket_bookings_one_live`: one such row per reservation. */
 export const ACTIVE_STATUSES: readonly BookingStatus[] = [
   "holding",

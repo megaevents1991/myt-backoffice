@@ -126,6 +126,9 @@
     "app/api/whatsapp/webhook/route.ts": {
       "maxDuration": 30
     },
+    "app/api/tixstock/webhook/[env]/route.ts": {
+      "maxDuration": 30
+    },
     "app/api/validate-airline/route.ts": {
       "memory": 1024,
       "maxDuration": 30
