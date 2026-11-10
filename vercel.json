@@ -62,10 +62,6 @@
       "schedule": "10 3 * * *"
     },
     {
-      "path": "/api/cron/googleReviewsSync",
-      "schedule": "0 4 * * *"
-    },
-    {
       "path": "/api/cron/price-light-crawl",
       "schedule": "7 */6 * * *"
     },
