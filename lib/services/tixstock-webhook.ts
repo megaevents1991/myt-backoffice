@@ -8,11 +8,13 @@
 //   environment's API token. There is no separate webhook secret. Hex or base64 was not said: both are accepted.
 // With no token configured, or a signature that does not match, the answer is 401 and nothing is stored.
 //
-// TixStock expects `{ external_id, order_status, message, success }` back. `external_id` is OUR order id (their
-// answer of 10.11): the reservation id of the booking the webhook belongs to.
+// An ORDER webhook is answered `{ external_id, order_status, message, success }`. `external_id` is OUR order id
+// (their answer of 10.11): the reservation id of the booking the webhook belongs to - the same value orders/add
+// sent as `order_id` (`ourOrderId`). ticket.hold / ticket.release carry no order and are answered `{ "ok": true }`
+// (their answer of 10.11, round 2).
 // Spec: docs/superpowers/specs/2026-11-09-tixstock-ticket-booking-design.md 7.5.
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { BookingEnv } from "../tixstock-booking/rules";
+import { ourOrderId, type BookingEnv } from "../tixstock-booking/rules";
 import {
   applyOrderUpdate,
   orderIdOf,
@@ -23,9 +25,14 @@ import {
   type BookingRow,
 } from "./tixstock-order-apply";
 
+/** What an order webhook is answered with. */
+export type OrderAnswerBody = { external_id: string | null; order_status: string | null; message: string; success: boolean };
+/** What ticket.hold / ticket.release are answered with - exactly this (TixStock, 10.11.2026). */
+export type AckBody = { ok: true };
+
 export type WebhookAnswer = {
   status: number;
-  body: { external_id: string | null; order_status: string | null; message: string; success: boolean };
+  body: OrderAnswerBody | AckBody | (OrderAnswerBody & AckBody);
 };
 
 export type WebhookDeps = ApplyDeps & {
@@ -85,7 +92,7 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-const nothing = (message: string, success: boolean): WebhookAnswer["body"] => ({
+const nothing = (message: string, success: boolean): OrderAnswerBody => ({
   external_id: null,
   order_status: null,
   message,
@@ -152,9 +159,12 @@ export async function handleTixstockWebhook(
   };
 
   if (!payload || !type) return done(400, nothing("invalid payload", false));
-  // ticket.hold / ticket.release / ticket.fullfillment carry no order, and TixStock fires them for every hold we
-  // place ourselves: logged, and answered as received.
-  if (!type.startsWith("order.")) return done(200, nothing("logged", true));
+  // A type that carries no order is logged and nothing else. TixStock fires hold / release for every hold we place
+  // ourselves, and asked for exactly `{ "ok": true }` back (10.11.2026).
+  if (type === "ticket.hold" || type === "ticket.release") return done(200, { ok: true });
+  // ticket.fullfillment (listing level) and a type we do not know: TixStock did not say which answer they read, so
+  // this one reads as received in both shapes.
+  if (!type.startsWith("order.")) return done(200, { ok: true, ...nothing("logged", true) });
   if (!data) return done(400, nothing("invalid payload", false));
 
   try {
@@ -164,7 +174,7 @@ export async function handleTixstockWebhook(
 
     const result = await applyOrderUpdate(booking.id, readOrderPayload(type, data), deps, eventId);
     return done(200, {
-      external_id: String(booking.reservation_id),
+      external_id: ourOrderId(booking.reservation_id),
       order_status: statusToTixstock(result.status),
       message: "ok",
       success: true,

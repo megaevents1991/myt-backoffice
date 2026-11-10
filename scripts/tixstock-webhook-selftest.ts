@@ -2,13 +2,13 @@
 // TixStock's webhook receiver (lib/services/tixstock-webhook.ts) and the order reader / applier it shares with the
 // refresh and the sweep (lib/services/tixstock-order-apply.ts). Every DB and storage call is a stub: no network.
 // What matters most here: a bad signature stores nothing, a file is stored once however often it arrives, a
-// status never moves back, and hold / release webhooks of our own holds are answered success:true.
+// status never moves back, and hold / release webhooks of our own holds are answered `{ ok: true }` (TixStock, 10.11).
 // Spec: docs/superpowers/specs/2026-11-09-tixstock-ticket-booking-design.md 7.5.
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { readOrderPayload, stripBodies, ticketFileStoragePath, type BookingRow, type FileToSave } from "../lib/services/tixstock-order-apply";
-import { handleTixstockWebhook, verifyTixstockSignature, type WebhookDeps } from "../lib/services/tixstock-webhook";
-import type { BookingStatus } from "../lib/tixstock-booking/rules";
+import { handleTixstockWebhook, verifyTixstockSignature, type OrderAnswerBody, type WebhookAnswer, type WebhookDeps } from "../lib/services/tixstock-webhook";
+import { ourOrderId, type BookingStatus } from "../lib/tixstock-booking/rules";
 
 const TOKEN = "sandbox-token";
 const NOW = new Date("2026-11-10T12:00:00Z");
@@ -80,6 +80,12 @@ const send = (w: ReturnType<typeof world>, payload: unknown, opts: { signature?:
     },
     w.deps,
   );
+};
+
+/** The four fields of an order answer. A bare `{ ok: true }` (hold / release) has none of them and fails here. */
+const fields = (r: WebhookAnswer): OrderAnswerBody => {
+  if (!("success" in r.body)) throw new Error(`not an order answer: ${JSON.stringify(r.body)}`);
+  return r.body;
 };
 
 const eticket = (over: Record<string, unknown> = {}) => ({
@@ -173,7 +179,7 @@ await run("no status regression", async () => {
   assert.equal(w.bookings[0].status, "commissionable");
   const late = await send(w, eticket({ order_status: "Approved", seat: "12" }));
   assert.equal(w.bookings[0].status, "commissionable", "a late Approved does not move it back");
-  assert.equal(late.body.order_status, "Commissionable");
+  assert.equal(fields(late).order_status, "Commissionable");
   assert.equal(w.files.length, 2, "the late ticket is still stored");
 });
 
@@ -210,7 +216,7 @@ await run("retry after a half-stored file", async () => {
   w.state.failSaves = 1;
   const first = await send(w, eticket());
   assert.equal(first.status, 500, "a failure of ours is not answered as done");
-  assert.equal(first.body.success, false);
+  assert.equal(fields(first).success, false);
   assert.equal(w.files.length, 0);
   const again = await send(w, eticket());
   assert.equal(again.status, 200);
@@ -221,26 +227,26 @@ await run("retry after a half-stored file", async () => {
 await run("uncertain is matched", async () => {
   const w = world([booking({ status: "uncertain", tixstock_order_id: null })]);
   const r = await send(w, eticket({ order_id: "O9", quantity: 2 }));
-  assert.equal(r.body.success, true);
+  assert.equal(fields(r).success, true);
   assert.equal(w.bookings[0].tixstock_order_id, "O9");
   assert.equal(w.bookings[0].status, "approved");
-  assert.equal(r.body.external_id, "2233");
+  assert.equal(fields(r).external_id, "2233");
 
   const two = world([
     booking({ id: "b1", status: "uncertain", tixstock_order_id: null }),
     booking({ id: "b2", reservation_id: 2234, status: "uncertain", tixstock_order_id: null }),
   ]);
   const none = await send(two, eticket({ order_id: "O9", quantity: 2 }));
-  assert.equal(none.body.success, false, "two candidates: nothing is guessed");
+  assert.equal(fields(none).success, false, "two candidates: nothing is guessed");
   assert.equal(two.bookings.every((b) => b.tixstock_order_id === null), true);
   assert.equal(two.files.length, 0);
 
   const old = world([booking({ status: "uncertain", tixstock_order_id: null, created_at: "2026-11-10T10:30:00.000Z" })]);
-  assert.equal((await send(old, eticket({ order_id: "O9" }))).body.success, false, "older than 60 minutes");
+  assert.equal(fields(await send(old, eticket({ order_id: "O9" }))).success, false, "older than 60 minutes");
   const otherQty = world([booking({ status: "uncertain", tixstock_order_id: null, quantity: 4 })]);
-  assert.equal((await send(otherQty, eticket({ order_id: "O9", quantity: 2 }))).body.success, false, "another quantity");
+  assert.equal(fields(await send(otherQty, eticket({ order_id: "O9", quantity: 2 }))).success, false, "another quantity");
   const otherEnv = world([booking({ status: "uncertain", tixstock_order_id: null })]);
-  assert.equal((await send(otherEnv, eticket({ order_id: "O9" }), { env: "production" })).body.success, false, "another environment");
+  assert.equal(fields(await send(otherEnv, eticket({ order_id: "O9" }), { env: "production" })).success, false, "another environment");
 });
 
 await run("unknown order", async () => {
@@ -252,17 +258,39 @@ await run("unknown order", async () => {
   assert.equal(w.events.length, 1, "it is logged");
 });
 
-await run("hold, release and listing fulfilment are logged only", async () => {
-  for (const type of ["ticket.hold", "ticket.release", "ticket.fullfillment"]) {
+await run("hold and release are answered ok", async () => {
+  for (const type of ["ticket.hold", "ticket.release"]) {
     const w = world([booking()]);
     const r = await send(w, { meta: { type }, data: { id: "L1", quantity: 2 } });
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body, { external_id: null, order_status: null, message: "logged", success: true }, type);
+    assert.deepEqual(r.body, { ok: true }, `${type}: exactly what TixStock asked for on 10.11, nothing beside it`);
+    assert.equal(w.events.length, 1, "it is logged");
+    assert.equal(w.events[0].type, type);
+    assert.deepEqual(w.events[0].result, { status: 200, ok: true }, "the log keeps what was answered");
+    assert.equal(w.state.saveCalls, 0);
+    assert.equal(w.bookings[0].status, "sale_on_hold");
+  }
+});
+
+await run("another order-less type is logged, and answered for a reader of either shape", async () => {
+  // TixStock named hold and release only. ticket.fullfillment (listing level) carries no order either.
+  for (const type of ["ticket.fullfillment", "listing.something_new"]) {
+    const w = world([booking()]);
+    const r = await send(w, { meta: { type }, data: { id: "L1", quantity: 2 } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true, external_id: null, order_status: null, message: "logged", success: true }, type);
     assert.equal(w.events.length, 1);
     assert.equal(w.events[0].type, type);
     assert.equal(w.state.saveCalls, 0);
     assert.equal(w.bookings[0].status, "sale_on_hold");
   }
+});
+
+await run("an order answer carries our own order id and no ok", async () => {
+  const w = world([booking()]);
+  const r = await send(w, { meta: { type: "order.update" }, data: { order_id: "O1" } });
+  assert.equal(fields(r).external_id, ourOrderId(2233), "the id orders/add sent as order_id");
+  assert.equal("ok" in r.body, false);
 });
 
 await run("order.update answers our status", async () => {
@@ -271,7 +299,7 @@ await run("order.update answers our status", async () => {
   assert.deepEqual(r.body, { external_id: "2233", order_status: "Approved", message: "ok", success: true });
   const moved = await send(w, { meta: { type: "order.update" }, data: { order_id: "O1", order_status: "Cancelled" } });
   assert.equal(w.bookings[0].status, "cancelled", "TixStock reports a cancellation");
-  assert.equal(moved.body.order_status, "Cancelled");
+  assert.equal(fields(moved).order_status, "Cancelled");
 });
 
 await run("a signed body that is not our kind of JSON is refused, not crashed on", async () => {
