@@ -60,10 +60,10 @@ Five questions went out after the plan review. TixStock's answers, as they wrote
 - "Italian customers" here, "italian events" on 09.11 (question 4 below). 58 of our 438 TixStock products on sale
   are at an Italian venue.
 
-## 2. One consolidated message (drafted 10.11, waiting for an answer)
+## 2. One consolidated message (drafted 10.11; questions 1-9 sent, answered the same day - section 4)
 
 Dor asked that everything open goes in one message, so TixStock answers once. Questions 10-13 are the ones the
-design kept for the CS call.
+design kept for the CS call; they were NOT sent in this round.
 
 ```
 Thanks, very clear. To close everything in one round, here are all our open questions:
@@ -90,19 +90,82 @@ Production
 13. Paper tickets: is shipping to the customer's hotel acceptable?
 ```
 
-## 3. What we build until they answer
+## 3. Where each question stands, and what the code does
 
-| Open question | What the code does meanwhile | Where one answer changes it |
-|---|---|---|
-| 1 - our order id in orders/add | Sends no id of ours; `orders/get` / `orders/update` take TixStock's `data.id` | `buildOrderRequest` (`lib/tixstock-booking/rules.ts`) and the client's callers |
-| 2 - the order's currency | Sends the feed's USD amount; stores the answer's `currency` / `grand_total`; warns on a difference | `buildOrderRequest` |
-| 3 - `requires_lead_booker` | No card for such a listing on the sandbox step; a warning in the office dialog | `sandbox-cards.ts`, `rank.ts` |
-| 4 - by event or by customer | By the event's country (`venue.country_code = IT`) | `openTicketBooking`, the sandbox ticket step |
-| 5 - `gender` / `nationality` | Field `gender` with `M` / `F`; ISO alpha-2 in `nationality`; passport in `national_id` | `buildOrderRequest` only |
-| 6 - Serie A item from the back office | The form is built on the test event as designed (Dor, 10.11) | nothing to change |
-| 7 - hex or base64 | Accepts both, over the raw body | `verifyTixstockSignature` |
-| 8 - hold / release webhooks | Logged, answered `success: true` | `handleTixstockWebhook` |
-| 9 - webhooks over 4.5 MB | Vercel refuses them before our code; the refresh (`orders/get`) is the fallback | the sweep and the card's Refresh |
+State after TixStock's round 2 (section 4). "Closed" = answered and the code matches.
 
-The sandbox itself answers three of these in the first end-to-end run (plan Task 17, Stage 5): which id
-`orders/get` takes, the currency an order is registered in, and what a 10-minute-old hold answers.
+| Question | State | What the code does | Where an answer changes it |
+|---|---|---|---|
+| 1 - our order id in orders/add | Closed | Sends `order_id` = our reservation id as a string (`ourOrderId`) - the same value the webhook answers as `external_id` | `buildOrderRequest` (`lib/tixstock-booking/rules.ts`) |
+| 1b - which id `orders/get` / `orders/update` take | Open | They take the id orders/add returned | the client's callers |
+| 2 - the order's currency | Closed ("YES") | Sends the feed's USD amount; stores the answer's `currency` / `grand_total`; warns on a difference | - |
+| 3 - `requires_lead_booker` | Open (no answer) | No card for such a listing on the sandbox step; a warning in the office dialog | `sandbox-cards.ts`, `rank.ts` |
+| 4 - by event or by customer | Closed | By the event's country (`venue.country_code = IT`), every attendee | - |
+| 5 - `gender` / `nationality` | Closed | `gender` goes out as `Male` / `Female` (our forms keep `M` / `F`); a country code in `nationality`; passport in `national_id` | `buildOrderRequest` only |
+| 6 - Serie A item from the back office | Waiting (TixStock's Abdullah) | The form is built on the test event as designed (Dor, 10.11) | nothing to change |
+| 7 - hex or base64 | Closed for us | Accepts both, over the raw body ("the exact JSON payload": confirmed) | `verifyTixstockSignature` |
+| 8 - hold / release webhooks | Closed | Logged, answered exactly `{ "ok": true }` | `handleTixstockWebhook` |
+| 9 - webhooks over 4.5 MB | Open (only the file types were answered) | Vercel refuses them before our code; the refresh (`orders/get`) is the fallback | the sweep and the card's Refresh |
+| 10-13 | Never sent | - | - |
+
+The sandbox itself answers some of these in the first end-to-end run (plan Task 17, Stage 5): which id
+`orders/get` takes, what a 10-minute-old hold answers, hex or base64, and whether a webhook's `order_id` is
+still TixStock's own id now that we send ours.
+
+## 4. Answered on 10.11, round 2 (questions 1-9)
+
+As TixStock wrote them. They numbered inside each heading, so "Orders 3" (`requires_lead_booker`) has no answer.
+
+> **Orders**
+> 1. In the orders/add request body, you will find a field called order_id You should pass your own internal
+>    order ID in this field. For example: "order_id": "454104g8195"
+> 2. YES
+>
+> **Attendee details**
+> 1. For events in Italy, attendee details are required regardless of the customer's nationality. For Italian
+>    events, the following attendee details must be provided for each ticket: First name, Last name, Email
+>    address, Gender, Date of birth, Place of birth, Nationality, National Id
+> 2. For the gender field, the accepted values are Male or Female. For nationality, please provide the country
+>    code (e.g., IT for Italian nationality). Regarding national_id, you can provide the attendee's
+>    identification document number, which serves as proof of their identity, such as their national ID or
+>    passport number.
+> 3. @Abdullah A.G Could you please assist here
+>
+> **Webhooks**
+> 1. Tixstock authenticates all webhook requests using the X-TIXSTOCK-SIGNATURE header. The signature is
+>    generated using SHA-256, with the webhook's JSON payload as the data and your Tixstock-provided Bearer Token
+>    as the key. The signature is calculated using the exact JSON payload sent to your endpoint.
+> 2. For both ticket.hold and ticket.release webhooks, please return the following response: `{ "ok": true }`
+> 3. For fulfilment, the file format depends on the ticket type: E-tickets: PDF files will be shared. Mobile
+>    links: The ticket links will be shared. External transfer proof: The proof of transfer can be in PNG, JPEG,
+>    or PDF format.
+
+What changed in the code the same day (backoffice `ac944190`, `1ae39bef`; myt-main `e2c0f71`):
+
+- **`order_id`.** `buildOrderRequest` takes the reservation id and sends it as `order_id`; without a real
+  reservation id no body is built. `ourOrderId` is the one function that spells the id, for the order body and
+  for the webhook's `external_id`.
+- **Gender.** `M` / `F` go out as `Male` / `Female`.
+- **Hold / release.** Answered exactly `{ "ok": true }`. `ticket.fullfillment` was not named: it is answered with
+  `ok: true` beside the four fields of an order answer.
+
+Decided on our side, and what it costs if wrong:
+
+- **One `order_id` per reservation.** A reservation that is booked a second time (after a cancelled or failed
+  attempt) sends the same `order_id` again. If TixStock refuses a repeat, that second booking fails loudly (the
+  row is `failed` with their error) and `ourOrderId` gets an attempt suffix. If they do refuse repeats, a lost
+  orders/add answer becomes safe to repeat - which 1.3 says it is not today.
+- **A webhook's `order_id`.** The receiver finds a booking by the id orders/add RETURNED. If TixStock's webhooks
+  start carrying OUR `order_id` instead, they are answered "unknown order" and the files arrive only through the
+  refresh. Every webhook is logged with its payload, so the first sandbox webhook shows which id it carries.
+
+## 5. Follow-up (drafted 10.11, Dor sends it)
+
+```
+Thanks, very clear. A few points are still open:
+1. order_id: do /orders/get and /orders/update take our order_id, or the id that orders/add returns? Is it unique on your side - would a second orders/add with the same order_id be rejected? And in your webhooks, is order_id still your own order id?
+2. What does requires_lead_booker = true on a listing require from us?
+3. Fulfilment webhook: do the PDF files arrive inside the JSON or as links? Our platform accepts requests up to 4.5 MB - can we fetch the same files from /orders/get?
+4. ticket.fullfillment webhooks: the same { "ok": true } response?
+@Abdullah - can the Serie A attendee step of the health check be shown from our back office instead of the website checkout?
+```

@@ -95,15 +95,21 @@ site's local checks (Tasks 8-12) need the test events, because `yarn dev` in myt
   10.11). It already includes TixStock's fee, so it is our full cost. With `target_currency=USD` it comes in USD
   at TixStock's rate. `items[].price` in orders/add is that amount exactly as the feed returned it - never the
   rounded card price and never the customer's price.
-- **Our id at TixStock:** the reservation id, as a string. It is the `external_id` of every webhook answer
-  (TixStock 10.11: "your own internal order ID"). orders/add has no field for it in the guide, so nothing is sent
-  there until TixStock answers (asked 10.11); `getOrder` / `updateOrder` take TixStock's `data.id` until then.
+- **Our id at TixStock:** the reservation id, as a string - `ourOrderId(reservationId)` in `rules.ts`, the one
+  function that spells it. It is the `external_id` of every order webhook answer (TixStock 10.11: "your own
+  internal order ID") and the `order_id` of the orders/add body (TixStock 10.11, round 2: "In the orders/add
+  request body, you will find a field called order_id. You should pass your own internal order ID in this
+  field"). Every caller of `buildOrderRequest` (Tasks 11 and 14) passes `reservationId`; without a real one no
+  body is built (`kind: "reservation_id"`). A reservation booked a second time sends the same id again - whether
+  TixStock refuses a repeat is asked. `getOrder` / `updateOrder` take TixStock's `data.id` until TixStock says
+  which id those paths take (still open).
 - **Italian events** (the TixStock event's `venue.country_code` is `IT`): every attendee needs first name, last
   name, passport number (sent as `national_id`), nationality (ISO 3166-1 alpha-2), date of birth (`YYYY-MM-DD`),
   gender and place of birth (TixStock's list of 10.11). The attendee's `email_address` is the buyer's e-mail -
-  no field for it (Dor 10.11: minimal Italian handling). **Provisional until TixStock answers the 10.11
-  follow-up:** the field name `gender` with values `M` / `F`, and the ISO code in `nationality`. Both live in
-  `buildOrderRequest` only, so an answer changes one function.
+  no field for it (Dor 10.11: minimal Italian handling). **Settled by TixStock on 10.11 (round 2):** the field
+  is `gender` with the values `Male` / `Female`, `nationality` is a country code, and a passport number is fine
+  in `national_id`. Our forms and rows keep `M` / `F`; `buildOrderRequest` maps them at the boundary, and it is
+  the only place that names these fields.
 - **`requires_lead_booker`:** a listing flag neither repo reads today (false on all 57 live listings sampled
   10.11; TixStock was asked what it requires). A listing with it `true` gets no card on the sandbox step and a
   warning line in the office dialog.
@@ -351,11 +357,12 @@ export type AttendeeInput = { first_name: string; last_name: string; passport?: 
   dob?: string; gender?: "M" | "F"; birth_place?: string };
 export type AttendeeIssue = "name" | "passport" | "nationality" | "dob" | "gender" | "birth_place";
 export function attendeeIssues(a: AttendeeInput, italian: boolean): AttendeeIssue[];
-export function buildOrderRequest(input: { status: "Sale on Hold" | "Approved"; at: Date; buyer: Buyer;
-  attendees: AttendeeInput[]; quantity: number; italian: boolean;
+export function ourOrderId(reservationId: number): string; // String(reservationId): order_id and external_id
+export function buildOrderRequest(input: { status: "Sale on Hold" | "Approved"; at: Date; reservationId: number;
+  buyer: Buyer; attendees: AttendeeInput[]; quantity: number; italian: boolean;
   listing: { generalAdmission: boolean; row: string; pricePerTicket: number };
   shippingAddress?: Record<string, string> }):
-  { ok: true; body: Record<string, unknown> } | { ok: false; kind: "attendee_count" | "attendee_issues" };
+  { ok: true; body: Record<string, unknown> } | { ok: false; kind: "reservation_id" | "attendee_count" | "attendee_issues" };
 export const SITE_ORIGIN = "https://www.mega-events.co.il";
 export function ticketPageUrl(token: string): string; // `${SITE_ORIGIN}/ticket/${token}`
 export function ticketLinkEmail(eventName: string, url: string): { subject: string; html: string; text: string };
@@ -400,7 +407,11 @@ export function ticketLinkEmail(eventName: string, url: string): { subject: stri
     - `body.datetime` matches `/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+0000$/`.
   - `order body, italian`: `items[i].customer` has exactly `first_name`, `last_name`, `email_address` (the
     buyer's), `national_id` (= passport), `nationality`, `dob`, `gender`, `birth_place` - for every attendee.
-  - `no id of ours in the body`: the body has no `external_id` and `customer` has no `id` (open with TixStock).
+    `gender` goes out as `Female` / `Male` for our `F` / `M` (TixStock 10.11, round 2).
+  - `our reservation id goes out as order_id`: `reservationId: 2233` gives `body.order_id === "2233"` (a string),
+    equal to `ourOrderId(2233)`; the body has no `external_id` and `customer` has no `id`.
+  - `an order is never built without a real reservation id`: `0`, `-5`, `1.5` and `NaN` each give
+    `{ok:false, kind:"reservation_id"}`.
   - `link email`: `ticketLinkEmail("Juventus - Como", ticketPageUrl("tok"))`: the html has `dir="rtl"`, the event
     name and `https://www.mega-events.co.il/ticket/tok`; the subject is "הקישור לכרטיסים שלכם"; the body says
     "הכרטיסים יופיעו בקישור ברגע שהספק ישלח אותם".
@@ -426,8 +437,9 @@ export function ticketLinkEmail(eventName: string, url: string): { subject: stri
     `cancelled` is only ever reported by TixStock (a webhook or a refresh); nothing here sets it by itself.
   - `attendeeIssues` on an Italian event asks every attendee for a passport, a two-letter nationality, a
     `YYYY-MM-DD` date of birth, a gender and a place of birth.
-  - `buildOrderRequest` is the ONE place that names TixStock's attendee fields. `gender` (`M` / `F`) and the ISO
-    code in `nationality` are provisional (Global Constraints): say so in a comment.
+  - `buildOrderRequest` is the ONE place that names TixStock's order and attendee fields: `order_id` (ours),
+    `gender` as `Male` / `Female` (mapped from our `M` / `F`), a country code in `nationality` - all three as
+    TixStock answered on 10.11 (Global Constraints).
   - `bookingEnvFor` accepts only the two mode strings.
   - No imports, so the module stays byte-identical.
 - [ ] **Step 4: Run both test files.** Expected: PASS. Copy the file to the backoffice, and `cmp` the pair.
@@ -510,7 +522,10 @@ export type OrderUpdate = { status: BookingStatus | null; files: Array<{ kind: "
 export function readOrderPayload(type: string, data: Record<string, unknown>): OrderUpdate; // in tixstock-order-apply.ts
 export function applyOrderUpdate(bookingId: string, update: OrderUpdate, deps: ApplyDeps): Promise<{ status: BookingStatus; newFiles: number }>;
 export function handleTixstockWebhook(input: { env: BookingEnv; rawBody: string; signature: string | null; apiToken: string | undefined },
-  deps: WebhookDeps): Promise<{ status: number; body: { external_id: string | null; order_status: string | null; message: string; success: boolean } }>;
+  deps: WebhookDeps): Promise<WebhookAnswer>;
+export type OrderAnswerBody = { external_id: string | null; order_status: string | null; message: string; success: boolean };
+export type AckBody = { ok: true }; // ticket.hold / ticket.release
+export type WebhookAnswer = { status: number; body: OrderAnswerBody | AckBody | (OrderAnswerBody & AckBody) };
 ```
   - **Payload:** `{data, meta}`. Type = `meta.type`; order id = `data.order_id`; listing = `data.id`; PDF =
     `data.file`; `data.proof_file_url[]`; `data.additional_file`; `data.mobile_links[{seat, link}]`; status =
@@ -520,7 +535,10 @@ export function handleTixstockWebhook(input: { env: BookingEnv; rawBody: string;
   - **Storage path** (inside the `ticket-files` bucket; the bucket's name is not part of it):
     `${bookingId}/${sha256(dedupeKey).slice(0, 32)}`. Row and seat are a seller's free text and never go into a
     path.
-  - **`external_id`** in every answer = the booking's reservation id as a string; `null` when no booking matched.
+  - **`external_id`** in every order answer = `ourOrderId(booking.reservation_id)`, the same value orders/add
+    sent as `order_id`; `null` when no booking matched.
+  - **Order-less types:** `ticket.hold` / `ticket.release` are answered exactly `{ok:true}` (TixStock 10.11,
+    round 2). `ticket.fullfillment` and an unknown type were not named: `ok:true` beside the four fields.
 
 - [ ] **Step 1: Write the failing selftest** (all I/O through `deps` stubs):
   - `bad signature 401`: a wrong signature gives 401; nothing saved; the event is logged with
@@ -548,10 +566,14 @@ export function handleTixstockWebhook(input: { env: BookingEnv; rawBody: string;
     `listing_id` and quantity, created under 60 minutes ago: it gets `tixstock_order_id` and moves to the
     payload's status. With two such bookings nothing is matched: logged, `success:false`.
   - `unknown order`: no booking and no uncertain match gives 200 with `success:false`, `message:"unknown order"`.
-  - `hold, release and listing fulfilment are logged only`: `meta.type` of `ticket.hold`, `ticket.release` or
-    `ticket.fullfillment` (no order id): the event is logged, nothing else is read or written, and the answer is
-    200 `{external_id:null, order_status:null, message:"logged", success:true}`. TixStock fires these for every
-    hold we place ourselves, so "unknown order" would answer `success:false` to each of them.
+  - `hold and release are answered ok`: `meta.type` of `ticket.hold` or `ticket.release` (no order id): the
+    event is logged, nothing else is read or written, and the answer is 200 with exactly `{ok:true}` - TixStock's
+    words of 10.11: "For both ticket.hold and ticket.release webhooks, please return the following response:
+    { "ok": true }". TixStock fires these for every hold we place ourselves.
+  - `another order-less type is logged, and answered for a reader of either shape`: `ticket.fullfillment` (and a
+    type we do not know): logged only, answered 200
+    `{ok:true, external_id:null, order_status:null, message:"logged", success:true}`.
+  - `an order answer carries our own order id and no ok`: `external_id === ourOrderId(reservation id)`.
   - `order.update answers our status`: answers with the booking's current status, as TixStock spells it.
 - [ ] **Step 2: Run it.** `npx tsx scripts/tixstock-webhook-selftest.ts`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
@@ -1367,10 +1389,12 @@ session note `2026-11-10-tixstock-plan-review-results.md`.
 - **Task 6:** stuck office rows, a paid site row that was never ordered, the link email after a sweep approval,
   and the refresh of sandbox rows whatever the event's date.
 - **Task 4:** the signature key is the API token; `external_id` is the reservation id; hold / release webhooks
-  are logged and answered `success:true`; the dedupe key has no webhook type; storage paths are hashed; a retry
-  after a half-stored file works; instruction letters are stored.
+  are logged and answered `{ok:true}` (TixStock's round 2 of 10.11; first built as `success:true`); the dedupe
+  key has no webhook type; storage paths are hashed; a retry after a half-stored file works; instruction letters
+  are stored.
 - **Task 2:** one transition table. Italian attendees follow TixStock's list of 10.11: gender, place of birth
-  for everyone, the buyer's e-mail.
+  for everyone, the buyer's e-mail. After TixStock's round 2 (10.11): the body carries `order_id` (our
+  reservation id) and gender goes out as `Male` / `Female`.
 - **Tasks 7-10:** the card price (rounded up) and the feed's amount (sent to TixStock) are two fields; the
   sandbox ticket carries the event's ticket id; the hold is placed right before the insert.
 - **Task 12:** instruction letters download; the confirmation page says "sent" only when the link was sent.
@@ -1383,7 +1407,14 @@ session note `2026-11-10-tixstock-plan-review-results.md`.
 - The request's `tixstock_*` fields do survive `validateOrderData` (it returns the original object), and the
   insert maps columns explicitly, so passports never reach `reservations`.
 
-**Still open** (asked TixStock on 10.11, `docs/tixstock/2026-11-10-questions-to-tixstock.md`): where our order
-id goes in orders/add; the order's currency; `requires_lead_booker`; attendee details by event or by customer;
-the `gender` field and the `nationality` format; the Serie A item from the back office; hex or base64; the answer
-to hold / release webhooks; webhooks over 4.5 MB.
+**Answered by TixStock on 10.11, round 2** (`docs/tixstock/2026-11-10-questions-to-tixstock.md`, section 4):
+our order id goes in the orders/add body as `order_id`; the order is registered in USD at the feed's price;
+attendee details follow the event's country; gender is `Male` / `Female`, nationality a country code, a passport
+number in `national_id`; the signature is over the exact payload; hold / release webhooks are answered
+`{ok:true}`.
+
+**Still open:** which id `orders/get` / `orders/update` take, and whether a repeated `order_id` is refused;
+whether a webhook's `order_id` stays TixStock's own id now that we send ours (the receiver matches a booking by
+TixStock's id - the first sandbox webhook shows it); `requires_lead_booker`; the Serie A item from the back
+office (with TixStock's Abdullah); hex or base64 (both accepted); webhooks over 4.5 MB and the same files from
+`orders/get`; the answer to `ticket.fullfillment`.

@@ -97,8 +97,12 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
   `contact_number`, addresses), `items[]` **one per ticket** (`general_admission`, `row`, `seat`, `price`,
   `customer` = the attendee). orders/add carries no id of ours in the guide (the only id field is `customer.id`),
   yet the guide names the path parameter of `orders/update` / `orders/get` `{external_order_id}`, "Your external
-  order id.", and TixStock said on 10.11 that `external_id` is "your own internal order ID". Which id those two
-  paths take, and where ours is sent, is open (asked 10.11); until then we pass the id orders/add returns.
+  order id.", and TixStock said on 10.11 that `external_id` is "your own internal order ID". **10.11, round 2:**
+  "In the orders/add request body, you will find a field called order_id. You should pass your own internal
+  order ID in this field." So the body carries `order_id` = our reservation id, as a string - the same value we
+  answer as `external_id`. Which id those two paths take is still open; until then we pass the id orders/add
+  returns. Also open: whether a repeated `order_id` is refused (a reservation booked a second time sends the
+  same one).
 - **A lost orders/add answer cannot be looked up** (7.4). TixStock 10.11: check their Request Logs by hand;
   "retrying the same order is not safe, as it may result in duplicate orders"; an expired hold answers "Resource
   Not Found", and then a new hold is needed.
@@ -120,11 +124,13 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
   events/leagues change their requirements.
   - **10.11, their fuller list:** first name, last name, email, citizenship (country code), date of birth,
     gender, place of birth, national id. So gender is new, and place of birth is for everyone.
-  - **Open (asked 10.11):** `gender` is not in the guide's `Attendee` schema, and the guide's `nationality`
-    example is "British" where their answer says a country code.
-  - **By event, not by customer.** The 10.11 answer opens with "For Italian customers"; 09.11 said "italian
-    events". We keep the event's country until they say otherwise: 58 of our 438 TixStock products on sale
-    (10.11) are at an Italian venue, sold to Israeli customers.
+  - **10.11, round 2 - the field details:** "For the gender field, the accepted values are Male or Female. For
+    nationality, please provide the country code (e.g., IT for Italian nationality). Regarding national_id, you
+    can provide the attendee's identification document number ... such as their national ID or passport number."
+    Our forms keep `M` / `F`; the order body sends `Male` / `Female`.
+  - **By event, not by customer.** 10.11, round 2: "For events in Italy, attendee details are required
+    regardless of the customer's nationality." 58 of our 438 TixStock products on sale (10.11) are at an Italian
+    venue, sold to Israeli customers.
   - **Dor, 10.11:** minimal Italian handling for now. The attendee's e-mail we send is the buyer's; no field.
 - **External transfers** (e.g. EPL): "our suppliers would be sending / transferring tickets to the end customer
   directly ... we would be requiring you to send name, email and phone number of the customer", with proof of
@@ -134,8 +140,8 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 - **Price (10.11).** TixStock: "The price received from Tixstock will already include the Tixstock fee". Measured
   on the live feed the same day (57 listings, 3 events): there is one price field, `proceed_price` - no
   `display_price`. It is in the seller's currency by default and in USD, at TixStock's own rate, with
-  `target_currency=USD`. So it is our full cost, and it is the amount we send as `items[].price`. The currency an
-  order is registered in is open (asked 10.11; the guide's example order is in GBP).
+  `target_currency=USD`. So it is our full cost, and it is the amount we send as `items[].price`. TixStock
+  confirmed on 10.11 (round 2) that the order is then registered in USD at that price.
 - **Every listing in the partner feed is bookable** (some are hidden from TX Trade by TixStock's own decision).
 - **Ticket types we must handle:** E-Ticket (PDF), Mobile Link (URL), External Transfer (proof only), Mobile
   Screenshot (PDF).
@@ -153,8 +159,9 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
     `order.paper_ticket_fulfilment`.
   - **Common fields:** `order_id`, `id` (listing), `row`, `seat`, `file`, `proof_file_url[]`, `additional_file`
     (instruction letter).
-  - **Required answer:** `{external_id, order_status, message, success}`. `external_id` is OUR order id, not
-    TixStock's (their answer of 10.11).
+  - **Required answer:** to an order webhook `{external_id, order_status, message, success}`; `external_id` is
+    OUR order id, not TixStock's (their answer of 10.11). To `ticket.hold` / `ticket.release`: `{ "ok": true }`
+    (10.11, round 2).
   - **Count:** an e-ticket order of quantity n fires n webhooks (the last one carries Commissionable); a mobile
     order fires one.
 - **TixStock does not email e-tickets to the buyer** ("you deliver those to your customer"); external transfers
@@ -324,7 +331,8 @@ Additive DB changes. The site never writes the new tables, except the booking ro
 
 ### 7.4 `uncertain` - an order TixStock may have created
 
-orders/add with no answer may still have created the order, and there is no id of ours to look it up by.
+orders/add with no answer may still have created the order, and there is no lookup by an id of ours (the body
+carries our `order_id` since 10.11, but TixStock has not said that `orders/get` takes it).
 An `uncertain` row blocks any new booking for the reservation. It is resolved by:
 - **an order webhook** for that listing and quantity soon after (`order.update` / fulfilment carry `order_id`
   and the listing id) -> `approved` with that id;
@@ -352,8 +360,10 @@ The card shows it in amber: "לא ודאי - לא להזמין שוב עד שי�
   Commissionable). The answer is `{external_id: <our reservation id>, order_status: <the status we now hold>,
   message, success: true}` (corrected 10.11: TixStock wants our own order id there).
 - **`order.update`:** answers with our row's status.
-- **`ticket.hold` / `ticket.release` / `ticket.fullfillment`:** logged only, and answered `success: true` - they
-  carry no order, and TixStock fires them for every hold we place ourselves.
+- **`ticket.hold` / `ticket.release`:** logged only, and answered exactly `{ "ok": true }` (TixStock 10.11,
+  round 2) - they carry no order, and TixStock fires them for every hold we place ourselves.
+- **`ticket.fullfillment`** (listing level) and a type we do not know: logged only. TixStock did not name their
+  answer, so it carries `ok: true` beside the four fields of an order answer (`success: true`).
 - **An unknown order id** is logged and answered `success: false`.
 - **Staff see** "כרטיסים התקבלו - לבדוק ולשלוח" on the card, and a reservations-list filter for "התקבלו ולא
   נשלחו" (builder: reuse the list's existing filters).
@@ -639,6 +649,10 @@ shape of the design did not change. What did, each marked "10.11" where it sits 
 - **TixStock's answers of 10.11:** the signature (5, 7.5); no lookup and no retry of orders/add, "Resource Not
   Found" for an expired hold (5, 7.4); the price already includes their fee, one price field (5); the Italian
   attendee list with gender (5, 7.8).
+- **TixStock's answers of 10.11, round 2:** our order id goes in the orders/add body as `order_id` (5); the
+  order is registered in USD (5); attendee details by the event's country, gender as `Male` / `Female`, a
+  country code, a passport number in `national_id` (5); hold / release webhooks are answered `{ "ok": true }`
+  (5, 7.5).
 - **Decisions, Dor 10.11:**
   - the ticket link goes in an email of its own (7.8.6, 8.21);
   - test reservations are cleaned up after the health check, not filtered by code (7.11.3);
