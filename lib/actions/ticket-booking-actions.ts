@@ -1,7 +1,7 @@
 "use server";
 
-// The TixStock ticket-booking card of a reservation: what it reads. (The book action and the delivery actions are
-// added to this file by the tasks that follow.)
+// The TixStock ticket-booking card of a reservation: what it reads, and the book action. (The delivery actions
+// are added to this file by the task that follows.)
 //
 // The reservation page is a client component that EVERY staff role opens, and `requireAdmin()` throws for the
 // others - so each action here starts with `fulfilmentSession()` and answers `{ ok: false, kind: "hidden" }`. It
@@ -10,12 +10,10 @@
 import { requireAdmin } from "@/lib/auth/guards";
 import type { SessionPayload } from "@/lib/auth/session";
 import { adminOrHidden, fulfilmentVisibleTo } from "@/lib/fulfilment/visibility";
-import { tixstockClientFor } from "@/lib/services/tixstock-booking-env";
+import { loadOfficeOpen, realOfficeDeps, type OfficeOpen } from "@/lib/services/tixstock-office";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { toBookingView, toFileView, type TicketBookingView, type TicketFileView } from "@/lib/tixstock-booking/booking-view";
-import { hotelShippingOf, reservationAttendees, reservationBuyer, soldTicketOf } from "@/lib/tixstock-booking/office-open";
-import { rankListings, type RankableListing, type RankedListing } from "@/lib/tixstock-booking/rank";
-import { bookingEnvFor, type AttendeeInput, type BookingEnv, type Buyer } from "@/lib/tixstock-booking/rules";
+import { runOfficeBooking, type OfficeBookingInput, type OfficeBookingResult } from "@/lib/tixstock-booking/office-booking";
 
 const FILES_BUCKET = "ticket-files";
 const SIGNED_URL_SECONDS = 300;
@@ -79,113 +77,25 @@ export async function getTicketBooking(reservationId: number): Promise<GetTicket
   }
 }
 
-export type OpenTicketBookingResult =
-  | {
-      ok: true;
-      env: BookingEnv;
-      tixstockEventId: string;
-      italian: boolean;
-      quantity: number;
-      listings: { sameCategory: RankedListing[]; others: RankedListing[] };
-      buyer: Buyer;
-      attendees: AttendeeInput[];
-      hotelShipping: Record<string, string> | null;
-      costSoldTotalUsd: number | null;
-    }
-  | {
-      ok: false;
-      kind:
-        | "hidden"
-        | "not_paid"
-        | "not_tixstock"
-        | "no_event"
-        | "test_without_sandbox"
-        | "production_closed"
-        | "not_configured"
-        | "supplier"
-        | "db";
-    };
+export type OpenTicketBookingResult = OfficeOpen | { ok: false; kind: "hidden" };
 
 /**
- * Everything the booking dialog shows before staff pick a listing: the environment (decided by the EVENT - a test
- * event books in the sandbox, a real one in production), the live listings ranked with their gap to the cost sold,
- * the buyer, the attendees and the hotel address. It reads; it holds and orders nothing.
- *
- * `tixstockEventId` is for an order that kept no TixStock event id (a hand-typed reservation): staff pick the
- * event in the dialog (`searchTixstockEvents`) and the dialog opens again with it.
+ * Everything the booking dialog shows before staff pick a listing (`loadOfficeOpen`): the environment, the live
+ * listings ranked with their gap to the cost sold, the buyer, the attendees, the hotel address. It reads only.
  */
 export async function openTicketBooking(reservationId: number, tixstockEventId?: string): Promise<OpenTicketBookingResult> {
   if (!(await fulfilmentSession())) return { ok: false, kind: "hidden" };
-  try {
-    // `ticket_cost_usd` is not in the generated types yet: read through the untyped client, as the P&L does.
-    const { data: reservation, error } = await supabase
-      .from("reservations")
-      .select(
-        "id, status, is_deleted, event_id, event_order_info, hotel_order_info, more_pax_info, main_contact_first_name, main_contact_last_name, main_contact_email, main_contact_phone_number, ticket_cost_usd",
-      )
-      .eq("id", reservationId)
-      .maybeSingle();
-    if (error) throw new Error(`reservations read failed: ${error.message}`);
-    const r: Record<string, unknown> = reservation ?? {};
-    if (!reservation || r.status !== "Paid" || r.is_deleted !== null) return { ok: false, kind: "not_paid" };
+  return loadOfficeOpen(reservationId, tixstockEventId);
+}
 
-    const { data: event, error: eventError } = await supabaseTyped
-      .from("events")
-      .select("is_test, tixstock_booking, tx_excluded_sections")
-      .eq("id", Number(r.event_id))
-      .maybeSingle();
-    if (eventError) throw new Error(`events read failed: ${eventError.message}`);
-    const env = bookingEnvFor({ is_test: event?.is_test, tixstock_booking: event?.tixstock_booking });
-    if (!env.ok) return { ok: false, kind: "test_without_sandbox" };
-
-    const sold = soldTicketOf(r.event_order_info);
-    const picked = (tixstockEventId ?? "").trim();
-    // An order sold from another supplier is not offered TixStock's listings by itself: staff may still pick a
-    // TixStock event by hand, and then it is their decision.
-    if (picked === "" && sold.supplier !== "tixstock" && sold.supplier !== "static") return { ok: false, kind: "not_tixstock" };
-    const eventId = picked !== "" ? picked : sold.supplier === "tixstock" ? sold.tixEventId : null;
-    if (!eventId || sold.quantity < 1) return { ok: false, kind: "no_event" };
-
-    const made = tixstockClientFor(env.env);
-    if (!made.ok) return { ok: false, kind: made.kind };
-
-    const [listings, country] = await Promise.all([made.client.listings(eventId), made.client.eventVenueCountry(eventId)]);
-    if (!listings.ok) {
-      console.error("[ticket-booking] listings not read:", listings.kind);
-      return { ok: false, kind: "supplier" };
-    }
-    // The attendee details TixStock asks for follow the TixStock event's own venue, never our event's location.
-    let italian = country.ok && country.data === "IT";
-    if (!country.ok && env.env === "production") {
-      const { data: known } = await supabaseTyped.from("tixstock_events").select("country_code").eq("event_id", eventId).maybeSingle();
-      italian = (known?.country_code ?? "").trim().toUpperCase() === "IT";
-    }
-
-    const cost = typeof r.ticket_cost_usd === "number" ? r.ticket_cost_usd : typeof r.ticket_cost_usd === "string" ? Number(r.ticket_cost_usd) : NaN;
-    const costSoldTotalUsd = Number.isFinite(cost) && cost > 0 ? cost : null;
-    return {
-      ok: true,
-      env: env.env,
-      tixstockEventId: eventId,
-      italian,
-      quantity: sold.quantity,
-      // The client hands the feed's listings on as it received them; the ranking reads them field by field.
-      listings: rankListings(listings.data as readonly RankableListing[], {
-        soldCategory: picked !== "" && sold.supplier !== "tixstock" ? null : sold.category,
-        quantity: sold.quantity,
-        together: sold.together,
-        excludedSections: event?.tx_excluded_sections ?? [],
-        costSoldTotalUsd,
-      }),
-      buyer: reservationBuyer(r),
-      attendees: reservationAttendees(r),
-      hotelShipping: hotelShippingOf(r.hotel_order_info),
-      costSoldTotalUsd,
-    };
-  } catch (e) {
-    console.error("[ticket-booking] openTicketBooking:", messageOf(e));
-    return { ok: false, kind: "db" };
-  }
+/**
+ * "הזמן כרטיס": hold the listing staff picked and order it at TixStock as Approved - a FINAL purchase. The rules
+ * and their order are `runOfficeBooking`'s; errors come back as a result, never as a throw.
+ */
+export async function bookReservationTicket(input: OfficeBookingInput): Promise<OfficeBookingResult> {
+  const session = await fulfilmentSession();
+  if (!session) return { ok: false, kind: "hidden" };
+  return runOfficeBooking(input, session.email, realOfficeDeps());
 }
 
 export type TixstockEventHit = { event_id: string; event_name: string; show_date: string; venue_name: string };
