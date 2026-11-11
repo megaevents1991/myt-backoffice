@@ -46,7 +46,10 @@ function isOfflineReservation(r: ReservationListRow) {
 // "Which pile am I looking at" lives in the URL (?status=Follow-up) - the dashboard and the
 // morning mail link straight to it, and a refresh keeps it.
 const WA_NEW_VIEW = "wa-new";
-const STATUS_VIEWS = ["all", FOLLOW_UP_STATUS, WA_NEW_VIEW] as const;
+// TixStock tickets that arrived for an order and were not sent to the customer yet. The rows carry the mark only
+// for a role the fulfilment tools are open to, and the tab is drawn only while such a row exists.
+const TICKETS_WAITING_VIEW = "tickets-waiting";
+const STATUS_VIEWS = ["all", FOLLOW_UP_STATUS, WA_NEW_VIEW, TICKETS_WAITING_VIEW] as const;
 type StatusView = (typeof STATUS_VIEWS)[number];
 
 const STATUS_TONE: Record<string, string> = {
@@ -705,8 +708,15 @@ export function ReservationsTable() {
     .filter((r) => isFollowUpStatus(r.status))
     .sort((a, b) => compareFollowUps(a, b, today));
   const waNewReservations = listedReservations.filter((r) => r.wa_new);
+  const ticketsWaitingReservations = listedReservations.filter((r) => r.tickets_waiting);
   const visibleReservations =
-    statusView === FOLLOW_UP_STATUS ? followUpReservations : statusView === WA_NEW_VIEW ? waNewReservations : listedReservations;
+    statusView === FOLLOW_UP_STATUS
+      ? followUpReservations
+      : statusView === WA_NEW_VIEW
+        ? waNewReservations
+        : statusView === TICKETS_WAITING_VIEW
+          ? ticketsWaitingReservations
+          : listedReservations;
 
   // Non-superadmins never see the Deleted column - they can't reveal deleted
   // rows via the toggle, so it would only ever read "-".
@@ -739,9 +749,16 @@ export function ReservationsTable() {
         { id: "all", label: "All", count: listedReservations.length },
         { id: FOLLOW_UP_STATUS, label: "Follow-up", count: followUpReservations.length },
         { id: WA_NEW_VIEW, label: "הודעות חדשות", count: waNewReservations.length },
+        ...(ticketsWaitingReservations.length > 0
+          ? [{ id: TICKETS_WAITING_VIEW, label: "התקבלו ולא נשלחו", count: ticketsWaitingReservations.length }]
+          : []),
       ]}
       activeView={statusView}
-      onViewChange={(id) => setStatusView(id === FOLLOW_UP_STATUS ? FOLLOW_UP_STATUS : id === WA_NEW_VIEW ? WA_NEW_VIEW : "all")}
+      onViewChange={(id) =>
+        setStatusView(
+          id === FOLLOW_UP_STATUS ? FOLLOW_UP_STATUS : id === WA_NEW_VIEW ? WA_NEW_VIEW : id === TICKETS_WAITING_VIEW ? TICKETS_WAITING_VIEW : "all",
+        )
+      }
       // A customer waiting for a call back today stands out in the full list too.
       getRowClassName={(row) => {
         const r = row.original;

@@ -10,7 +10,7 @@ import { attachOrder, loadSweepReservation, realApplyDeps } from "@/lib/services
 import { TICKET_LINK_FROM } from "@/lib/services/tixstock-booking-sweep";
 import { applyOrderUpdate, readOrderPayload } from "@/lib/services/tixstock-order-apply";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
-import { toBookingView, type TicketBookingView } from "@/lib/tixstock-booking/booking-view";
+import { toBookingView, waitingReservations, type TicketBookingView } from "@/lib/tixstock-booking/booking-view";
 import { attachmentsWithin, customerTicketEmail, seatsLine, sentPatch } from "@/lib/tixstock-booking/customer-email";
 import { attendeeIssues, buildOrderRequest, canMoveTo, ourOrderId, safeHttpUrl, type AttendeeInput } from "@/lib/tixstock-booking/rules";
 import type { TablesUpdate } from "@/types/database.types";
@@ -250,4 +250,25 @@ export async function settleUncertain(
   } catch (e) {
     return fail("settleUncertain", e);
   }
+}
+
+/**
+ * The marks of the reservations list view "התקבלו ולא נשלחו": reservations whose OFFICE booking has tickets nobody
+ * sent to the customer yet. Two small reads; the caller runs it only for a role the fulfilment tools are open to.
+ */
+export async function ticketsWaitingMarks(): Promise<Set<number>> {
+  const { data: bookings, error } = await supabaseTyped
+    .from("ticket_bookings")
+    .select("id, reservation_id")
+    .eq("source", "office")
+    .is("sent_to_customer_at", null)
+    .in("status", ["sale_on_hold", "approved", "commissionable"]);
+  if (error) throw new Error(`ticket_bookings read failed: ${error.message}`);
+  if (!bookings || bookings.length === 0) return new Set();
+  const { data: files, error: filesError } = await supabaseTyped
+    .from("ticket_booking_files")
+    .select("booking_id")
+    .in("booking_id", bookings.map((b) => b.id));
+  if (filesError) throw new Error(`ticket_booking_files read failed: ${filesError.message}`);
+  return waitingReservations(bookings, new Set((files ?? []).map((f) => f.booking_id)));
 }

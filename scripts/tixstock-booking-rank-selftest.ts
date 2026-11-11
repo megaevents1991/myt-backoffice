@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { adminOrHidden, fulfilmentVisibleTo } from "../lib/fulfilment/visibility";
 import { rankListings, type RankInput } from "../lib/tixstock-booking/rank";
 import { hotelShippingOf, reservationAttendees, reservationBuyer, soldTicketOf } from "../lib/tixstock-booking/office-open";
-import { toBookingView, toFileView } from "../lib/tixstock-booking/booking-view";
+import { toBookingView, toFileView, waitingReservations } from "../lib/tixstock-booking/booking-view";
 
 const cases: Array<[string, () => void | Promise<void>]> = [];
 const it = (name: string, run: () => void | Promise<void>): void => {
@@ -246,6 +246,17 @@ it("a file is a link staff can open only when it is safe to open", () => {
   assert.deepEqual([hostile.href, hostile.text], [null, "javascript:alert(1)"]);
   // A stored file whose signed URL could not be made has nothing to open.
   assert.deepEqual([toFileView({ ...base, kind: "pdf", url: null }, null).href, toFileView({ ...base, kind: "pdf", url: null }, null).text], [null, null]);
+});
+
+it("tickets waiting: an office booking with at least one file that nobody sent yet", () => {
+  const bookings = [
+    { id: "b1", reservation_id: 11 },
+    { id: "b2", reservation_id: 12 },
+    { id: "b3", reservation_id: 11 },
+  ];
+  assert.deepEqual([...waitingReservations(bookings, new Set(["b1", "b3"]))], [11], "one mark per reservation");
+  assert.deepEqual([...waitingReservations(bookings, new Set(["b2"]))], [12]);
+  assert.deepEqual([...waitingReservations(bookings, new Set())], [], "a booking with no file yet is not waiting");
 });
 
 const main = async (): Promise<void> => {

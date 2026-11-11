@@ -59,6 +59,7 @@ import { hasHotelInfo, normalizeReservationEventOrderInfo } from "@/lib/utils";
 import { otherHotelHolders, type ItineraryGroup } from "@/lib/itinerary/reservation-group";
 import { ItineraryPanel } from "./itinerary-panel";
 import { WhatsappFold } from "./whatsapp-fold";
+import { TicketBookingCard } from "./ticket-booking-card";
 import { israelDate } from "@/lib/tasks/reminders";
 import { followUpLabel, isFollowUpStatus } from "@/lib/reservations/follow-up";
 import {
@@ -693,6 +694,9 @@ export default function ReservationDetailsPage({
           )}
         </CardContent>
       </Card>
+
+      {/* TixStock ticket booking. Renders nothing unless the fulfilment tools are open to this role. */}
+      <TicketBookingCard reservationId={reservation.id} eventName={reservationEvents[0]?.name ?? ""} />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

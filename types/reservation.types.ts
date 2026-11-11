@@ -160,6 +160,9 @@ export type ReservationListRow = Pick<
   has_payment_info: boolean;
   /** An unseen WhatsApp conversation marks this order (spec 2026-11-08 R-1). */
   wa_new?: boolean;
+  /** TixStock tickets arrived for this order's office booking and nobody sent them yet. Set only for a role
+   *  the fulfilment tools are open to; absent for everyone else. */
+  tickets_waiting?: boolean;
   /** Which office agent the booking is credited to (utm_touches, resolved
    *  across every office) - null when unattributed. See getAgentLabelsForReservations. */
   agent_label: string | null;

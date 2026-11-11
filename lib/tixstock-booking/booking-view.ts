@@ -145,3 +145,12 @@ export function toFileView(file: Record<string, unknown>, signedUrl: string | nu
     receivedAt: str(file.received_at),
   };
 }
+
+/**
+ * The reservations of the list view "התקבלו ולא נשלחו": `bookings` are the OFFICE bookings nobody sent yet,
+ * `withFiles` the ids of bookings that have at least one file. A site (test) booking is never passed in: nobody
+ * "sends" it, so it would sit in the view for ever.
+ */
+export function waitingReservations(bookings: ReadonlyArray<{ id: string; reservation_id: number }>, withFiles: ReadonlySet<string>): Set<number> {
+  return new Set(bookings.filter((b) => withFiles.has(b.id)).map((b) => b.reservation_id));
+}

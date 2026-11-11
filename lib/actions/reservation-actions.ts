@@ -2,6 +2,8 @@
 
 import { withoutWaColumns } from "@/lib/whatsapp/events/chat-rules";
 import { whatsappMarks } from "@/lib/services/whatsapp-events-db";
+import { fulfilmentVisibleTo } from "@/lib/fulfilment/visibility";
+import { ticketsWaitingMarks } from "@/lib/services/tixstock-delivery";
 import { drainOutbox, drainOutboxFor } from "@/lib/services/whatsapp-events-outbox";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { requireStaff, requireSuperadmin } from "@/lib/auth/guards";
@@ -43,7 +45,7 @@ type ReservationListDbRow = Omit<ReservationListRow, "has_payment_info"> & {
 };
 
 export async function getReservations(): Promise<ReservationListRow[]> {
-  await requireStaff();
+  const session = await requireStaff();
   // Paged: PostgREST hard-caps every response at 1000 rows, so the old single
   // fetch silently dropped everything past the cap once the table outgrew it
   // (1331 rows as of 2026-08-19 → the 331 oldest were invisible).
@@ -83,7 +85,7 @@ export async function getReservations(): Promise<ReservationListRow[]> {
   // The Euro Trip chips ride the same wait: the three itinerary columns are NOT in the
   // list select above (a deploy that beat its migration must still list everything), they
   // come from a separate best-effort read that answers an empty map on any failure.
-  const [agentLabels, itineraryMarks, waMarks] = await Promise.all([
+  const [agentLabels, itineraryMarks, waMarks, ticketMarks] = await Promise.all([
     getAgentLabelsForReservations(rows.map((r) => r.id)),
     loadItineraryMarks(supabase),
     // best-effort, like the Euro Trip chips: a failed read leaves every row unmarked, never the list empty
@@ -91,6 +93,14 @@ export async function getReservations(): Promise<ReservationListRow[]> {
       console.warn("getReservations: whatsapp marks not read:", e instanceof Error ? e.message : e);
       return new Set<number>();
     }),
+    // TixStock tickets that arrived and were not sent yet - read ONLY for a role the fulfilment tools are open to
+    // (for everyone else no query is added to the list's load), best-effort like the marks above.
+    fulfilmentVisibleTo(session.role, process.env.NEXT_SECRET_FULFILMENT_OPEN)
+      ? ticketsWaitingMarks().catch((e: unknown) => {
+          console.warn("getReservations: ticket marks not read:", e instanceof Error ? e.message : e);
+          return new Set<number>();
+        })
+      : Promise.resolve(new Set<number>()),
   ]);
 
   return rows.map(({ payment_info, ...row }) => ({
@@ -100,6 +110,7 @@ export async function getReservations(): Promise<ReservationListRow[]> {
     has_payment_info: payment_info != null,
     agent_label: agentLabels.get(row.id) ?? null,
     ...(waMarks.has(row.id) ? { wa_new: true } : {}),
+    ...(ticketMarks.has(row.id) ? { tickets_waiting: true } : {}),
   }));
 }
 
