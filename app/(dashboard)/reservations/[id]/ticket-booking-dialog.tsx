@@ -48,6 +48,7 @@ const BOOK_ERRORS: Record<string, string> = {
   gap_not_accepted: "הליסטינג יקר מהעלות שנמכרה - יש לאשר את הפער.",
   locked: "להזמנה הזו כבר יש הזמנת כרטיסים פעילה.",
   gone: "הליסטינג כבר לא זמין. בחרו ליסטינג אחר.",
+  lead_booker: "הליסטינג דורש Lead Booker - לא מזמינים אותו עד ש-TixStock יענו מה נדרש. בחרו ליסטינג אחר.",
   refused: "TixStock סירב להזמנה.",
   uncertain: "לא ודאי - לא להזמין שוב עד שיתברר",
   production_closed: "TixStock - הזמנה בפרודקשן עוד לא נפתחה",
@@ -134,8 +135,14 @@ function ListingRow({ listing, selected, onSelect }: { listing: RankedListing; s
     <button
       type="button"
       onClick={onSelect}
+      // A listing that requires a lead booker cannot be picked (the book action refuses it too): it is shown, so
+      // staff see why the cheapest row is not on offer, and it says why.
+      disabled={listing.leadBooker}
       aria-pressed={selected}
-      className={cn("w-full rounded-md border p-3 text-right transition-colors", selected ? "border-primary bg-primary/5" : "hover:bg-muted/50")}
+      className={cn(
+        "w-full rounded-md border p-3 text-right transition-colors",
+        listing.leadBooker ? "cursor-not-allowed bg-muted opacity-70" : selected ? "border-primary bg-primary/5" : "hover:bg-muted/50",
+      )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium">
@@ -162,7 +169,7 @@ function ListingRow({ listing, selected, onSelect }: { listing: RankedListing; s
         </div>
       )}
       {listing.leadBooker && (
-        <div className="mt-1 text-sm font-medium text-red-600">הליסטינג דורש Lead Booker - לבדוק מול TixStock לפני הזמנה</div>
+        <div className="mt-1 text-sm font-medium text-red-600">חסום להזמנה: הליסטינג דורש Lead Booker, ו-TixStock עוד לא ענו מה נדרש</div>
       )}
       {listing.restrictions.length > 0 && (
         <ul className="mt-1 list-disc ps-5 text-xs" dir="ltr">

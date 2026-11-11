@@ -146,6 +146,15 @@ it("a listing that is no longer offered is gone, with no row and no hold", async
   assert.equal(s.calls.some((c) => c === "insert" || c.startsWith("hold")), false);
 });
 
+it("a listing that requires a lead booker is refused, whatever the dialog sent", async () => {
+  // TixStock has not said what such a listing asks of the buyer (one in five production listings carries the
+  // flag). Until they do it is not booked: an order at TixStock is final. The flag is read from the listing as it
+  // is re-read at the click, so a browser cannot wave it through.
+  const s = world({ listing: ranked({ leadBooker: true }) });
+  assert.deepEqual(await runOfficeBooking(input({ acceptGap: true }), ACTOR, s.deps), { ok: false, kind: "lead_booker" });
+  assert.deepEqual(s.calls, ["context:2233:TX-EVENT:L1"], "no row, no audit, no hold");
+});
+
 it("production that is not open, or not configured, books nothing", async () => {
   for (const kind of ["production_closed", "not_configured", "db"] as const) {
     const s = world({ context: { ok: false, kind } });

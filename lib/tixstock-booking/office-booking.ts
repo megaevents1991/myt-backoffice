@@ -2,7 +2,8 @@
 // An order at TixStock is FINAL - it is never cancelled from here - so the order of things is the whole point:
 //
 //   1. staff's three ticks, before anything is read or called;
-//   2. the listing is read again (it must still be offered to this party) and a dearer one needs an explicit yes;
+//   2. the listing is read again (it must still be offered to this party, and must not require a lead booker) and
+//      a dearer one needs an explicit yes;
 //   3. the booking row is inserted as `holding` - the table's unique index is the lock: a reservation with a live
 //      booking cannot get a second one, whoever presses;
 //   4. the attempt is audited BEFORE TixStock is called;
@@ -59,6 +60,7 @@ export type OfficeBookingResult =
         | "gap_not_accepted"
         | "locked"
         | "gone"
+        | "lead_booker"
         | "refused"
         | "uncertain"
         | "production_closed"
@@ -127,6 +129,9 @@ export async function runOfficeBooking(input: OfficeBookingInput, actor: string,
     if (!context.ok) return { ok: false, kind: context.kind };
     const listing = context.listing;
     if (!listing) return { ok: false, kind: "gone" };
+    // A listing that requires a lead booker is not booked until TixStock says what it asks of the buyer (Dor,
+    // 11.11.2026). Read from the listing as it was re-read at the click - nothing staff type can change it.
+    if (listing.leadBooker) return { ok: false, kind: "lead_booker" };
     const { env, quantity } = context;
     // The venue decides; staff's tick can only add. What the dialog sent is never a reason to leave the details out.
     const italian = context.italian || input.italian;
