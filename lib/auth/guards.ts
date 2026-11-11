@@ -162,7 +162,9 @@ async function readActorProfile(sub: string): Promise<ActorProfile | null> {
  *
  * Who passes:
  *  - superadmin, and every non-staff role (partners, forms_operator): they are
- *    Mega Events accounts and are not looked up;
+ *    not looked up here. A forms_operator never comes through this gate since
+ *    2026-11-11 - the forms belong to a company and lib/forms/access.ts resolves
+ *    the operator's company from its own memberships;
  *  - admin / editor with a Mega Events membership;
  *  - admin / editor with NO membership at all: an account nobody assigned to a
  *    company is a Mega Events account - the same floor lib/company.ts uses;
@@ -263,49 +265,14 @@ export async function requireStaffOfAnyCompany(): Promise<SessionPayload> {
 }
 
 /**
- * Staff or forms_operator - the forms area: list, view, duplicate, trip links,
- * responses, reports, and (since 21.10, Dor) building and publishing the forms
- * opened to operators - every per-form action adds `requireFormVisible`. A blank
- * new form, deleting a form, opening it to operators and personal invite mails
- * stay behind requireStaff.
+ * A signed-in forms_operator whose account is still switched on - the role check alone,
+ * with no company gate. ONLY for lib/forms/access.ts, which resolves the operator's company
+ * itself (its memberships, failing closed) and scopes every forms query by it.
  */
-export async function requireFormsAccess(): Promise<SessionPayload> {
-  const session = await requireRole(
-    "superadmin",
-    "admin",
-    "editor",
-    "forms_operator",
-  );
-  // An external operator's still-signed cookie must stop working the moment
-  // the account is disabled in /users - same decision as requirePartner
-  // (QA 20.08). Staff roles were already re-checked by getSession.
-  if (session.role === "forms_operator") await assertActorActive(session.sub);
+export async function requireActiveFormsOperator(): Promise<SessionPayload> {
+  const session = await requireRoleInAnyCompany("forms_operator");
+  await assertActorActive(session.sub);
   return session;
-}
-
-/**
- * Deep check for per-form actions: staff pass; a forms_operator passes only
- * when the form is flagged operator_visible. Fail-closed on query errors.
- * Guards the ACTIONS (trip links, invites, responses, report) - list/read
- * filtering alone would still leave direct action calls open.
- */
-export async function requireFormVisible(
-  actor: SessionPayload,
-  formId: number,
-): Promise<void> {
-  if (actor.role !== "forms_operator") return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from("forms")
-    .select("operator_visible")
-    .eq("id", formId)
-    .is("is_deleted", null)
-    .maybeSingle();
-  if (error) {
-    console.error("requireFormVisible:", JSON.stringify(error));
-    throw new Error("Unauthorized");
-  }
-  if (!data?.operator_visible) throw new Error("Unauthorized");
 }
 
 /** superadmin or admin - user management. Per-target hierarchy enforced in user-actions. */

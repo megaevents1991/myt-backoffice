@@ -3,22 +3,24 @@
  * docs/superpowers/specs/2026-10-21-forms-series-hotels-design.md). Session-free: every
  * caller is a forms action that already passed its own guard.
  *
- * The forms are Mega Events data with no company of their own, while a series belongs to a
- * tours company (today only Mega Family has organized series - BBC, FPAR... the codes the
- * trip links always carried). So these reads are NOT scoped to one company: every company's
- * series are offered, and the series id is what a form stores.
+ * Every read takes the company the form belongs to (2026-11-11 - the forms belong to a
+ * company, spec docs/superpowers/specs/2026-11-11-forms-to-mega-family-design.md) and
+ * answers only that company's series, departures and guides (`company_id` on
+ * tours.series / tours.instructors; a departure belongs to its series). A company that sells
+ * no tours (Mega Events) has none, so its forms get no series parts.
  */
 import { toursDb } from "@/lib/tours/db";
 import { fetchPaged } from "@/lib/supabase-paged";
 import type { SeriesDeparture } from "@/lib/forms/series";
 import type { FormSeries } from "@/types/form.types";
 
-/** Every series (or the ones asked for), with its tour's name, by code. */
-export async function readSeries(ids?: string[]): Promise<FormSeries[]> {
+/** Every series of the company (or the ones asked for), with its tour's name, by code. */
+export async function readSeries(companyId: string, ids?: string[]): Promise<FormSeries[]> {
   if (ids && ids.length === 0) return [];
   let query = toursDb()
     .from("series")
     .select("id,code,label,is_active,package_id")
+    .eq("company_id", companyId)
     .order("code", { ascending: true });
   if (ids) query = query.in("id", ids);
   const { data, error } = await query;
@@ -50,20 +52,25 @@ export async function readSeries(ids?: string[]): Promise<FormSeries[]> {
   }));
 }
 
-/** One series, or null when the id is not a series. */
-export async function readOneSeries(id: string): Promise<FormSeries | null> {
-  const [series] = await readSeries([id]);
+/** One series of the company, or null when the id is not one of its series. */
+export async function readOneSeries(companyId: string, id: string): Promise<FormSeries | null> {
+  const [series] = await readSeries(companyId, [id]);
   return series ?? null;
 }
 
 const DEPARTURES_MAX = 5000;
 
 /**
- * The live departures of one series - or of every series when `seriesId` is null (a general
- * form like #5) - each with its series' code. Paged: the catalog passes 1,000 in a season or two.
+ * The live departures of one series of the company - or of every series of the company when
+ * `seriesId` is null (a general form like #5) - each with its series' code. Paged: the
+ * catalog passes 1,000 in a season or two.
  */
-export async function readSeriesDepartures(seriesId: string | null): Promise<SeriesDeparture[]> {
-  const series = await readSeries(seriesId ? [seriesId] : undefined);
+export async function readSeriesDepartures(
+  companyId: string,
+  seriesId: string | null,
+): Promise<SeriesDeparture[]> {
+  const series = await readSeries(companyId, seriesId ? [seriesId] : undefined);
+  if (series.length === 0) return [];
   const codeOf = new Map(series.map((s) => [s.id, s.code]));
   if (seriesId && !codeOf.has(seriesId)) return [];
 
@@ -80,6 +87,8 @@ export async function readSeriesDepartures(seriesId: string | null): Promise<Ser
       .is("is_deleted", null)
       .order("start_date", { ascending: true })
       .order("id", { ascending: true });
+    // Every series: read them all and keep the company's below (codeOf) - an id list of
+    // every series in the URL would outgrow PostgREST's request line.
     if (seriesId) query = query.eq("series_id", seriesId);
     return query;
   }, DEPARTURES_MAX);
@@ -99,8 +108,8 @@ export async function readSeriesDepartures(seriesId: string | null): Promise<Ser
     }));
 }
 
-/** One departure with its series code, or null. */
-export async function readDeparture(id: string): Promise<SeriesDeparture | null> {
+/** One departure of the company's series with its series code, or null. */
+export async function readDeparture(companyId: string, id: string): Promise<SeriesDeparture | null> {
   const { data, error } = await toursDb()
     .from("departures")
     .select("id,code,start_date,end_date,series_id")
@@ -112,7 +121,8 @@ export async function readDeparture(id: string): Promise<SeriesDeparture | null>
     throw new Error("Could not read the departure");
   }
   if (!data) return null;
-  const series = await readOneSeries(data.series_id);
+  // A departure of another company's series is no departure of this form.
+  const series = await readOneSeries(companyId, data.series_id);
   if (!series) return null;
   return {
     id: data.id,
@@ -124,11 +134,12 @@ export async function readDeparture(id: string): Promise<SeriesDeparture | null>
   };
 }
 
-/** The guides' names (tours.instructors), offered as escort suggestions on a trip link. */
-export async function readGuideNames(): Promise<string[]> {
+/** The company's guides' names (tours.instructors), offered as escort suggestions on a trip link. */
+export async function readGuideNames(companyId: string): Promise<string[]> {
   const { data, error } = await toursDb()
     .from("instructors")
     .select("name")
+    .eq("company_id", companyId)
     .eq("is_active", true)
     .order("name", { ascending: true })
     .limit(1000);

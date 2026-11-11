@@ -1100,6 +1100,32 @@ these tables.
 | `form_invites`   | per-recipient `token`, language, `sent_at`/`opened_at`/`submitted_at`   |
 | `form_responses` | `answers` jsonb keyed by **field id**, plus `lang`, `ip`                |
 
+- **Every form belongs to a company (2026-11-11; spec `docs/superpowers/specs/2026-11-11-forms-to-mega-family-design.md`).**
+  The forms were built before companies and served Mega Family (מגה תיירות) from inside Mega Events; Dor moved them, their
+  answers and their people. `forms.company_id` (NOT NULL, default Mega Events, FK companies; migration `20261111074850`
+  tagged by rule: opened to operators OR on a series OR created by nir1 / daniel = Mega Family - #5 #6 #7 #8 #10; the rest
+  Mega Events - #1-4 #9). Fields / invites / answers follow their form through `form_id` and have no company column.
+  **Guards** (`lib/forms/access.ts`, rules pure in `lib/forms/company-access.ts`, selftest `scripts/forms-company-selftest.ts`):
+  `requireFormsCompany()` = staff as `requireCompany()` (no product gate) or a `forms_operator` by its OWN memberships
+  (`listFormsOperatorCompanies`: none = Mega Events, unreadable = refused); `{ staffOnly: true }` for a blank form, delete,
+  personal invites; `requireFormInCompany(ctx, formId)` on EVERY per-form action - an action that arrives with a child id
+  (`resendInvite`, `deleteInvite`) reads the child's `form_id` first. A form of another company answers exactly like a
+  missing one. `requireFormsAccess` / `requireFormVisible` (the Mega Events gate) are gone - never route a forms action
+  through `requireStaff()` again. Lists, the hotels report, copy-question targets, escort suggestions and the Family site's
+  reviews picker read the active company's forms only; series / departures / guides (`lib/services/form-series.ts`) take
+  the company; the xlsx export is `guardAdminRoute({ anyCompany: true })` + the scoped reads. `/forms` is a shared menu
+  item and a tours-company path (`isToursCompanyPath` - else the route gate bounces a Family operator off it); the top bar
+  gives a forms operator its real company. A page of a form in the viewer's OTHER company says where it is with a
+  `?company=` switch (`findFormElsewhere`), an empty list names the viewer's other companies that have forms
+  (`otherCompaniesWithForms`); a non-member is told nothing. `deleteInvite` (a HARD delete; answers' invite link is
+  `on delete set null`) refuses a trip link, and the links page no longer offers it on one - a trip link goes through
+  `deleteTripLink`. **Users:** `forms_operator` is a company role (`COMPANY_MEMBER_ROLES`, label "Forms operator" /
+  "מפעיל טפסים"); moving a person between staff / sales agent / forms operator is a superadmin's move
+  (`crossesRoleLine`, `lib/auth/company-roles.ts`). Migration `20261111084022` re-tagged forms made between the stages and
+  moved Nir (Mega Family admin only - he had been a full Mega Events admin through a stale membership) and Daniel (Mega
+  Family forms operator only); SQL tests `scripts/forms-company-sql-pglite-test.mjs`,
+  `scripts/forms-company-users-sql-pglite-test.mjs` (`PGLITE_PATH`). Not changed: the public `/f/*` pages, slugs (global),
+  the invite mail sender (`DEFAULT_FROM`), `audit_log`, Storage (the logo picker stays a Storage-API tool).
 - **`/f/<slug>` and `/f/i/<token>` are the only unauthenticated pages** - `middleware.ts`
   skips the session check for `/f/*`. The submit server action
   (`lib/actions/form-response-actions.ts`) is therefore a public endpoint: it resolves

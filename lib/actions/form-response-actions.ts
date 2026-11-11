@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
+import { requireFormInCompany, requireFormsCompany } from "@/lib/forms/access";
 import { logAudit } from "@/lib/audit";
 import { liveRowsQuery, softDeleteStamp } from "@/lib/forms/soft-delete";
 import { buildFieldSchema, isEmptyAnswer, validateAnswers } from "@/lib/forms/validation";
@@ -442,8 +442,8 @@ export async function submitFormResponse(
 export async function getFormResponses(
   formId: number,
 ): Promise<FormResponseRow[]> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const { data, error } = await liveRowsQuery((filterDeleted) => {
     let query = responsesTable()
@@ -488,8 +488,8 @@ export async function deleteFormResponse(
   id: number,
   formId: number,
 ): Promise<RemoveResponseResult> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const { data, error } = await responsesTable()
     .update({ is_deleted: softDeleteStamp() })
@@ -531,8 +531,8 @@ export async function restoreFormResponse(
   id: number,
   formId: number,
 ): Promise<RemoveResponseResult> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const { data, error } = await responsesTable()
     .update({ is_deleted: null })
@@ -580,8 +580,8 @@ export async function updateFormResponseAnswers(
   formId: number,
   patch: Record<string, unknown>,
 ): Promise<EditAnswersResult> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const [responseRes, fieldsRes] = await Promise.all([
     responsesTable()

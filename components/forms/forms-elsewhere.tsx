@@ -1,0 +1,61 @@
+import Link from "next/link";
+import { Building2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+/*
+ * The forms belong to a company (2026-11-11): a viewer who works in more than one
+ * company may land on a form - or an empty forms list - of the company they are NOT in
+ * now. These say where the forms are and switch there through the company deep link
+ * (`?company=<slug>`, contexts/company-context.tsx). They are only shown for a company
+ * the viewer works in (findFormElsewhere / otherCompaniesWithForms decide).
+ */
+
+/** A form page whose form lives in another company of the viewer. */
+export function FormInOtherCompany({
+  company,
+  path,
+}: {
+  company: { slug: string; name: string };
+  path: string;
+}) {
+  return (
+    <div className="mx-auto mt-16 max-w-md rounded-lg border bg-card p-8 text-center" dir="rtl">
+      <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+      <h1 className="text-lg font-bold">הטופס הזה נמצא בחברה {company.name}</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        הטפסים מנוהלים בתוך החברה שהם שייכים לה. עוברים לחברה ופותחים אותו שם.
+      </p>
+      <Button asChild className="mt-5">
+        <Link href={`${path}?company=${encodeURIComponent(company.slug)}`}>
+          מעבר ל{company.name}
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+/** One line over an empty forms list: the viewer's other companies that have forms. */
+export function FormsInOtherCompanies({
+  companies,
+}: {
+  companies: { slug: string; name: string; count: number }[];
+}) {
+  if (companies.length === 0) return null;
+  return (
+    <div className="space-y-2" dir="rtl">
+      {companies.map((company) => (
+        <div
+          key={company.slug}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/40 px-4 py-3 text-sm"
+        >
+          <span>
+            הטפסים של {company.name} ({company.count}) נמצאים בחברה {company.name}.
+          </span>
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/forms?company=${encodeURIComponent(company.slug)}`}>החלף חברה</Link>
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}

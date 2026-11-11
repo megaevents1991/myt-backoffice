@@ -27,7 +27,7 @@ import { PrintBar } from "./print-bar";
  * print). A route OUTSIDE the (dashboard) group was tried: a root-level
  * `app/forms` shadows `app/(dashboard)/forms` and /forms itself 404s.
  * /forms/*, so middleware lets a forms_operator in, and every loader below
- * runs requireFormsAccess + requireFormVisible like the report itself.
+ * runs requireFormsCompany + requireFormInCompany (lib/forms/access.ts) like the report itself.
  */
 
 export const dynamic = "force-dynamic";

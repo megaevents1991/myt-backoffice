@@ -36,6 +36,7 @@ export const TOURS_AGENT_ROLE = "tours_agent" satisfies Role;
 /** Display names of the roles that are shown by more than their id. */
 export const ROLE_LABELS: Partial<Record<Role, { en: string; he: string }>> = {
   tours_agent: { en: "Sales agent", he: "נציג מכירות" },
+  forms_operator: { en: "Forms operator", he: "מפעיל טפסים" },
 };
 
 export const STAFF_ROLES: Role[] = ["superadmin", "admin", "editor"];
@@ -48,9 +49,12 @@ export const SELLER_ROLES: Role[] = ["agent", "office_manager"];
 /**
  * The roles a person can hold in a company other than Mega Events - the Users
  * screen in company scope (lib/actions/user-actions.ts). Only a superadmin
- * gives `admin`.
+ * gives `admin`. `forms_operator` (2026-11-11): the forms belong to a company,
+ * so a company keeps its own forms operators; moving a person between kinds of
+ * role (staff / sales agent / forms operator) is a superadmin's move
+ * (lib/auth/company-roles.ts).
  */
-export const COMPANY_MEMBER_ROLES: Role[] = ["admin", "editor", "tours_agent"];
+export const COMPANY_MEMBER_ROLES: Role[] = ["admin", "editor", "tours_agent", "forms_operator"];
 
 /** Row shape of public.user_profiles (hand-typed until `npm run db:types` regen). */
 export interface UserProfile {

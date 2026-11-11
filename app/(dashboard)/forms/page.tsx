@@ -1,4 +1,5 @@
-import { getForms, listFormSeries } from "@/lib/actions/form-actions";
+import { getForms, listFormSeries, otherCompaniesWithForms } from "@/lib/actions/form-actions";
+import { FormsInOtherCompanies } from "@/components/forms/forms-elsewhere";
 import { getSession } from "@/lib/auth/guards";
 import { FormsClient } from "./forms-client";
 
@@ -12,6 +13,9 @@ export default async function FormsPage() {
     // Staff and forms operators make series forms; a failed tours read only hides the button.
     listFormSeries().catch(() => []),
   ]);
+  // An empty list in one company while the viewer's other company has forms reads like lost
+  // data (most superadmins work in Mega Events by default) - say where they are.
+  const elsewhere = forms.length === 0 ? await otherCompaniesWithForms() : [];
 
   return (
     <div className="space-y-6">
@@ -23,6 +27,8 @@ export default async function FormsPage() {
           dashboard.
         </p>
       </div>
+
+      <FormsInOtherCompanies companies={elsewhere} />
 
       <FormsClient initialForms={forms} isOperator={isOperator} seriesOptions={seriesOptions} />
     </div>

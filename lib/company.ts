@@ -21,6 +21,7 @@ import {
   type CompanyHomeHint,
 } from "@/lib/company-ids";
 import { TOURS_AGENT_ROLE, type Role } from "@/types/auth.types";
+import { formsOperatorCompanyIds } from "@/lib/forms/company-access";
 import type { SessionPayload } from "@/lib/auth/session";
 
 export { MEGA_EVENTS_COMPANY_ID };
@@ -96,13 +97,50 @@ async function listToursAgentCompanies(userId: string): Promise<Company[]> {
 }
 
 /**
+ * The companies a forms_operator works in (2026-11-11 - the forms belong to a company).
+ * The rule is pure in lib/forms/company-access.ts (formsOperatorCompanyIds): no
+ * membership = Mega Events (its users screen creates operators with none), the active
+ * companies of its memberships otherwise. NULL when the memberships cannot be read - the
+ * forms guard refuses then, rather than fall back to Mega Events like staff do.
+ */
+export async function listFormsOperatorCompanies(userId: string): Promise<Company[] | null> {
+  try {
+    const { data, error } = await supabaseTyped
+      .from("company_members")
+      .select(`companies!inner(${COLUMNS}, is_active, created_at)`)
+      .eq("user_id", userId);
+    if (error || !data) {
+      if (error) console.error("listFormsOperatorCompanies:", JSON.stringify(error));
+      return null;
+    }
+    const rows = data
+      .map((m) => m.companies as unknown as CompanyRow & { is_active: boolean; created_at: string })
+      .filter(Boolean)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const ids = formsOperatorCompanyIds(
+      rows.map((c) => ({ company_id: c.id, is_active: c.is_active })),
+      MEGA_EVENTS_COMPANY_ID,
+    );
+    if (ids === null) return null;
+    if (rows.length === 0) return [MEGA_EVENTS_FALLBACK];
+    return rows.filter((c) => ids.includes(c.id)).map(toCompany);
+  } catch (e) {
+    console.error("listFormsOperatorCompanies:", e);
+    return null;
+  }
+}
+
+/**
  * The companies this session may work in. superadmin: every active company.
  * Everyone else: their company_members rows. Never empty - Mega Events is the
- * floor - except for a tours_agent, which works only where it was assigned.
+ * floor - except for a tours_agent, which works only where it was assigned, and
+ * a forms_operator whose memberships cannot be read (empty: the forms guard
+ * refuses it - lib/forms/access.ts reads listFormsOperatorCompanies itself).
  */
 export async function listCompaniesFor(session: SessionPayload | null): Promise<Company[]> {
   if (!session) return [MEGA_EVENTS_FALLBACK];
   if (session.role === TOURS_AGENT_ROLE) return listToursAgentCompanies(session.sub);
+  if (session.role === "forms_operator") return (await listFormsOperatorCompanies(session.sub)) ?? [];
   try {
     if (session.role === "superadmin") {
       const { data, error } = await supabaseTyped

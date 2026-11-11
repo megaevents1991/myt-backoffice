@@ -488,16 +488,20 @@ export function InvitesClient({
                         >
                           <RotateCw className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          disabled={pending}
-                          onClick={() => handleDelete(invite)}
-                          aria-label="Delete invite"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {/* A trip link is removed from the trips report (a soft delete that
+                            refuses a trip with answers) - deleting it here would orphan them. */}
+                        {!invite.multi_use && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive"
+                            disabled={pending}
+                            onClick={() => handleDelete(invite)}
+                            aria-label="Delete invite"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>

@@ -199,6 +199,12 @@ type Props = {
    * operators and the Storage image picker stay staff tools.
    */
   isOperator?: boolean;
+  /**
+   * The logo / cover picker runs on the Storage API, a Mega Events tool (guardAdminRoute):
+   * false for an operator and for staff who do not work in Mega Events (a Mega Family admin).
+   * Without it the stored logo and cover stay as they are.
+   */
+  canPickImages?: boolean;
 };
 
 export function FormBuilder({
@@ -207,6 +213,7 @@ export function FormBuilder({
   seriesOptions,
   otherForms,
   isOperator = false,
+  canPickImages = !isOperator,
 }: Props) {
   const { toast } = useToast();
   const [pending, startTransition] = useTransition();
@@ -881,10 +888,10 @@ export function FormBuilder({
               </div>
             </div>
 
-            {isOperator ? (
+            {!canPickImages ? (
               <p className="text-xs text-muted-foreground">
-                The logo and the cover image come with the form you copied - Mega staff change
-                them.
+                The logo and the cover image stay as they are (they come with the form you copied) -
+                a superadmin changes them.
               </p>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">

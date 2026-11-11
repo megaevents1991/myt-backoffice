@@ -302,11 +302,11 @@ const NAV: NavGroup[] = [
         productType: "events",
       },
       {
+        // Shared by every company (2026-11-11): each company sees its own forms only.
         name: "Forms",
         href: "/forms",
         icon: ClipboardCheck,
-        keywords: "leads questionnaires טפסים",
-        productType: "events",
+        keywords: "leads questionnaires feedback trip forms טפסים משוב",
       },
     ],
   },
@@ -489,6 +489,7 @@ const FLIGHTS_HREF = "/offline-flights";
 const TASKS_HREF = "/tasks";
 const USERS_HREF = "/users";
 const GUIDE_HREF = "/guide";
+const FORMS_HREF = "/forms";
 
 /**
  * The menu of a company that sells `productTypes`: entries of another product
@@ -540,11 +541,12 @@ function groupsForRole(groups: NavGroup[], role: Role | undefined | null): NavGr
 /**
  * The screens a company that sells tours and no events works in: its own
  * module and the shared screens that follow the active company (flights,
- * tasks, users, the guide).
- * The dashboard layout sends such a company home (TOURS_HOME) from anywhere else.
+ * tasks, users, the guide, and since 2026-11-11 the forms).
+ * The dashboard layout sends such a company home (TOURS_HOME) from anywhere else -
+ * a forms operator, confined to /forms by middleware.ts, would bounce between the two.
  */
 export function isToursCompanyPath(pathname: string): boolean {
-  return [TOURS_HOME, FLIGHTS_HREF, TASKS_HREF, USERS_HREF, GUIDE_HREF].some(
+  return [TOURS_HOME, FLIGHTS_HREF, TASKS_HREF, USERS_HREF, GUIDE_HREF, FORMS_HREF].some(
     (root) => pathname === root || pathname.startsWith(`${root}/`),
   );
 }

@@ -83,6 +83,7 @@ import {
   type UserListItem,
   type UserProfile,
 } from "@/types/auth.types";
+import { crossesRoleLine } from "@/lib/auth/company-roles";
 import type { PartnerListItem } from "@/lib/actions/partner-actions";
 import { useAuth } from "@/contexts/auth-context";
 import { useConfirm } from "@/components/confirm-provider";
@@ -253,13 +254,12 @@ export function UsersClient({
   const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
   const [resetPassword, setResetPassword] = useState("");
 
-  // Company scope, editing as a company admin: a tours agent stays a tours
-  // agent and staff stays staff - crossing that line is a superadmin's call.
+  // Company scope, editing as a company admin: a sales agent stays a sales agent,
+  // a forms operator a forms operator and staff stays staff - moving between those
+  // kinds is a superadmin's call (lib/auth/company-roles.ts).
   const editRoleOptions =
     inCompany && editing && !isSuper
-      ? roleOptions.filter(
-          (r) => (r === TOURS_AGENT_ROLE) === (roleHere(editing) === TOURS_AGENT_ROLE),
-        )
+      ? roleOptions.filter((r) => !crossesRoleLine(roleHere(editing), r))
       : roleOptions;
 
   const needsPartner = PARTNER_ROLES.includes(form.role);

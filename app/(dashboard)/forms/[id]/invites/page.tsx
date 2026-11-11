@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
+import { FormInOtherCompany } from "@/components/forms/forms-elsewhere";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getForm } from "@/lib/actions/form-actions";
+import { findFormElsewhere, getForm } from "@/lib/actions/form-actions";
 import { getFormInvites, getTripLinkOptions } from "@/lib/actions/form-invite-actions";
 import { getSession } from "@/lib/auth/guards";
 import { STAFF_ROLES } from "@/types/auth.types";
@@ -21,7 +22,12 @@ export default async function FormInvitesPage({
   if (!Number.isFinite(formId)) notFound();
 
   const loaded = await getForm(formId);
-  if (!loaded) notFound();
+  if (!loaded) {
+    // A form of the viewer's other company: say where it is instead of "not found".
+    const elsewhere = await findFormElsewhere(formId);
+    if (elsewhere) return <FormInOtherCompany company={elsewhere} path={`/forms/${formId}/invites`} />;
+    notFound();
+  }
 
   const [invites, tripOptions] = await Promise.all([
     getFormInvites(formId),

@@ -2198,7 +2198,6 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "forms",
     nav: "/forms",
-    productType: "events",
     howTo: [
       {
         title: t("Build a new form", "בניית טופס חדש"),
@@ -2280,6 +2279,10 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       "שאלונים דו־לשוניים בסגנון Google Forms: בונים בדשבורד, שולחים קישורי הזמנה, לקוחות עונים בעמוד ציבורי.",
     ),
     points: [
+      t(
+        "Every form belongs to a company (since 11.11.2026 the trip feedback forms are Mega Family's): [Forms](/forms) lists the forms of the company you work in now - switch the company in the top bar to see another company's. A copy or a series form stays in the company it was made in, a series form lists that company's series only, and a forms operator is added on that company's [Users](/users). Links already sent keep working.",
+        "כל טופס שייך לחברה (מ-11.11.2026 טפסי המשוב על הטיולים שייכים למגה פמילי): ב[טפסים](/forms) רואים את הטפסים של החברה שעובדים בה עכשיו - מחליפים חברה בסרגל העליון כדי לראות טפסים של חברה אחרת. עותק או טופס סדרה נשארים בחברה שבה נוצרו, טופס סדרה מציג רק את הסדרות של אותה חברה, ומפעיל טפסים מוסיפים ב[משתמשים](/users) של אותה חברה. קישורים שכבר נשלחו ממשיכים לעבוד.",
+      ),
       t(
         "Each form has EN+HE labels (either may be empty), a status (draft → live), and per-recipient invite tokens with open/submit tracking. Invite emails go out from the system.",
         "לכל טופס תוויות EN+HE (כל אחת יכולה להיות ריקה), סטטוס (טיוטה → חי), וטוקני הזמנה אישיים עם מעקב פתיחה/שליחה. מיילי הזמנה נשלחים מהמערכת.",

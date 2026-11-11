@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
+import { FormInOtherCompany } from "@/components/forms/forms-elsewhere";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getForm } from "@/lib/actions/form-actions";
+import { findFormElsewhere, getForm } from "@/lib/actions/form-actions";
 import { getFormTripReport } from "@/lib/actions/form-report-actions";
 import { getFormResponses } from "@/lib/actions/form-response-actions";
 import { adminLabel } from "@/lib/forms/i18n";
@@ -20,7 +21,12 @@ export default async function FormReportPage({
   if (!Number.isFinite(formId)) notFound();
 
   const loaded = await getForm(formId);
-  if (!loaded) notFound();
+  if (!loaded) {
+    // A form of the viewer's other company: say where it is instead of "not found".
+    const elsewhere = await findFormElsewhere(formId);
+    if (elsewhere) return <FormInOtherCompany company={elsewhere} path={`/forms/${formId}/report`} />;
+    notFound();
+  }
 
   const [{ report, ratingFields }, responses] = await Promise.all([
     getFormTripReport(formId),

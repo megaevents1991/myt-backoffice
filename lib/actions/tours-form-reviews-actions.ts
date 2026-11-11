@@ -4,17 +4,15 @@
  * Reviews picked from the feedback forms, for the Reviews section of a tours
  * company's site (Website > Homepage > Reviews > "Pick from the feedback forms").
  *
- * The forms and their answers are Mega Events data (public.forms / form_responses
- * have no company of their own yet), so this action is open only to someone who may
- * already read every form in /forms: a member of the tours company who ALSO works in
- * Mega Events. It only reads; a picked answer is copied into the section by the
- * editor and saved with the page (lib/actions/tours-site-actions.ts), which is where
- * the audit row is written.
+ * Every form belongs to a company (forms.company_id, 2026-11-11), so this reads the
+ * active tours company's OWN feedback forms - the staff who build its site are the staff
+ * who may read its forms in /forms. It only reads; a picked answer is copied into the
+ * section by the editor and saved with the page (lib/actions/tours-site-actions.ts), which
+ * is where the audit row is written.
  */
 import { requireCompany } from "@/lib/company";
-import { worksInMegaEvents } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
-import { actionFail, chunk, plainFail, type ActionResult } from "@/lib/tours/action-kit";
+import { actionFail, chunk, type ActionResult } from "@/lib/tours/action-kit";
 import {
   canFeedReviews,
   formReviewCandidate,
@@ -52,9 +50,6 @@ export interface FormReviewCandidates {
   answers: number;
 }
 
-const FORMS_ARE_MEGA_EVENTS =
-  "The feedback forms belong to the Mega Events backoffice, so only someone who also works there can pick reviews from them. Ask a Mega Events staff member, or type the reviews here.";
-
 type Row = Record<string, unknown>;
 
 const toField = (row: Row): FormReviewField => {
@@ -84,10 +79,14 @@ const tripLabelOf = (invite: Row): string => {
  */
 export async function getFormReviewCandidates(formId: number | null): Promise<ActionResult<FormReviewCandidates>> {
   try {
-    const { session } = await requireCompany("tours");
-    if (!(await worksInMegaEvents(session))) return plainFail(FORMS_ARE_MEGA_EVENTS);
+    const { company } = await requireCompany("tours");
 
-    const { data: formRows, error: formsError } = await db.from("forms").select("id, title_he, title_en, status").is("is_deleted", null).order("id");
+    const { data: formRows, error: formsError } = await db
+      .from("forms")
+      .select("id, title_he, title_en, status")
+      .eq("company_id", company.id)
+      .is("is_deleted", null)
+      .order("id");
     if (formsError) throw new Error(`forms read: ${formsError.message}`);
     const allForms = (formRows ?? []) as Row[];
     if (allForms.length === 0) return { success: true, data: { forms: [], formId: null, candidates: [], answers: 0 } };

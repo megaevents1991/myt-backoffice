@@ -16,7 +16,9 @@ function safeFileName(name: string): string {
 }
 
 export async function GET(request: Request) {
-  const denied = await guardAdminRoute();
+  // Staff of whatever company: the form's company is checked by the two reads below
+  // (getForm / getFormResponses answer only for a form of the active company).
+  const denied = await guardAdminRoute({ anyCompany: true });
   if (denied) return denied;
 
   const formId = Number(new URL(request.url).searchParams.get("formId"));

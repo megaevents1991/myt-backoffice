@@ -1,7 +1,7 @@
 "use server";
 
 import { supabase } from "@/lib/supabase-server";
-import { requireFormVisible, requireFormsAccess } from "@/lib/auth/guards";
+import { requireFormInCompany, requireFormsCompany } from "@/lib/forms/access";
 import { fieldAdminLabel } from "@/lib/forms/i18n";
 import { buildTripReport } from "@/lib/forms/report";
 import { hotelOf } from "@/lib/forms/series";
@@ -27,8 +27,8 @@ export type FormTripReport = {
 export async function getFormTripReport(
   formId: number,
 ): Promise<FormTripReport> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const [fieldsRes, invitesRes, responsesRes] = await Promise.all([
     table("form_fields")

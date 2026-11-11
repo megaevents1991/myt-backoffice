@@ -9,6 +9,10 @@
 //
 // Run AFTER 20260819120000_forms_trip_feedback.sql is applied (it adds
 // forms.review_link_url, form_fields.staff_only, form_invites.multi_use/label).
+//
+// Since 2026-11-11 the form (#5) belongs to Mega Family (forms.company_id). A re-run
+// updates it in place and leaves its company alone; should this script ever CREATE the
+// form again, the column's default would tag it Mega Events - set it to Mega Family's id.
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 

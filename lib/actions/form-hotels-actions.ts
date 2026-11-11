@@ -9,7 +9,7 @@
  * (lib/forms/series.ts) - the period / series filters then cost no round trip.
  */
 import { supabase } from "@/lib/supabase-server";
-import { requireFormsAccess } from "@/lib/auth/guards";
+import { requireFormsCompany } from "@/lib/forms/access";
 import { liveRowsQuery } from "@/lib/forms/soft-delete";
 import { adminLabel } from "@/lib/forms/i18n";
 import { hotelOf, snapshotsOf, type HotelAnswer } from "@/lib/forms/series";
@@ -65,14 +65,16 @@ function responsesQuery(formIds: number[], withContext: boolean) {
 }
 
 export async function getHotelsReport(): Promise<HotelsReport> {
-  const actor = await requireFormsAccess();
+  const ctx = await requireFormsCompany();
 
   const { data: formsData, error: formsError } = await liveRowsQuery((withSeries) => {
+    // The company's own forms only.
     let query = table("forms")
       .select(withSeries ? "id,title_en,title_he,series_id,audience" : "id,title_en,title_he")
+      .eq("company_id", ctx.company.id)
       .is("is_deleted", null);
     // Operators read only the forms opened to them - same rule as the forms list.
-    if (actor.role === "forms_operator") query = query.eq("operator_visible", true);
+    if (ctx.operator) query = query.eq("operator_visible", true);
     return query;
   });
   if (formsError) {
@@ -112,7 +114,7 @@ export async function getHotelsReport(): Promise<HotelsReport> {
   const seriesCode = new Map<string, string>();
   try {
     const ids = forms.map((f) => f.series_id).filter((id): id is string => Boolean(id));
-    for (const s of await readSeries(ids)) seriesCode.set(s.id, s.code);
+    for (const s of await readSeries(ctx.company.id, ids)) seriesCode.set(s.id, s.code);
   } catch (e) {
     // A trip code's letters still name the series; only link-less answers lose it.
     console.error("getHotelsReport series failed:", e);

@@ -20,6 +20,7 @@ import { createManagedUser, resetPasswordById } from "@/lib/auth/user-create";
 import { generateAgentSlug } from "@/lib/portal-attribution";
 import type { SessionPayload } from "@/lib/auth/session";
 import { getActiveCompany, requireCompany, type Company } from "@/lib/company";
+import { crossesRoleLine } from "@/lib/auth/company-roles";
 import { MEGA_EVENTS_COMPANY_ID } from "@/lib/company-ids";
 import { isManagerRole } from "@/components/tours/flights/block-rules";
 import { companyAudit } from "@/lib/tours/company-kit";
@@ -209,6 +210,37 @@ export async function createUser(input: {
   return { ok: true, id: created.id };
 }
 
+/**
+ * Mega Events' users screen lists every account. Since the companies split (forms moved to
+ * Mega Family, 2026-11-11), an account that works ONLY in other companies - memberships, none
+ * of them Mega Events - is that company's to manage: on this screen only a superadmin changes
+ * it, so a Mega Events admin can never turn Mega Family's forms operator into staff there.
+ * Null when the memberships cannot be read (the caller refuses).
+ */
+async function worksOnlyInOtherCompanies(userId: string): Promise<boolean | null> {
+  const { data, error } = await supabaseTyped
+    .from("company_members")
+    .select("company_id")
+    .eq("user_id", userId);
+  if (error) {
+    console.error("worksOnlyInOtherCompanies:", JSON.stringify(error));
+    return null;
+  }
+  const ids = (data ?? []).map((m) => m.company_id);
+  return ids.length > 0 && !ids.includes(MEGA_EVENTS_COMPANY_ID);
+}
+
+const OTHER_COMPANY_ACCOUNT =
+  "This user works in another company only - manage them from that company's Users screen, or ask a superadmin";
+
+/** The refusal of an events-scope change to another company's account; null = go ahead. */
+async function otherCompanyRefusal(actor: SessionPayload, userId: string): Promise<Result | null> {
+  if (actor.role === "superadmin") return null;
+  const elsewhere = await worksOnlyInOtherCompanies(userId);
+  if (elsewhere === null) return { ok: false, error: "Update failed" };
+  return elsewhere ? { ok: false, error: OTHER_COMPANY_ACCOUNT } : null;
+}
+
 export async function updateUser(
   id: string,
   input: {
@@ -236,6 +268,8 @@ export async function updateUser(
   if (!canManage(actor.role, targetRole)) {
     return { ok: false, error: "Only a superadmin can modify admin users" };
   }
+  const elsewhere = await otherCompanyRefusal(actor, id);
+  if (elsewhere) return elsewhere;
   if (
     input.role &&
     (ADMIN_ROLES.includes(input.role) || input.role === "office_manager") &&
@@ -323,6 +357,8 @@ export async function resetUserPassword(
       error: "Only a superadmin can reset an admin's password",
     };
   }
+  const elsewhere = await otherCompanyRefusal(actor, id);
+  if (elsewhere) return elsewhere;
   const result = await resetPasswordById(id, newPassword);
   if (!result.ok) return result;
   await logAudit({
@@ -490,17 +526,15 @@ export async function removeUserContract(id: string): Promise<Result> {
 
 const NOT_A_MEMBER = "This user is not a member of this company";
 const NOT_A_COMPANY_ROLE =
-  "In a company a user is an admin, an editor or a tours agent";
+  "In a company a user is an admin, an editor, a sales agent or a forms operator";
 /** The one answer to every refused "add an existing account" - it tells nothing about that account. */
 const CANNOT_ADD = "This email can't be added to the company - ask a superadmin";
 const NOT_ACROSS_AGENT_LINE =
-  "Only a superadmin can turn a tours agent into staff, or staff into a tours agent";
+  "Only a superadmin can move a person between staff, sales agent and forms operator";
 /** No "*" either: PostgREST reads it as a wildcard in the ilike lookup. */
 const EMAIL_PATTERN = /^[^\s@*]+@[^\s@*]+\.[^\s@*]+$/;
 /** What the company table and its edit form show - no partner link, contract, slug or creator. */
 const MEMBER_COLUMNS = "id,email,display_name,role,phone,is_active,created_at";
-
-const isToursAgentRole = (role: Role) => role === TOURS_AGENT_ROLE;
 
 type Member = {
   profile: UserProfile;
@@ -809,7 +843,7 @@ async function addExistingAccount(
   }
   if (!COMPANY_MEMBER_ROLES.includes(profile.role)) {
     return refuse(
-      `This account (${profile.role}) cannot work in a company. Only admins, editors and tours agents can be added.`,
+      `This account (${profile.role}) cannot work in a company. Only admins, editors, sales agents and forms operators can be added.`,
     );
   }
   if (!canManage(actor.role, profile.role)) return refuse(CANNOT_ADD);
@@ -931,13 +965,15 @@ async function updateCompanyUser(
     };
   }
   // A tours_agent with no company works nowhere; staff with no company is
-  // Mega Events staff. Crossing that line, either way, is a superadmin's call -
-  // a company admin could otherwise race a removal and mint Mega Events staff.
+  // Mega Events staff; a forms_operator works the forms only. Moving between
+  // those kinds (lib/auth/company-roles.ts), either way, is a superadmin's call -
+  // a company admin could otherwise race a removal and mint Mega Events staff,
+  // or turn a forms operator into staff with the whole backoffice.
   if (
     newRole &&
     actor.role !== "superadmin" &&
-    (isToursAgentRole(newRole) !== isToursAgentRole(member.role) ||
-      isToursAgentRole(newRole) !== isToursAgentRole(member.profile.role))
+    (crossesRoleLine(newRole, member.role) ||
+      crossesRoleLine(newRole, member.profile.role))
   ) {
     return { ok: false, error: NOT_ACROSS_AGENT_LINE };
   }

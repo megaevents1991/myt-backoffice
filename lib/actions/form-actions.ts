@@ -2,7 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
-import { requireFormVisible, requireFormsAccess, requireStaff } from "@/lib/auth/guards";
+import {
+  FORM_NOT_FOUND,
+  formCompanyForViewer,
+  requireFormInCompany,
+  requireFormsCompany,
+  type FormsContext,
+} from "@/lib/forms/access";
+import { formOpensFor } from "@/lib/forms/company-access";
+import { listCompaniesFor, listFormsOperatorCompanies } from "@/lib/company";
 import { logAudit } from "@/lib/audit";
 import type {
   Form,
@@ -36,7 +44,7 @@ const fieldsTable = () => (supabase as any).from("form_fields");
 const FORM_COLUMNS =
   "id,slug,title_en,title_he,description_en,description_he,status,languages,default_lang," +
   "allow_multiple,thank_you_en,thank_you_he,review_link_url,review_min_avg,operator_visible," +
-  "theme,accent_color,logo_url,cover_image_url,created_by,created_at,updated_at,is_deleted";
+  "theme,accent_color,logo_url,cover_image_url,created_by,created_at,updated_at,is_deleted,company_id";
 
 const FIELD_COLUMNS =
   "id,form_id,type,position,label_en,label_he,help_en,help_he," +
@@ -86,23 +94,25 @@ const formColumns = (withSeries: boolean) =>
 
 /**
  * Who may BUILD a form (questions, design, status, series): staff, or a forms_operator on a
- * form opened to operators (Dor 21.10 - Daniel sets up his own series forms). Deleting a form
- * and opening it to operators stay staff-only.
+ * form opened to operators (Dor 21.10 - Daniel sets up his own series forms) - of the
+ * company they work in now (2026-11-11). Deleting a form and opening it to operators stay
+ * staff-only.
  */
-async function requireFormEditor(formId: number) {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
-  return actor;
+async function requireFormEditor(formId: number): Promise<FormsContext> {
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
+  return ctx;
 }
 
-const isOperator = (actor: { role: string }) => actor.role === "forms_operator";
-
 /** Series code + tour name per series id; a failed tours read only drops the labels. */
-async function seriesById(ids: (string | null | undefined)[]): Promise<Map<string, FormSeries>> {
+async function seriesById(
+  companyId: string,
+  ids: (string | null | undefined)[],
+): Promise<Map<string, FormSeries>> {
   const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   if (wanted.length === 0) return new Map();
   try {
-    return new Map((await readSeries(wanted)).map((s) => [s.id, s]));
+    return new Map((await readSeries(companyId, wanted)).map((s) => [s.id, s]));
   } catch (e) {
     console.error("forms series labels failed:", e);
     return new Map();
@@ -110,17 +120,18 @@ async function seriesById(ids: (string | null | undefined)[]): Promise<Map<strin
 }
 
 export async function getForms(): Promise<FormSummary[]> {
-  const actor = await requireFormsAccess();
+  const ctx = await requireFormsCompany();
   const { data, error } = await liveRowsQuery((withSeries) =>
     liveRowsQuery((filterDeleted) => {
       let query = formsTable()
         .select(`${formColumns(withSeries)},form_fields(count),form_responses(count)`)
+        .eq("company_id", ctx.company.id)
         .is("is_deleted", null)
         .order("created_at", { ascending: false });
       // A response staff removed from the report does not count here either.
       if (filterDeleted) query = query.is("form_responses.is_deleted", null);
       // Operators see only forms explicitly opened to them.
-      if (actor.role === "forms_operator") {
+      if (ctx.operator) {
         query = query.eq("operator_visible", true);
       }
       return query;
@@ -134,7 +145,7 @@ export async function getForms(): Promise<FormSummary[]> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (data ?? []) as any[];
-  const series = await seriesById(rows.map((row) => row.series_id));
+  const series = await seriesById(ctx.company.id, rows.map((row) => row.series_id));
 
   // PostgREST returns embedded counts as [{ count: n }].
   return rows.map((row) => {
@@ -151,7 +162,7 @@ export async function getForms(): Promise<FormSummary[]> {
 export async function getForm(
   id: number,
 ): Promise<{ form: Form; fields: FormField[] } | null> {
-  const actor = await requireFormsAccess();
+  const ctx = await requireFormsCompany();
 
   const { data: form, error } = await liveRowsQuery((withSeries) =>
     formsTable()
@@ -166,8 +177,8 @@ export async function getForm(
     throw error;
   }
   if (!form) return null;
-  // To an operator, a form not opened to them does not exist.
-  if (actor.role === "forms_operator" && !form.operator_visible) return null;
+  // A form of another company - or, to an operator, one not opened to them - does not exist.
+  if (!formOpensFor(form, { companyId: ctx.company.id, operator: ctx.operator })) return null;
 
   const { data: fields, error: fieldsError } = await fieldsTable()
     .select(FIELD_COLUMNS)
@@ -183,7 +194,7 @@ export async function getForm(
 }
 
 export async function createForm(): Promise<Form> {
-  const actor = await requireStaff();
+  const { actor, company } = await requireFormsCompany({ staffOnly: true });
   const slug = await uniqueSlug(await slugify("untitled form"));
 
   const payload = {
@@ -195,6 +206,7 @@ export async function createForm(): Promise<Form> {
     default_lang: "en" as FormLang,
     allow_multiple: false,
     created_by: actor.email ?? null,
+    company_id: company.id,
   };
 
   const { data, error } = await formsTable()
@@ -240,7 +252,7 @@ export async function updateFormMeta(
   id: number,
   input: FormMetaInput,
 ): Promise<Form> {
-  const actor = await requireFormEditor(id);
+  const ctx = await requireFormEditor(id);
 
   // A form may be authored in Hebrew only - require one language, not English.
   const titleEn = input.title_en?.trim() ?? "";
@@ -274,7 +286,7 @@ export async function updateFormMeta(
   // is the stored one, one of our Google presets, or none - never a URL of their own.
   let logoUrl = input.logo_url?.trim() || null;
   let coverUrl = input.cover_image_url?.trim() || null;
-  if (isOperator(actor)) {
+  if (ctx.operator) {
     const { data: stored, error: storedError } = await formsTable()
       .select("logo_url,cover_image_url,review_link_url")
       .eq("id", id)
@@ -307,7 +319,7 @@ export async function updateFormMeta(
         ? input.review_min_avg
         : null,
     // An operator never closes a form to operators - they would lock themselves out of it.
-    operator_visible: isOperator(actor) ? true : Boolean(input.operator_visible),
+    operator_visible: ctx.operator ? true : Boolean(input.operator_visible),
     slug,
     languages,
     default_lang: defaultLang,
@@ -510,11 +522,12 @@ export async function saveFormFields(
 export async function duplicateForm(id: number): Promise<Form> {
   // Operators may duplicate (of forms they can see - getForm enforces that);
   // the copy lands as a draft only staff can publish.
-  const actor = await requireFormsAccess();
+  const { actor, company } = await requireFormsCompany();
   const loaded = await getForm(id);
-  if (!loaded) throw new Error("Form not found");
+  if (!loaded) throw new Error(FORM_NOT_FOUND);
 
   return copyForm(loaded, {
+    companyId: company.id,
     slugBase: `${loaded.form.title_en} copy`,
     title_en: `${loaded.form.title_en} (copy)`,
     title_he: loaded.form.title_he,
@@ -557,10 +570,10 @@ export async function createSeriesForm(
   seriesId: string,
   opts: { audience?: FormAudience; questions?: "copy" | "trip_details" } = {},
 ): Promise<Form> {
-  const actor = await requireFormsAccess();
+  const { actor, company, operator } = await requireFormsCompany();
   const loaded = await getForm(baseFormId);
   if (!loaded) throw new Error("Base form not found");
-  const series = await readOneSeries(String(seriesId ?? ""));
+  const series = await readOneSeries(company.id, String(seriesId ?? ""));
   if (!series) throw new Error("Series not found");
   const audience: FormAudience = opts.audience === "escorts" ? "escorts" : "clients";
   const escorts = audience === "escorts";
@@ -596,10 +609,11 @@ export async function createSeriesForm(
         : loaded.form.title_he
           ? `${loaded.form.title_he} · ${place}`
           : null,
+      companyId: company.id,
       series_id: series.id,
       audience,
       // A form an operator made must stay theirs to open.
-      operatorVisible: isOperator(actor) ? true : loaded.form.operator_visible,
+      operatorVisible: operator ? true : loaded.form.operator_visible,
       createdBy: actor.email ?? null,
       audit: { duplicated_from: baseFormId, series: label, audience, questions: opts.questions ?? "copy" },
     },
@@ -609,6 +623,8 @@ export async function createSeriesForm(
 async function copyForm(
   loaded: { form: Form; fields: FormField[] },
   opts: {
+    /** The company the copy belongs to - the one the copy was made in. */
+    companyId: string;
     slugBase: string;
     title_en: string;
     title_he: string | null;
@@ -644,6 +660,7 @@ async function copyForm(
       logo_url: loaded.form.logo_url,
       cover_image_url: loaded.form.cover_image_url,
       created_by: opts.createdBy,
+      company_id: opts.companyId,
     })
     .select(FORM_COLUMNS);
 
@@ -715,7 +732,8 @@ async function copyForm(
 }
 
 export async function softDeleteForm(id: number): Promise<boolean> {
-  await requireStaff();
+  const ctx = await requireFormsCompany({ staffOnly: true });
+  await requireFormInCompany(ctx, id);
   const { error } = await formsTable()
     .update({ is_deleted: todayStamp(), status: "closed" })
     .eq("id", id);
@@ -731,13 +749,14 @@ export async function softDeleteForm(id: number): Promise<boolean> {
 }
 
 /**
- * Every tours series a form can belong to, by code, with its tour's name - for "New series
- * form" and the builder's Series box. Forms operators build their own series forms (Dor
- * 21.10), so they read it too; it holds codes and tour names the site already shows.
+ * Every tours series of the company a form can belong to, by code, with its tour's name - for
+ * "New series form" and the builder's Series box. Forms operators build their own series
+ * forms (Dor 21.10), so they read it too; it holds codes and tour names the site already
+ * shows. A company with no tours (Mega Events) has none.
  */
 export async function listFormSeries(): Promise<FormSeries[]> {
-  await requireFormsAccess();
-  return readSeries();
+  const { company } = await requireFormsCompany();
+  return readSeries(company.id);
 }
 
 /**
@@ -745,8 +764,8 @@ export async function listFormSeries(): Promise<FormSeries[]> {
  * departures; nothing already collected changes.
  */
 export async function setFormSeries(formId: number, seriesId: string | null): Promise<FormSeries | null> {
-  await requireFormEditor(formId);
-  const series = seriesId ? await readOneSeries(String(seriesId)) : null;
+  const { company } = await requireFormEditor(formId);
+  const series = seriesId ? await readOneSeries(company.id, String(seriesId)) : null;
   if (seriesId && !series) throw new Error("Series not found");
 
   const { error } = await formsTable()
@@ -806,7 +825,7 @@ export async function copyFieldToForms(
   fieldId: number,
   targetFormIds: number[],
 ): Promise<{ copied: number[] }> {
-  const actor = await requireFormsAccess();
+  const ctx = await requireFormsCompany();
   const targets = [...new Set((targetFormIds ?? []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
   if (targets.length === 0) throw new Error("Pick at least one form");
   if (targets.length > COPY_TARGETS_MAX) throw new Error(`At most ${COPY_TARGETS_MAX} forms at once`);
@@ -820,11 +839,16 @@ export async function copyFieldToForms(
     throw sourceError;
   }
   if (!source) throw new Error("Save the form first - this question is not saved yet");
-  await requireFormVisible(actor, (source as FormField).form_id);
+  await requireFormInCompany(ctx, (source as FormField).form_id);
 
-  let formsQuery = formsTable().select("id").in("id", targets).is("is_deleted", null);
+  // Only into forms of the same company.
+  let formsQuery = formsTable()
+    .select("id")
+    .in("id", targets)
+    .eq("company_id", ctx.company.id)
+    .is("is_deleted", null);
   // An operator copies only into the forms opened to them.
-  if (isOperator(actor)) formsQuery = formsQuery.eq("operator_visible", true);
+  if (ctx.operator) formsQuery = formsQuery.eq("operator_visible", true);
   const { data: forms, error: formsError } = await formsQuery;
   if (formsError) {
     console.error("copyFieldToForms forms failed:", JSON.stringify(formsError));
@@ -868,4 +892,56 @@ export async function copyFieldToForms(
   });
   revalidatePath("/forms");
   return { copied };
+}
+
+/**
+ * For a form page that could not open the form: the viewer's OTHER company it lives in, so a
+ * bookmarked link says where it is and offers the switch. Null when the viewer could not open
+ * it there either - they are never told that a form exists in a company they cannot see.
+ */
+export async function findFormElsewhere(
+  formId: number,
+): Promise<{ slug: string; name: string } | null> {
+  const ctx = await requireFormsCompany();
+  const company = await formCompanyForViewer(ctx, formId);
+  return company ? { slug: company.slug, name: company.name } : null;
+}
+
+/**
+ * The viewer's other companies that have forms, for the hint on an empty forms list - most
+ * superadmins work in Mega Events by default, and an empty list there would read as "the forms
+ * are gone". Counts live forms the viewer could open there. Never throws.
+ */
+export async function otherCompaniesWithForms(): Promise<{ slug: string; name: string; count: number }[]> {
+  try {
+    const ctx = await requireFormsCompany();
+    const companies = ctx.operator
+      ? ((await listFormsOperatorCompanies(ctx.actor.sub)) ?? [])
+      : await listCompaniesFor(ctx.actor);
+    const others = companies.filter((c) => c.id !== ctx.company.id);
+    if (others.length === 0) return [];
+    let query = formsTable()
+      .select("company_id")
+      .in(
+        "company_id",
+        others.map((c) => c.id),
+      )
+      .is("is_deleted", null);
+    if (ctx.operator) query = query.eq("operator_visible", true);
+    const { data, error } = await query;
+    if (error) {
+      console.error("otherCompaniesWithForms failed:", JSON.stringify(error));
+      return [];
+    }
+    const counts = new Map<string, number>();
+    for (const row of (data ?? []) as { company_id: string }[]) {
+      counts.set(row.company_id, (counts.get(row.company_id) ?? 0) + 1);
+    }
+    return others
+      .filter((c) => (counts.get(c.id) ?? 0) > 0)
+      .map((c) => ({ slug: c.slug, name: c.name, count: counts.get(c.id) ?? 0 }));
+  } catch (e) {
+    console.error("otherCompaniesWithForms:", e);
+    return [];
+  }
 }

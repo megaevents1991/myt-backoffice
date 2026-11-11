@@ -4,10 +4,11 @@ import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/supabase-server";
 import {
-  requireFormVisible,
-  requireFormsAccess,
-  requireStaff,
-} from "@/lib/auth/guards";
+  FORM_NOT_FOUND,
+  requireFormInCompany,
+  requireFormsCompany,
+  type FormsContext,
+} from "@/lib/forms/access";
 import { logAudit } from "@/lib/audit";
 import { appOrigin, sendMail } from "@/lib/email";
 import { pickLang, fieldAdminLabel } from "@/lib/forms/i18n";
@@ -122,8 +123,8 @@ function escapeHtml(value: string): string {
 const newToken = () => randomBytes(16).toString("hex");
 
 export async function getFormInvites(formId: number): Promise<FormInvite[]> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
   // A trip link removed from the report is gone from this list too.
   const { data, error } = await liveRowsQuery((filterDeleted) => {
     let query = invitesTable().select(INVITE_COLUMNS).eq("form_id", formId);
@@ -166,8 +167,9 @@ const ESCORTS_MAX = 500;
  * suggest - ONE action, so the invites page pays one guard and one round trip.
  */
 export async function getTripLinkOptions(formId: number): Promise<TripLinkOptions> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
+  const companyId = ctx.company.id;
 
   const { data: form } = await liveRowsQuery((withSeries) =>
     formsTable().select(withSeries ? "id,series_id,audience" : "id").eq("id", formId).maybeSingle(),
@@ -176,8 +178,8 @@ export async function getTripLinkOptions(formId: number): Promise<TripLinkOption
   const audience = audienceOf(form ?? {});
 
   const [seriesRes, departuresRes, linksRes, escorts] = await Promise.all([
-    seriesId ? readOneSeries(seriesId).catch(() => null) : Promise.resolve(null),
-    readSeriesDepartures(seriesId).then(
+    seriesId ? readOneSeries(companyId, seriesId).catch(() => null) : Promise.resolve(null),
+    readSeriesDepartures(companyId, seriesId).then(
       (rows) => ({ rows, error: null as string | null }),
       (e: unknown) => ({
         rows: [] as SeriesDeparture[],
@@ -198,7 +200,7 @@ export async function getTripLinkOptions(formId: number): Promise<TripLinkOption
         return query;
       }),
     ),
-    escortSuggestions(actor.role === "forms_operator"),
+    escortSuggestions(ctx),
   ]);
 
   const links = (linksRes.data ?? []) as {
@@ -227,23 +229,30 @@ export async function getTripLinkOptions(formId: number): Promise<TripLinkOption
 }
 
 /**
- * Escort names already typed on any trip link (the first staff short-text answer - the
- * report's escort rule) plus the guides list, one spelling per escort, A to Z. A hint only:
- * a failed read suggests nothing.
+ * Escort names already typed on any trip link of the company's forms (the first staff
+ * short-text answer - the report's escort rule) plus the company's guides list, one spelling
+ * per escort, A to Z. A hint only: a failed read suggests nothing.
  */
-async function escortSuggestions(operatorOnly: boolean): Promise<string[]> {
+async function escortSuggestions(ctx: FormsContext): Promise<string[]> {
   try {
-    // An operator hears only the names on forms opened to them - the same rule as the list.
-    let visible: Set<number> | null = null;
-    if (operatorOnly) {
-      const { data, error } = await formsTable().select("id").eq("operator_visible", true);
-      if (error) throw error;
-      visible = new Set(((data ?? []) as { id: number }[]).map((f) => f.id));
+    // The company's forms only - and an operator hears only the names on forms opened to
+    // them (the same rule as the list).
+    let formsQuery = formsTable().select("id").eq("company_id", ctx.company.id);
+    if (ctx.operator) formsQuery = formsQuery.eq("operator_visible", true);
+    const { data: formRows, error: formsError } = await formsQuery;
+    if (formsError) throw formsError;
+    const visible = new Set(((formRows ?? []) as { id: number }[]).map((f) => f.id));
+    // Read only these forms' rows - read all and filter after, and another company's rows
+    // would one day push this company's newer ones past the read caps below.
+    const formIds = [...visible];
+    if (formIds.length === 0) {
+      return ctx.operator ? [] : (await readGuideNames(ctx.company.id)).slice(0, ESCORTS_MAX);
     }
     const [fieldsRes, invites, guides] = await Promise.all([
       (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
         .from("form_fields")
         .select("id,form_id,position")
+        .in("form_id", formIds)
         .eq("staff_only", true)
         .eq("type", "short_text")
         .order("form_id", { ascending: true })
@@ -253,12 +262,13 @@ async function escortSuggestions(operatorOnly: boolean): Promise<string[]> {
         () =>
           invitesTable()
             .select("id,form_id,prefill")
+            .in("form_id", formIds)
             .eq("multi_use", true)
             .order("id", { ascending: true }),
         5000,
       ),
       // The guides list is staff's; an operator gets the names on their own forms only.
-      operatorOnly ? Promise.resolve([] as string[]) : readGuideNames(),
+      ctx.operator ? Promise.resolve([] as string[]) : readGuideNames(ctx.company.id),
     ]);
     const escortField = new Map<number, number>();
     for (const f of (fieldsRes.data ?? []) as { id: number; form_id: number }[]) {
@@ -272,7 +282,7 @@ async function escortSuggestions(operatorOnly: boolean): Promise<string[]> {
       if (key && !byKey.has(key)) byKey.set(key, clean);
     };
     for (const invite of invites.rows) {
-      if (visible && !visible.has(invite.form_id)) continue;
+      if (!visible.has(invite.form_id)) continue;
       const fieldId = escortField.get(invite.form_id);
       if (fieldId) add(invite.prefill?.[String(fieldId)]);
     }
@@ -306,7 +316,8 @@ export async function createAndSendInvites(
   formId: number,
   recipients: InviteRecipient[],
 ): Promise<SendInvitesResult> {
-  await requireStaff();
+  const ctx = await requireFormsCompany({ staffOnly: true });
+  await requireFormInCompany(ctx, formId);
 
   const { data: form, error: formError } = await formsTable()
     .select("id,title_en,title_he,status,is_deleted,languages,default_lang")
@@ -408,7 +419,7 @@ export async function createAndSendInvites(
 }
 
 export async function resendInvite(inviteId: number): Promise<boolean> {
-  await requireStaff();
+  const ctx = await requireFormsCompany({ staffOnly: true });
 
   const { data: invite, error } = await invitesTable()
     .select("id,form_id,token,recipient_name,recipient_email,lang")
@@ -416,7 +427,10 @@ export async function resendInvite(inviteId: number): Promise<boolean> {
     .maybeSingle();
 
   if (error) throw error;
-  if (!invite?.recipient_email) throw new Error("Invite has no email address");
+  // The invite is reached by its own id: the form it belongs to is what is checked.
+  if (!invite) throw new Error("Invite not found");
+  await requireFormInCompany(ctx, invite.form_id);
+  if (!invite.recipient_email) throw new Error("Invite has no email address");
 
   const { data: form } = await formsTable()
     .select("title_en,title_he,status,is_deleted")
@@ -483,10 +497,13 @@ export async function createTripLink(
     departureId?: string | null;
   },
 ): Promise<{ url: string; invite: FormInvite }> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
-  const departure = input.departureId ? await readDeparture(String(input.departureId)) : null;
+  // Only a departure of the form's company - readDeparture answers null for any other.
+  const departure = input.departureId
+    ? await readDeparture(ctx.company.id, String(input.departureId))
+    : null;
   if (input.departureId && !departure) throw new Error("Departure not found");
   if (departure) {
     // A series form takes its own series' departures only; a general form takes any.
@@ -518,7 +535,7 @@ export async function createTripLink(
     .eq("id", formId)
     .maybeSingle();
   if (formError) throw formError;
-  if (!form || form.is_deleted) throw new Error("Form not found");
+  if (!form || form.is_deleted) throw new Error(FORM_NOT_FOUND);
 
   const { data: staffFields, error: fieldsError } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
     .from("form_fields")
@@ -609,7 +626,8 @@ export async function createInviteLink(
   formId: number,
   recipient: { name: string | null; email: string | null; lang: FormLang },
 ): Promise<{ url: string; invite: FormInvite }> {
-  await requireStaff();
+  const ctx = await requireFormsCompany({ staffOnly: true });
+  await requireFormInCompany(ctx, formId);
 
   const token = newToken();
   const { data, error } = await invitesTable()
@@ -652,8 +670,8 @@ export async function setTripTotalTravelers(
   formId: number,
   total: number | string | null,
 ): Promise<SetTotalTravelersResult> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   let value: number | null;
   try {
@@ -685,12 +703,32 @@ export async function setTripTotalTravelers(
   return { ok: true, total: value };
 }
 
+/**
+ * Staff: delete a PERSONAL invite (one recipient's link). A hard delete - an answer's link to
+ * its invite is `on delete set null` - so it never takes a trip link: those go through
+ * deleteTripLink, the soft delete that also refuses a trip with answers. The invite's own
+ * form is what is checked; `formId` only names the page to refresh.
+ */
 export async function deleteInvite(
   inviteId: number,
   formId: number,
 ): Promise<boolean> {
-  await requireStaff();
-  const { error } = await invitesTable().delete().eq("id", inviteId);
+  const ctx = await requireFormsCompany({ staffOnly: true });
+  const { data: invite, error: loadError } = await invitesTable()
+    .select("id,form_id,multi_use")
+    .eq("id", inviteId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!invite) throw new Error("Invite not found");
+  await requireFormInCompany(ctx, invite.form_id);
+  if (invite.multi_use) {
+    throw new Error("A trip link is removed from the trips report, not deleted here");
+  }
+  const { error } = await invitesTable()
+    .delete()
+    .eq("id", inviteId)
+    .eq("form_id", invite.form_id)
+    .eq("multi_use", false);
   if (error) throw error;
   await logAudit({
     action: "delete",
@@ -718,8 +756,8 @@ export async function deleteTripLink(
   inviteId: number,
   formId: number,
 ): Promise<TripLinkResult> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const { data: invite, error: loadError } = await invitesTable()
     .select("id,multi_use,trip_code_prefix,trip_code_num")
@@ -788,8 +826,8 @@ export async function restoreTripLink(
   inviteId: number,
   formId: number,
 ): Promise<TripLinkResult> {
-  const actor = await requireFormsAccess();
-  await requireFormVisible(actor, formId);
+  const ctx = await requireFormsCompany();
+  await requireFormInCompany(ctx, formId);
 
   const { data, error } = await invitesTable()
     .update({ is_deleted: null })

@@ -311,6 +311,19 @@ a second forms operator. So `forms_operator` becomes a company role with the tou
    form path (never reads a company), Nir's landing (the gate corrects his stale hint - no new
    sign-in), no other reader of the tables, no open tasks of Nir's.
 
+## As built (11.11)
+
+- Stage 1 went live on 11.11 (a16de7a0): split 5 / 5 on prod, counts 10 / 78 / 20 / 199 unchanged.
+- Stage 2: `lib/forms/access.ts` (`requireFormsCompany`, `requireFormInCompany`, `formCompanyForViewer`), pure
+  `lib/forms/company-access.ts` + `lib/auth/company-roles.ts`, selftest `scripts/forms-company-selftest.ts`, migration
+  `20261111084022_forms_company_users.sql` + `scripts/forms-company-users-sql-pglite-test.mjs`. The old
+  `requireFormsAccess` / `requireFormVisible` are removed.
+- Found while building: the links page offered its Delete (a hard delete) on trip links too - one click would have dropped
+  a trip's answers into "no trip". The button is gone from trip-link rows and `deleteInvite` refuses one.
+- The logo / cover picker shows only to someone the Storage API admits (`worksInMegaEvents`); a Mega Family admin keeps
+  the stored logo and cover.
+- `/guide`: the Forms section is shared by every company and says the forms belong to a company.
+
 ## Left to the builder
 
 - File names, the exact shape of the guards, whether `requireFormVisible` is removed or kept as a thin

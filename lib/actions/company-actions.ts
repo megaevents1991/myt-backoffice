@@ -31,12 +31,19 @@ export interface CompanyContext {
 }
 
 /**
- * What the top bar needs. Partners and forms_operator always get Mega Events
- * alone. A tours_agent gets the companies it is a member of and nothing else -
- * never Mega Events - and `unassigned` when there is none.
+ * What the top bar needs. Partners always get Mega Events alone. A tours_agent
+ * gets the companies it is a member of and nothing else - never Mega Events -
+ * and `unassigned` when there is none. A forms_operator gets the companies its
+ * forms live in (its memberships; none = Mega Events, 2026-11-11), so the top bar
+ * and the route gate agree with the forms guard (lib/forms/access.ts).
  */
 export async function getCompanyContext(): Promise<CompanyContext> {
   const session = await getSession();
+  if (session?.role === "forms_operator") {
+    const companies = await listCompaniesFor(session);
+    if (companies.length === 0) return { active: MEGA_EVENTS_FALLBACK, companies: [MEGA_EVENTS_FALLBACK] };
+    return { active: await getActiveCompany(session), companies };
+  }
   if (session?.role === TOURS_AGENT_ROLE) {
     const companies = await listCompaniesFor(session);
     if (companies.length === 0) return { active: null, companies: [], unassigned: true };
@@ -52,9 +59,16 @@ export async function getCompanyContext(): Promise<CompanyContext> {
 
 export async function setActiveCompany(slug: string): Promise<{ success: boolean; error?: string }> {
   const session = await getSession();
-  // Staff, and a tours_agent that was assigned to more than one company: both
-  // may only pick from their own list (listCompaniesFor), checked right below.
-  if (!session || !(STAFF_ROLES.includes(session.role) || session.role === TOURS_AGENT_ROLE)) {
+  // Staff, and a tours_agent or forms_operator that works in more than one company:
+  // they may only pick from their own list (listCompaniesFor), checked right below.
+  if (
+    !session ||
+    !(
+      STAFF_ROLES.includes(session.role) ||
+      session.role === TOURS_AGENT_ROLE ||
+      session.role === "forms_operator"
+    )
+  ) {
     return { success: false, error: "Unauthorized" };
   }
   const companies = await listCompaniesFor(session);
