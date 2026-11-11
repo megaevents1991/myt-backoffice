@@ -112,8 +112,10 @@ site's local checks (Tasks 8-12) need the test events, because `yarn dev` in myt
   in `national_id`. Our forms and rows keep `M` / `F`; `buildOrderRequest` maps them at the boundary, and it is
   the only place that names these fields.
 - **`requires_lead_booker`:** a listing flag neither repo reads today (false on all 57 live listings sampled
-  10.11; TixStock was asked what it requires). A listing with it `true` gets no card on the sandbox step and a
-  warning line in the office dialog.
+  10.11; 38 of 185 `true` on six events sampled 11.11; TixStock was asked what it requires). A listing with it
+  `true` gets no card on the sandbox step, and in the office it is BLOCKED (Dor, 11.11): its row in the dialog
+  cannot be picked and says why, and the book action refuses it (`kind: "lead_booker"`), reading the flag from the
+  listing as it is re-read at the click. It stays blocked until TixStock says what such a listing asks of us.
 - **Hebrew copy fixed by the spec:**
   - dialog: "רכישה סופית - הזמנה מאושרת ב-TixStock לא מתבטלת", "הזמן כרטיס", "קטגוריות אחרות", "האירוע
     דורש פרטי זיהוי";
@@ -1473,9 +1475,19 @@ Fixed the same day on Dor's go, each by a test that failed first:
 - **A ticket the seller sent as a link** (not as bytes) opens at that link on the customer's page; the first build
   pointed it at our file route, which has no file for it.
 
-**Not built, Dor's decisions:** analytics (GTM, Mixpanel) on `/ticket/<token>` - the token is the page's URL, and
-turning them off there needs an edit in the site's root layout, outside this plan's allowed files; a
-`requires_lead_booker` listing gets a warning line only - block it until TixStock says what it requires?
+**Not built, Dor's decision:** analytics (GTM, Mixpanel) on `/ticket/<token>` - the token is the page's URL, and
+turning them off there needs an edit in the site's root layout, outside this plan's allowed files.
+
+**Decided by Dor on 11.11 and built the same day:**
+- **A `requires_lead_booker` listing is blocked** in the office (above).
+- **"הזמן כרטיס" is unavailable wherever a booking cannot be placed** - "כרגע הכפתורים בבקאופיס - תהפוך אותם ללא
+  זמינים". `getTicketBooking` now answers `availability` (`bookingAvailability`: the event's environment, and
+  whether that environment can book here - no call to TixStock), and the card draws the button disabled with the
+  reason: for every real order today, "TixStock - הזמנה בפרודקשן עוד לא נפתחה". Checked on Vercel that day (names
+  only): the backoffice's production has NO `NEXT_SECRET_TIXSTOCK_PRODUCTION_BOOKING`, NO
+  `NEXT_SECRET_TIXSTOCK_BOOKING_TOKEN` and NO `NEXT_SECRET_FULFILMENT_OPEN`. The button becomes available by two
+  acts of Dor's only: a sandbox test event (after `--apply`), or opening production booking (the switch and its
+  own token on Vercel).
 
 **Deferred minors** are listed in the ledger (`Final: minor (deferred)`), with what each costs.
 
