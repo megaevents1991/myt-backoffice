@@ -217,3 +217,81 @@ What each answer changes on our side:
 | 6 | ours | the receiver also matches a booking by reservation id + listing id (today: by the id orders/add returned) |
 | 7-8 | inside the JSON, over 4.5 MB possible | the refresh (`orders/get`) stays the way those files arrive |
 | 9 | another shape | one line in `handleTixstockWebhook` |
+
+## 6. Answered on 11.11, round 3 (the follow-up of section 5)
+
+As TixStock wrote them. The Seller Portal login they sent is NOT kept in this file or anywhere in the repo: Dor has
+it in the WhatsApp group and signs in himself. Question 10 (Abdullah, the Serie A step) got no line.
+
+> **Sandbox**
+> 1. Please Use: Login for seller portal: sandbox-new.tixstock.com - username and password *(left out here)*
+>
+> **Orders**
+> 2. Please use the {external_order_id} for both /orders/get and /orders/update.
+> 3. Yes, the order_id must be unique. Duplicate order IDs should not be used
+> 4. Could you please share where you are getting the requires_lead_booker field from?
+>
+> **Webhooks**
+> 5. The ticket.hold webhook will be triggered when another marketplace places a hold on the listing,
+> 6. There is no separate webhook for the Add Order API. The webhook is triggered for order fulfilment. You need
+>    to register the relevant fulfilment webhook to receive these updates, rather than an Add Order webhook.
+> 7. The fulfilment details will be included in the webhook payload based on the ticket type: E-ticket: The PDF
+>    file will be provided. Mobile Link: The link will be provided. External Transfer: The fulfilment document can
+>    be a PDF, link, JPG, PNG, or other supported format.
+> 8. Let me check this internally and get back to you with confirmation.
+> 9. The response should depend on the fulfilment quantity. For example, if the order quantity is 2: If its E
+>    Ticket then the first ticket is fulfilled, the response should return order_status: "Completed". When the
+>    second (final) ticket is fulfilled, the response should return order_status: "Commissionable". The response
+>    format should be - first fulfilment: `{ "success": true, "external_id": "6a3", "order_status": "Completed",
+>    "message": "Listing has been fulfilled for the order." }`; final fulfilment: the same with
+>    `"order_status": "Commissionable"`. In short, the status should be Completed for the initial fulfilment and
+>    Commissionable once the entire order quantity has been fulfilled in Case of E Ticket and in case of mobile
+>    Ticket Please return Commissionable
+>
+> **Production**
+> 11. We will provide a new, separate token for the Production Booking API.
+> 12. @Abdullah A.G Could you please assist here
+> 13. The delivery address is entirely your choice. You can use the customer's hotel address if that's more
+>     convenient. @Abdullah A.G could you please assist with this as well?
+
+### Where each one stands
+
+| # | State | What it means for us |
+|---|---|---|
+| 1 | Answered | Dor signs in to the Seller Portal himself (MFA is set up on the first login); then the seven listings are created |
+| 2 | Answered, one word to confirm | The guide describes `{external_order_id}` as "Your external order id", so both paths take the `order_id` WE send. Today the sweep passes the id orders/add returned - **a code change** |
+| 3 | Answered | A reservation booked a second time must not repeat its id. Today `ourOrderId` is the reservation id alone - **a code change** |
+| 4 | They ask us | Measured 11.11: the field is on every listing of `GET /tickets/feed`, top level, a string. Sandbox: 11 of 11 `"false"`. Production: 185 listings of six events, 38 `"true"` (one in five). The reply is below |
+| 5 | Answered | A hold of ours sends us nothing - what the sandbox showed on 10.11. Nothing to change in code; the plan's and the spec's wording is corrected with the code changes |
+| 6 | Not answered | Which id a fulfilment webhook's `order_id` holds was not said. The receiver should find a booking by either id - **a code change** that makes the answer unnecessary |
+| 7 | Answered as far as it goes | "Included in the payload": bytes or a link is still not said; `readOrderPayload` reads both |
+| 8 | They check internally | Open. Until then the refresh (`orders/get`) is how a file too large for a webhook arrives |
+| 9 | Answered | A fulfilment webhook is answered with `order_status` by what is fulfilled: e-ticket - `Completed` until the last ticket, then `Commissionable`; mobile - `Commissionable`; `message` as they wrote it. Today we answer our own status and "ok" - **a code change** |
+| 10 | No line | Waiting for Abdullah; the form stays on the test event |
+| 11 | Answered, as built | A separate production booking token = `NEXT_SECRET_TIXSTOCK_BOOKING_TOKEN` |
+| 12 | Waiting for Abdullah | Orders placed days after the payment |
+| 13 | Answered | A hotel address is fine for paper tickets; Abdullah may add to it |
+
+### Code changes these answers ask for (proposed 11.11, waiting for Dor's go)
+
+1. **A unique `order_id` per booking attempt** (answer 3): `<reservation id>-<first 8 characters of the booking
+   row's id>`, e.g. `2233-9f3a1c2e` - derived from the row alone, no new column, the reservation number still
+   readable by TixStock's CS. The same string is the webhook answer's `external_id`.
+2. **`orders/get` / `orders/update` by our id** (answer 2): the sweep's two calls.
+3. **The fulfilment answer** (answer 9): `Completed` / `Commissionable` by the files in hand against the order's
+   quantity, their `message`; our own row moves to `commissionable` with the last ticket.
+4. **A webhook finds its booking by either id** (answer 6 left open): first the id orders/add returned, then ours.
+5. Plan and spec follow.
+
+Later, once the sandbox shows `orders/get` by our id works: an `uncertain` booking (orders/add with no answer) can
+be settled by reading the order back instead of by hand.
+
+### The reply (Dor sends it)
+
+```
+Thanks, very helpful. Three short points:
+2. To confirm: {external_order_id} is the order_id we send in orders/add, correct?
+4. requires_lead_booker comes from the /tickets/feed response - a top-level field on every listing (next to seller_id and event_id), with the value "true" or "false". We see it in the sandbox and in production; in production about one in five listings has "true". What does a "true" listing require from us when we place the order?
+6. In the fulfilment webhooks, which id is in the order_id field - the order_id we sent in orders/add, or the id your orders/add response returned?
+```
+
