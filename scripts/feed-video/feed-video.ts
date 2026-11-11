@@ -466,19 +466,39 @@ function review(items: PlanItem[]) {
 async function publish(items: PlanItem[]) {
   const apply = flag("apply");
   const state = readState();
+  // What each event shows today - a live video that no longer matches today's data comes down.
+  const { data: liveRows, error: liveErr } = await supabaseTyped
+    .from("events")
+    .select("id,campaign_video_url")
+    .in("id", items.map((i) => i.id));
+  if (liveErr) throw new Error(JSON.stringify(liveErr));
+  const liveUrl = new Map((liveRows ?? []).map((r) => [r.id, r.campaign_video_url ?? ""]));
   let ok = 0;
   for (const it of items) {
     const l = state.lines[it.id];
+    const current = liveUrl.get(it.id) ?? "";
     const why =
       it.problems.length ? it.problems.join("; ")
       : !l ? "no line"
       : l.status !== "approved" ? "line not approved"
       : !existsSync(path.join(OUT, videoFile(it, l.line))) ? "no video for today's data - render again"
       : null;
-    if (why) { console.log(`  ${it.id}: skipped - ${why}`); continue; }
+    if (why) {
+      // Dor 11.11: the video keeps the price, and a moved price gets a NEW video. Until that video
+      // exists the old one comes down, so the ad falls back to its image and never shows a wrong price.
+      if (current.includes(`/${STORAGE_DIR}/`)) {
+        if (!apply) console.log(`  ${it.id}: would take its live video down - ${why}`);
+        else {
+          const res = await supabaseTyped.from("events").update({ campaign_video_url: null }).eq("id", it.id);
+          console.log(`  ${it.id}: live video taken down (${why})${res.error ? ` - FAILED ${JSON.stringify(res.error)}` : ""}`);
+        }
+      } else console.log(`  ${it.id}: skipped - ${why}`);
+      continue;
+    }
     const file = videoFile(it, l!.line);
     const objectPath = `${STORAGE_DIR}/${file}`;
     const url = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath).data.publicUrl;
+    if (current === url) { console.log(`  ${it.id}: already live`); ok++; continue; }
     if (!apply) { console.log(`  ${it.id}: would upload ${objectPath} and set campaign_video_url`); ok++; continue; }
     const body = readFileSync(path.join(OUT, file));
     const up = await supabase.storage.from(STORAGE_BUCKET).upload(objectPath, body, {

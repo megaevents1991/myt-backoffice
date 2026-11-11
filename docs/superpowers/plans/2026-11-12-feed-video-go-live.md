@@ -60,10 +60,11 @@ Before step 4: other sessions may push to this repo - take the push lock for the
 
 ## Open (Dor's calls)
 
-- **The price goes stale.** The image ad redraws by itself when a price moves; these videos do not
-  until someone runs `plan` + `render` + `publish` again. Either re-render on every price move (the
-  nightly build does it by hash), or videos without a price (`--price off`: the pill says
-  "טיסה + מלון + כרטיס").
+- **The price - decided (Dor 11.11): the video keeps the price, and a moved price gets a new video.**
+  `plan` + `render` + `publish --apply` does exactly that: `render` makes the new video (its file name
+  carries the price), `publish` swaps the URL, and an event whose new video is not ready yet has its old
+  one TAKEN DOWN - the ad falls back to the image, never a wrong price. Until the nightly build exists,
+  someone has to run those three commands every day (or a daily job on Dor's Mac, like the ISSTA crawl).
 - **Reels / Stories (9:16)** - only 4:5 is made. Meta picks the video per placement when an item has
   several (`video[1].url` ...).
 - **Music** - none yet; a licence per track has to be recorded first.
