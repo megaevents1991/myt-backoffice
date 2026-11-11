@@ -220,6 +220,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > (`roomPrice` in `lib/tours/pricing.ts`, `tours.room_price` in migration 20261111150000, mega-family
 > `lib/data/departures.mjs` - the three together); a date with either price keeps the fourth person's fallback (ATP415 alone
 > on 11.11).
+> **Liz, 11.11 later (tab "הערות ליז" notes 3 + 4).** A date's Content tab has "Copy to other dates"
+> (`copyDepartureContent`): the fields and the tour's not-yet-left dates ticked there - the date's season or all in one
+> click - get this date's fields (an empty one goes back to the season's / the tour's; a date's other fields stay its own;
+> the panel warns which ticked dates lose their own), and this date is saved in the same call. `DepartureContentData.siblings`
+> lists those dates. Every drag list (`useDragReorder` in `components/tours/content/fields.tsx`) scrolls its scrolling area
+> while a row is held near its top or bottom, or above it (a drawer never scrolled during a native drag); the attractions
+> editor picks lines with a click on their grips (Shift = a range) and drags them together (`movedBlock`,
+> `lib/tours/list-moves.ts`, `npx tsx scripts/tours-list-moves-selftest.ts`).
 > **Customers + deal cards (2026-10-19, Nir Azulay - the end user; spec `docs/superpowers/specs/2026-10-19-tours-customer-cards-design.md`,
 > migration `20261019180000_tours_customers.sql`, mockup https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).** `public.customers`
 > = one per phone (`phone_keys` = last 9 digits, kept by a trigger; `customer_no` shown `C-1041`; `not_same`, `merged_into`); every

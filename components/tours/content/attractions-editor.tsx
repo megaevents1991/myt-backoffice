@@ -5,7 +5,12 @@
  * (Daniel, 10.11.2026): "Country" makes the line a country, so the attractions after it are in that country (the site
  * prints the country in bold in the tour's colour - blue on Mega Family), and a colour paints one attraction so it
  * stands out. The marks are written into the line itself (lib/tours/attractions.ts), so the list stays a list of words.
+ *
+ * Several lines move together (Liz 11.11: "אפילו אם אפשר לבחור כמה אטרקציות ביחד ולגלול בו זמנית"): a click on the grips
+ * picks lines (Shift + click a range), and dragging one of them carries them all, in their order; the list scrolls while
+ * a row is held near its top or bottom (useDragReorder).
  */
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Flag, Palette, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ATTRACTION_COLORS, readAttraction, writeAttraction, type AttractionLine } from "@/lib/tours/attractions";
 import { cn } from "@/lib/utils";
-import { DragGrip, RowControls, dropMarkClass, moved, movedTo, useDragReorder } from "@/components/tours/content/fields";
+import { DragGrip, RowControls, dropMarkClass, moved, movedBlock, movedTo, useDragReorder } from "@/components/tours/content/fields";
 
 function ColorPick({ value, onChange, label }: { value: string | null; onChange: (color: string | null) => void; label: string }) {
   return (
@@ -58,7 +63,38 @@ function ColorPick({ value, onChange, label }: { value: string | null; onChange:
 }
 
 export function AttractionsEditor({ label, value, onChange }: { label: string; value: string[]; onChange: (value: string[]) => void }) {
-  const drag = useDragReorder((from, to) => onChange(movedTo(value, from, to)));
+  // the lines picked to move together (their indexes), and the last one clicked, for Shift + click
+  const [picked, setPicked] = useState<number[]>([]);
+  const lastPick = useRef<number | null>(null);
+  // a line added or removed shifts the indexes: the pick starts over
+  useEffect(() => {
+    setPicked([]);
+    lastPick.current = null;
+  }, [value.length]);
+  const drag = useDragReorder((from, to) => {
+    if (picked.length > 1 && picked.includes(from)) {
+      const next = movedBlock(value, picked, to, from < to);
+      onChange(next.list);
+      setPicked(next.at);
+      return;
+    }
+    onChange(movedTo(value, from, to));
+    setPicked([]);
+  });
+  const pick = (index: number, event: MouseEvent) => {
+    const from = lastPick.current;
+    if (event.shiftKey && from !== null) {
+      const [a, b] = from < index ? [from, index] : [index, from];
+      const range = Array.from({ length: b - a + 1 }, (_, k) => a + k);
+      setPicked((current) => [...new Set([...current, ...range])]);
+    } else {
+      setPicked((current) => (current.includes(index) ? current.filter((i) => i !== index) : [...current, index]));
+    }
+    lastPick.current = index;
+  };
+  // the rows a drag carries: the picked ones when it started on one of them
+  const carried = (index: number) =>
+    drag.dragging !== null && (drag.dragging === index || (picked.length > 1 && picked.includes(drag.dragging) && picked.includes(index)));
   const lines = value.map(readAttraction);
   const patch = (index: number, change: Partial<AttractionLine>) => onChange(value.map((line, i) => (i === index ? writeAttraction({ ...lines[i], ...change }) : line)));
   const count = lines.filter((a) => !a.country).length;
@@ -67,10 +103,37 @@ export function AttractionsEditor({ label, value, onChange }: { label: string; v
       <Label>
         {label} <span className="font-normal text-muted-foreground">({count})</span>
       </Label>
+      {picked.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-sm">
+          <span>
+            {picked.length} picked - drag any of them to move them together. Hold it near the top or the bottom and the list scrolls.
+          </span>
+          <Button type="button" variant="ghost" size="sm" className="ms-auto h-7" onClick={() => setPicked([])}>
+            <X />
+            Clear
+          </Button>
+        </div>
+      )}
       <ul className="space-y-1.5">
         {lines.map((a, index) => (
-          <li key={index} {...drag.row(index)} className={cn("flex items-center gap-2 rounded-md", drag.dragging === index && "opacity-50", dropMarkClass(drag.mark(index)), a.country && index > 0 && "mt-3")}>
-            {value.length > 1 && <DragGrip {...drag.grip(index)} />}
+          <li
+            key={index}
+            {...drag.row(index)}
+            className={cn(
+              "flex items-center gap-2 rounded-md",
+              picked.includes(index) && "bg-primary/10 ring-1 ring-primary/40",
+              carried(index) && "opacity-50",
+              dropMarkClass(drag.mark(index)),
+              a.country && index > 0 && "mt-3",
+            )}
+          >
+            {value.length > 1 && (
+              <DragGrip
+                {...drag.grip(index)}
+                onClick={(event) => pick(index, event)}
+                title={picked.includes(index) ? "Picked - drag to move the picked lines together; click to unpick" : "Drag to move - click to pick several lines and move them together"}
+              />
+            )}
             <Button
               type="button"
               variant={a.country ? "default" : "ghost"}
@@ -109,7 +172,8 @@ export function AttractionsEditor({ label, value, onChange }: { label: string; v
       </div>
       <p className="text-xs text-muted-foreground">
         A country (<Flag className="inline h-3 w-3" />) heads the attractions after it, until the next country; the site prints it in bold in the tour&apos;s colour. The palette (
-        <Palette className="inline h-3 w-3" />) paints one attraction in a colour of your choice.
+        <Palette className="inline h-3 w-3" />) paints one attraction in a colour of your choice. Click the grips of several lines (Shift + click
+        for a range) and drag one of them to move them together; the list scrolls while you hold it near the top or the bottom.
       </p>
     </div>
   );

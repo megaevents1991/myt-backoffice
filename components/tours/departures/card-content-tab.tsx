@@ -5,21 +5,24 @@
  * instead of the tour page - description, attractions, included / not included, top picture, gallery. Each field the
  * date leaves empty shows what the site shows instead: its season's when the season fills it, else the tour's.
  * "Edit for this date" copies that text in to change. Saved in data.ownContent (lib/tours/departure-content.ts); the
- * day-by-day plan stays the General tab's "Itinerary version".
+ * day-by-day plan stays the General tab's "Itinerary version". "Copy to other dates" (Liz 11.11: "שיהיה אפשר לבחור יותר
+ * מטיסה אחת כדי לשנות") saves this date and writes the fields ticked there to the tour's other dates ticked there.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Copy, Loader2 } from "lucide-react";
+import { Copy, CopyCheck, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActionToast } from "@/hooks/use-action-toast";
-import { getDepartureContent, saveDepartureContent } from "@/lib/actions/tours-departure-content-actions";
+import { copyDepartureContent, getDepartureContent, saveDepartureContent } from "@/lib/actions/tours-departure-content-actions";
 import { attractionLabel } from "@/lib/tours/attractions";
 import {
   CONTENT_FIELDS,
   filled,
   inheritedField,
   type ContentField,
+  type ContentSibling,
   type DepartureContentData,
   type DepartureContentForm,
 } from "@/lib/tours/departure-content";
@@ -36,6 +39,11 @@ const LABELS: Record<ContentField, string> = {
   notIncluded: "Not included",
   heroImage: "Top picture",
   gallery: "Images",
+};
+
+const shortDate = (iso: string) => {
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y.slice(2)}`;
 };
 
 const textOf = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
@@ -60,6 +68,9 @@ export function CardContentTab({ data }: { data: DepartureCardData }) {
   // fields opened for this date: their editor stays while they are empty (a field the season and the tour leave empty
   // too, or one cleared while typing - review 10.11)
   const [opened, setOpened] = useState<Set<ContentField>>(() => new Set());
+  // "Copy to other dates": the dates ticked, and the fields ticked (null = the fields this date fills)
+  const [copyTo, setCopyTo] = useState<Set<string>>(() => new Set());
+  const [copyFields, setCopyFields] = useState<Set<ContentField> | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -133,6 +144,29 @@ export function CardContentTab({ data }: { data: DepartureCardData }) {
     setOpened(new Set());
   };
 
+  const fields = copyFields ?? new Set(own);
+  const chosen = content.siblings.filter((d) => copyTo.has(d.id));
+  // a ticked date that already says a ticked field of its own: it is replaced
+  const replaced = chosen.filter((d) => d.own.some((k) => fields.has(k)));
+  const copy = async () => {
+    setBusy(true);
+    const answer = await runAction(() => copyDepartureContent(departureId, draft, [...copyTo], [...fields]));
+    setBusy(false);
+    if (!answer.success) return;
+    setContent(answer.data);
+    setDraft(answer.data.own);
+    setOpened(new Set());
+    setCopyTo(new Set());
+    setCopyFields(null);
+  };
+  const tick = (set: Set<string>, id: string, on: boolean) => {
+    const next = new Set(set);
+    if (on) next.add(id);
+    else next.delete(id);
+    return next;
+  };
+  const sameSeason = (d: ContentSibling) => !!content.season && d.season === content.season.name;
+
   return (
     <div className="space-y-4 pb-24">
       <Section
@@ -189,6 +223,85 @@ export function CardContentTab({ data }: { data: DepartureCardData }) {
           />
         )}
       </Section>
+
+      {content.siblings.length > 0 && (
+        <Section
+          title="Copy to other dates"
+          description={`The same content on other dates of this tour: tick the fields and the dates, then copy. This date is saved too. On each ticked date a ticked field becomes ${content.code}'s (an empty one goes back to its season's / the tour's); its other fields stay its own.`}
+        >
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Fields</p>
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
+              {CONTENT_FIELDS.map((key) => (
+                <label key={key} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={fields.has(key)}
+                    onCheckedChange={(on) => {
+                      const next = new Set(fields);
+                      if (on === true) next.add(key);
+                      else next.delete(key);
+                      setCopyFields(next);
+                    }}
+                  />
+                  {LABELS[key]}
+                  {!filled(draft, key) && <span className="text-xs text-muted-foreground">(empty here)</span>}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="me-auto text-sm font-medium">
+                Dates <span className="font-normal text-muted-foreground">- the ones that have not left yet</span>
+              </p>
+              {content.season && content.siblings.some(sameSeason) && (
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setCopyTo(new Set(content.siblings.filter(sameSeason).map((d) => d.id)))}>
+                  Season {content.season.name}
+                </Button>
+              )}
+              <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setCopyTo(new Set(content.siblings.map((d) => d.id)))}>
+                All {content.siblings.length}
+              </Button>
+              {copyTo.size > 0 && (
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setCopyTo(new Set())}>
+                  None
+                </Button>
+              )}
+            </div>
+            <ul className="grid gap-1.5 sm:grid-cols-2">
+              {content.siblings.map((d) => (
+                <li key={d.id}>
+                  <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted/40">
+                    <Checkbox checked={copyTo.has(d.id)} onCheckedChange={(on) => setCopyTo((current) => tick(current, d.id, on === true))} />
+                    <span className="font-mono font-medium">{d.code}</span>
+                    <span className="text-muted-foreground" dir="ltr">
+                      {shortDate(d.startDate)} - {shortDate(d.endDate)}
+                    </span>
+                    {d.season && <span className="text-xs text-muted-foreground">· {d.season}</span>}
+                    {d.own.length > 0 && (
+                      <span className="ms-auto text-xs text-amber-700 dark:text-amber-400" title={`Has its own ${d.own.map((k) => LABELS[k].toLowerCase()).join(", ")}`}>
+                        own {d.own.map((k) => LABELS[k].toLowerCase()).join(", ")}
+                      </span>
+                    )}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {replaced.length > 0 && (
+            <Notice tone="warning">
+              {replaced.map((d) => `${d.code} (${d.own.filter((k) => fields.has(k)).map((k) => LABELS[k].toLowerCase()).join(", ")})`).join(", ")}: what{" "}
+              {replaced.length === 1 ? "it says" : "they say"} of {replaced.length === 1 ? "its" : "their"} own in the ticked fields is replaced.
+            </Notice>
+          )}
+          <div className="flex justify-end">
+            <Button type="button" onClick={() => void copy()} disabled={busy || copyTo.size === 0 || fields.size === 0}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CopyCheck />}
+              {dirty ? "Save and copy" : "Copy"} to {copyTo.size === 0 ? "the ticked dates" : copyTo.size === 1 ? "1 date" : `${copyTo.size} dates`}
+            </Button>
+          </div>
+        </Section>
+      )}
 
       <div className="sticky bottom-3 z-20 flex flex-wrap items-center gap-3 rounded-lg border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
         <span className="text-sm text-muted-foreground">{dirty ? "Unsaved changes in this date's content" : "No changes"}</span>

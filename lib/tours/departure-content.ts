@@ -34,6 +34,19 @@ export const EMPTY_DEPARTURE_CONTENT: DepartureContentForm = {
 export const CONTENT_FIELDS = ["descriptionHtml", "attractions", "included", "notIncluded", "heroImage", "gallery"] as const;
 export type ContentField = (typeof CONTENT_FIELDS)[number];
 
+/**
+ * Another date of the same tour that has not left yet, for "Copy to other dates" (Liz 11.11, road map tab "הערות ליז"
+ * note 3: "שיהיה אפשר לבחור יותר מטיסה אחת כדי לשנות"): which fields it already says of its own.
+ */
+export interface ContentSibling {
+  id: string;
+  code: string;
+  startDate: string;
+  endDate: string;
+  season: string | null;
+  own: ContentField[];
+}
+
 /** What the Content tab shows: the date's own, and what it falls back to - its season's, then the tour's. */
 export interface DepartureContentData {
   departureId: string;
@@ -43,6 +56,8 @@ export interface DepartureContentData {
   season: { name: string; content: DepartureContentForm } | null;
   tour: DepartureContentForm;
   siteUrl: string | null;
+  /** The tour's other dates that have not left yet, by date. */
+  siblings: ContentSibling[];
 }
 
 const strings = (value: unknown): string[] =>
@@ -86,3 +101,16 @@ export function inheritedField<K extends ContentField>(data: Pick<DepartureConte
   if (data.season && filled(data.season.content, key)) return { from: "season", value: data.season.content[key] };
   return { from: "tour", value: data.tour[key] };
 }
+
+/**
+ * A date's own content after the chosen fields were copied in from another date: each chosen field becomes the source's
+ * (an empty one goes back to the season's / the tour's), every other field stays the date's own.
+ */
+export function withCopiedFields(target: DepartureContentForm, source: DepartureContentForm, fields: readonly ContentField[]): DepartureContentForm {
+  const next = { ...target };
+  for (const key of fields) (next as Record<ContentField, unknown>)[key] = structuredClone(source[key]);
+  return next;
+}
+
+/** The fields a date fills of its own. */
+export const ownFields = (form: DepartureContentForm): ContentField[] => CONTENT_FIELDS.filter((k) => filled(form, k));

@@ -52,6 +52,22 @@ export function movedTo<T>(list: T[], from: number, to: number): T[] {
   return next;
 }
 
+/** Move several items together (Liz 11.11) - lib/tours/list-moves.ts, pure for its selftest. */
+export { movedBlock } from "@/lib/tours/list-moves";
+
+/** The nearest ancestor that scrolls up and down, or null for the page itself. */
+function scrollParent(node: Element | null): HTMLElement | null {
+  for (let el = node?.parentElement ?? null; el; el = el.parentElement) {
+    const { overflowY } = getComputedStyle(el);
+    if ((overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight + 1) return el;
+  }
+  return null;
+}
+
+/** How close to the top or bottom of the scrolling area a dragged row starts scrolling it, and how fast at most. */
+const EDGE_PX = 80;
+const MAX_STEP_PX = 22;
+
 /**
  * Drag a row by its grip onto another row to move it there (Alon, 07.10.2026);
  * the arrows stay for the keyboard. Spread `row(index)` on the row and put a
@@ -61,10 +77,43 @@ export function movedTo<T>(list: T[], from: number, to: number): T[] {
 export function useDragReorder(onMove: (from: number, to: number) => void) {
   const [drag, setDrag] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
+  const scroller = useRef<HTMLElement | null>(null);
   const end = () => {
     setDrag(null);
     setOver(null);
   };
+  // While a row is dragged, holding it near the top or the bottom of the list's scrolling area (the drawer of a date,
+  // or the page) scrolls it, faster the closer it gets, and above the area (over its header) at full speed - Liz 11.11:
+  // "כשגוררים למעלה ... שזה יגלול למעלה אוטומטית מבלי למקם את האטרקציה ואז לגלול בנפרד". A browser does not scroll
+  // a drawer by itself during a drag, and its mouse wheel does nothing while one runs.
+  useEffect(() => {
+    if (drag === null) return;
+    const area = scroller.current;
+    let y: number | null = null;
+    let frame = 0;
+    const onOver = (event: DragEvent) => {
+      y = event.clientY;
+    };
+    const tick = () => {
+      if (y !== null) {
+        const box = area ? area.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+        const top = Math.max(box.top, 0);
+        const bottom = Math.min(box.bottom, window.innerHeight);
+        const zone = Math.min(EDGE_PX, (bottom - top) / 4);
+        let step = 0;
+        if (y < top + zone) step = -Math.ceil(MAX_STEP_PX * Math.min(1, (top + zone - y) / zone));
+        else if (y > bottom - zone) step = Math.ceil(MAX_STEP_PX * Math.min(1, (y - (bottom - zone)) / zone));
+        if (step) (area ?? document.scrollingElement ?? document.documentElement).scrollBy(0, step);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    document.addEventListener("dragover", onOver);
+    frame = requestAnimationFrame(tick);
+    return () => {
+      document.removeEventListener("dragover", onOver);
+      cancelAnimationFrame(frame);
+    };
+  }, [drag]);
   return {
     dragging: drag,
     grip: (index: number) => ({
@@ -75,6 +124,7 @@ export function useDragReorder(onMove: (from: number, to: number) => void) {
         event.dataTransfer.setData("text/plain", String(index));
         const row = event.currentTarget.closest("[data-drag-row]");
         if (row) event.dataTransfer.setDragImage(row, 16, 16);
+        scroller.current = scrollParent(event.currentTarget);
         setDrag(index);
       },
       onDragEnd: end,
@@ -103,9 +153,9 @@ export function useDragReorder(onMove: (from: number, to: number) => void) {
 export function DragGrip(props: HTMLAttributes<HTMLSpanElement> & { draggable: boolean }) {
   return (
     <span
+      title="Drag to move"
       {...props}
       aria-hidden
-      title="Drag to move"
       className="flex h-8 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground hover:text-foreground active:cursor-grabbing"
     >
       <GripVertical className="h-4 w-4" />
