@@ -99,10 +99,11 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
   yet the guide names the path parameter of `orders/update` / `orders/get` `{external_order_id}`, "Your external
   order id.", and TixStock said on 10.11 that `external_id` is "your own internal order ID". **10.11, round 2:**
   "In the orders/add request body, you will find a field called order_id. You should pass your own internal
-  order ID in this field." So the body carries `order_id` = our reservation id, as a string - the same value we
-  answer as `external_id`. Which id those two paths take is still open; until then we pass the id orders/add
-  returns. Also open: whether a repeated `order_id` is refused (a reservation booked a second time sends the
-  same one).
+  order ID in this field." So the body carries `order_id` = our own order id - the same value we
+  answer as `external_id`. **11.11, round 3:** "Please use the {external_order_id} for both /orders/get and
+  /orders/update" and "the order_id must be unique. Duplicate order IDs should not be used". So our order id is
+  one per BOOKING ROW, the reservation id and the first 8 characters of the row's id (`2233-9f3a1c2e`,
+  `ourOrderId`), and both paths are called with it; the id orders/add returns is kept as `tixstock_order_id`.
 - **A lost orders/add answer cannot be looked up** (7.4). TixStock 10.11: check their Request Logs by hand;
   "retrying the same order is not safe, as it may result in duplicate orders"; an expired hold answers "Resource
   Not Found", and then a new hold is needed.
@@ -161,7 +162,9 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
     (instruction letter).
   - **Required answer:** to an order webhook `{external_id, order_status, message, success}`; `external_id` is
     OUR order id, not TixStock's (their answer of 10.11). To `ticket.hold` / `ticket.release`: `{ "ok": true }`
-    (10.11, round 2).
+    (10.11, round 2). To a fulfilment (11.11, round 3): an e-ticket order is `"Completed"` until its last ticket
+    and `"Commissionable"` with it, a mobile order is `"Commissionable"`, `message` "Listing has been fulfilled
+    for the order.".
   - **Count:** an e-ticket order of quantity n fires n webhooks (the last one carries Commissionable); a mobile
     order fires one.
 - **TixStock does not email e-tickets to the buyer** ("you deliver those to your customer"); external transfers
@@ -331,8 +334,9 @@ Additive DB changes. The site never writes the new tables, except the booking ro
 
 ### 7.4 `uncertain` - an order TixStock may have created
 
-orders/add with no answer may still have created the order, and there is no lookup by an id of ours (the body
-carries our `order_id` since 10.11, but TixStock has not said that `orders/get` takes it).
+orders/add with no answer may still have created the order. Since 11.11 TixStock says `orders/get` takes the
+`order_id` we sent, so such an order can be read back by our id - not built yet: it waits for the first sandbox
+order to show that the read works (plan Task 17), and until then the rules below stand.
 An `uncertain` row blocks any new booking for the reservation. It is resolved by:
 - **an order webhook** for that listing and quantity soon after (`order.update` / fulfilment carry `order_id`
   and the listing id) -> `approved` with that id;
@@ -353,15 +357,21 @@ The card shows it in amber: "לא ודאי - לא להזמין שוב עד שי�
 `POST /api/tixstock/webhook/[env]`. It is public, because TixStock calls it.
 - **Signature:** `X-Tixstock-Signature` is verified as HMAC-SHA256 of the raw body, keyed with that environment's
   API token (TixStock 10.11). A bad or missing signature answers 401 and is logged.
-- **Idempotent** on (order id, kind, row, seat): a repeat stores nothing new and answers the same. The webhook
-  type is not part of it, so a refresh of the same order does not store a file twice.
+- **Idempotent** on (our booking row, kind, row, seat): a repeat stores nothing new and answers the same. Neither
+  the webhook type nor the order id the payload names is part of it, so a refresh of the same order does not
+  store a file twice.
+- **Finding the booking:** `order_id` is tried as TixStock's own order id, then as ours (TixStock did not say
+  which a webhook carries); an id of ours that names no booking matches nothing.
 - **Fulfilment types:** the file goes to the private bucket, or the link / proof URL is stored, and the
   instruction letter goes in as `additional`. The booking takes the status the payload carries (Approved /
-  Commissionable). The answer is `{external_id: <our reservation id>, order_status: <the status we now hold>,
-  message, success: true}` (corrected 10.11: TixStock wants our own order id there).
+  Commissionable), and moves to Commissionable once the tickets in hand (PDF files + mobile links) reach its
+  quantity. The answer is `{external_id: <our order id>, order_status, message: "Listing has been fulfilled for
+  the order.", success: true}` with `order_status` by TixStock's rule of 11.11: e-ticket `"Completed"` until the
+  last ticket, then `"Commissionable"`; every other fulfilment `"Commissionable"`.
 - **`order.update`:** answers with our row's status.
 - **`ticket.hold` / `ticket.release`:** logged only, and answered exactly `{ "ok": true }` (TixStock 10.11,
-  round 2) - they carry no order, and TixStock fires them for every hold we place ourselves.
+  round 2) - they carry no order. They fire when ANOTHER marketplace holds a listing (TixStock 11.11); a hold
+  of ours sends us nothing (seen in the sandbox on 10.11).
 - **`ticket.fullfillment`** (listing level) and a type we do not know: logged only. TixStock did not name their
   answer, so it carries `ok: true` beside the four fields of an order answer (`success: true`).
 - **An unknown order id** is logged and answered `success: false`.
@@ -649,6 +659,9 @@ shape of the design did not change. What did, each marked "10.11" where it sits 
 - **TixStock's answers of 10.11:** the signature (5, 7.5); no lookup and no retry of orders/add, "Resource Not
   Found" for an expired hold (5, 7.4); the price already includes their fee, one price field (5); the Italian
   attendee list with gender (5, 7.8).
+- **TixStock's answers of 11.11, round 3:** the order id is unique, one per booking row, and `orders/get` /
+  `orders/update` take it (5); hold webhooks come from other marketplaces' holds (7.5); the fulfilment answer is
+  `Completed` / `Commissionable` by quantity (5, 7.5); production booking gets its own token (as designed).
 - **TixStock's answers of 10.11, round 2:** our order id goes in the orders/add body as `order_id` (5); the
   order is registered in USD (5); attendee details by the event's country, gender as `Male` / `Female`, a
   country code, a passport number in `national_id` (5); hold / release webhooks are answered `{ "ok": true }`

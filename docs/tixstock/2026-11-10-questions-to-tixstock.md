@@ -272,7 +272,7 @@ it in the WhatsApp group and signs in himself. Question 10 (Abdullah, the Serie 
 | 12 | Waiting for Abdullah | Orders placed days after the payment |
 | 13 | Answered | A hotel address is fine for paper tickets; Abdullah may add to it |
 
-### Code changes these answers ask for (proposed 11.11, waiting for Dor's go)
+### Code changes these answers ask for (proposed 11.11; Dor: "כן, תתקן"; built the same day)
 
 1. **A unique `order_id` per booking attempt** (answer 3): `<reservation id>-<first 8 characters of the booking
    row's id>`, e.g. `2233-9f3a1c2e` - derived from the row alone, no new column, the reservation number still
@@ -282,6 +282,13 @@ it in the WhatsApp group and signs in himself. Question 10 (Abdullah, the Serie 
    quantity, their `message`; our own row moves to `commissionable` with the last ticket.
 4. **A webhook finds its booking by either id** (answer 6 left open): first the id orders/add returned, then ours.
 5. Plan and spec follow.
+
+Built with one addition: a stored file's key is OUR booking row (it was the order id the payload named). With two
+ids for one order, a ticket arriving by webhook under one and by refresh under the other would have been stored
+twice. No file row exists yet, so no stored key changed.
+
+Still to watch in the first sandbox order: an e-ticket seller who sends ONE PDF for several tickets leaves our
+answer at `Completed` (the count is of files); and whether `orders/get` really answers to our id.
 
 Later, once the sandbox shows `orders/get` by our id works: an `uncertain` booking (orders/add with no answer) can
 be settled by reading the order back instead of by hand.
