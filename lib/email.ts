@@ -36,6 +36,8 @@ export type SendMailInput = {
   text?: string;
   from?: string;
   replyTo?: string;
+  /** Files to attach (the ticket PDFs of a TixStock booking). Passed through to nodemailer as they are. */
+  attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
 };
 
 export async function sendMail(input: SendMailInput): Promise<void> {
@@ -46,6 +48,7 @@ export async function sendMail(input: SendMailInput): Promise<void> {
     html: input.html,
     text: input.text,
     replyTo: input.replyTo,
+    attachments: input.attachments,
   });
 }
 

@@ -1,7 +1,7 @@
 "use server";
 
-// The TixStock ticket-booking card of a reservation: what it reads, and the book action. (The delivery actions
-// are added to this file by the task that follows.)
+// The TixStock ticket-booking card of a reservation: what it reads, the book action, and what staff do once the
+// tickets arrive (check, send, fix an attendee, refresh, settle an uncertain order).
 //
 // The reservation page is a client component that EVERY staff role opens, and `requireAdmin()` throws for the
 // others - so each action here starts with `fulfilmentSession()` and answers `{ ok: false, kind: "hidden" }`. It
@@ -10,10 +10,20 @@
 import { requireAdmin } from "@/lib/auth/guards";
 import type { SessionPayload } from "@/lib/auth/session";
 import { adminOrHidden, fulfilmentVisibleTo } from "@/lib/fulfilment/visibility";
+import {
+  markChecked,
+  markWhatsapp,
+  refreshBooking,
+  sendToCustomer,
+  settleUncertain,
+  updateAttendees,
+  type DeliveryResult,
+} from "@/lib/services/tixstock-delivery";
 import { loadOfficeOpen, realOfficeDeps, type OfficeOpen } from "@/lib/services/tixstock-office";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { toBookingView, toFileView, type TicketBookingView, type TicketFileView } from "@/lib/tixstock-booking/booking-view";
 import { runOfficeBooking, type OfficeBookingInput, type OfficeBookingResult } from "@/lib/tixstock-booking/office-booking";
+import type { AttendeeInput } from "@/lib/tixstock-booking/rules";
 
 const FILES_BUCKET = "ticket-files";
 const SIGNED_URL_SECONDS = 300;
@@ -119,4 +129,44 @@ export async function searchTixstockEvents(query: string): Promise<TixstockEvent
     console.error("[ticket-booking] searchTixstockEvents:", messageOf(e));
     return [];
   }
+}
+
+const HIDDEN: DeliveryResult = { ok: false, kind: "hidden" };
+
+/** "בדקתי את הכרטיסים". */
+export async function markTicketsChecked(bookingId: string): Promise<DeliveryResult> {
+  const session = await fulfilmentSession();
+  return session ? markChecked(bookingId, session.email) : HIDDEN;
+}
+
+/** "שלח ללקוח": the e-mail with the ticket page link (and the PDFs when they fit). Refused until the tickets were checked. */
+export async function sendTicketsToCustomer(bookingId: string): Promise<DeliveryResult> {
+  const session = await fulfilmentSession();
+  return session ? sendToCustomer(bookingId, session.email) : HIDDEN;
+}
+
+/** "נשלח בוואטסאפ": staff sent the text themselves; the row records it. */
+export async function markWhatsappSent(bookingId: string): Promise<DeliveryResult> {
+  const session = await fulfilmentSession();
+  return session ? markWhatsapp(bookingId, session.email) : HIDDEN;
+}
+
+export async function updateTicketAttendees(bookingId: string, attendees: AttendeeInput[]): Promise<DeliveryResult> {
+  const session = await fulfilmentSession();
+  return session ? updateAttendees(bookingId, attendees, session.email) : HIDDEN;
+}
+
+export async function refreshTicketBooking(bookingId: string): Promise<DeliveryResult> {
+  const session = await fulfilmentSession();
+  return session ? refreshBooking(bookingId) : HIDDEN;
+}
+
+/** "בדקתי - נוצרה הזמנה <id>" / "בדקתי - לא נוצרה". */
+export async function resolveUncertain(
+  bookingId: string,
+  resolution: { created: true; orderId: string } | { created: false },
+  note: string,
+): Promise<DeliveryResult> {
+  const session = await fulfilmentSession();
+  return session ? settleUncertain(bookingId, resolution, note, session.email) : HIDDEN;
 }
