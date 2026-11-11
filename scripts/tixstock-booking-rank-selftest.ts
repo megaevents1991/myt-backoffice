@@ -5,7 +5,16 @@
 import assert from "node:assert/strict";
 import { adminOrHidden, fulfilmentVisibleTo } from "../lib/fulfilment/visibility";
 import { rankListings, type RankInput } from "../lib/tixstock-booking/rank";
-import { eventForBooking, fitAttendees, hotelShippingOf, reservationAttendees, reservationBuyer, soldTicketOf, venueItaly } from "../lib/tixstock-booking/office-open";
+import {
+  bookingAvailability,
+  eventForBooking,
+  fitAttendees,
+  hotelShippingOf,
+  reservationAttendees,
+  reservationBuyer,
+  soldTicketOf,
+  venueItaly,
+} from "../lib/tixstock-booking/office-open";
 import { toBookingView, toFileView, waitingReservations } from "../lib/tixstock-booking/booking-view";
 
 const cases: Array<[string, () => void | Promise<void>]> = [];
@@ -295,6 +304,36 @@ it("which TixStock event a reservation may be booked on", () => {
   assert.deepEqual(eventForBooking(sold({ supplier: "livetickets", tixEventId: "77" }), ""), { ok: false, kind: "not_tixstock" });
   assert.deepEqual(eventForBooking(sold({ supplier: "livetickets", tixEventId: "77" }), "TX7"), { ok: false, kind: "not_tixstock" });
   assert.deepEqual(eventForBooking(sold({ quantity: 0 }), ""), { ok: false, kind: "no_event" });
+});
+
+it("the book button is available only where a booking can really be placed", () => {
+  type Env = "sandbox" | "production";
+  const asked: Env[] = [];
+  const clients = (state: Partial<Record<Env, "production_closed" | "not_configured">>) => (env: Env) => {
+    asked.push(env);
+    const kind = state[env];
+    return kind ? ({ ok: false, kind } as const) : ({ ok: true } as const);
+  };
+  const real = { is_test: false, tixstock_booking: null };
+  const test = { is_test: true, tixstock_booking: "sandbox_office" };
+
+  // A real event books in production: closed until the production switch is on AND its own token is set.
+  assert.deepEqual(bookingAvailability(real, clients({ production: "production_closed" })), { available: false, reason: "production_closed" });
+  assert.deepEqual(bookingAvailability(real, clients({ production: "not_configured" })), { available: false, reason: "not_configured" });
+  assert.deepEqual(bookingAvailability(real, clients({})), { available: true, env: "production" });
+  // A real event is production whatever its `tixstock_booking` says, and a sandbox that works does not open it.
+  assert.deepEqual(bookingAvailability({ is_test: false, tixstock_booking: "sandbox_office" }, clients({ production: "production_closed" })), { available: false, reason: "production_closed" });
+
+  // A test event books in the sandbox, production closed or not.
+  assert.deepEqual(bookingAvailability(test, clients({ production: "production_closed" })), { available: true, env: "sandbox" });
+  assert.deepEqual(bookingAvailability(test, clients({ sandbox: "not_configured" })), { available: false, reason: "not_configured" });
+
+  // A test event with no known mode books nowhere - and no environment is even asked about.
+  asked.length = 0;
+  assert.deepEqual(bookingAvailability({ is_test: true, tixstock_booking: null }, clients({})), { available: false, reason: "test_without_sandbox" });
+  assert.deepEqual(asked, []);
+  // An event that could not be read is never "available".
+  assert.deepEqual(bookingAvailability(null, clients({})), { available: false, reason: "not_configured" });
 });
 
 const main = async (): Promise<void> => {

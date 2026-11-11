@@ -2,7 +2,7 @@
 // ticket the order was sold with, and the hotel a paper ticket can be shipped to. A reservation's JSON columns are
 // read as unknown - an old or hand-typed row never breaks the dialog. Pure.
 // Selftest: scripts/tixstock-booking-rank-selftest.ts.
-import type { AttendeeInput, Buyer } from "./rules";
+import { bookingEnvFor, type AttendeeInput, type BookingEnv, type Buyer, type EventFlags } from "./rules";
 
 const text = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const rec = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? { ...v } : {});
@@ -128,4 +128,27 @@ export function eventForBooking(
   const eventId = picked !== "" ? picked : sold.supplier === "tixstock" ? sold.tixEventId : null;
   if (!eventId) return { ok: false, kind: "no_event" };
   return { ok: true, eventId, soldCategory: sold.supplier === "tixstock" ? sold.category : null };
+}
+
+/** May "הזמן כרטיס" be pressed for this reservation at all - and when not, why. */
+export type BookingAvailability =
+  | { available: true; env: BookingEnv }
+  | { available: false; reason: "production_closed" | "not_configured" | "test_without_sandbox" };
+
+/**
+ * Whether a booking can really be placed for an event, decided by the event's environment - the same rule the
+ * book action itself applies, so the card never offers a button the server would refuse:
+ * a real event books in production (closed until the production switch is on and its own token is set), a test
+ * event in the sandbox, a test event with no known mode nowhere. `clientFor` is `tixstockClientFor` (it reads the
+ * environment's configuration; it calls nobody). An event that could not be read is never available.
+ */
+export function bookingAvailability(
+  event: EventFlags | null | undefined,
+  clientFor: (env: BookingEnv) => { ok: true } | { ok: false; kind: "production_closed" | "not_configured" },
+): BookingAvailability {
+  if (!event) return { available: false, reason: "not_configured" };
+  const env = bookingEnvFor(event);
+  if (!env.ok) return { available: false, reason: "test_without_sandbox" };
+  const client = clientFor(env.env);
+  return client.ok ? { available: true, env: env.env } : { available: false, reason: client.kind };
 }

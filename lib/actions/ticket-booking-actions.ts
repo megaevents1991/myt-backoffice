@@ -19,10 +19,11 @@ import {
   updateAttendees,
   type DeliveryResult,
 } from "@/lib/services/tixstock-delivery";
-import { loadOfficeOpen, realOfficeDeps, type OfficeOpen } from "@/lib/services/tixstock-office";
+import { loadBookingAvailability, loadOfficeOpen, realOfficeDeps, type OfficeOpen } from "@/lib/services/tixstock-office";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { toBookingView, toFileView, type TicketBookingView, type TicketFileView } from "@/lib/tixstock-booking/booking-view";
 import { runOfficeBooking, type OfficeBookingInput, type OfficeBookingResult } from "@/lib/tixstock-booking/office-booking";
+import type { BookingAvailability } from "@/lib/tixstock-booking/office-open";
 import type { AttendeeInput } from "@/lib/tixstock-booking/rules";
 
 const FILES_BUCKET = "ticket-files";
@@ -41,14 +42,21 @@ async function fulfilmentSession(): Promise<SessionPayload | null> {
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : JSON.stringify(e));
 
 export type GetTicketBookingResult =
-  | { ok: true; booking: TicketBookingView | null; files: TicketFileView[] }
+  | { ok: true; booking: TicketBookingView | null; files: TicketFileView[]; availability: BookingAvailability }
   | { ok: false; kind: "hidden" | "db" };
 
-/** The reservation's newest booking and its files. Stored files come with a signed URL good for five minutes. */
+/**
+ * The reservation's newest booking and its files (stored files come with a signed URL good for five minutes), and
+ * whether "הזמן כרטיס" can be pressed for it at all - the card draws the button disabled, with the reason, where
+ * the book action would refuse anyway.
+ */
 export async function getTicketBooking(reservationId: number): Promise<GetTicketBookingResult> {
   if (!(await fulfilmentSession())) return { ok: false, kind: "hidden" };
   try {
-    if (!Number.isInteger(reservationId) || reservationId < 1) return { ok: true, booking: null, files: [] };
+    if (!Number.isInteger(reservationId) || reservationId < 1) {
+      return { ok: true, booking: null, files: [], availability: { available: false, reason: "not_configured" } };
+    }
+    const availability = await loadBookingAvailability(reservationId);
     const { data: row, error } = await supabaseTyped
       .from("ticket_bookings")
       .select("*")
@@ -58,7 +66,7 @@ export async function getTicketBooking(reservationId: number): Promise<GetTicket
       .maybeSingle();
     if (error) throw new Error(`ticket_bookings read failed: ${error.message}`);
     const booking = row ? toBookingView(row, new Date()) : null;
-    if (!booking) return { ok: true, booking: null, files: [] };
+    if (!booking) return { ok: true, booking: null, files: [], availability };
 
     const { data: fileRows, error: filesError } = await supabaseTyped
       .from("ticket_booking_files")
@@ -80,7 +88,7 @@ export async function getTicketBooking(reservationId: number): Promise<GetTicket
         return toFileView(file, signed);
       }),
     );
-    return { ok: true, booking, files };
+    return { ok: true, booking, files, availability };
   } catch (e) {
     console.error("[ticket-booking] getTicketBooking:", messageOf(e));
     return { ok: false, kind: "db" };

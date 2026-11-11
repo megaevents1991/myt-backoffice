@@ -8,6 +8,7 @@ import { tixstockClientFor } from "@/lib/services/tixstock-booking-env";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import type { OfficeContext, OfficeDeps } from "@/lib/tixstock-booking/office-booking";
 import {
+  bookingAvailability,
   eventForBooking,
   fitAttendees,
   hotelShippingOf,
@@ -15,6 +16,7 @@ import {
   reservationBuyer,
   soldTicketOf,
   venueItaly,
+  type BookingAvailability,
 } from "@/lib/tixstock-booking/office-open";
 import { rankListings, type RankableListing, type RankedListing } from "@/lib/tixstock-booking/rank";
 import { bookingEnvFor, type AttendeeInput, type BookingEnv, type Buyer } from "@/lib/tixstock-booking/rules";
@@ -125,6 +127,26 @@ export async function loadOfficeOpen(reservationId: number, tixstockEventId?: st
     console.error("[ticket-booking] loadOfficeOpen:", messageOf(e));
     return { ok: false, kind: "db" };
   }
+}
+
+/**
+ * May "הזמן כרטיס" be pressed for this reservation: its event's environment, and whether that environment can book
+ * here at all (`bookingAvailability`). Two small reads and no call to TixStock - the card asks on every open.
+ */
+export async function loadBookingAvailability(reservationId: number): Promise<BookingAvailability> {
+  const { data: reservation, error } = await supabaseTyped.from("reservations").select("event_id").eq("id", reservationId).maybeSingle();
+  if (error) throw new Error(`reservations read failed: ${error.message}`);
+  const eventId = Number(reservation?.event_id);
+  let flags: { is_test: boolean | null; tixstock_booking: string | null } | null = null;
+  if (Number.isInteger(eventId) && eventId > 0) {
+    const { data: event, error: eventError } = await supabaseTyped.from("events").select("is_test, tixstock_booking").eq("id", eventId).maybeSingle();
+    if (eventError) throw new Error(`events read failed: ${eventError.message}`);
+    flags = event ? { is_test: event.is_test, tixstock_booking: event.tixstock_booking } : null;
+  }
+  return bookingAvailability(flags, (env) => {
+    const made = tixstockClientFor(env);
+    return made.ok ? { ok: true } : { ok: false, kind: made.kind };
+  });
 }
 
 const NO_CLIENT = { ok: false, kind: "no_answer", detail: "no TixStock client for this environment" } as const;

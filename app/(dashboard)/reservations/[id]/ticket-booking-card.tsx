@@ -27,6 +27,7 @@ import {
 } from "@/lib/actions/ticket-booking-actions";
 import type { TicketBookingView, TicketFileView } from "@/lib/tixstock-booking/booking-view";
 import { seatsLine, whatsappTicketText } from "@/lib/tixstock-booking/customer-email";
+import type { BookingAvailability } from "@/lib/tixstock-booking/office-open";
 import type { AttendeeInput, BookingStatus } from "@/lib/tixstock-booking/rules";
 import { AttendeesEditor, TicketBookingDialog } from "./ticket-booking-dialog";
 
@@ -68,6 +69,13 @@ const ACTION_ERRORS: Record<string, string> = {
   db: "הפעולה נכשלה. נסו שוב.",
 };
 
+/** Why "הזמן כרטיס" cannot be pressed for this reservation. The button is then drawn disabled, with this line. */
+const UNAVAILABLE: Record<Extract<BookingAvailability, { available: false }>["reason"], string> = {
+  production_closed: "TixStock - הזמנה בפרודקשן עוד לא נפתחה",
+  not_configured: "אין חיבור ל-TixStock בסביבה הזו",
+  test_without_sandbox: "אירוע בדיקה בלי מצב סנדבוקס - לא מזמינים ממנו כרטיסים",
+};
+
 const money = (n: number | null): string => (n === null ? "-" : `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`);
 const when = (iso: string | null): string => (iso ? new Date(iso).toLocaleString("he-IL") : "");
 
@@ -76,7 +84,7 @@ const LIVE: readonly BookingStatus[] = ["holding", "on_hold", "ordering", "sale_
 
 export function TicketBookingCard({ reservationId, eventName }: { reservationId: number; eventName: string }) {
   const { toast } = useToast();
-  const [loaded, setLoaded] = useState<{ booking: TicketBookingView | null; files: TicketFileView[] } | null>(null);
+  const [loaded, setLoaded] = useState<{ booking: TicketBookingView | null; files: TicketFileView[]; availability: BookingAvailability } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AttendeeInput[] | null>(null);
@@ -86,7 +94,7 @@ export function TicketBookingCard({ reservationId, eventName }: { reservationId:
   const load = useCallback(async () => {
     try {
       const answer = await getTicketBooking(reservationId);
-      setLoaded(answer.ok ? { booking: answer.booking, files: answer.files } : null);
+      setLoaded(answer.ok ? { booking: answer.booking, files: answer.files, availability: answer.availability } : null);
     } catch {
       // Hidden, a read error or a rejected call: the page stays exactly as it was.
       setLoaded(null);
@@ -113,7 +121,7 @@ export function TicketBookingCard({ reservationId, eventName }: { reservationId:
   };
 
   if (!loaded) return null;
-  const { booking, files } = loaded;
+  const { booking, files, availability } = loaded;
   const live = !!booking && LIVE.includes(booking.status);
   const tickets = files.filter((f) => f.kind === "pdf" || f.kind === "mobile_link");
   const waiting = !!booking && booking.source === "office" && files.length > 0 && !booking.sentToCustomerAt;
@@ -133,7 +141,11 @@ export function TicketBookingCard({ reservationId, eventName }: { reservationId:
         {!live && (
           <div className="space-y-2">
             {booking?.lastError && <p className="text-red-600">ניסיון קודם: <bdi dir="ltr">{booking.lastError}</bdi></p>}
-            <Button type="button" onClick={() => setDialogOpen(true)}>הזמן כרטיס</Button>
+            {/* Disabled wherever the book action would refuse anyway: today, every real (production) order. */}
+            <Button type="button" disabled={!availability.available} onClick={() => availability.available && setDialogOpen(true)}>
+              הזמן כרטיס
+            </Button>
+            {!availability.available && <p className="text-muted-foreground" data-ticket-booking-unavailable>{UNAVAILABLE[availability.reason]}</p>}
           </div>
         )}
 
