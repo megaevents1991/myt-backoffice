@@ -1,12 +1,16 @@
-import Link from "next/link";
 import { Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /*
  * The forms belong to a company (2026-11-11): a viewer who works in more than one
- * company may land on a form - or the forms list - of the company they are NOT in now. These say where the forms are and switch there through the company deep link
+ * company may land on a form - or the forms list - of the company they are NOT in now.
+ * These say where the forms are and switch there through the company deep link
  * (`?company=<slug>`, contexts/company-context.tsx). They are only shown for a company
  * the viewer works in (findFormElsewhere / otherCompaniesWithForms decide).
+ *
+ * The switch is a plain <a>, never next/link: the deep link is followed on a page LOAD
+ * (the company provider re-reads the URL when the pathname changes), and these links keep
+ * the pathname - a client navigation changed the address and stayed in the old company.
  */
 
 /** A form page whose form lives in another company of the viewer. */
@@ -25,9 +29,9 @@ export function FormInOtherCompany({
         הטפסים מנוהלים בתוך החברה שהם שייכים לה. עוברים לחברה ופותחים אותו שם.
       </p>
       <Button asChild className="mt-5">
-        <Link href={`${path}?company=${encodeURIComponent(company.slug)}`}>
+        <a href={`${path}?company=${encodeURIComponent(company.slug)}`}>
           מעבר ל{company.name}
-        </Link>
+        </a>
       </Button>
     </div>
   );
@@ -53,7 +57,7 @@ export function FormsInOtherCompanies({
               : `${company.count} טפסים נוספים נמצאים בחברה ${company.name}.`}
           </span>
           <Button asChild size="sm" variant="outline">
-            <Link href={`/forms?company=${encodeURIComponent(company.slug)}`}>החלף חברה</Link>
+            <a href={`/forms?company=${encodeURIComponent(company.slug)}`}>החלף חברה</a>
           </Button>
         </div>
       ))}
