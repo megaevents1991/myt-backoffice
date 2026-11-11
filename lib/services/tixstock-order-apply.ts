@@ -3,7 +3,8 @@
 // (tixstock-webhook.ts), the card's Refresh and the sweep, so a ticket is stored once whichever way it arrives.
 //
 // Rules that hold here:
-//   - a file is stored once per dedupe key (order + kind + row + seat + index; the webhook type is NOT in it);
+//   - a file is stored once per dedupe key (OUR booking + kind + row + seat + index). Neither the webhook type nor
+//     the order id a payload names is in it: TixStock knows an order by its own id and by the `order_id` we sent;
 //   - a status only moves along `canMoveTo` - a late "Approved" never pulls a Commissionable order back;
 //   - a SITE booking (the hidden sandbox checkout) is released to the customer's page by its first file; an
 //     OFFICE booking is released by staff after they checked the tickets.
@@ -61,20 +62,20 @@ const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefined 
 
 const isUrl = (s: string): boolean => /^https?:\/\//i.test(s);
 
-/** The order id of a payload: `order_id` on a webhook (where `id` is the LISTING), `id` on an order read back. */
-export function orderIdOf(type: string, data: Record<string, unknown>): string | null {
-  return str(data.order_id) ?? (type === "orders.get" ? str(data.id) : null);
+/** The order id a WEBHOOK names: its `order_id` (a webhook's `id` is the LISTING). TixStock's own id, or ours. */
+export function orderIdOf(data: Record<string, unknown>): string | null {
+  return str(data.order_id);
 }
 
 /** Bytes or a link, from a field TixStock fills with base64 (sometimes as a data: URL) or with a URL. */
 const bodyOrLink = (value: string): { base64?: string; url?: string } =>
   isUrl(value) ? { url: value } : { base64: value.replace(/^data:[^;,]*;base64,/i, "") };
 
-const filesOfPart = (orderId: string, part: Record<string, unknown>, fallback: { row: string | null; seat: string | null }): FileToSave[] => {
+const filesOfPart = (keyBase: string, part: Record<string, unknown>, fallback: { row: string | null; seat: string | null }): FileToSave[] => {
   const row = str(part.row) ?? fallback.row;
   const seat = str(part.seat) ?? fallback.seat;
   const key = (kind: TicketFileKind, seatOfKey: string | null, index: number): string =>
-    `${orderId}:${kind}:${row ?? ""}:${seatOfKey ?? ""}:${index}`;
+    `${keyBase}:${kind}:${row ?? ""}:${seatOfKey ?? ""}:${index}`;
   const out: FileToSave[] = [];
 
   list(part.file).forEach((value, index) => {
@@ -101,18 +102,16 @@ const filesOfPart = (orderId: string, part: Record<string, unknown>, fallback: {
 /**
  * One reader for both sources. A webhook carries one ticket at the top level (`row`, `seat`, `file`, ...); an
  * order read back with orders/get is expected to carry them per item - that part is provisional until the first
- * sandbox refresh shows the real shape (plan Task 17, Stage 5). The key is the same either way.
+ * sandbox refresh shows the real shape (plan Task 17, Stage 5). The key is the same either way: `bookingId` is the
+ * `ticket_bookings` row the caller already found, so a ticket has one key whichever id the payload names.
  */
-export function readOrderPayload(type: string, data: Record<string, unknown>): OrderUpdate {
+export function readOrderPayload(data: Record<string, unknown>, bookingId: string): OrderUpdate {
   const status = statusFromTixstock(data.order_status ?? data.status);
-  const orderId = orderIdOf(type, data);
-  if (!orderId) return { status, files: [] };
-
   const top = { row: str(data.row), seat: str(data.seat) };
-  const files = filesOfPart(orderId, data, top);
+  const files = filesOfPart(bookingId, data, top);
   for (const item of list(data.items)) {
     const part = rec(item);
-    if (part) files.push(...filesOfPart(orderId, part, { row: null, seat: null }));
+    if (part) files.push(...filesOfPart(bookingId, part, { row: null, seat: null }));
   }
   const seen = new Set<string>();
   return { status, files: files.filter((f) => (seen.has(f.dedupeKey) ? false : (seen.add(f.dedupeKey), true))) };

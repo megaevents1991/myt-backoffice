@@ -14,12 +14,15 @@
 //                                                      a day, when the event is within 14 days or the booking is a
 //                                                      sandbox one (the test event is months away)
 //
+// orders/update and orders/get are called with the order_id WE sent (`ourOrderId`): TixStock, 11.11.2026 - "use the
+// {external_order_id} for both". `tixstock_order_id` (the id orders/add returned) still says that an order exists.
+//
 // Every status change is a compare-and-set on the status the row was read with: a lost race is skipped, never
 // retried. A hold is released only AFTER our row moved, so a payment that claimed the row meanwhile keeps its hold.
 // All I/O goes through `SweepDeps`; the real ones are in tixstock-booking-store.ts.
 // Test: scripts/tixstock-booking-sweep-selftest.ts. Spec: docs/superpowers/specs/2026-11-09-tixstock-ticket-booking-design.md 7.4, 7.5, 7.8.
 import type { TixstockClient } from "../tixstock-booking/client";
-import { canMoveTo, statusFromTixstock, ticketLinkEmail, ticketPageUrl, type BookingEnv, type BookingStatus } from "../tixstock-booking/rules";
+import { canMoveTo, ourOrderId, statusFromTixstock, ticketLinkEmail, ticketPageUrl, type BookingEnv, type BookingStatus } from "../tixstock-booking/rules";
 import { applyOrderUpdate, readOrderPayload, type ApplyDeps, type BookingRow } from "./tixstock-order-apply";
 
 const MINUTE = 60_000;
@@ -150,7 +153,7 @@ export async function sweepTixstockBookings(now: Date, deps: SweepDeps, opts: Sw
         return;
       }
       const client = deps.clientFor(row.env);
-      const answer = client ? await client.updateOrder(row.tixstock_order_id, { order_status: "Approved" }) : null;
+      const answer = client ? await client.updateOrder(ourOrderId(row.reservation_id, row.id), { order_status: "Approved" }) : null;
       if (answer?.ok) {
         // TixStock took the update; a status it does not name is the one we asked for.
         const next = statusFromTixstock(answer.data.status) ?? "approved";
@@ -235,12 +238,12 @@ export async function sweepTixstockBookings(now: Date, deps: SweepDeps, opts: Sw
     if (!due) return;
     const client = deps.clientFor(row.env);
     if (!client) return;
-    const order = await client.getOrder(row.tixstock_order_id);
+    const order = await client.getOrder(ourOrderId(row.reservation_id, row.id));
     if (!order.ok) {
       console.warn("[tixstock-sweep] refresh not done", JSON.stringify({ booking: row.id, kind: order.kind }));
       return;
     }
-    await applyOrderUpdate(row.id, readOrderPayload("orders.get", order.data), deps);
+    await applyOrderUpdate(row.id, readOrderPayload(order.data, row.id), deps);
     result.refreshed++;
   };
 

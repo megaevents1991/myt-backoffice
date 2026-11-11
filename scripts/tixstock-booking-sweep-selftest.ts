@@ -8,11 +8,16 @@ import assert from "node:assert/strict";
 import { sweepTixstockBookings, type SweepDeps, type SweepReservation, type SweepRow } from "../lib/services/tixstock-booking-sweep";
 import type { FileToSave } from "../lib/services/tixstock-order-apply";
 import type { TixstockCall, TixstockClient } from "../lib/tixstock-booking/client";
+import { ourOrderId } from "../lib/tixstock-booking/rules";
 
 const NOW = new Date("2026-11-10T12:00:00Z");
 const minutesAgo = (m: number): string => new Date(NOW.getTime() - m * 60_000).toISOString();
 const daysAhead = (d: number): string => new Date(NOW.getTime() + d * 86_400_000).toISOString().slice(0, 10);
 const PDF = Buffer.from("%PDF-1.4 a ticket").toString("base64");
+// TixStock, 11.11: orders/update and orders/get take the order_id WE sent ({external_order_id}), never the id
+// orders/add returned ("O1" in these rows). The default row is booking "b1" of reservation 1.
+const OUR = ourOrderId(1, "b1");
+assert.notEqual(OUR, "O1");
 
 const row = (over: Partial<SweepRow>): SweepRow => ({
   id: "b1",
@@ -274,7 +279,7 @@ const main = async () => {
     const w = world([row({ status: "sale_on_hold", tixstock_order_id: "O1", created_at: minutesAgo(6) })], paid);
     const result = await sweepTixstockBookings(NOW, w.deps);
     assert.equal(w.find("b1")?.status, "approved");
-    assert.deepEqual(w.log, ['updateOrder:O1:{"order_status":"Approved"}', "status:b1:approved"]);
+    assert.deepEqual(w.log, [`updateOrder:${OUR}:{"order_status":"Approved"}`, "status:b1:approved"]);
     assert.equal(result.approved, 1);
     assert.equal(w.mails.length, 1, "a site booking gets its link email from the sweep that approved it");
     assert.equal(w.mails[0].to, "buyer@example.com");
@@ -340,7 +345,7 @@ const main = async () => {
     const w = world([row({ status: "approved", tixstock_order_id: "O1", created_at: minutesAgo(3000) })], { 1: reservation({ paid: true }) });
     w.state.getOrder = { ok: true, data: { id: "O1", status: "Commissionable", items: [{ row: "A", seat: "12", file: PDF }] } };
     const result = await sweepTixstockBookings(NOW, w.deps);
-    assert.deepEqual(w.log.filter((l) => l.startsWith("getOrder")), ["getOrder:O1"]);
+    assert.deepEqual(w.log.filter((l) => l.startsWith("getOrder")), [`getOrder:${OUR}`]);
     assert.equal(w.files.length, 1, "the order's ticket is stored");
     assert.equal(w.find("b1")?.status, "commissionable");
     assert.equal(w.find("b1")?.last_refresh_at, NOW.toISOString());
@@ -363,7 +368,7 @@ const main = async () => {
       { 1: reservation({ paid: true, eventDate: daysAhead(10) }) },
     );
     await sweepTixstockBookings(NOW, near.deps);
-    assert.deepEqual(near.log, ["getOrder:O1"]);
+    assert.deepEqual(near.log, [`getOrder:${OUR}`]);
 
     // read two hours ago: not again today
     const recent = world([row({ status: "approved", tixstock_order_id: "O1", created_at: minutesAgo(3000), last_refresh_at: minutesAgo(120) })]);
@@ -377,7 +382,7 @@ const main = async () => {
     assert.equal(fresh.find("b1")?.last_refresh_at, null);
     const hourOld = world([row({ status: "approved", tixstock_order_id: "O1", created_at: minutesAgo(61) })]);
     await sweepTixstockBookings(NOW, hourOld.deps);
-    assert.deepEqual(hourOld.log, ["getOrder:O1"]);
+    assert.deepEqual(hourOld.log, [`getOrder:${OUR}`]);
 
     // TixStock did not answer: one try a day, the row is left as it was
     const down = world([row({ status: "approved", tixstock_order_id: "O1", created_at: minutesAgo(3000) })]);

@@ -62,6 +62,33 @@ export async function findBookingByOrder(env: BookingEnv, orderId: string): Prom
   return data ? toBookingRow(data) : null;
 }
 
+/**
+ * The booking an order id of ours names (`ourOrderId`: the reservation and the first 8 characters of the row's id).
+ * A reservation has a handful of rows, so the prefix is matched here; two rows that share it name nothing.
+ */
+export async function findBookingByOurId(env: BookingEnv, reservationId: number, bookingPrefix: string): Promise<BookingRow | null> {
+  const { data, error } = await supabaseTyped
+    .from("ticket_bookings")
+    .select(BOOKING_COLUMNS)
+    .eq("env", env)
+    .eq("reservation_id", reservationId);
+  if (error) throw new Error(`ticket_bookings read by our order id failed: ${error.message}`);
+  const found = (data ?? []).filter((r) => r.id.toLowerCase().startsWith(bookingPrefix));
+  return found.length === 1 ? toBookingRow(found[0]) : null;
+}
+
+/** The tickets in hand for a booking: its stored PDF files and its mobile links. */
+export async function countTicketFiles(bookingId: string): Promise<{ pdf: number; mobileLink: number }> {
+  const { data, error } = await supabaseTyped
+    .from("ticket_booking_files")
+    .select("kind")
+    .eq("booking_id", bookingId)
+    .in("kind", ["pdf", "mobile_link"]);
+  if (error) throw new Error(`ticket_booking_files count failed: ${error.message}`);
+  const kinds = (data ?? []).map((r) => r.kind);
+  return { pdf: kinds.filter((k) => k === "pdf").length, mobileLink: kinds.filter((k) => k === "mobile_link").length };
+}
+
 export async function findUncertain(env: BookingEnv, listingId: string, sinceIso: string): Promise<BookingRow[]> {
   const { data, error } = await supabaseTyped
     .from("ticket_bookings")
@@ -307,6 +334,8 @@ export function realWebhookDeps(): WebhookDeps {
   return {
     ...realApplyDeps(),
     findBookingByOrder,
+    findBookingByOurId,
+    countTicketFiles,
     findUncertain,
     attachOrder,
     // The log must never be the reason a webhook fails: both writes swallow their own errors.

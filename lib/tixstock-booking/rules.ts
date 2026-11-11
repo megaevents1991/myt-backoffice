@@ -163,13 +163,23 @@ export function attendeeIssues(a: AttendeeInput, italian: boolean): AttendeeIssu
 }
 
 /**
- * Our order id as TixStock knows it: the reservation id, as a string. It is sent as `order_id` in orders/add and
- * answered as `external_id` to every order webhook (TixStock, 10.11.2026: both are "your own internal order ID").
- * A reservation that is booked a second time (after a cancelled or failed attempt) sends the same id again; whether
- * TixStock refuses a repeat is asked - if it does, this is the one function to change.
+ * Our order id as TixStock knows it - one per BOOKING, never per reservation: `order_id` must be unique (TixStock,
+ * 11.11.2026), and a reservation can be booked again after a cancelled or failed attempt. It is the reservation id,
+ * so their support and ours read the same number, and the first 8 characters of the booking row's id:
+ * `2233-9f3a1c2e`. It is sent as `order_id` in orders/add, answered as `external_id` to every order webhook, and it
+ * is the id `orders/get` / `orders/update` take (the guide's `{external_order_id}`).
  */
-export function ourOrderId(reservationId: number): string {
-  return String(reservationId);
+export function ourOrderId(reservationId: number, bookingId: string): string {
+  return `${reservationId}-${bookingId.slice(0, 8).toLowerCase()}`;
+}
+
+const BOOKING_ROW_ID = /^[0-9a-f]{8}-/i;
+const OUR_ORDER_ID = /^([1-9]\d*)-([0-9a-f]{8})$/i;
+
+/** The two halves of an id `ourOrderId` built; null for any other value. TixStock's own order ids never match. */
+export function parseOurOrderId(v: unknown): { reservationId: number; bookingPrefix: string } | null {
+  const m = typeof v === "string" ? OUR_ORDER_ID.exec(v.trim()) : null;
+  return m ? { reservationId: Number(m[1]), bookingPrefix: m[2].toLowerCase() } : null;
 }
 
 /** TixStock's spelling of the gender our forms keep as `M` / `F` (their answer of 10.11.2026). */
@@ -179,8 +189,8 @@ const GENDER_TO_TIXSTOCK = { M: "Male", F: "Female" } as const;
  * The body of `POST /orders/add/{hold_id}/{quantity}`: our order id, the buyer once, and one item per ticket with
  * its attendee. The ONE place that names TixStock's order and attendee fields.
  *
- * Settled by TixStock's answers of 10.11.2026 (backoffice docs/tixstock/2026-11-10-questions-to-tixstock.md):
- * `order_id` carries our own order id; `gender` is `Male` / `Female`; `nationality` is a country code;
+ * Settled by TixStock's answers of 10-11.11.2026 (backoffice docs/tixstock/2026-11-10-questions-to-tixstock.md):
+ * `order_id` carries our own order id and is unique; `gender` is `Male` / `Female`; `nationality` is a country code;
  * `national_id` takes a passport number. Still ours to see in the sandbox: the empty `seat` (a listing names a row,
  * not seats).
  *
@@ -191,6 +201,8 @@ export function buildOrderRequest(input: {
   status: "Sale on Hold" | "Approved";
   at: Date;
   reservationId: number;
+  /** The `ticket_bookings` row this order is placed for (a uuid). */
+  bookingId: string;
   buyer: Buyer;
   attendees: AttendeeInput[];
   quantity: number;
@@ -199,9 +211,10 @@ export function buildOrderRequest(input: {
   shippingAddress?: Record<string, string>;
 }):
   | { ok: true; body: Record<string, unknown> }
-  | { ok: false; kind: "reservation_id" | "attendee_count" | "attendee_issues" } {
-  // An order at TixStock is final: it never goes out under an id that is not a reservation of ours.
+  | { ok: false; kind: "reservation_id" | "booking_id" | "attendee_count" | "attendee_issues" } {
+  // An order at TixStock is final: it never goes out under an id that is not a reservation and a booking of ours.
   if (!Number.isInteger(input.reservationId) || input.reservationId < 1) return { ok: false, kind: "reservation_id" };
+  if (!BOOKING_ROW_ID.test(input.bookingId)) return { ok: false, kind: "booking_id" };
   if (input.quantity < 1 || input.attendees.length !== input.quantity) return { ok: false, kind: "attendee_count" };
   if (input.attendees.some((a) => attendeeIssues(a, input.italian).length > 0)) {
     return { ok: false, kind: "attendee_issues" };
@@ -238,7 +251,7 @@ export function buildOrderRequest(input: {
   return {
     ok: true,
     body: {
-      order_id: ourOrderId(input.reservationId),
+      order_id: ourOrderId(input.reservationId, input.bookingId),
       order_status: input.status,
       datetime: tixstockDatetime(input.at),
       customer,

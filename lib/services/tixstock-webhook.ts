@@ -9,12 +9,15 @@
 // With no token configured, or a signature that does not match, the answer is 401 and nothing is stored.
 //
 // An ORDER webhook is answered `{ external_id, order_status, message, success }`. `external_id` is OUR order id
-// (their answer of 10.11): the reservation id of the booking the webhook belongs to - the same value orders/add
-// sent as `order_id` (`ourOrderId`). ticket.hold / ticket.release carry no order and are answered `{ "ok": true }`
-// (their answer of 10.11, round 2).
+// (their answer of 10.11): the value orders/add sent as `order_id` for that booking (`ourOrderId`).
+// A FULFILMENT webhook is answered by how much of the order is in hand (their answer of 11.11): an e-ticket order
+// is "Completed" until its last ticket and "Commissionable" with it; a mobile order is "Commissionable".
+// ticket.hold / ticket.release carry no order and are answered `{ "ok": true }` (10.11, round 2); they fire when
+// ANOTHER marketplace holds a listing - a hold of ours sends nothing (11.11).
+// Whose id a webhook's `order_id` is was not said: a booking is looked for by TixStock's order id, then by ours.
 // Spec: docs/superpowers/specs/2026-11-09-tixstock-ticket-booking-design.md 7.5.
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { ourOrderId, type BookingEnv } from "../tixstock-booking/rules";
+import { canMoveTo, ourOrderId, parseOurOrderId, type BookingEnv } from "../tixstock-booking/rules";
 import {
   applyOrderUpdate,
   orderIdOf,
@@ -47,6 +50,10 @@ export type WebhookDeps = ApplyDeps & {
   /** Adds what we answered to the log row. Never throws. */
   finishEvent(id: string | null, result: unknown): Promise<void>;
   findBookingByOrder(env: BookingEnv, orderId: string): Promise<BookingRow | null>;
+  /** The booking an order id of OURS names (`ourOrderId`): that reservation's one row whose id starts with the prefix. */
+  findBookingByOurId(env: BookingEnv, reservationId: number, bookingPrefix: string): Promise<BookingRow | null>;
+  /** The tickets in hand for a booking: its stored PDF files and its mobile links. */
+  countTicketFiles(bookingId: string): Promise<{ pdf: number; mobileLink: number }>;
   /** `uncertain` bookings of that environment on that listing, created at or after `sinceIso`. */
   findUncertain(env: BookingEnv, listingId: string, sinceIso: string): Promise<BookingRow[]>;
   attachOrder(bookingId: string, orderId: string): Promise<void>;
@@ -54,6 +61,11 @@ export type WebhookDeps = ApplyDeps & {
 
 /** An order whose orders/add got no answer may show up here within this long; later it is staff's to settle. */
 const UNCERTAIN_MATCH_MINUTES = 60;
+
+/** order.eticket_fulfilment, order.mobile_ticket_fulfilment, ... - the Reseller Admin's own spellings. */
+const isFulfilment = (type: string): boolean => /^order\..*fulfil+ment$/.test(type);
+/** The message of TixStock's own example answer to a fulfilment (11.11.2026). */
+const FULFILLED_MESSAGE = "Listing has been fulfilled for the order.";
 
 const HEX_DIGEST = /^[0-9a-fA-F]{64}$/;
 const BASE64_DIGEST = /^[A-Za-z0-9+/_-]{43}=?$/;
@@ -144,7 +156,7 @@ export async function handleTixstockWebhook(
   const payload = rec(parsed);
   const type = str(rec(payload?.meta)?.type);
   const data = rec(payload?.data);
-  const orderId = type && data ? orderIdOf(type, data) : null;
+  const orderId = type && data ? orderIdOf(data) : null;
 
   const eventId = await deps.logEvent({
     env,
@@ -169,14 +181,29 @@ export async function handleTixstockWebhook(
 
   try {
     let booking = orderId ? await deps.findBookingByOrder(env, orderId) : null;
-    if (!booking && orderId) booking = await matchUncertain(env, orderId, data, deps);
+    const ours = booking ? null : parseOurOrderId(orderId);
+    if (ours) booking = await deps.findBookingByOurId(env, ours.reservationId, ours.bookingPrefix);
+    // An id of our own shape that names no booking is never handed to another booking as TixStock's order id.
+    if (!booking && orderId && !ours) booking = await matchUncertain(env, orderId, data, deps);
     if (!booking) return done(200, nothing("unknown order", false));
 
-    const result = await applyOrderUpdate(booking.id, readOrderPayload(type, data), deps, eventId);
+    const result = await applyOrderUpdate(booking.id, readOrderPayload(data, booking.id), deps, eventId);
+    const externalId = ourOrderId(booking.reservation_id, booking.id);
+    if (!isFulfilment(type)) {
+      return done(200, { external_id: externalId, order_status: statusToTixstock(result.status), message: "ok", success: true });
+    }
+
+    // With the last ticket in hand the order is Commissionable at TixStock, so our row follows - by the tickets we
+    // hold, not by this answer: a mobile order is answered Commissionable from its first link.
+    const inHand = await deps.countTicketFiles(booking.id);
+    if (inHand.pdf + inHand.mobileLink >= booking.quantity && canMoveTo(result.status, "commissionable")) {
+      await deps.setStatus(booking.id, result.status, "commissionable", deps.now().toISOString());
+    }
+    const whole = type !== "order.eticket_fulfilment" || inHand.pdf >= booking.quantity;
     return done(200, {
-      external_id: ourOrderId(booking.reservation_id),
-      order_status: statusToTixstock(result.status),
-      message: "ok",
+      external_id: externalId,
+      order_status: whole ? "Commissionable" : "Completed",
+      message: FULFILLED_MESSAGE,
       success: true,
     });
   } catch (e) {
