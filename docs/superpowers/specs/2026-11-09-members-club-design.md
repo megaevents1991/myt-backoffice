@@ -320,11 +320,14 @@ from the link in every message. (See §13 Q2.)
   בפנים...", then "המועדון האקסקלוסיבי של מגה איבנטס", "מעכשיו אתם תהיו הראשונים לדעת על כל הופעה, מבצע ומשחק חדש שעולים
   לאתר", "כרטיס החבר שלכם מוכן:" and the card as Tom drew it: "מס׳ חבר N" in the corner, MEGA CLUB, the member's e-mail,
   "קוד קופון ממבר:" and the code. Under it: the price goes in by itself on the device they joined from; on another, type
-  the code or sign in with the e-mail; "תודה שבחרתם ב-MEGA EVENTS". **This replaces §9's "no perks list"**: Dor took
-  the risk call - ZeptoMail lists welcome mail that introduces the service as transactional, the mail is one per
-  sign-up the visitor asked for, and it still names no price, no amount, no event and links only to the site and the
-  unsubscribe page (`lib/__tests__/clubMail.test.ts` pins that). If ZeptoMail ever objects, the fallback is the old plain
-  wording until Zoho Campaigns. **Softened:** Tom's "תוכלו להירשם ל-WISHLIST של כל אמן ... ותקבלו הודעה" became "- גם של
+  the code or sign in with the e-mail; "תודה שבחרתם ב-MEGA EVENTS". **This replaces §9's "no perks list".** Dor's
+  answer was conditional ("keep Tom's words unless it can get us blocked at ZeptoMail; then soften until Zoho
+  Campaigns"), and the call on the evidence is mine: Zoho's own article lists "account activation and welcome emails"
+  that introduce a service as transactional, while its guide asks to avoid promotional content in a transactional body,
+  and nothing published says what triggers a block - so it could not be confirmed either way. Kept Tom's words because
+  the mail is one per sign-up the visitor asked for, and it still names no price, no amount, no event and links only to
+  the site and the unsubscribe page (`lib/__tests__/clubMail.test.ts` pins that). Fallback, one word from Dor away: drop
+  "מבצע" and "עם ההנחה" (the old plain wording) until Zoho Campaigns. **Softened:** Tom's "תוכלו להירשם ל-WISHLIST של כל אמן ... ותקבלו הודעה" became "- גם של
   האמנים שאתם הכי מחכים להם!", because the site has no sign-up to an artist's wishlist ("Wishlist" is only a heading on
   the artists page). Typos fixed: אוטומטית, האקסקלוסיבי, "ל-MEGA", "לפי מכשיר זה" -> "במכשיר שממנו הצטרפתם" (the mail is
   read on another device). Words: `CLUB_MAIL_COPY` in main `lib/club/mail.ts`.
