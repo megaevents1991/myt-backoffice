@@ -38,6 +38,8 @@ const ranked = (over: Partial<RankedListing> = {}): RankedListing => ({
 });
 
 type World = {
+  /** What the SERVER read about the venue when the button was pressed. */
+  venueItalian: boolean;
   listing: RankedListing | null;
   context: Awaited<ReturnType<OfficeDeps["loadContext"]>> | null;
   insert: { ok: true } | { ok: false; kind: "locked" | "db" };
@@ -47,6 +49,7 @@ type World = {
 
 const world = (over: Partial<World> = {}) => {
   const w: World = {
+    venueItalian: false,
     listing: ranked(),
     context: null,
     insert: { ok: true },
@@ -63,7 +66,7 @@ const world = (over: Partial<World> = {}) => {
     newToken: () => "t".repeat(43),
     loadContext: async (reservationId, tixEventId, listingId) => {
       calls.push(`context:${reservationId}:${tixEventId}:${listingId}`);
-      return w.context ?? { ok: true, env: "sandbox", quantity: 2, listing: w.listing, costSoldTotalUsd: 120 };
+      return w.context ?? { ok: true, env: "sandbox", quantity: 2, listing: w.listing, costSoldTotalUsd: 120, italian: w.venueItalian };
     },
     insertBooking: async (insert) => {
       calls.push("insert");
@@ -158,6 +161,30 @@ it("attendees must fit the party and the event", async () => {
   const italy = world();
   assert.deepEqual(await runOfficeBooking(input({ italian: true }), ACTOR, italy.deps), { ok: false, kind: "attendees" });
   assert.equal([...count.calls, ...italy.calls].some((c) => c === "insert" || c.startsWith("hold")), false);
+});
+
+it("an Italian venue asks for the identity details whatever the dialog sent", async () => {
+  // The dialog's own value is a browser's claim. The venue is read again on the server at the click, and it decides.
+  const s = world({ venueItalian: true });
+  assert.deepEqual(await runOfficeBooking(input({ italian: false }), ACTOR, s.deps), { ok: false, kind: "attendees" });
+  assert.equal(s.calls.some((c) => c === "insert" || c.startsWith("hold")), false, "nothing is held for an order that would go out without them");
+
+  const full = { passport: "12345678", nationality: "IL", dob: "1990-04-02", gender: "F" as const, birth_place: "Haifa" };
+  const withDetails = input({ italian: false, attendees: [{ first_name: "Dana", last_name: "Levi", ...full }, { first_name: "Omer", last_name: "Levi", ...full, gender: "M" }] });
+  const booked = world({ venueItalian: true });
+  assert.equal((await runOfficeBooking(withDetails, ACTOR, booked.deps)).ok, true);
+  assert.equal((booked.bodies[0].items as Array<{ customer: { national_id?: string } }>)[0].customer.national_id, "12345678");
+  assert.equal((booked.row()?.listing as { italian?: boolean }).italian, true, "the row remembers it, so a later attendee update asks for them too");
+});
+
+it("staff's tick can add the identity details to a venue that is not marked Italian, never remove them", async () => {
+  const full = { passport: "12345678", nationality: "IL", dob: "1990-04-02", gender: "F" as const, birth_place: "Haifa" };
+  const ticked = world({ venueItalian: false });
+  assert.deepEqual(await runOfficeBooking(input({ italian: true }), ACTOR, ticked.deps), { ok: false, kind: "attendees" }, "ticked, so the details are required");
+  const booked = world({ venueItalian: false });
+  const result = await runOfficeBooking(input({ italian: true, attendees: [{ first_name: "Dana", last_name: "Levi", ...full }, { first_name: "Omer", last_name: "Levi", ...full, gender: "M" }] }), ACTOR, booked.deps);
+  assert.equal(result.ok, true);
+  assert.equal((booked.row()?.listing as { italian?: boolean }).italian, true);
 });
 
 it("dearer needs acceptGap", async () => {

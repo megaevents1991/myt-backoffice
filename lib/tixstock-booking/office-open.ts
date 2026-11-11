@@ -79,3 +79,53 @@ export function hotelShippingOf(hotelOrderInfo: unknown): Record<string, string>
   const checkIn = text(hotel.checkin);
   return { name, address, ...(checkIn ? { check_in: checkIn } : {}) };
 }
+
+/**
+ * The attendees fitted to the order's tickets: blank rows for the names nobody typed (a hand-typed or phone
+ * reservation often has the main contact alone - staff type the rest in the dialog), and never more rows than
+ * tickets.
+ */
+export function fitAttendees(attendees: readonly AttendeeInput[], quantity: number): AttendeeInput[] {
+  const size = Number.isInteger(quantity) && quantity > 0 ? quantity : 0;
+  return Array.from({ length: size }, (_, i) => attendees[i] ?? { first_name: "", last_name: "" });
+}
+
+/**
+ * Is the TixStock event's venue in Italy (every attendee then carries the identity details)? `true` / `false` when
+ * it is known, `null` when it is NOT - the venue could not be read and the sync's table has no country for it.
+ * Unknown is never "not Italian": an order at TixStock is final, and one sent without the details cannot be mended.
+ *
+ * `country` is the live venue read (it wins when it names a country); `knownCode` is `tixstock_events.country_code`.
+ */
+export function venueItaly(
+  country: { ok: true; data: string | null } | { ok: false },
+  knownCode: string | null | undefined,
+): boolean | null {
+  const live = country.ok ? text(country.data).toUpperCase() : "";
+  if (live !== "") return live === "IT";
+  const known = text(knownCode).toUpperCase();
+  if (known !== "") return known === "IT";
+  // Read, and the venue names no country: not Italian (staff can still tick the details). Not read at all: unknown.
+  return country.ok ? false : null;
+}
+
+/**
+ * Which TixStock event a reservation may be booked on, and the category to rank first.
+ *
+ * - An order sold from ANOTHER supplier is refused, whatever event staff picked: its ticket is bought there, and a
+ *   TixStock order on top would be a second, final purchase (spec 7.1: other suppliers get the manual mark only).
+ * - A TixStock order uses its own event (or one staff picked instead).
+ * - Our own stock or a hand-typed order has no event of its own: staff pick one, and then no category is "the one
+ *   that was sold".
+ */
+export function eventForBooking(
+  sold: SoldTicket,
+  pickedEventId: string,
+): { ok: true; eventId: string; soldCategory: string | null } | { ok: false; kind: "not_tixstock" | "no_event" } {
+  if (sold.supplier !== "tixstock" && sold.supplier !== "static") return { ok: false, kind: "not_tixstock" };
+  if (sold.quantity < 1) return { ok: false, kind: "no_event" };
+  const picked = pickedEventId.trim();
+  const eventId = picked !== "" ? picked : sold.supplier === "tixstock" ? sold.tixEventId : null;
+  if (!eventId) return { ok: false, kind: "no_event" };
+  return { ok: true, eventId, soldCategory: sold.supplier === "tixstock" ? sold.category : null };
+}

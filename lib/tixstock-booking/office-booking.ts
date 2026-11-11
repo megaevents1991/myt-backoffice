@@ -34,7 +34,10 @@ export type OfficeBookingInput = {
   listingId: string;
   buyer: Buyer;
   attendees: AttendeeInput[];
-  /** The TixStock event's venue is in Italy: every attendee carries the identity details. */
+  /**
+   * Staff ticked "האירוע דורש פרטי זיהוי". It can only ADD the identity details: when the venue is in Italy they are
+   * required whatever this says - the venue is read again on the server at the click (`OfficeContext.italian`).
+   */
   italian: boolean;
   /** Required for a paper ticket: where it is shipped. */
   shippingAddress?: Record<string, string>;
@@ -73,6 +76,8 @@ export type OfficeContext =
       /** The listing staff picked, as it is offered to this party right now; null when it no longer is. */
       listing: RankedListing | null;
       costSoldTotalUsd: number | null;
+      /** The TixStock event's venue is in Italy, as the server read it at the click. */
+      italian: boolean;
     }
   | { ok: false; kind: "production_closed" | "not_configured" | "db" | "gone" };
 
@@ -123,8 +128,10 @@ export async function runOfficeBooking(input: OfficeBookingInput, actor: string,
     const listing = context.listing;
     if (!listing) return { ok: false, kind: "gone" };
     const { env, quantity } = context;
+    // The venue decides; staff's tick can only add. What the dialog sent is never a reason to leave the details out.
+    const italian = context.italian || input.italian;
 
-    if (input.attendees.length !== quantity || input.attendees.some((a) => attendeeIssues(a, input.italian).length > 0)) {
+    if (input.attendees.length !== quantity || input.attendees.some((a) => attendeeIssues(a, italian).length > 0)) {
       return { ok: false, kind: "attendees" };
     }
     const shippingAddress = cleanAddress(input.shippingAddress);
@@ -142,7 +149,7 @@ export async function runOfficeBooking(input: OfficeBookingInput, actor: string,
       buyer: input.buyer,
       attendees: input.attendees,
       quantity,
-      italian: input.italian,
+      italian,
       listing: { generalAdmission: listing.generalAdmission, row: listing.row ?? "", pricePerTicket: listing.pricePerTicketUsd },
       ...(listing.paper && shippingAddress ? { shippingAddress } : {}),
     });
@@ -159,7 +166,7 @@ export async function runOfficeBooking(input: OfficeBookingInput, actor: string,
       deliveryDate: listing.deliveryDate,
       deliveryType: listing.deliveryType,
       instantDownload: listing.instantDownload,
-      italian: input.italian,
+      italian,
     };
     const inserted = await deps.insertBooking({
       id,

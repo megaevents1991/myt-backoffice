@@ -7,7 +7,15 @@ import { logAudit } from "@/lib/audit";
 import { tixstockClientFor } from "@/lib/services/tixstock-booking-env";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import type { OfficeContext, OfficeDeps } from "@/lib/tixstock-booking/office-booking";
-import { hotelShippingOf, reservationAttendees, reservationBuyer, soldTicketOf } from "@/lib/tixstock-booking/office-open";
+import {
+  eventForBooking,
+  fitAttendees,
+  hotelShippingOf,
+  reservationAttendees,
+  reservationBuyer,
+  soldTicketOf,
+  venueItaly,
+} from "@/lib/tixstock-booking/office-open";
 import { rankListings, type RankableListing, type RankedListing } from "@/lib/tixstock-booking/rank";
 import { bookingEnvFor, type AttendeeInput, type BookingEnv, type Buyer } from "@/lib/tixstock-booking/rules";
 import type { TablesInsert, TablesUpdate } from "@/types/database.types";
@@ -64,12 +72,10 @@ export async function loadOfficeOpen(reservationId: number, tixstockEventId?: st
     if (!env.ok) return { ok: false, kind: "test_without_sandbox" };
 
     const sold = soldTicketOf(r.event_order_info);
-    const picked = (tixstockEventId ?? "").trim();
-    // An order sold from another supplier is not offered TixStock's listings by itself: staff may still pick a
-    // TixStock event by hand, and then it is their decision.
-    if (picked === "" && sold.supplier !== "tixstock" && sold.supplier !== "static") return { ok: false, kind: "not_tixstock" };
-    const eventId = picked !== "" ? picked : sold.supplier === "tixstock" ? sold.tixEventId : null;
-    if (!eventId || sold.quantity < 1) return { ok: false, kind: "no_event" };
+    // Which event, if any: an order sold from another supplier is refused whatever was picked (`eventForBooking`).
+    const target = eventForBooking(sold, tixstockEventId ?? "");
+    if (!target.ok) return { ok: false, kind: target.kind };
+    const eventId = target.eventId;
 
     const made = tixstockClientFor(env.env);
     if (!made.ok) return { ok: false, kind: made.kind };
@@ -80,10 +86,18 @@ export async function loadOfficeOpen(reservationId: number, tixstockEventId?: st
       return { ok: false, kind: "supplier" };
     }
     // The attendee details TixStock asks for follow the TixStock event's own venue, never our event's location.
-    let italian = country.ok && country.data === "IT";
-    if (!country.ok && env.env === "production") {
+    // When the live venue names no country (or was not read), the sync's table is asked - production only: it
+    // knows nothing of sandbox events. A venue that stays unknown stops the dialog: an order is final, and
+    // "unknown" must never be booked as "not Italian".
+    let knownCode: string | null = null;
+    if (env.env === "production" && !(country.ok && country.data)) {
       const { data: known } = await supabaseTyped.from("tixstock_events").select("country_code").eq("event_id", eventId).maybeSingle();
-      italian = (known?.country_code ?? "").trim().toUpperCase() === "IT";
+      knownCode = known?.country_code ?? null;
+    }
+    const italian = venueItaly(country, knownCode);
+    if (italian === null) {
+      console.error("[ticket-booking] the venue's country is unknown - the dialog is not opened", JSON.stringify({ reservationId, eventId }));
+      return { ok: false, kind: "supplier" };
     }
 
     const cost = typeof r.ticket_cost_usd === "number" ? r.ticket_cost_usd : typeof r.ticket_cost_usd === "string" ? Number(r.ticket_cost_usd) : NaN;
@@ -96,14 +110,14 @@ export async function loadOfficeOpen(reservationId: number, tixstockEventId?: st
       quantity: sold.quantity,
       // The client hands the feed's listings on as it received them; the ranking reads them field by field.
       listings: rankListings(listings.data as readonly RankableListing[], {
-        soldCategory: picked !== "" && sold.supplier !== "tixstock" ? null : sold.category,
+        soldCategory: target.soldCategory,
         quantity: sold.quantity,
         together: sold.together,
         excludedSections: event?.tx_excluded_sections ?? [],
         costSoldTotalUsd,
       }),
       buyer: reservationBuyer(r),
-      attendees: reservationAttendees(r),
+      attendees: fitAttendees(reservationAttendees(r), sold.quantity),
       hotelShipping: hotelShippingOf(r.hotel_order_info),
       costSoldTotalUsd,
     };
@@ -132,7 +146,7 @@ export function realOfficeDeps(): OfficeDeps {
         return { ok: false, kind: "gone" };
       }
       const listing = [...open.listings.sameCategory, ...open.listings.others].find((l) => l.listingId === listingId) ?? null;
-      return { ok: true, env: open.env, quantity: open.quantity, listing, costSoldTotalUsd: open.costSoldTotalUsd };
+      return { ok: true, env: open.env, quantity: open.quantity, listing, costSoldTotalUsd: open.costSoldTotalUsd, italian: open.italian };
     },
 
     async insertBooking(row) {

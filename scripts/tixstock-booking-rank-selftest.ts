@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { adminOrHidden, fulfilmentVisibleTo } from "../lib/fulfilment/visibility";
 import { rankListings, type RankInput } from "../lib/tixstock-booking/rank";
-import { hotelShippingOf, reservationAttendees, reservationBuyer, soldTicketOf } from "../lib/tixstock-booking/office-open";
+import { eventForBooking, fitAttendees, hotelShippingOf, reservationAttendees, reservationBuyer, soldTicketOf, venueItaly } from "../lib/tixstock-booking/office-open";
 import { toBookingView, toFileView, waitingReservations } from "../lib/tixstock-booking/booking-view";
 
 const cases: Array<[string, () => void | Promise<void>]> = [];
@@ -257,6 +257,44 @@ it("tickets waiting: an office booking with at least one file that nobody sent y
   assert.deepEqual([...waitingReservations(bookings, new Set(["b1", "b3"]))], [11], "one mark per reservation");
   assert.deepEqual([...waitingReservations(bookings, new Set(["b2"]))], [12]);
   assert.deepEqual([...waitingReservations(bookings, new Set())], [], "a booking with no file yet is not waiting");
+});
+
+it("the attendees are fitted to the tickets: blank rows for names nobody typed, never more rows than tickets", () => {
+  const dana = { first_name: "Dana", last_name: "Levi" };
+  const omer = { first_name: "Omer", last_name: "Levi" };
+  assert.deepEqual(fitAttendees([dana], 3), [dana, { first_name: "", last_name: "" }, { first_name: "", last_name: "" }], "a hand-typed reservation of three with one name can still be booked: staff type the rest");
+  assert.deepEqual(fitAttendees([dana, omer, { first_name: "X", last_name: "Y" }], 2), [dana, omer]);
+  assert.deepEqual(fitAttendees([dana, omer], 2), [dana, omer]);
+  assert.deepEqual(fitAttendees([], 0), []);
+});
+
+it("an Italian venue is never guessed: a venue that could not be read is unknown, not 'not Italian'", () => {
+  const ok = (data: string | null) => ({ ok: true as const, data });
+  const failed = { ok: false as const, kind: "no_answer" as const, detail: "timeout" };
+  assert.equal(venueItaly(ok("IT"), null), true);
+  assert.equal(venueItaly(ok("it"), null), true);
+  assert.equal(venueItaly(ok("GB"), "IT"), false, "the live venue wins over the table");
+  assert.equal(venueItaly(ok(null), "IT"), true, "a venue with no country falls back to what the sync knows");
+  assert.equal(venueItaly(ok(null), null), false, "a venue that was read and names no country is not Italian (staff can still tick the details)");
+  assert.equal(venueItaly(failed, "IT"), true);
+  assert.equal(venueItaly(failed, "gb"), false);
+  assert.equal(venueItaly(failed, null), null, "nothing to go by: the dialog refuses instead of dropping the identity details");
+  assert.equal(venueItaly(failed, "  "), null);
+});
+
+it("which TixStock event a reservation may be booked on", () => {
+  const sold = (over: Partial<ReturnType<typeof soldTicketOf>> = {}) => ({ supplier: "tixstock", tixEventId: "TX9", category: "Longside", quantity: 2, together: false, ...over });
+  assert.deepEqual(eventForBooking(sold(), ""), { ok: true, eventId: "TX9", soldCategory: "Longside" });
+  assert.deepEqual(eventForBooking(sold(), " TX7 "), { ok: true, eventId: "TX7", soldCategory: "Longside" }, "staff may pick another TixStock event for a TixStock order");
+  assert.deepEqual(eventForBooking(sold({ tixEventId: null }), ""), { ok: false, kind: "no_event" });
+  // Our own stock, or a hand-typed order: no event of its own - staff pick one, and no category is "the sold one".
+  assert.deepEqual(eventForBooking(sold({ supplier: "static", tixEventId: null }), ""), { ok: false, kind: "no_event" });
+  assert.deepEqual(eventForBooking(sold({ supplier: "static", tixEventId: null }), "TX7"), { ok: true, eventId: "TX7", soldCategory: null });
+  // Sold from another supplier: its ticket is bought THERE. Booking it at TixStock too would be a second, final
+  // purchase - refused, whatever event was picked (spec 7.1: other suppliers get the manual mark only).
+  assert.deepEqual(eventForBooking(sold({ supplier: "livetickets", tixEventId: "77" }), ""), { ok: false, kind: "not_tixstock" });
+  assert.deepEqual(eventForBooking(sold({ supplier: "livetickets", tixEventId: "77" }), "TX7"), { ok: false, kind: "not_tixstock" });
+  assert.deepEqual(eventForBooking(sold({ quantity: 0 }), ""), { ok: false, kind: "no_event" });
 });
 
 const main = async (): Promise<void> => {

@@ -32,6 +32,7 @@ type Opened = Extract<OpenTicketBookingResult, { ok: true }>;
 const OPEN_ERRORS: Record<string, string> = {
   hidden: "אין הרשאה.",
   not_paid: "אפשר להזמין כרטיס רק להזמנה ששולמה.",
+  not_tixstock: "ההזמנה נמכרה מספק אחר - הכרטיסים נקנים אצלו. כאן לא מזמינים לה כרטיסים מ-TixStock.",
   test_without_sandbox: "אירוע בדיקה בלי מצב סנדבוקס - לא מזמינים ממנו כרטיסים.",
   production_closed: "TixStock - הזמנה בפרודקשן עוד לא נפתחה",
   not_configured: "אין חיבור ל-TixStock בסביבה הזו (חסר טוקן).",
@@ -72,7 +73,6 @@ export function AttendeesEditor({
     onChange(attendees.map((a, i) => (i === index ? { ...a, ...patch } : a)));
   return (
     <div className="space-y-3" dir="rtl">
-      {italian && <p className="text-sm font-medium text-amber-700">האירוע דורש פרטי זיהוי</p>}
       {attendees.map((a, index) => {
         const issues = attendeeIssues(a, italian);
         return (
@@ -193,6 +193,9 @@ export function TicketBookingDialog({
   const [shipping, setShipping] = useState<{ name: string; address: string }>({ name: "", address: "" });
   const [acks, setAcks] = useState({ flightHotelDone: false, notBoughtByHand: false, finalPurchase: false });
   const [acceptGap, setAcceptGap] = useState(false);
+  // Staff's tick "האירוע דורש פרטי זיהוי". It can only ADD the identity details: when the venue is in Italy the
+  // server requires them whatever is ticked here.
+  const [identityTick, setIdentityTick] = useState(false);
   const [booking, setBooking] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -212,7 +215,10 @@ export function TicketBookingDialog({
           setShipping({ name: answer.hotelShipping?.name ?? "", address: answer.hotelShipping?.address ?? "" });
           setAcks({ flightHotelDone: false, notBoughtByHand: false, finalPurchase: false });
           setAcceptGap(false);
-        } else if (answer.kind === "no_event" || answer.kind === "not_tixstock") {
+          setIdentityTick(false);
+        } else if (answer.kind === "no_event") {
+          // Our own stock or a hand-typed order: staff pick the TixStock event. An order sold from another
+          // supplier is refused (`not_tixstock`) - it falls to the error line below, never to the picker.
           setState({ kind: "pick_event" });
         } else {
           setState({ kind: "error", error: OPEN_ERRORS[answer.kind] ?? OPEN_ERRORS.db });
@@ -242,7 +248,8 @@ export function TicketBookingDialog({
   const data = state.kind === "ready" ? state.data : null;
   const all = data ? [...data.listings.sameCategory, ...data.listings.others] : [];
   const picked = all.find((l) => l.listingId === listingId) ?? null;
-  const attendeesOk = !!data && attendees.length === data.quantity && attendees.every((a) => attendeeIssues(a, data.italian).length === 0);
+  const identityDetails = !!data && (data.italian || identityTick);
+  const attendeesOk = !!data && attendees.length === data.quantity && attendees.every((a) => attendeeIssues(a, identityDetails).length === 0);
   const shippingOk = !picked?.paper || (shipping.name.trim() !== "" && shipping.address.trim() !== "");
   const canBook = !!data && !!picked && attendeesOk && shippingOk && acks.flightHotelDone && acks.notBoughtByHand && acks.finalPurchase && (!picked.dearer || acceptGap) && !booking;
 
@@ -257,7 +264,7 @@ export function TicketBookingDialog({
         listingId: picked.listingId,
         buyer: data.buyer,
         attendees,
-        italian: data.italian,
+        italian: identityDetails,
         ...(picked.paper ? { shippingAddress: { name: shipping.name, address: shipping.address } } : {}),
         acceptGap,
         acks,
@@ -343,7 +350,12 @@ export function TicketBookingDialog({
 
             <section className="space-y-2">
               <h3 className="font-medium">נוסעים</h3>
-              <AttendeesEditor attendees={attendees} italian={data.italian} onChange={setAttendees} disabled={booking} />
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={identityDetails} disabled={data.italian || booking} onCheckedChange={(v) => setIdentityTick(v === true)} />
+                האירוע דורש פרטי זיהוי
+                {data.italian && <span className="text-muted-foreground">(האצטדיון באיטליה - חובה)</span>}
+              </label>
+              <AttendeesEditor attendees={attendees} italian={identityDetails} onChange={setAttendees} disabled={booking} />
               {attendees.length !== data.quantity && (
                 <p className="text-sm text-red-600">מספר הנוסעים ({attendees.length}) לא תואם את מספר הכרטיסים ({data.quantity}).</p>
               )}
