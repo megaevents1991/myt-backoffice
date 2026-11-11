@@ -26,7 +26,7 @@ Dor's Mac). Nothing reaches the database or Storage without `--apply`.
   most 34 characters, no numbers / prices / quotes / alcohol, no repeats). All are **pending**: a
   person approves them (Tom or an admin).
 - **74 videos rendered** (`.superpowers/feed-video/out/`), 1080x1350, 10 s, 30 fps, H.264 + a silent
-  AAC track, ~0.7-6 MB each. `review` writes `.superpowers/feed-video/review.html` - every video
+  AAC track, 0.6-5 MB each (165 MB for all 74). `review` writes `.superpowers/feed-video/review.html` - every video
   playing beside its line, style and status.
 - **Held: the six Knebworth shows (1303-1308).** Their location row is named
   "נבוורת טיסה ללונדון . בריטניה", and today's IMAGE ad prints exactly that. Fix the location's name
