@@ -40,6 +40,20 @@ export const ORDER_ATTEMPT_DEAD_MS = 5 * MINUTE;
 export const APPROVE_AFTER_MS = 5 * MINUTE;
 /** TixStock wants Sale on Hold settled within 2 hours. */
 export const SALE_ON_HOLD_OVERDUE_MS = 90 * MINUTE;
+
+/** The cron's own interval (vercel.json: every ten minutes): exactly one run falls inside each window of it. */
+const SWEEP_EVERY_MS = 10 * MINUTE;
+const DAY_MS = 24 * 60 * MINUTE;
+
+/**
+ * Is THIS run the one that raises the "sale on hold too long" alert for a row of this age? The run in which the row
+ * crosses 90 minutes, and then one run a day - not every run: a row that can never be approved (its reservation
+ * was soft-deleted, TixStock keeps refusing) raised it every ten minutes for ever. Stateless on purpose.
+ */
+export function overdueAlertDue(rowAgeMs: number): boolean {
+  const over = rowAgeMs - SALE_ON_HOLD_OVERDUE_MS;
+  return over >= 0 && over % DAY_MS < SWEEP_EVERY_MS;
+}
 export const REFRESH_EVERY_MS = DAY;
 /** No read of an order in its first hour: its tickets come by webhook, and a read then spends the day's look. */
 export const REFRESH_FIRST_AFTER_MS = 60 * MINUTE;
@@ -171,7 +185,7 @@ export async function sweepTixstockBookings(now: Date, deps: SweepDeps, opts: Sw
     }
     if (!settled && rowAge >= SALE_ON_HOLD_OVERDUE_MS) {
       result.overdue++;
-      if (!dryRun) {
+      if (!dryRun && overdueAlertDue(rowAge)) {
         console.error(
           "tixstock_sale_on_hold_over_90m",
           JSON.stringify({ booking: row.id, reservation: row.reservation_id, order: row.tixstock_order_id, minutes: Math.floor(rowAge / MINUTE) }),

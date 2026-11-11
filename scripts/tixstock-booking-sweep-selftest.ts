@@ -5,7 +5,7 @@
 // order attempt that died is `uncertain`, and a dry run touches nothing.
 // Spec: docs/superpowers/specs/2026-11-09-tixstock-ticket-booking-design.md 7.4, 7.5, 7.8.
 import assert from "node:assert/strict";
-import { sweepTixstockBookings, type SweepDeps, type SweepReservation, type SweepRow } from "../lib/services/tixstock-booking-sweep";
+import { overdueAlertDue, sweepTixstockBookings, type SweepDeps, type SweepReservation, type SweepRow } from "../lib/services/tixstock-booking-sweep";
 import type { FileToSave } from "../lib/services/tixstock-order-apply";
 import type { TixstockCall, TixstockClient } from "../lib/tixstock-booking/client";
 import { ourOrderId } from "../lib/tixstock-booking/rules";
@@ -338,6 +338,21 @@ const main = async () => {
     assert.equal(ok.overdue, 0);
     assert.equal(ok.approved, 1);
     assert.equal(none.length, 0);
+  });
+
+  await run("an order that stays overdue is alerted when it crosses 90 minutes and then once a day", async () => {
+    // The cron runs every ten minutes. A row that can never be approved (its reservation was soft-deleted, or
+    // TixStock keeps refusing) used to raise the alert on EVERY run, for ever.
+    const MIN = 60_000;
+    for (const [minutes, due] of [[89, false], [90, true], [99, true], [100, false], [300, false], [90 + 1440, true], [99 + 1440, true], [100 + 1440, false], [90 + 2 * 1440, true]] as const) {
+      assert.equal(overdueAlertDue(minutes * MIN), due, `${minutes} minutes`);
+    }
+    const stuck = (minutes: number) => world([row({ status: "sale_on_hold", tixstock_order_id: "O1", created_at: minutesAgo(minutes) })], { 1: reservation({ paid: false }) });
+    const quiet = await withErrors(() => sweepTixstockBookings(NOW, stuck(300).deps));
+    assert.equal(quiet.value.overdue, 1, "the run still counts it");
+    assert.equal(quiet.errors.filter((e) => e.includes("tixstock_sale_on_hold_over_90m")).length, 0, "but it is not alerted again five hours in");
+    const nextDay = await withErrors(() => sweepTixstockBookings(NOW, stuck(90 + 1440 + 3).deps));
+    assert.equal(nextDay.errors.filter((e) => e.includes("tixstock_sale_on_hold_over_90m")).length, 1, "once a day it is");
   });
 
   await run("daily refresh", async () => {
