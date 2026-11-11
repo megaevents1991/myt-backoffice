@@ -288,3 +288,51 @@ export function ticketLinkEmail(eventName: string, url: string): { subject: stri
   const text = `שלום,\nהזמנת הכרטיסים שלכם ל-${eventName} התקבלה.\n${note}.\n${url}`;
   return { subject, html, text };
 }
+
+/**
+ * The listing as booked - `ticket_bookings.listing`: what the customer's card (site) or the staff dialog (office)
+ * showed when the tickets were held. Written once; read by the order body, the customer's ticket page and the
+ * backoffice card.
+ */
+export type ListingSnapshot = {
+  category: string;
+  section: string | null;
+  row: string | null;
+  generalAdmission: boolean;
+  ticketType: string;
+  splitType: string;
+  restrictions: string[];
+  deliveryDate: string | null;
+  deliveryType: string | null;
+  instantDownload: boolean;
+  /** The TixStock event's venue is in Italy: the order then names every attendee's identity details. */
+  italian: boolean;
+};
+
+const textOrNull = (v: unknown): string | null => {
+  const text = typeof v === "string" ? v.trim() : "";
+  return text === "" ? null : text;
+};
+
+/** A stored snapshot, read back. Whatever is missing or of another type reads as empty: a row is never unreadable. */
+export function readListingSnapshot(v: unknown): ListingSnapshot {
+  const o: Record<string, unknown> = v !== null && typeof v === "object" && !Array.isArray(v) ? { ...v } : {};
+  return {
+    category: textOrNull(o.category) ?? "",
+    section: textOrNull(o.section),
+    row: textOrNull(o.row),
+    generalAdmission: o.generalAdmission === true,
+    ticketType: textOrNull(o.ticketType) ?? "",
+    splitType: textOrNull(o.splitType) ?? "",
+    restrictions: Array.isArray(o.restrictions)
+      ? o.restrictions.flatMap((line: unknown) => {
+          const text = textOrNull(line);
+          return text ? [text] : [];
+        })
+      : [],
+    deliveryDate: textOrNull(o.deliveryDate),
+    deliveryType: textOrNull(o.deliveryType),
+    instantDownload: o.instantDownload === true,
+    italian: o.italian === true,
+  };
+}

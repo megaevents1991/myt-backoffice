@@ -19,6 +19,7 @@ import {
   isSandboxBookingEvent,
   ourOrderId,
   parseOurOrderId,
+  readListingSnapshot,
   siteBooksAfterPayment,
   statusFromTixstock,
   ticketLinkEmail,
@@ -27,6 +28,7 @@ import {
   type AttendeeInput,
   type BookingStatus,
   type Buyer,
+  type ListingSnapshot,
 } from "../lib/tixstock-booking/rules";
 
 const STATUSES: BookingStatus[] = [
@@ -267,6 +269,33 @@ describe("tixstock booking rules", () => {
     assert.match(mail.text, /https:\/\/www\.mega-events\.co\.il\/ticket\/tok/);
     assert.equal(/<[a-z]/i.test(mail.text), false, "the text part has no html");
     assert.match(ticketLinkEmail("<b>X</b> & Y", "https://x").html, /&lt;b&gt;X&lt;\/b&gt; &amp; Y/, "the event name is escaped");
+  });
+});
+
+describe("the listing as booked", () => {
+  it("reads the snapshot a booking row keeps", () => {
+    assert.deepEqual(
+      readListingSnapshot({
+        category: " Curva Sud ", section: "12", row: "B", generalAdmission: false, ticketType: "eTicket",
+        splitType: "No Preferences", restrictions: ["Away fans", 7, " "], deliveryDate: "2026-05-20",
+        deliveryType: "email", instantDownload: true, italian: true,
+      }),
+      {
+        category: "Curva Sud", section: "12", row: "B", generalAdmission: false, ticketType: "eTicket",
+        splitType: "No Preferences", restrictions: ["Away fans"], deliveryDate: "2026-05-20",
+        deliveryType: "email", instantDownload: true, italian: true,
+      } satisfies ListingSnapshot,
+    );
+  });
+
+  it("a value that is not a snapshot reads as an empty one, never as an error", () => {
+    const empty: ListingSnapshot = {
+      category: "", section: null, row: null, generalAdmission: false, ticketType: "", splitType: "",
+      restrictions: [], deliveryDate: null, deliveryType: null, instantDownload: false, italian: false,
+    };
+    assert.deepEqual(readListingSnapshot(null), empty);
+    assert.deepEqual(readListingSnapshot("x"), empty);
+    assert.deepEqual(readListingSnapshot({ row: "  ", generalAdmission: "true", restrictions: "none", italian: "true" }), empty);
   });
 });
 
