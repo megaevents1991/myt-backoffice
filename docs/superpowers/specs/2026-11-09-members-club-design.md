@@ -206,9 +206,9 @@ stops all marketing to the member on every channel (§13 Q1 default); **the memb
 - Hebrew, RTL, table layout like the site's other mails: the MEGA CLUB member card (name, "מס׳ חבר <member_no>"), the
   member code in large type, "the member price applies by itself on this device, or type the code at checkout", a link
   to the site, the company address line, and the unsubscribe link.
-- It is a signup confirmation the customer asked for, and it stays one: **no perks list, no deals, no events.**
-  ZeptoMail is transactional-only and the same account sends every order confirmation (08.11 ruling: no marketing over
-  ZeptoMail). The perks are said in the popup; mail with offers waits for Zoho Campaigns.
+- It is a signup confirmation the customer asked for, and it stays one: ~~no perks list~~ (since D18 it introduces the
+  club in Tom's words), **no deals, no prices, no events.** ZeptoMail is transactional-only and the same account sends
+  every order confirmation (08.11 ruling: no marketing over ZeptoMail); mail with offers waits for Zoho Campaigns.
 
 ## 10. Backoffice (master): full support
 
@@ -313,6 +313,32 @@ from the link in every message. (See §13 Q2.)
   and "כבר חברים" forms outside an order (`source = 'site_page'`, no event). Joining there sets the device cookie, so
   the next order applies the price by itself. The amount is still shown only after joining.
 
+## 13c. Tom's notes 11.11 (doc tab "תיקונים מגה קלאב", `t.5owywl49ps9b`; D18-D19)
+
+- **D18 The welcome mail in Tom's words (Dor 11.11: approved, with the wishlist line softened).** Subject "ברוכים הבאים
+  ל-MEGA CLUB" (the member number left the subject), preview text "הצטרפתם בהצלחה! קוד הקופון עם ההנחה מחכה לכם
+  בפנים...", then "המועדון האקסקלוסיבי של מגה איבנטס", "מעכשיו אתם תהיו הראשונים לדעת על כל הופעה, מבצע ומשחק חדש שעולים
+  לאתר", "כרטיס החבר שלכם מוכן:" and the card as Tom drew it: "מס׳ חבר N" in the corner, MEGA CLUB, the member's e-mail,
+  "קוד קופון ממבר:" and the code. Under it: the price goes in by itself on the device they joined from; on another, type
+  the code or sign in with the e-mail; "תודה שבחרתם ב-MEGA EVENTS". **This replaces §9's "no perks list"**: Dor took
+  the risk call - ZeptoMail lists welcome mail that introduces the service as transactional, the mail is one per
+  sign-up the visitor asked for, and it still names no price, no amount, no event and links only to the site and the
+  unsubscribe page (`lib/__tests__/clubMail.test.ts` pins that). If ZeptoMail ever objects, the fallback is the old plain
+  wording until Zoho Campaigns. **Softened:** Tom's "תוכלו להירשם ל-WISHLIST של כל אמן ... ותקבלו הודעה" became "- גם של
+  האמנים שאתם הכי מחכים להם!", because the site has no sign-up to an artist's wishlist ("Wishlist" is only a heading on
+  the artists page). Typos fixed: אוטומטית, האקסקלוסיבי, "ל-MEGA", "לפי מכשיר זה" -> "במכשיר שממנו הצטרפתם" (the mail is
+  read on another device). Words: `CLUB_MAIL_COPY` in main `lib/club/mail.ts`.
+- **D19 A sign-up form in the site footer (Tom: "להוסיף בפוטר באתר אופציה להרשמה לממבר קלאב"; Dor chose the form over
+  a link to /club).** E-mail, phone, the same consent box (v1) and "הצטרפות בחינם", in the club's mint card at the top
+  of the footer (`components/order/club/ClubFooterSignup.tsx`), recorded as `club_members.source = 'site_footer'` with
+  the page in `source_path`, no event. It wakes only when the footer comes near the screen (no club request for a
+  visitor who never scrolls there) and shows only by `footerClubShows`: the club on, no member cookie on this device, no
+  partner's link in `myt_utm`, and not on `/order`, `/club`, `/confirmation`, `/agent`, `/partner` (the club or a partner
+  already has those pages). An agent signed in is not looked up there (that read re-checks the backoffice login on every
+  page; the order page keeps the club from an agent anyway). Joining sets the device cookie and answers "ברוכים הבאים
+  ל-MEGA CLUB! מס׳ חבר N. קוד החבר מחכה לכם במייל."; "כבר חברי MEGA CLUB?" leads to /club. The homepage block and the
+  scroll bar Tom asked about on 09.11 are still not built.
+
 ## 14. My calls (Dor to check)
 
 Coupon per member reusing the coupon path (§6) · code format `MEGA` + 6 · club codes count event tickets on both sides
@@ -326,6 +352,6 @@ marketing dashboard.
 
 ## 15. Phase 2 (not now)
 
-Zoho Campaigns: lists, sync by API, the newsletter (the CSV export is the bridge until then) · a footer / homepage
-signup (join without the checkout price) · WhatsApp marketing consent into `wa_consents` · Meta CAPI + Google
+Zoho Campaigns: lists, sync by API, the newsletter (the CSV export is the bridge until then) · a homepage signup block
+(the footer form is built - D19) · WhatsApp marketing consent into `wa_consents` · Meta CAPI + Google
 enhanced conversions · member-only early access as a site feature.
