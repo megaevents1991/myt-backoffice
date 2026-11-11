@@ -71,31 +71,45 @@ export function orderIdOf(data: Record<string, unknown>): string | null {
 const bodyOrLink = (value: string): { base64?: string; url?: string } =>
   isUrl(value) ? { url: value } : { base64: value.replace(/^data:[^;,]*;base64,/i, "") };
 
+/**
+ * A file's key: the booking, the kind, and a hash of the file's OWN content (its bytes, or its link).
+ *
+ * Never its seat or its place in the payload: an e-ticket order of n tickets arrives as n webhooks with one file
+ * each, so "the first file of this payload" is every one of them - and with no seat numbers (general admission, or
+ * a seller who gives none) the second ticket had the first one's key and was dropped as a repeat (found in review,
+ * 11.11.2026, before any file was stored). By content, a webhook sent twice is still one file, n different tickets
+ * are n files, and a ticket read back with another seat label is the same file.
+ */
+const fileKey = (keyBase: string, kind: TicketFileKind, content: string): string =>
+  `${keyBase}:${kind}:${createHash("sha256").update(content, "utf8").digest("hex").slice(0, 40)}`;
+
 const filesOfPart = (keyBase: string, part: Record<string, unknown>, fallback: { row: string | null; seat: string | null }): FileToSave[] => {
   const row = str(part.row) ?? fallback.row;
   const seat = str(part.seat) ?? fallback.seat;
-  const key = (kind: TicketFileKind, seatOfKey: string | null, index: number): string =>
-    `${keyBase}:${kind}:${row ?? ""}:${seatOfKey ?? ""}:${index}`;
   const out: FileToSave[] = [];
+  /** Bytes or a link (TixStock fills these fields with either), keyed by whichever it is. */
+  const stored = (kind: "pdf" | "additional", value: string): FileToSave => {
+    const body = bodyOrLink(value);
+    return { kind, row, seat, ...body, dedupeKey: fileKey(keyBase, kind, body.url ?? body.base64 ?? "") };
+  };
 
-  list(part.file).forEach((value, index) => {
+  for (const value of list(part.file)) {
     const body = str(value);
-    if (body) out.push({ kind: "pdf", row, seat, ...bodyOrLink(body), dedupeKey: key("pdf", seat, index) });
-  });
-  list(part.additional_file).forEach((value, index) => {
+    if (body) out.push(stored("pdf", body));
+  }
+  for (const value of list(part.additional_file)) {
     const body = str(value);
-    if (body) out.push({ kind: "additional", row, seat, ...bodyOrLink(body), dedupeKey: key("additional", seat, index) });
-  });
-  list(part.proof_file_url).forEach((value, index) => {
+    if (body) out.push(stored("additional", body));
+  }
+  for (const value of list(part.proof_file_url)) {
     const url = str(value);
-    if (url) out.push({ kind: "proof", row, seat, url, dedupeKey: key("proof", seat, index) });
-  });
-  list(part.mobile_links).forEach((value, index) => {
+    if (url) out.push({ kind: "proof", row, seat, url, dedupeKey: fileKey(keyBase, "proof", url) });
+  }
+  for (const value of list(part.mobile_links)) {
     const entry = rec(value);
     const url = str(entry?.link);
-    const linkSeat = str(entry?.seat) ?? seat;
-    if (url) out.push({ kind: "mobile_link", row, seat: linkSeat, url, dedupeKey: key("mobile_link", linkSeat, index) });
-  });
+    if (url) out.push({ kind: "mobile_link", row, seat: str(entry?.seat) ?? seat, url, dedupeKey: fileKey(keyBase, "mobile_link", url) });
+  }
   return out;
 };
 
@@ -103,7 +117,8 @@ const filesOfPart = (keyBase: string, part: Record<string, unknown>, fallback: {
  * One reader for both sources. A webhook carries one ticket at the top level (`row`, `seat`, `file`, ...); an
  * order read back with orders/get is expected to carry them per item - that part is provisional until the first
  * sandbox refresh shows the real shape (plan Task 17, Stage 5). The key is the same either way: `bookingId` is the
- * `ticket_bookings` row the caller already found, so a ticket has one key whichever id the payload names.
+ * `ticket_bookings` row the caller already found and the rest is the file's content (`fileKey`), so a ticket has
+ * one key whichever id the payload names and wherever in it the file sits.
  */
 export function readOrderPayload(data: Record<string, unknown>, bookingId: string): OrderUpdate {
   const status = statusFromTixstock(data.order_status ?? data.status);

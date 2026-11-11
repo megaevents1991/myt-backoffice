@@ -13,7 +13,9 @@ import { ourOrderId, type BookingStatus } from "../lib/tixstock-booking/rules";
 
 const TOKEN = "sandbox-token";
 const NOW = new Date("2026-11-10T12:00:00Z");
-const PDF = Buffer.from("%PDF-1.4 a ticket").toString("base64");
+/** A ticket's own PDF: two tickets never share their bytes (each carries its own barcode). */
+const pdfFor = (seat: string): string => Buffer.from(`%PDF-1.4 a ticket for seat ${seat}`).toString("base64");
+const PDF = pdfFor("12");
 /** The default booking row, and the order id it goes to TixStock under (`ourOrderId`). */
 const B1 = "9f3a1c2e-1111-4222-8333-444455556666";
 const OUR = "2233-9f3a1c2e";
@@ -103,8 +105,19 @@ const fields = (r: WebhookAnswer): OrderAnswerBody => {
 
 const eticket = (over: Record<string, unknown> = {}) => ({
   meta: { type: "order.eticket_fulfilment" },
-  data: { order_id: "O1", id: "L1", row: "A", seat: "12", order_status: "Approved", file: PDF, ...over },
+  data: { order_id: "O1", id: "L1", row: "A", seat: "12", order_status: "Approved", file: pdfFor(typeof over.seat === "string" ? over.seat : "12"), ...over },
 });
+
+/** Runs with the console's warnings held back (a refused request says so in the log). */
+const silenced = async <T>(fn: () => Promise<T>): Promise<T> => {
+  const { warn } = console;
+  console.warn = () => undefined;
+  try {
+    return await fn();
+  } finally {
+    console.warn = warn;
+  }
+};
 
 const run = async (name: string, fn: () => Promise<void>): Promise<void> => {
   await fn();
@@ -125,7 +138,32 @@ await run("bad signature 401", async () => {
   assert.equal(w.events.length, 1);
   assert.equal(w.events[0].signatureValid, false);
   assert.equal(JSON.stringify(w.events[0].payload).includes(PDF), false, "an unsigned body is not kept");
-  assert.equal((await send(w, eticket(), { signature: null })).status, 401, "no signature at all");
+});
+
+await run("a request with no signature is refused and leaves no row", async () => {
+  // The URL is public: anyone can post to it. Only a request that at least claims a signature is worth a row
+  // (it is what a real TixStock webhook with a key or encoding problem looks like); anything else must not be
+  // able to fill the table.
+  const w = world([booking()]);
+  const r = await silenced(() => send(w, eticket(), { signature: null }));
+  assert.equal(r.status, 401, "no signature at all");
+  assert.deepEqual(r.body, { external_id: null, order_status: null, message: "bad signature", success: false });
+  assert.equal(w.events.length, 0, "no row for an unsigned request");
+  assert.equal(w.files.length, 0);
+});
+
+await run("the signature is over the bytes that arrived", async () => {
+  // A body that starts with a byte-order mark: decoding it to text drops the mark, so a digest of the TEXT is not
+  // the digest TixStock made. The route hands the raw bytes on, and those are what is verified.
+  const json = JSON.stringify(eticket());
+  const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(json, "utf8")]);
+  const digest = createHmac("sha256", TOKEN).update(bytes).digest("hex");
+  assert.equal(verifyTixstockSignature(bytes, digest, TOKEN), true);
+  assert.equal(verifyTixstockSignature(json, digest, TOKEN), false, "the decoded text is another input");
+  const w = world([booking()]);
+  const r = await handleTixstockWebhook({ env: "sandbox", rawBody: json, rawBytes: bytes, signature: digest, apiToken: TOKEN }, w.deps);
+  assert.equal(r.status, 200);
+  assert.equal(w.files.length, 1);
 });
 
 await run("missing token 401", async () => {
@@ -134,6 +172,7 @@ await run("missing token 401", async () => {
   assert.equal(r.status, 401, "with no token configured every webhook is refused");
   assert.equal(w.files.length, 0);
   assert.equal((await send(w, eticket(), { apiToken: "" })).status, 401);
+  assert.equal(w.events.length, 0, "with no token there is nothing to check a signature against, so nothing to log either");
 });
 
 await run("signature encodings", async () => {
@@ -162,7 +201,7 @@ await run("eticket stores and answers", async () => {
   assert.equal(w.files[0].row, "A");
   assert.equal(w.files[0].seat, "12");
   assert.equal(w.files[0].base64, PDF);
-  assert.equal(w.files[0].dedupeKey, `${B1}:pdf:A:12:0`, "keyed by OUR booking, not by the order id the payload names");
+  assert.match(w.files[0].dedupeKey, new RegExp(`^${B1}:pdf:[0-9a-f]{40}$`), "keyed by OUR booking and the file's own content - not by the order id, the seat or its place in the payload");
   assert.equal(w.bookings[0].status, "approved");
   assert.equal(w.bookings[0].released_to_customer_at, null, "an office booking is released by staff, not by the webhook");
   assert.equal(w.events[0].signatureValid, true);
@@ -184,6 +223,19 @@ await run("repeat is idempotent", async () => {
   assert.equal(w.state.saveCalls, 1, "the file is saved once in total");
   assert.equal(w.files.length, 1);
   assert.deepEqual(second, first, "the two answers are equal");
+});
+
+await run("two tickets with the same row and no seat are two tickets", async () => {
+  // General admission, or a seller who gives no seat numbers: every fulfilment webhook carries ONE file, so its
+  // place in the payload is always the first. Each ticket must still be kept.
+  const w = world([booking()]);
+  const first = await send(w, eticket({ order_status: undefined, row: undefined, seat: undefined, file: pdfFor("first") }));
+  const second = await send(w, eticket({ order_status: undefined, row: undefined, seat: undefined, file: pdfFor("second") }));
+  assert.equal(w.files.length, 2, "the second ticket is not dropped as a repeat of the first");
+  assert.deepEqual([fields(first).order_status, fields(second).order_status], ["Completed", "Commissionable"]);
+  const again = await send(w, eticket({ order_status: undefined, row: undefined, seat: undefined, file: pdfFor("second") }));
+  assert.equal(w.files.length, 2, "the same ticket sent again is still stored once");
+  assert.equal(fields(again).order_status, "Commissionable");
 });
 
 await run("no status regression", async () => {
@@ -397,14 +449,20 @@ await run("reading an order", async () => {
     assert.equal(readOrderPayload({ order_id: "O1", order_status: given }, B1).status, expected);
   }
   assert.equal(readOrderPayload({ order_id: "O1", status: "Sale on Hold" }, B1).status, "sale_on_hold", "status is read when order_status is absent");
-  const many = readOrderPayload({ order_id: "O1", row: "A", seat: "12", file: [PDF, PDF], proof_file_url: ["https://p1", "https://p2"] }, B1);
-  assert.deepEqual(many.files.map((f) => f.dedupeKey), [`${B1}:pdf:A:12:0`, `${B1}:pdf:A:12:1`, `${B1}:proof:A:12:0`, `${B1}:proof:A:12:1`]);
+  const many = readOrderPayload({ order_id: "O1", row: "A", seat: "12", file: [PDF, pdfFor("13")], proof_file_url: ["https://p1", "https://p2"] }, B1);
+  assert.deepEqual(many.files.map((f) => f.kind), ["pdf", "pdf", "proof", "proof"]);
+  assert.equal(new Set(many.files.map((f) => f.dedupeKey)).size, 4, "two different files and two different links: four keys");
+  const twice = readOrderPayload({ order_id: "O1", row: "A", seat: "12", file: [PDF, PDF], proof_file_url: ["https://p1", "https://p1"] }, B1);
+  assert.deepEqual(twice.files.map((f) => f.kind), ["pdf", "proof"], "the same bytes, or the same link, twice in one payload is one file");
   const dataUrl = readOrderPayload({ order_id: "O1", file: `data:application/pdf;base64,${PDF}` }, B1);
   assert.equal(dataUrl.files[0].base64, PDF, "a data: prefix is dropped");
   // a refresh (orders/get) carries the same files per item, and the type is not in the key
   const refreshed = readOrderPayload({ id: "O1", order_id: OUR, status: "Approved", items: [{ row: "A", seat: "12", file: PDF }] }, B1);
   assert.equal(refreshed.status, "approved");
-  assert.deepEqual(refreshed.files.map((f) => f.dedupeKey), [`${B1}:pdf:A:12:0`], "the same key the webhook gave that ticket, whichever id the order read back names");
+  const fromWebhook = readOrderPayload({ order_id: "O1", row: "A", seat: "12", file: PDF }, B1).files[0].dedupeKey;
+  assert.deepEqual(refreshed.files.map((f) => f.dedupeKey), [fromWebhook], "the same key the webhook gave that ticket, whichever id the order read back names");
+  assert.equal(readOrderPayload({ file: `data:application/pdf;base64,${PDF}` }, B1).files[0].dedupeKey, fromWebhook, "the same file with no row, no seat and a data: prefix is still that file");
+  assert.notEqual(readOrderPayload({ row: "A", seat: "12", file: PDF }, "0b7d44aa-1111-4222-8333-444455556666").files[0].dedupeKey, fromWebhook, "another booking's file is another key");
   assert.equal(readOrderPayload({ row: "A", seat: "12", file: PDF }, B1).files.length, 1, "the booking is known by then: a payload needs no order id to carry a file");
 });
 

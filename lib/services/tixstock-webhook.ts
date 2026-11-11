@@ -78,11 +78,13 @@ const digestOf = (header: string): Buffer | null => {
 };
 
 /** HMAC-SHA256 of the raw body keyed with the environment's API token; hex (either case), `sha256=<hex>` or base64. */
-export function verifyTixstockSignature(rawBody: string, header: string | null, apiToken: string | undefined): boolean {
+export function verifyTixstockSignature(rawBody: string | Uint8Array, header: string | null, apiToken: string | undefined): boolean {
   if (!apiToken || typeof header !== "string") return false;
   const given = digestOf(header);
   if (!given) return false;
-  const expected = createHmac("sha256", apiToken).update(rawBody, "utf8").digest();
+  // Over the bytes as they arrived when the caller has them: decoding to text drops a byte-order mark and
+  // replaces invalid UTF-8, and a digest of that text is no longer the sender's.
+  const expected = createHmac("sha256", apiToken).update(typeof rawBody === "string" ? Buffer.from(rawBody, "utf8") : rawBody).digest();
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
@@ -135,13 +137,29 @@ const matchUncertain = async (
 };
 
 export async function handleTixstockWebhook(
-  input: { env: BookingEnv; rawBody: string; signature: string | null; apiToken: string | undefined },
+  input: {
+    env: BookingEnv;
+    /** The body as text (what is parsed). */
+    rawBody: string;
+    /** The body's bytes exactly as they arrived (what is verified); the text's own bytes when not given. */
+    rawBytes?: Uint8Array;
+    signature: string | null;
+    apiToken: string | undefined;
+  },
   deps: WebhookDeps,
 ): Promise<WebhookAnswer> {
   const { env, rawBody } = input;
 
-  if (!verifyTixstockSignature(rawBody, input.signature, input.apiToken)) {
-    // An unsigned body is not ours to keep: the log gets its size and the kind of signature, nothing else.
+  if (!verifyTixstockSignature(input.rawBytes ?? rawBody, input.signature, input.apiToken)) {
+    // The URL is public. A request with no signature at all, or one that arrives while this environment has no
+    // token to check against, is refused and leaves NO row - an anonymous sender must not be able to fill the
+    // table. Only a request that claims a signature we could check is logged: that is what a real TixStock
+    // webhook with a key or an encoding problem looks like, and the row is how it is found.
+    if (input.signature === null || !input.apiToken) {
+      console.warn("[tixstock-webhook] refused, not logged:", JSON.stringify({ env, signature: describeSignature(input.signature), token_configured: Boolean(input.apiToken), bytes: rawBody.length }));
+      return { status: 401, body: nothing("bad signature", false) };
+    }
+    // An unverified body is not ours to keep: the log gets its size and the kind of signature, nothing else.
     const id = await deps.logEvent({ env, type: null, signatureValid: false, orderId: null, payload: { bytes: rawBody.length } });
     await deps.finishEvent(id, { status: 401, signature: describeSignature(input.signature), token_configured: Boolean(input.apiToken) });
     return { status: 401, body: nothing("bad signature", false) };

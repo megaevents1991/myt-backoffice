@@ -20,12 +20,14 @@ export async function POST(request: Request, context: { params: Promise<{ env: s
   if (env !== "sandbox" && env !== "production") return NextResponse.json({ error: "not found" }, { status: 404 });
 
   try {
-    // The raw text, before any parse: the signature is over these exact bytes.
-    const rawBody = await request.text();
+    // The bytes exactly as they arrived, before any decode or parse: the signature is over these. The text is
+    // read from the same bytes (`request.text()` alone would drop a byte-order mark and repair invalid UTF-8).
+    const rawBytes = new Uint8Array(await request.arrayBuffer());
+    const rawBody = new TextDecoder("utf-8").decode(rawBytes);
     const apiToken =
       env === "sandbox" ? process.env.NEXT_SECRET_TIXSTOCK_SANDBOX_TOKEN : process.env.NEXT_SECRET_TIXSTOCK_BOOKING_TOKEN;
     const answer = await handleTixstockWebhook(
-      { env, rawBody, signature: request.headers.get("x-tixstock-signature"), apiToken: apiToken?.trim() || undefined },
+      { env, rawBody, rawBytes, signature: request.headers.get("x-tixstock-signature"), apiToken: apiToken?.trim() || undefined },
       realWebhookDeps(),
     );
     return NextResponse.json(answer.body, { status: answer.status });
