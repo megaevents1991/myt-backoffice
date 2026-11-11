@@ -23,6 +23,14 @@ import { toursDb } from "@/lib/tours/db";
 /** Mega Events – חבילות להופעות ואירועי ספורט בחו״ל (CID 3588250245740006173). */
 export const DEFAULT_PLACE_ID = "ChIJ4_iJNrNJZWoRHYuKTpYGzDE";
 
+/**
+ * Whether a cron runs this sync. False since 2026-11-10: `googleReviewsSync` is out of
+ * vercel.json (Elfsight's feed is gone) and both profiles are filled by hand. While false
+ * the dashboard's health banner stays silent - with no run there is nothing to fail, and
+ * `synced_at` only ages. Set it back to true in the commit that puts the cron back.
+ */
+export const GOOGLE_REVIEWS_SYNC_SCHEDULED = false;
+
 const PLACES_ENDPOINT = "https://places.googleapis.com/v1/places";
 const FIELD_MASK = "displayName,rating,userRatingCount,googleMapsUri,reviews";
 

@@ -4,6 +4,7 @@ import { requireAdmin, requireStaff } from "@/lib/auth/guards";
 import { supabase } from "@/lib/supabase-server";
 import {
   DEFAULT_PLACE_ID,
+  GOOGLE_REVIEWS_SYNC_SCHEDULED,
   STALE_FEED_MARK,
   syncGoogleReviews,
   type GoogleReviewsSyncResult,
@@ -61,7 +62,9 @@ export async function getGoogleReviewsHealth(): Promise<GoogleReviewsHealth> {
   const rating = data?.rating == null ? null : Number(data.rating);
 
   let problem: string | null = null;
-  if (!data) {
+  if (!GOOGLE_REVIEWS_SYNC_SCHEDULED) {
+    // Off on purpose (see the flag): no cron run to fail, and synced_at only ages.
+  } else if (!data) {
     problem = "No reviews source row - the mirror was never seeded.";
   } else if (syncError?.includes(STALE_FEED_MARK)) {
     // The run itself worked - its SOURCE has shown nothing new for weeks (2026-10: the
