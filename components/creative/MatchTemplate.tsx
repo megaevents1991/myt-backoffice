@@ -95,7 +95,7 @@ const SAFE_INSET = 148;
 // NOT hand-typed text. currentColor letterforms → INK; the accent dot stays
 // brand mint (hsl(var(--brand-mint)) in the source; satori can't read CSS
 // vars, so it's the literal hex here).
-function Wordmark({ width }: { width: number }) {
+export function Wordmark({ width }: { width: number }) {
   const height = Math.round((width * 25) / 174);
   return (
     <svg width={width} height={height} viewBox="0 0 174 25" fill="none">
@@ -201,7 +201,7 @@ export function buildPriceText(mode: "package" | "ticket", price: number, curren
 // creative prints the CITY only (2026-08-12): the country is noise next to a
 // recognisable city name, and dropping it buys the line a bigger font. A name
 // with no comma is used as-is.
-function cityOf(location: string): string {
+export function cityOf(location: string): string {
   const comma = location.indexOf(",");
   return comma === -1 ? location.trim() : location.slice(0, comma).trim();
 }
