@@ -908,9 +908,9 @@ export async function findFormElsewhere(
 }
 
 /**
- * The viewer's other companies that have forms, for the hint on an empty forms list - most
- * superadmins work in Mega Events by default, and an empty list there would read as "the forms
- * are gone". Counts live forms the viewer could open there. Never throws.
+ * The viewer's other companies that have forms, for the hint over the forms list (empty or not) -
+ * most superadmins work in Mega Events by default, where one draft sits; a short list there would
+ * read as "the forms are gone". Counts live forms the viewer could open there. Never throws.
  */
 export async function otherCompaniesWithForms(): Promise<{ slug: string; name: string; count: number }[]> {
   try {

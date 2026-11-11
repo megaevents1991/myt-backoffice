@@ -253,9 +253,10 @@ a second forms operator. So `forms_operator` becomes a company role with the tou
 - Two stages / two pushes instead of one.
 - `forms_operator` as a company role on a company's users screen, created by a company admin.
 - A forms operator with no membership = Mega Events; unreadable memberships = refused.
-- **Empty-company hint:** when `/forms` of the active company has no forms and the viewer can work in
-  another company that has some, the screen says so in one line with a switch link ("הטפסים של מגה
-  פמילי נמצאים בחברה מגה פמילי - החלף חברה").
+- **Other-company hint:** when the viewer can work in another company that has forms, `/forms` says
+  so in one line per company with a switch link ("2 טפסים נוספים נמצאים בחברה מגה פמילי - החלף
+  חברה") - whatever the active company's own list holds (11.11: first built for an EMPTY list only,
+  which hid it in Mega Events, where draft #9 sits).
 - **A form page of the other company** (a superadmin in Mega Events opens a bookmarked
   `/forms/5/report`): when the viewer is a member of the form's company, the page says in one line
   that the form is in that company, with a switch through the existing `?company=<slug>` deep link

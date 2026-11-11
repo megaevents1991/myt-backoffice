@@ -1129,8 +1129,8 @@ these tables.
   the company; the xlsx export is `guardAdminRoute({ anyCompany: true })` + the scoped reads. `/forms` is a shared menu
   item and a tours-company path (`isToursCompanyPath` - else the route gate bounces a Family operator off it); the top bar
   gives a forms operator its real company. A page of a form in the viewer's OTHER company says where it is with a
-  `?company=` switch (`findFormElsewhere`), an empty list names the viewer's other companies that have forms
-  (`otherCompaniesWithForms`); a non-member is told nothing. `deleteInvite` (a HARD delete; answers' invite link is
+  `?company=` switch (`findFormElsewhere`), `/forms` names the viewer's other companies that have forms
+  over the list, empty or not (`otherCompaniesWithForms`); a non-member is told nothing. `deleteInvite` (a HARD delete; answers' invite link is
   `on delete set null`) refuses a trip link, and the links page no longer offers it on one - a trip link goes through
   `deleteTripLink`. **Users:** `forms_operator` is a company role (`COMPANY_MEMBER_ROLES`, label "Forms operator" /
   "מפעיל טפסים"); moving a person between staff / sales agent / forms operator is a superadmin's move

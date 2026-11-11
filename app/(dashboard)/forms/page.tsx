@@ -8,14 +8,15 @@ export const dynamic = "force-dynamic";
 export default async function FormsPage() {
   const session = await getSession();
   const isOperator = session?.role === "forms_operator";
-  const [forms, seriesOptions] = await Promise.all([
+  const [forms, seriesOptions, elsewhere] = await Promise.all([
     getForms(),
     // Staff and forms operators make series forms; a failed tours read only hides the button.
     listFormSeries().catch(() => []),
+    // The viewer's OTHER companies that have forms, shown whatever this list holds: most
+    // superadmins work in Mega Events by default, where one draft sits while Mega Family's
+    // forms (with every answer) live in Mega Family - a short list there reads like lost data.
+    otherCompaniesWithForms(),
   ]);
-  // An empty list in one company while the viewer's other company has forms reads like lost
-  // data (most superadmins work in Mega Events by default) - say where they are.
-  const elsewhere = forms.length === 0 ? await otherCompaniesWithForms() : [];
 
   return (
     <div className="space-y-6">

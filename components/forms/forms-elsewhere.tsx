@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 
 /*
  * The forms belong to a company (2026-11-11): a viewer who works in more than one
- * company may land on a form - or an empty forms list - of the company they are NOT in
- * now. These say where the forms are and switch there through the company deep link
+ * company may land on a form - or the forms list - of the company they are NOT in now. These say where the forms are and switch there through the company deep link
  * (`?company=<slug>`, contexts/company-context.tsx). They are only shown for a company
  * the viewer works in (findFormElsewhere / otherCompaniesWithForms decide).
  */
@@ -34,7 +33,7 @@ export function FormInOtherCompany({
   );
 }
 
-/** One line over an empty forms list: the viewer's other companies that have forms. */
+/** One line per other company of the viewer that has forms, over the forms list (empty or not). */
 export function FormsInOtherCompanies({
   companies,
 }: {
@@ -49,7 +48,9 @@ export function FormsInOtherCompanies({
           className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/40 px-4 py-3 text-sm"
         >
           <span>
-            הטפסים של {company.name} ({company.count}) נמצאים בחברה {company.name}.
+            {company.count === 1
+              ? `טופס אחד נוסף נמצא בחברה ${company.name}.`
+              : `${company.count} טפסים נוספים נמצאים בחברה ${company.name}.`}
           </span>
           <Button asChild size="sm" variant="outline">
             <Link href={`/forms?company=${encodeURIComponent(company.slug)}`}>החלף חברה</Link>
