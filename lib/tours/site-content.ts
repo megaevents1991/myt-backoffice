@@ -533,7 +533,10 @@ const summarySection = z.object({
 // always in the page's list - staff move or hide them, never remove them.
 /** How many tours or sub-categories a built-in part lets staff put first. */
 export const TERM_PICKS_MAX = 24;
-/** The world's sub-categories: the tags to show, in this order (empty = every tag attached to the world). */
+/**
+ * The world's sub-categories: the tags that lead the trip-type pills of its tour list, in this order (empty = every tag
+ * attached to the world). The site never draws them as a row of their own (mega-family TaxonomyArchive `pillsOf`, 11.11).
+ */
 const subcategoriesBlock = z.object({ ...base, type: z.literal("subcategories"), tags: z.array(slug).max(TERM_PICKS_MAX).default([]) });
 /** The tour list: the tours that come first, in this order; `onlyPicked` = and nothing after them. */
 const termToursBlock = z.object({
@@ -864,7 +867,12 @@ export interface SectionKind {
 }
 
 export const SECTION_KINDS: SectionKind[] = [
-  { type: "subcategories", label: "Sub-categories", description: "The tags attached to this world, as buttons in the world's color - all of them, or the ones you put first.", builtIn: true },
+  {
+    type: "subcategories",
+    label: "Sub-categories",
+    description: "The tags attached to this world come first among the trip-type pills of the tour list - all of them, or the ones you pick, in that order. The same pills as every other trip type.",
+    builtIn: true,
+  },
   { type: "term_tours", label: "Tour list", description: "Every tour of this page, with its search. The page fills it by itself; you can put tours first, or show only the ones you pick.", builtIn: true },
   { type: "term_description", label: "Description", description: "The description written further down this screen.", builtIn: true },
   { type: "summary", label: "Destination summary", description: "\"<destination> on a fingertip\": a heading, a row of pictures, a gray intro card and text columns.", termOnly: true },
@@ -955,7 +963,7 @@ export function sectionSummary(section: HomeSection): string {
     case "reasons":
       return [section.title, `${section.items.length} items`].filter(Boolean).join(" · ");
     case "subcategories":
-      return section.tags.length ? `${section.tags.length} sub-categories, in this order` : "The tags attached to this world";
+      return section.tags.length ? `${section.tags.length} sub-categories first among the pills, in this order` : "The tags attached to this world, first among the pills";
     case "term_tours":
       return section.onlyPicked && section.tours.length
         ? `Only the ${section.tours.length} tours picked, with the search`

@@ -923,7 +923,7 @@ function ImageForm({ section, onChange, options, siteUrl }: FormProps<"image">) 
 /** What a built-in part of a term page is, and how to use it. */
 const BLOCK_NOTES: Record<"subcategories" | "term_tours" | "term_description", string> = {
   subcategories:
-    "The tags attached to this world, as buttons in the world's color. Attach a tag on the tag's own screen (its World field). Nothing shows while the world has none.",
+    "The tags attached to this world come first among the trip-type pills of the tour list - the same pills as every other trip type, never buttons of their own. Attach a tag on the tag's own screen (its World field). A tag that none of the page's tours carries does not show: the site never offers a choice with nothing behind it. Switch this part off to leave the pills in their own order.",
   term_tours: "Every tour that carries this term, with its search. It fills itself. Move it up or down among the other parts, or switch it off to hide it.",
   term_description: "The text of the Description field, further down this screen. Move it to where the page should say it, or switch it off.",
 };
@@ -955,24 +955,27 @@ function TermToursForm({ section, onChange, options }: FormProps<"term_tours">) 
   );
 }
 
-/** The sub-categories of a world page: which of its tags to show, in which order. */
+/** The sub-categories of a world page: which of its tags lead the pills of its tour list, in which order. */
 function SubcategoriesForm({ section, onChange, options }: FormProps<"subcategories">) {
   return (
     <div className="space-y-4">
       <Notice tone="info">{BLOCK_NOTES.subcategories}</Notice>
       <ItemList
-        label="Sub-categories to show"
+        label="Sub-categories first"
         items={section.tags}
         onChange={(tags) => onChange({ ...section, tags })}
         create={() => ""}
         addLabel="Add Sub-category"
-        empty="None picked: the page shows every tag attached to this world, in the order of the tags list."
+        empty="None picked: every tag attached to this world comes first among the pills, in the order of the tags list."
         max={TERM_PICKS_MAX}
         render={(tag, _patch, index) => (
           <TermSelect kind="tags" value={tag} onChange={(slug) => onChange({ ...section, tags: section.tags.map((t, i) => (i === index ? slug : t)) })} options={options} ariaLabel="Tag" />
         )}
       />
-      <p className="text-xs text-muted-foreground">With a list here, the page shows these tags only, in this order - also a tag that is not attached to this world.</p>
+      <p className="text-xs text-muted-foreground">
+        With a list here, these tags lead the pills, in this order - also a tag that is not attached to this world; the other trip types of the page&apos;s tours follow
+        them. A tag shows only while one of the page&apos;s tours carries it.
+      </p>
     </div>
   );
 }

@@ -30,8 +30,8 @@ const DEFAULT_PART_IDS = ["b_lead_form", "b_reviews"];
 /** What the page of each kind is, in one line under the title. */
 const KIND_NOTES: Record<string, string> = {
   destinations: "A destination page lists every tour that goes there, by itself.",
-  audiences: "A world is a top category of the site: its page lists its tours and its sub-categories (the tags attached to it), by itself.",
-  tags: "A tag page lists every tour that carries the tag, by itself. Attach the tag to a world to make it one of the world's sub-categories.",
+  audiences: "A world is a top category of the site: its page lists its tours by itself, its sub-categories (the tags attached to it) first among the trip-type pills.",
+  tags: "A tag page lists every tour that carries the tag, by itself. Attach the tag to a world to make it one of the world's sub-categories: a trip-type pill of the world's tour list, first in line.",
   categories: "A category page lists every tour of the category, by itself.",
 };
 
@@ -106,7 +106,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
             <Input dir="auto" value={form.subtitle} onChange={(e) => set("subtitle", e.target.value)} />
           </Field>
           {isTag && (
-            <Field label="World" hint="The world this tag is a sub-category of. The world's page links to it, and the tag's page takes the world's color." className="md:col-span-2">
+            <Field label="World" hint="The world this tag is a sub-category of. The world's tour list offers it first among its trip-type pills (the same pills as the others, and only while one of its tours carries the tag), and the tag's page takes the world's color." className="md:col-span-2">
               <select value={form.worldSlug} onChange={(e) => set("worldSlug", e.target.value)} className={cn(selectClass, "w-full")}>
                 <option value="">No world</option>
                 {form.worldSlug && !saved.worlds.some((w) => w.slug === form.worldSlug) && <option value={form.worldSlug}>{form.worldSlug} (not active)</option>}
@@ -124,7 +124,7 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
       {isWorld && (
         <Section
           title="World"
-          description="A world with a brand name gets a tile in the Worlds section of the home page, a link in the footer's worlds row and its name in the trail at the top of its tours' pages. Once a customer enters the world - its tile on the home page, its own page, one of its tours - the site's fresh look wears the world for the rest of the visit (the tour, the booking steps, the other pages): the header, the buttons and the footer take its colors, and the header says its brand name instead of the logo. The color also paints its sub-categories and the cards of its tours."
+          description="A world with a brand name gets a tile in the Worlds section of the home page, a link in the footer's worlds row and its name in the trail at the top of its tours' pages. Once a customer enters the world - its tile on the home page, its own page, one of its tours - the site's fresh look wears the world for the rest of the visit (the tour, the booking steps, the other pages): the header, the buttons and the footer take its colors, and the header says its brand name instead of the logo. The color also paints the cards of its tours and the pages of its sub-categories."
         >
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Brand name" hint='As the group names the world, e.g. "מגה פמילי". Empty = a plain audience: no tile, no link in the footer, and the header keeps the logo.'>

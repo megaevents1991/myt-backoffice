@@ -212,7 +212,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > searches (Alon: "יש לי 2 שורות באתר ובבק אופיס יש רק שורה 1"). Its switch "Show the tour grid before a search" (`showGrid`,
 > default on - Alon's second note of 11.11, "תן לי אופציה לכבות את זה") lets the grid wait for a search: off, the site
 > shows only the tile's rows until the customer narrows the list, and keeps the grid when no row has a tour to show
-> (mega-family `HomeFilters` `gridShown`). A world has "Name on tour cards" (`terms.data.cardLabel`):
+> (mega-family `HomeFilters` `gridShown`). A world page's built-in "Sub-categories" part no longer draws buttons of its
+> own on the site (Dor 11.11, after a tag tied to sport & music drew a green button to an empty page): its tags - picked,
+> else every tag tied to the world - lead the trip-type pills of the tour list, the same pills as the others, only while a
+> tour carries them (mega-family TaxonomyArchive `pillsOf`); its words here (`SECTION_KINDS`, `BLOCK_NOTES`, the tag's
+> World field, the tour editor's "Add to the world") say so. A world has "Name on tour cards" (`terms.data.cardLabel`):
 > what the site's cards print on their picture - the kind of trip, "טיול משפחות", not the brand; empty = "טיול" + its name
 > (mega-family `lib/world-label.ts`).
 > **Liz + Daniel, 11.11 (road map tabs "הערות ליז" note 2, "הערות דניאל 1").** A home tile's "Picture at the top" shows at any

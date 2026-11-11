@@ -253,7 +253,7 @@ export function PackageTermsPicker({
     if (!world.slug || !onTermCreated || joining) return;
     const ok = await confirm({
       title: `Add ${tags.length} tag(s) to ${world.name}?`,
-      description: `${tags.map((t) => t.name).join(", ")} - from now on these are tags of ${world.name}: every tour of that world offers them first, and after the next Revalidate the site lists them as sub-categories on the world's page. To take a tag out of a world, open it in Categories & Tags.`,
+      description: `${tags.map((t) => t.name).join(", ")} - from now on these are tags of ${world.name}: every tour of that world offers them first, and after the next Revalidate the world's page offers them first among its trip-type pills. To take a tag out of a world, open it in Categories & Tags.`,
       confirmLabel: "Add to the world",
       cancelLabel: "Cancel",
     });
