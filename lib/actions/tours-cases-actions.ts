@@ -1496,6 +1496,12 @@ type LinkDepartureRow = {
   sale_status: string;
   currency: string | null;
   updated_at: string | null;
+  series_id: string;
+  season_id: string | null;
+  itinerary_id: string | null;
+  arrival_airport: string | null;
+  return_airport: string | null;
+  capacity: number | null;
   packages: { name: string; slug: string; data: unknown; updated_at: string | null } | null;
 };
 
@@ -1504,10 +1510,12 @@ type LinkDepartureRow = {
  * the site shows (Alon 10.11: "זה טיולים לא אקטיבים באתר יותר לא צריכים להופיע"): active and not deleted, the rule of
  * the site's own `packages` view (provision_company) - a published date of a switched-off tour has no page to open.
  */
-async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDeparture[]> {
+async function linkDepartures(company: Company, onlyId?: string, withNotes = false): Promise<LinkDeparture[]> {
   let query = toursDb()
     .from("departures")
-    .select("id, code, start_date, package_id, legacy_product_id, site_id, sale_status, currency, updated_at, packages!inner(name, slug, data, updated_at)")
+    .select(
+      "id, code, start_date, package_id, legacy_product_id, site_id, sale_status, currency, updated_at, series_id, season_id, itinerary_id, arrival_airport, return_airport, capacity, packages!inner(name, slug, data, updated_at)",
+    )
     .eq("company_id", company.id)
     .eq("is_published", true)
     .is("is_deleted", null)
@@ -1533,6 +1541,7 @@ async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDe
       prices.set(p.departure_id, list);
     }
   }
+  const notes = withNotes ? await linkDepartureNotes(company, rows) : null;
   return rows
     .filter((d) => d.packages)
     .map((d) => {
@@ -1554,15 +1563,89 @@ async function linkDepartures(company: Company, onlyId?: string): Promise<LinkDe
           const price = roomPrice(c.key, matrix);
           return price === null ? [] : [{ key: c.key, title: c.title, price }];
         }),
+        ...(notes?.get(d.id) ?? {}),
       };
     });
+}
+
+/**
+ * What the offer builder says of each date beside its name (Alon 11.11, road map tab "בק אופיס לידים והזמנות" note 2):
+ * how many are booked of its seats ("6/45 רשומים" - departure_stats.sold of its live flight seats, else of its Capacity, else
+ * of its series' default),
+ * and a reminder when it does not run the tour's usual plan - an itinerary other than the main one (the date's own
+ * "Itinerary version", else its season's - the rule of the site's lib/data/departures.mjs), or flights of its own route
+ * (its own arrival / return airport, not its series').
+ */
+async function linkDepartureNotes(company: Company, rows: LinkDepartureRow[]): Promise<Map<string, Pick<LinkDeparture, "seats" | "itineraryNotes">>> {
+  const db = toursDb();
+  const unique = (list: (string | null)[]) => [...new Set(list.filter((v): v is string => !!v))];
+  type Stat = { departure_id: string | null; sold: number | null; allocated_seats: number | null };
+  type Season = { id: string; name: string | null; itinerary_id: string | null };
+  type Itinerary = { id: string; package_id: string; key: string; label: string | null; arrival_city: string | null; return_city: string | null };
+  type Series = { id: string; arrival_airport: string | null; return_airport: string | null; default_capacity: number | null };
+  const read = async <T,>(what: string, ids: string[], query: (part: string[]) => PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> => {
+    let out: T[] = [];
+    for (const part of chunk(ids, IN_CHUNK)) {
+      const { data, error } = await query(part);
+      if (error) throw new Error(`${what}: ${error.message}`);
+      out = out.concat((data ?? []) as T[]);
+    }
+    return out;
+  };
+  const [stats, seasons, itineraries, series] = await Promise.all([
+    read<Stat>("departure_stats", unique(rows.map((d) => d.id)), (part) =>
+      db.from("departure_stats").select("departure_id, sold, allocated_seats").eq("company_id", company.id).in("departure_id", part),
+    ),
+    read<Season>("package_seasons", unique(rows.map((d) => d.season_id)), (part) =>
+      db.from("package_seasons").select("id, name, itinerary_id").eq("company_id", company.id).in("id", part),
+    ),
+    read<Itinerary>("package_itineraries", unique(rows.map((d) => d.package_id)), (part) =>
+      db.from("package_itineraries").select("id, package_id, key, label, arrival_city, return_city").eq("company_id", company.id).in("package_id", part),
+    ),
+    read<Series>("series", unique(rows.map((d) => d.series_id)), (part) =>
+      db.from("series").select("id, arrival_airport, return_airport, default_capacity").eq("company_id", company.id).in("id", part),
+    ),
+  ]);
+  const statOf = new Map(stats.map((s) => [s.departure_id, s]));
+  const seasonOf = new Map(seasons.map((s) => [s.id, s]));
+  const itineraryOf = new Map(itineraries.map((i) => [i.id, i]));
+  const mainOf = new Map(itineraries.filter((i) => i.key === "main").map((i) => [i.package_id, i.id]));
+  const seriesOf = new Map(series.map((s) => [s.id, s]));
+  const named = (i: Itinerary) => `"${i.label || i.key}"${i.arrival_city || i.return_city ? ` (${i.arrival_city ?? "?"} → ${i.return_city ?? "?"})` : ""}`;
+
+  const out = new Map<string, Pick<LinkDeparture, "seats" | "itineraryNotes">>();
+  for (const d of rows) {
+    const stat = statOf.get(d.id);
+    const line = seriesOf.get(d.series_id);
+    // the seats: its live flight seats, else the date's Capacity, else its series' default
+    const of = [stat?.allocated_seats, d.capacity, line?.default_capacity].find((n): n is number => typeof n === "number" && n > 0) ?? null;
+    const notes: string[] = [];
+    // the day-by-day plan: the date's own version, else its season's, else the main one
+    const season = d.season_id ? seasonOf.get(d.season_id) : undefined;
+    const plan = d.itinerary_id ?? season?.itinerary_id ?? null;
+    const planned = plan ? itineraryOf.get(plan) : undefined;
+    if (planned && planned.key !== "main" && plan !== mainOf.get(d.package_id)) {
+      const whose = d.itinerary_id && d.itinerary_id !== season?.itinerary_id ? "the date's own" : `its season's${season?.name ? ` (${season.name})` : ""}`;
+      notes.push(`Another itinerary than the tour's main one: ${named(planned)} - ${whose}.`);
+    }
+    // the flights: the date's own airports over its series'
+    const seriesArrival = line?.arrival_airport ?? null;
+    const seriesReturn = line?.return_airport ?? seriesArrival;
+    const arrival = d.arrival_airport || seriesArrival;
+    const back = d.return_airport || seriesReturn || arrival;
+    if (arrival && back && (arrival !== seriesArrival || back !== seriesReturn)) {
+      notes.push(`Flights of its own: lands in ${arrival}, returns from ${back}${seriesArrival ? ` (the series: ${seriesArrival} → ${seriesReturn ?? seriesArrival})` : ""}.`);
+    }
+    out.set(d.id, { seats: { sold: stat?.sold ?? 0, of }, itineraryNotes: notes });
+  }
+  return out;
 }
 
 /** Departures a link can point at: open on the site AND priced - a date with no price table takes no booking (Alon 18.10). */
 export async function listLinkDepartures(): Promise<ActionResult<LinkDeparture[]>> {
   try {
     const { company } = await requireCompanyRep("tours");
-    return actionOk((await linkDepartures(company)).filter((d) => d.rooms.length > 0));
+    return actionOk((await linkDepartures(company, undefined, true)).filter((d) => d.rooms.length > 0));
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to load the departures");
   }

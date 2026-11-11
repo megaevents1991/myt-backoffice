@@ -199,6 +199,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > picture, gallery; the site shows the date's field, else its season's, else the tour's (mega-family `contentOf`). **The deals
 > tag "מבצעים"** (note 8, migration `20261110171000_tours_deals_tag.sql` creates it for Mega Family): the site gives it to every
 > tour with a discount or a gift on an open date, plus tours staff tick it on (mega-family `lib/sale-tag.ts`).
+> **Alon's pass of 11.11 on the same tab (Dor: "סבב תיקונים של פמילי").** The offers list shows the message word for word before it
+> goes out ("See the message" in `SendButtons`; the "Send the N together" box opens on it - `previewOpen`), with "Copy the
+> message". The builder's dates say how many are booked of their seats (`LinkDeparture.seats`, `seatsLabel` "6/45 booked":
+> `departure_stats.sold` of its live flight seats, else the date's Capacity, else its series' default) and remind when a date
+> does not run the tour's usual plan (`LinkDeparture.itineraryNotes`, "other route" in the picker, the line under the chosen
+> date): another itinerary than the main one - the date's own "Itinerary version", else its season's, the site's rule - or
+> flights of its own route (its own arrival / return airport, not its series'). Both come from `linkDepartureNotes`, read only
+> for the builder's list (`linkDepartures(company, undefined, true)`), not for a quote. A tile's tour grid is the last entry of
+> "Rows of this tile" (`TileGrid` in `section-forms.tsx`, the old "Tour grid of this tile" fold is gone): its title, its
+> "more" link, and in words what it lists - with "מבצע" in the title, the tours on a deal (the tag "מבצעים") until the customer
+> searches (Alon: "יש לי 2 שורות באתר ובבק אופיס יש רק שורה 1"). A world has "Name on tour cards" (`terms.data.cardLabel`):
+> what the site's cards print on their picture - the kind of trip, "טיול משפחות", not the brand; empty = "טיול" + its name
+> (mega-family `lib/world-label.ts`).
 > **Customers + deal cards (2026-10-19, Nir Azulay - the end user; spec `docs/superpowers/specs/2026-10-19-tours-customer-cards-design.md`,
 > migration `20261019180000_tours_customers.sql`, mockup https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).** `public.customers`
 > = one per phone (`phone_keys` = last 9 digits, kept by a trigger; `customer_no` shown `C-1041`; `not_same`, `merged_into`); every

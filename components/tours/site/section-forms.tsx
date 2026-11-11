@@ -282,6 +282,71 @@ function TilePicture({
 }
 
 // ---------------------------------------------------------------- tour finder
+type ToursSection = FormProps<"tours">["section"];
+type ToursTile = ToursSection["tabs"][number];
+
+/** The title the site prints over a tile's tour grid: the tile's own, else the section's "Title of the tour grid". */
+const gridTitleOf = (tab: ToursTile, section: ToursSection): string => tab.gridTitle.trim() || section.gridTitle.trim();
+
+/**
+ * The tile's tour grid, as the last entry of its rows - where the site draws it (Alon 11.11). Its title decides what it
+ * lists before a search (mega-family lib/search-facets.ts saleGrid): with the word "מבצע", the tours on a deal (the tag
+ * "מבצעים" - a discount or a gift on an open date, or ticked on the tour); any other title, every tour of the tile.
+ */
+function TileGrid({ tab, section, patch, options }: { tab: ToursTile; section: ToursSection; patch: (change: Partial<ToursTile>) => void; options: SiteEditorOptions }) {
+  const title = gridTitleOf(tab, section);
+  const deals = title.includes("מבצע");
+  return (
+    <div className="space-y-3 rounded-md border border-dashed bg-background p-3">
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 w-5 shrink-0 text-center text-xs text-muted-foreground">{tab.rows.length + 1}</span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-sm font-medium">
+            The tour grid, always last{" "}
+            {title ? (
+              <span dir="auto" className="font-semibold">
+                &quot;{title}&quot;
+              </span>
+            ) : (
+              <span className="font-normal text-muted-foreground">(no title)</span>
+            )}
+            {!tab.gridTitle.trim() && title && <span className="ms-1 text-xs font-normal text-muted-foreground">- the section&apos;s &quot;Title of the tour grid&quot;</span>}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {deals ? (
+              <>
+                Its title has the word &quot;מבצע&quot;, so before a search it lists only the tile&apos;s tours on a deal - the tours that carry the tag
+                &quot;מבצעים&quot;: a discount or a gift on an open date puts it on by itself, and you can tick it on any tour. A search, a trip type, or
+                no deal at all: every tour of the tile that answers. To list every tour here, give the grid a title without &quot;מבצע&quot; - and to keep
+                the deals in a row of their own, add a row &quot;The tours of a tag&quot; &gt; &quot;מבצעים&quot; above it.
+              </>
+            ) : (
+              <>
+                It lists every tour of the tile; a search or a trip type narrows it. A title with the word &quot;מבצע&quot; makes it list only the tours on
+                a deal (the tag &quot;מבצעים&quot;) until the customer searches.
+              </>
+            )}
+          </p>
+        </div>
+      </div>
+      <Grid>
+        <Field label="Title of the grid" hint='Empty = the "Title of the tour grid" at the top of this section. E.g. "חם עכשיו באיבנטס".'>
+          <Input dir="auto" value={tab.gridTitle} placeholder={section.gridTitle} onChange={(e) => patch({ gridTitle: e.target.value })} />
+        </Field>
+        <Field label={'Text of the "more" link'} hint='Empty = "לכל הטיולים". The link beside the title takes the customer to everything the tile stands for.'>
+          <Input dir="auto" value={tab.moreLabel} onChange={(e) => patch({ moreLabel: e.target.value })} />
+        </Field>
+        <Field
+          label={'"More" link'}
+          hint="Empty = the page of the tile's world (or the other site the world lives on), tag, destination or category. A sale, all-tours or picked-tours tile has no link until you give it one."
+        >
+          <LinkInput value={tab.moreHref} onChange={(moreHref) => patch({ moreHref })} options={options} />
+        </Field>
+      </Grid>
+    </div>
+  );
+}
+
 function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) {
   return (
     <div className="space-y-4">
@@ -290,7 +355,10 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
         the world&apos;s color, and the header says the world&apos;s brand name instead of the logo. Set both on the world itself (Categories &amp; Tags &gt; the
         world). The other sections of the page can belong to some tiles only: open a section and tick tiles under &quot;Show for tiles&quot;.
       </Notice>
-      <Field label="Title of the tour grid" hint='With the word "מבצע" the grid lists only the tours on sale, until the customer searches. Any other title lists every tour of the tile.'>
+      <Field
+        label="Title of the tour grid"
+        hint={'The grid under each tile\'s rows - a tile can give it its own title (the last entry of its "Rows of this tile"). With the word "מבצע" it lists only the tours on a deal (the tag "מבצעים") until the customer searches; any other title lists every tour of the tile.'}
+      >
         <Input dir="auto" value={section.gridTitle} onChange={(e) => onChange({ ...section, gridTitle: e.target.value })} />
       </Field>
       <ItemList
@@ -393,29 +461,6 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                 />
               </Fold>
 
-              <Fold
-                title="Tour grid of this tile"
-                summary={[tab.gridTitle, tab.moreLabel || (tab.moreHref ? "own link" : "")].filter(Boolean).join(" · ") || "The page's title, an automatic link"}
-              >
-                <p className="text-sm text-muted-foreground">
-                  The title above the tile&apos;s tours, and the link beside it that takes the customer to everything the tile stands for.
-                </p>
-                <Grid>
-                  <Field label="Title of the grid" hint='Empty = the "Title of the tour grid" at the top of this section. E.g. "חם עכשיו באיבנטס". With the word "מבצע" the grid lists only the tours on sale, until the customer searches.'>
-                    <Input dir="auto" value={tab.gridTitle} onChange={(e) => patch({ gridTitle: e.target.value })} />
-                  </Field>
-                  <Field label={'Text of the "more" link'} hint='Empty = "לכל הטיולים".'>
-                    <Input dir="auto" value={tab.moreLabel} onChange={(e) => patch({ moreLabel: e.target.value })} />
-                  </Field>
-                  <Field
-                    label={'"More" link'}
-                    hint="Empty = the page of the tile's world (or the other site the world lives on), tag, destination or category. A sale, all-tours or picked-tours tile has no link until you give it one."
-                  >
-                    <LinkInput value={tab.moreHref} onChange={(moreHref) => patch({ moreHref })} options={options} />
-                  </Field>
-                </Grid>
-              </Fold>
-
               <Fold title="Trip-type pills" summary={tab.pillTags.length ? `${tab.pillTags.length} picked` : "Automatic"}>
                 <p className="text-sm text-muted-foreground">
                   Empty = the tile builds its pills by itself, from the tags of its tours. Pick tags to show only those, in this order. A pill that none of
@@ -452,10 +497,16 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                 />
               </Fold>
 
-              <Fold title="Rows of this tile" summary={tab.rows.length ? `${tab.rows.length} ${tab.rows.length === 1 ? "row" : "rows"}` : "None"}>
+              {/* the rows AND the grid under them, in the order the site draws them (Alon 11.11: "יש לי 2 שורות באתר ובבק אופיס יש
+                  רק שורה 1" - the grid "מוצרים במבצע" looked like a row nobody had set) */}
+              <Fold
+                title="Rows of this tile"
+                summary={`${tab.rows.length ? `${tab.rows.length} ${tab.rows.length === 1 ? "row" : "rows"}` : "No rows"} + the tour grid${gridTitleOf(tab, section) ? ` "${gridTitleOf(tab, section)}"` : ""}`}
+              >
                 <p className="text-sm text-muted-foreground">
-                  Rows of tours of this tile only, under its search and above the tour grid: best sellers, a holiday, tours you pick. They step aside as soon as
-                  the customer searches or picks a trip type, so the results come first.
+                  What the site shows under the tile&apos;s search, top to bottom: the rows you add here (best sellers, a holiday, tours you pick, the tours of
+                  a tag), then the tile&apos;s tour grid - always last, it is also where the search results show. The rows step aside as soon as the customer
+                  searches or picks a trip type, so the results come first.
                 </p>
                 <ItemList
                   items={tab.rows}
@@ -473,6 +524,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                     </div>
                   )}
                 />
+                <TileGrid tab={tab} section={section} patch={patch} options={options} />
               </Fold>
             </div>
           );

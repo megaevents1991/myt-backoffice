@@ -401,6 +401,7 @@ const termSchema = z.object({
   subtitle: z.string().trim().max(300),
   seoTitle: z.string().trim().max(300),
   brandName: z.string().trim().max(120),
+  cardLabel: z.string().trim().max(60),
   color: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
   colorDeep: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
   ctaColor: z.string().trim().max(40).refine((v) => v === "" || isSiteColor(v), "A color is #RRGGBB"),
@@ -1571,6 +1572,7 @@ async function loadTerm(company: Company, id: string): Promise<{ row: TourTerm; 
         subtitle: dataText(data, "subtitle"),
         seoTitle: dataText(data, "seoTitle"),
         brandName: dataText(data, "brandName"),
+        cardLabel: dataText(data, "cardLabel"),
         color: dataText(data, "color"),
         colorDeep: dataText(data, "colorDeep"),
         ctaColor: dataText(data, "ctaColor"),
@@ -1631,6 +1633,7 @@ export async function saveTourTerm(id: string, form: TermForm): Promise<ActionRe
     if (input.seoTitle !== "" || dataText(stored, "seoTitle") !== "") patch.setData("seoTitle", dataText(stored, "seoTitle"), input.seoTitle);
     if (before.kind === "audiences") {
       patch.setData("brandName", dataText(stored, "brandName"), input.brandName);
+      patch.setData("cardLabel", dataText(stored, "cardLabel"), input.cardLabel);
       patch.setData("color", dataText(stored, "color"), input.color);
       patch.setData("colorDeep", dataText(stored, "colorDeep"), input.colorDeep);
       patch.setData("ctaColor", dataText(stored, "ctaColor"), input.ctaColor);

@@ -547,6 +547,8 @@ export interface TermForm {
   seoTitle: string;
   /** A world (an audience): its brand name ("מגה פמילי"), its color, a tile picture and a link when it lives on another site. */
   brandName: string;
+  /** What the site's tour cards say of the world, on their picture (Alon 11.11: "טיול משפחות", not the brand). "" = "טיול " + the name. */
+  cardLabel: string;
   color: string;
   /** The world's second colour, when its logo has two (Mega Family: red and blue): the site's header, footer and dark cards wear it. "" = shades of `color`. */
   colorDeep: string;

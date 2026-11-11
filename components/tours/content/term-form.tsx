@@ -130,6 +130,12 @@ export function TermFormEditor({ initial }: { initial: TermEditorData }) {
             <Field label="Brand name" hint='As the group names the world, e.g. "מגה פמילי". Empty = a plain audience: no tile, no link in the footer, and the header keeps the logo.'>
               <Input dir="auto" value={form.brandName} onChange={(e) => set("brandName", e.target.value)} />
             </Field>
+            <Field
+              label="Name on tour cards"
+              hint={`What the site's cards of the world's tours say on their picture - the kind of trip, not the brand. Empty = "${form.name.trim().startsWith("טיול") ? form.name.trim() : `טיול ${form.name.trim()}`}".`}
+            >
+              <Input dir="auto" value={form.cardLabel} onChange={(e) => set("cardLabel", e.target.value)} placeholder={form.name.trim().startsWith("טיול") ? form.name.trim() : `טיול ${form.name.trim()}`} />
+            </Field>
             <ColorInput label="World color" value={form.color} onChange={(color) => set("color", color)} />
             <ColorInput label="Second color (header and footer)" value={form.colorDeep} onChange={(color) => set("colorDeep", color)} fallback="#0b5cad" />
             <ColorInput label="Booking button color" value={form.ctaColor} onChange={(color) => set("ctaColor", color)} fallback="#d7262d" />

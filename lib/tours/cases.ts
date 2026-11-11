@@ -1288,6 +1288,22 @@ export interface LinkDeparture {
   changedAt: string | null;
   /** The rooms its price table prices, each with the room's price before any discount. */
   rooms: { key: string; title: string; price: number }[];
+  /**
+   * How many are booked of the date's seats (Alon 11.11: "כמה מקומות נותרו... 6/45 רשומים"): `sold` = its reservations
+   * (departure_stats.sold), `of` = its live flight seats, else its Capacity, else its series' default; null = none set. Only in the builder's list.
+   */
+  seats?: { sold: number; of: number | null };
+  /**
+   * A reminder when the date does not run the tour's usual plan (Alon 11.11: "תזכורת אם המסלול שונה... מהמסלול הקבוע
+   * לאותה עונה / טיול"): another itinerary than the tour's main one (its own, or its season's), or flights of its own
+   * route. Empty = the usual. Only in the builder's list.
+   */
+  itineraryNotes?: string[];
+}
+
+/** "6/45 booked", or "6 booked" for a date with no seats set. */
+export function seatsLabel(seats: { sold: number; of: number | null }): string {
+  return seats.of ? `${seats.sold}/${seats.of} booked` : `${seats.sold} booked`;
 }
 
 /** A prepared offer and the ways to send it. It counts as sent only through markOfferSent. */

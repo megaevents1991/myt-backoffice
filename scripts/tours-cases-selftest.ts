@@ -78,6 +78,7 @@ import {
   primaryOffer,
   otherTour,
   offersMessage,
+  seatsLabel,
   offersState,
   OFFERS_MAX,
   offerSent,
@@ -906,6 +907,13 @@ assert.equal(afterSave(seenA, { id: "a", assignedTo: "u9" }, manager).cards[0].a
   assert.deepEqual(scopeThread(all, { all: true }).map((x) => x.id), ["a", "b", "c"], "a manager sees every message");
   assert.deepEqual(scopeThread(all, { visibleCaseIds: new Set(["card-mine"]) }).map((x) => x.id), ["a", "c"], "a rep: their own card and the unlinked ones, never a card of another rep");
   assert.deepEqual(scopeThread(all, { visibleCaseIds: new Set() }).map((x) => x.id), [], "no visible card of the customer: nothing, the unlinked ones included (security review)");
+}
+
+// ---- the seats of a date in the offer builder (Alon 11.11: "6/45 רשומים")
+{
+  assert.equal(seatsLabel({ sold: 6, of: 45 }), "6/45 booked", "booked of the date's seats");
+  assert.equal(seatsLabel({ sold: 0, of: 45 }), "0/45 booked", "none booked yet still says the seats");
+  assert.equal(seatsLabel({ sold: 3, of: null }), "3 booked", "a date with no seats set says the booked alone");
 }
 
 console.log("tours-cases selftest: ok");

@@ -8,6 +8,8 @@ import {
   ChevronsUpDown,
   Copy,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   Link2,
   Loader2,
@@ -18,6 +20,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Route,
   Send,
   TriangleAlert,
   Undo2,
@@ -42,6 +45,7 @@ import {
   offerSent,
   offersMessage,
   otherTour,
+  seatsLabel,
   waLink,
   whatsappAppLink,
   type CaseOffer,
@@ -78,6 +82,8 @@ export interface SendProps {
   copyText: string;
   /** The mail's subject. */
   subject?: string;
+  /** The message shows open under the buttons (the offers sent together); else behind "See the message". */
+  previewOpen?: boolean;
   phone: string | null;
   email: string | null;
   busy: boolean;
@@ -85,17 +91,19 @@ export interface SendProps {
 }
 
 /** The ways to send a message. A click on WhatsApp or e-mail records it as sent (markOfferSent) - copying does not. */
-export function SendButtons({ message, copyText, subject = "קישור להזמנה", phone, email, busy, onSent }: SendProps) {
+export function SendButtons({ message, copyText, subject = "קישור להזמנה", previewOpen = false, phone, email, busy, onSent }: SendProps) {
   const { toast } = useToast();
+  // what the customer gets, word for word (Alon 11.11: "איך נראית ההודעה ?")
+  const [preview, setPreview] = useState(previewOpen);
   const app = whatsappAppLink(phone, message);
   const web = waLink(phone, message);
   const mailto = email ? `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}` : null;
-  const copy = async () => {
+  const copy = async (text: string, what: "Link" | "Message") => {
     try {
-      await navigator.clipboard.writeText(copyText);
-      toast({ title: "Link copied", description: "Copying does not count as sending - send it on WhatsApp or by e-mail." });
+      await navigator.clipboard.writeText(text);
+      toast({ title: `${what} copied`, description: "Copying does not count as sending - send it on WhatsApp or by e-mail." });
     } catch {
-      toast({ variant: "destructive", title: "Copy failed", description: "Select the link and copy it by hand." });
+      toast({ variant: "destructive", title: "Copy failed", description: `Select the ${what.toLowerCase()} and copy it by hand.` });
     }
   };
   return (
@@ -144,13 +152,54 @@ export function SendButtons({ message, copyText, subject = "קישור להזמ�
         )}
         <button
           type="button"
-          onClick={() => void copy()}
+          onClick={() => void copy(copyText, "Link")}
           className="inline-flex min-h-6 items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
           <Copy className="h-3 w-3" />
           Copy link
         </button>
+        <button
+          type="button"
+          onClick={() => setPreview((open) => !open)}
+          aria-expanded={preview}
+          className="inline-flex min-h-6 items-center gap-1 text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          {preview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+          {preview ? "Hide the message" : "See the message"}
+        </button>
       </div>
+      {preview && (
+        <div className="space-y-1.5 rounded-md border bg-background p-2.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">The message, as the customer gets it</p>
+          {/* the same text the buttons send: WhatsApp and the mail take it as it is */}
+          <p dir="rtl" className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-start text-sm leading-relaxed">
+            {message}
+          </p>
+          <button
+            type="button"
+            onClick={() => void copy(message, "Message")}
+            className="inline-flex min-h-6 items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            <Copy className="h-3 w-3" />
+            Copy the message
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The date's own route, in a word (Alon 11.11: "תזכורת אם המסלול שונה") - beside the offer's tour and date. */
+function ItineraryNotes({ notes }: { notes: readonly string[] }) {
+  if (!notes.length) return null;
+  return (
+    <div className="space-y-1">
+      {notes.map((note) => (
+        <p key={note} className="flex items-start gap-1.5 rounded-md bg-warning-muted px-2 py-1 text-xs font-medium text-warning">
+          <Route className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span dir="auto">{note}</span>
+        </p>
+      ))}
     </div>
   );
 }
@@ -373,6 +422,7 @@ export function OffersList({ offers, cardPackageId, cardTourName, phone, email, 
             message={offersMessage(firstName, unsent)}
             copyText={unsent.map((o) => o.url).join("\n")}
             subject="הצעות להזמנה"
+            previewOpen
             phone={phone}
             email={email}
             busy={busy}
@@ -706,6 +756,14 @@ export function BookingLinkCard({
                       </span>
                       <span className="block text-xs text-muted-foreground">
                         <Ltr className="rounded bg-muted px-1 font-mono text-[11px] text-foreground">{chosen.code}</Ltr> · {fmtDate(chosen.startDate)}
+                        {chosen.seats && (
+                          <>
+                            {" · "}
+                            <span className={cn("tabular font-medium", chosen.seats.of && chosen.seats.sold >= chosen.seats.of ? "text-destructive" : "text-foreground")}>
+                              {seatsLabel(chosen.seats)}
+                            </span>
+                          </>
+                        )}
                       </span>
                     </span>
                   ) : (
@@ -742,8 +800,14 @@ export function BookingLinkCard({
                           {cardPackageId && d.packageId === cardPackageId && (
                             <span className="shrink-0 rounded-full bg-success-muted px-1.5 text-[10px] font-semibold text-success">card&apos;s tour</span>
                           )}
+                          {(d.itineraryNotes?.length ?? 0) > 0 && (
+                            <span className="shrink-0 rounded-full bg-warning-muted px-1.5 text-[10px] font-semibold text-warning" title={d.itineraryNotes!.join("\n")}>
+                              other route
+                            </span>
+                          )}
                           <span className="shrink-0 text-xs tabular text-muted-foreground">
                             {d.code} · {fmtDate(d.startDate)}
+                            {d.seats ? ` · ${d.seats.of ? `${d.seats.sold}/${d.seats.of}` : `${d.seats.sold} booked`}` : ""}
                           </span>
                         </CommandItem>
                       ))}
@@ -753,6 +817,7 @@ export function BookingLinkCard({
               </PopoverContent>
             </Popover>
             {otherTourChosen && <OtherTourNote offerTour={chosen?.tourName ?? null} cardTour={cardTourName} />}
+            {chosen?.itineraryNotes && <ItineraryNotes notes={chosen.itineraryNotes} />}
           </Step>
 
           {chosen && (
