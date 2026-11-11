@@ -336,3 +336,18 @@ export function readListingSnapshot(v: unknown): ListingSnapshot {
     italian: o.italian === true,
   };
 }
+
+/**
+ * A link a seller sent (a mobile ticket, a proof of transfer), as something safe to put in an `href`: an absolute
+ * http(s) URL, or null. A seller's text is never trusted as a link - `javascript:` and `data:` URLs run as script
+ * on the page that shows them. Every place that renders such a link goes through here.
+ */
+export function safeHttpUrl(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  try {
+    const url = new URL(v.trim());
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}

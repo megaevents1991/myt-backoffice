@@ -20,6 +20,7 @@ import {
   ourOrderId,
   parseOurOrderId,
   readListingSnapshot,
+  safeHttpUrl,
   siteBooksAfterPayment,
   statusFromTixstock,
   ticketLinkEmail,
@@ -296,6 +297,18 @@ describe("the listing as booked", () => {
     assert.deepEqual(readListingSnapshot(null), empty);
     assert.deepEqual(readListingSnapshot("x"), empty);
     assert.deepEqual(readListingSnapshot({ row: "  ", generalAdmission: "true", restrictions: "none", italian: "true" }), empty);
+  });
+});
+
+describe("a link a seller sent", () => {
+  it("is safe to open only as an absolute http(s) URL", () => {
+    assert.equal(safeHttpUrl("https://tickets.example/abc?x=1"), "https://tickets.example/abc?x=1");
+    assert.equal(safeHttpUrl("  http://tickets.example/abc "), "http://tickets.example/abc");
+    for (const bad of ["javascript:alert(1)", "JaVaScRiPt:alert(1)", " javascript:alert(1)", "data:text/html,<script>1</script>", "vbscript:x", "/relative", "tickets.example/abc", "", "   "]) {
+      assert.equal(safeHttpUrl(bad), null, bad);
+    }
+    assert.equal(safeHttpUrl(null), null);
+    assert.equal(safeHttpUrl(17), null);
   });
 });
 
