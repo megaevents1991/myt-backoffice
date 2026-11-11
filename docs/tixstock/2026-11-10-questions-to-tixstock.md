@@ -106,7 +106,8 @@ State after TixStock's round 2 (section 4). "Closed" = answered and the code mat
 | 7 - hex or base64 | Closed for us | Accepts both, over the raw body ("the exact JSON payload": confirmed) | `verifyTixstockSignature` |
 | 8 - hold / release webhooks | Closed | Logged, answered exactly `{ "ok": true }` | `handleTixstockWebhook` |
 | 9 - webhooks over 4.5 MB | Open (only the file types were answered) | Vercel refuses them before our code; the refresh (`orders/get`) is the fallback | the sweep and the card's Refresh |
-| 10-13 | Never sent | - | - |
+| 10 - webhook URL per environment | Answered by the Reseller Admin itself | Each environment has its own Webhooks tab, one row per type; the sandbox's ten rows are registered (section 5) | - |
+| 11-13 - production token, late orders, paper to a hotel | In the follow-up of 11.11 (section 5, questions 11-13) | - | - |
 
 The sandbox itself answers some of these in the first end-to-end run (plan Task 17, Stage 5): which id
 `orders/get` takes, what a 10-minute-old hold answers, hex or base64, and whether a webhook's `order_id` is
@@ -159,34 +160,60 @@ Decided on our side, and what it costs if wrong:
   start carrying OUR `order_id` instead, they are answered "unknown order" and the files arrive only through the
   refresh. Every webhook is logged with its payload, so the first sandbox webhook shows which id it carries.
 
-## 5. Follow-up (drafted 10.11, updated the same evening; Dor sends it)
+## 5. Follow-up (final text of 11.11; Dor sends it)
 
-Two points joined it in the evening:
+What joined the round-2 leftovers:
 
 - **The Seller Portal user.** Dor has no user on `sandbox-new.tixstock.com`, so the seven test listings
-  (`2026-11-09-sandbox-listings-checklist-he.md`) cannot be created yet.
-- **What the sandbox showed once the webhooks were registered.** The Reseller Admin takes one webhook row per
-  type; ten rows now point at `https://backoffice-app-six.vercel.app/api/tixstock/webhook/sandbox`
+  (`2026-11-09-sandbox-listings-checklist-he.md`) cannot be created yet. The only point that blocks work today.
+- **What the sandbox showed once the webhooks were registered (10.11 evening).** The Reseller Admin takes one
+  webhook row per type; ten rows now point at `https://backoffice-app-six.vercel.app/api/tixstock/webhook/sandbox`
   (`ticket.hold`, `ticket.release`, `order.update`, `order.eticket_fulfilment`, `order.mobile_ticket_fulfilment`,
   `order.mobile_link_ticket_fulfilment`, `order.paper_ticket_fulfilment`, `ticket.fulfillment`,
   `order.season_cards_ticket_fulfilment`, `order.local_delivery_ticket_fulfilment` - their spellings). A hold and
   a release placed by our client (both 200, listed in their Request Log) sent us no webhook: their Webhook Log
   stayed empty. So TixStock's real signature is proven only by the first order webhook.
+- **The production questions** kept for the CS call (11-13 of section 2), sent now so one round closes everything.
+
+One question per line: in round 2 the second half of a two-part question went unanswered twice.
 
 ```
-Thanks, very clear. A few points are still open:
-1. Seller Portal (sandbox): we have no user on sandbox-new.tixstock.com. Could you open one for us, so we can create the test listings for the health check and fulfil them ourselves? Or should we use the listings already in the sandbox, and you fulfil the test orders?
-2. order_id: do /orders/get and /orders/update take our order_id, or the id that orders/add returns? Is it unique on your side - would a second orders/add with the same order_id be rejected? And in your webhooks, is order_id still your own order id?
-3. What does requires_lead_booker = true on a listing require from us?
-4. Fulfilment webhook: do the PDF files arrive inside the JSON or as links? Our platform accepts requests up to 4.5 MB - can we fetch the same files from /orders/get?
-5. Webhooks: we registered all ten types in the sandbox Reseller Admin. A hold and a release we placed through the API sent us no ticket.hold / ticket.release webhook (the Webhook Log is empty) - is that expected? And for ticket.fulfillment, is the response also { "ok": true }?
-@Abdullah - can the Serie A attendee step of the health check be shown from our back office instead of the website checkout?
-```
+Good morning,
 
-If the first version of this follow-up already went out, only these two are new:
+Thanks, this was very clear. To close the remaining points in one round:
 
-```
-Two more things:
+Sandbox
 1. We have no user on the sandbox Seller Portal (sandbox-new.tixstock.com). Could you open one for us, so we can create the test listings for the health check and fulfil them ourselves? Or should we use the listings already in the sandbox, and you fulfil the test orders?
-2. We registered all ten webhook types in the sandbox Reseller Admin. A hold and a release we placed through the API sent us no ticket.hold / ticket.release webhook (the Webhook Log is empty) - is that expected?
+
+Orders
+2. Do /orders/get and /orders/update take our order_id, or the id that orders/add returns?
+3. Is order_id unique on your side? Would a second orders/add with the same order_id be rejected?
+4. What does requires_lead_booker = true on a listing require from us?
+
+Webhooks
+5. We registered all ten webhook types in the sandbox Reseller Admin. A hold and a release we placed through the API sent us no ticket.hold / ticket.release webhook (the Webhook Log is empty). Is that expected?
+6. In order webhooks, is order_id your order id or ours?
+7. Fulfilment: do the PDF files arrive inside the webhook JSON, or as links?
+8. Our platform accepts requests up to 4.5 MB. Does /orders/get return the same files, so we can fetch them if a webhook is larger?
+9. ticket.fulfillment: is the expected response also { "ok": true }?
+
+Health check
+10. @Abdullah - real Serie A orders are placed from our back office, where our staff enter the attendee details. Can that step of the health check be shown from the back office instead of the website checkout?
+
+Production
+11. Will the production booking token be our current feed token with booking enabled, or a new one?
+12. We place orders from our back office after the flight and hotel are confirmed, sometimes days after the customer paid (as we do in TX Trade today). Please confirm this is fine.
+13. Paper tickets: is shipping to the customer's hotel acceptable?
 ```
+
+What each answer changes on our side:
+
+| # | If the answer is... | Then |
+|---|---|---|
+| 1 | a user is opened | Dor signs in, the seven listings are created; until then the test events use the sandbox's own listings |
+| 2 | our `order_id` | the client's `getOrder` / `updateOrder` callers pass `ourOrderId(reservationId)` instead of the returned id |
+| 3 | a repeat is rejected | a re-booked reservation needs an attempt suffix in `ourOrderId`; a lost orders/add answer becomes safe to repeat |
+| 5 | not expected | they look at their side; nothing changes in our code |
+| 6 | ours | the receiver also matches a booking by reservation id + listing id (today: by the id orders/add returned) |
+| 7-8 | inside the JSON, over 4.5 MB possible | the refresh (`orders/get`) stays the way those files arrive |
+| 9 | another shape | one line in `handleTixstockWebhook` |
