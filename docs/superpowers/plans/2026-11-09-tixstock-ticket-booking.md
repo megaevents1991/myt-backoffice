@@ -535,10 +535,13 @@ export type WebhookAnswer = { status: number; body: OrderAnswerBody | AckBody | 
   - **Payload:** `{data, meta}`. Type = `meta.type`; order id = `data.order_id`; listing = `data.id`; PDF =
     `data.file`; `data.proof_file_url[]`; `data.additional_file`; `data.mobile_links[{seat, link}]`; status =
     `data.order_status ?? data.status`.
-  - **`dedupeKey`:** `${bookingId}:${kind}:${row}:${seat}:${index}` - OUR booking row, not the order id the
-    payload names (since 11.11: TixStock knows an order by its own id and by the `order_id` we sent, and a ticket
-    must have one key whichever it names). The webhook type is NOT in it either, so the same file arriving again
-    through a refresh (`orders/get`) is not stored twice.
+  - **`dedupeKey`:** `${bookingId}:${kind}:${sha256(content).slice(0, 40)}` - OUR booking row (not the order id
+    the payload names: TixStock knows an order by its own id and by the `order_id` we sent), the kind, and a hash
+    of the file's OWN content - its base64 body, or its link. Never the row, the seat or the file's place in the
+    payload (the first build's key, `...:${row}:${seat}:${index}`): an e-ticket order of n tickets arrives as n
+    webhooks with one file each, so with no seat numbers the second ticket had the first one's key and was
+    dropped (final review, 11.11). The webhook type is not in it either, so the same file arriving again through
+    a refresh (`orders/get`) is not stored twice.
   - **Storage path** (inside the `ticket-files` bucket; the bucket's name is not part of it):
     `${bookingId}/${sha256(dedupeKey).slice(0, 32)}`. Row and seat are a seller's free text and never go into a
     path.
@@ -558,7 +561,9 @@ export type WebhookAnswer = { status: number; body: OrderAnswerBody | AckBody | 
 
 - [ ] **Step 1: Write the failing selftest** (all I/O through `deps` stubs):
   - `bad signature 401`: a wrong signature gives 401; nothing saved; the event is logged with
-    `signature_valid:false`.
+    `signature_valid:false`. A request with NO signature header, or one that arrives while the environment has no
+    token, is refused the same way and leaves no row at all (final review, 11.11: the URL is public, and an
+    anonymous sender must not be able to fill the table). The signature is verified over the raw bytes.
   - `missing token 401`: an undefined API token gives 401 (fails closed).
   - `signature encodings`: the HMAC-SHA256 of the raw body keyed with the token passes as lower-case hex, as
     upper-case hex, as `sha256=<hex>` and as base64. The digest of the same JSON re-serialised with another key
@@ -1447,3 +1452,30 @@ shows it either way); whose id a fulfilment webhook's `order_id` is (the receive
 production); the Serie A item and orders placed days after payment (with TixStock's Abdullah); hex or base64
 (both accepted); webhooks over 4.5 MB and the same files from `orders/get` ("checking internally"); an e-ticket
 seller who sends ONE PDF for several tickets would leave our answer at `Completed` - watch it in the sandbox.
+
+## Final review amendments (11.11.2026)
+
+A fresh reviewer read both repos' diffs once every code task was built (before the test events and the rollout).
+Fixed the same day on Dor's go, each by a test that failed first:
+
+- **A ticket is keyed by its own content** (Task 4, above) - the second ticket of an order with no seat numbers was
+  dropped as a repeat of the first.
+- **An unsigned webhook request leaves no row; the signature is verified over the raw bytes** (Task 4).
+- **The "sale on hold too long" alert** is raised when a row crosses 90 minutes and then once a day
+  (`overdueAlertDue`), not on every run for ever (Task 6).
+- **The office dialog never guesses "not Italian"** (Tasks 13-14): a venue that could not be read stops the dialog
+  (`venueItaly` answers null); the venue is read again on the server at the book click and decides
+  (`OfficeContext.italian`); the dialog's tick "האירוע דורש פרטי זיהוי" can only ADD the identity details.
+- **The attendees are fitted to the tickets** (`fitAttendees`): blank rows for the names nobody typed, so a
+  hand-typed reservation can be booked.
+- **An order sold from another supplier is refused**, with or without a hand-picked event (`eventForBooking`;
+  spec 7.1). The first build offered it the event picker - a second, final purchase one wrong click away.
+- **A ticket the seller sent as a link** (not as bytes) opens at that link on the customer's page; the first build
+  pointed it at our file route, which has no file for it.
+
+**Not built, Dor's decisions:** analytics (GTM, Mixpanel) on `/ticket/<token>` - the token is the page's URL, and
+turning them off there needs an edit in the site's root layout, outside this plan's allowed files; a
+`requires_lead_booker` listing gets a warning line only - block it until TixStock says what it requires?
+
+**Deferred minors** are listed in the ledger (`Final: minor (deferred)`), with what each costs.
+

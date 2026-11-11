@@ -253,6 +253,8 @@ The ticket is still last in the panel: an Approved TixStock order is final and c
 - Enabled when the hotel step is done (the RateHawk design's rules, 7.1 there).
 - **Book ticket** shows when the reservation's ticket is TixStock (`supplier = 'tixstock'`, or implied by
   `event.type = 'tx_event'`) and the reservation is Paid. Other suppliers get only the manual mark.
+  (Built 11.11: an order on our own stock, or a hand-typed one, may be given a TixStock event staff pick in the
+  dialog; an order sold from another supplier is refused whatever was picked - its ticket is bought there.)
 - The step is **done** when a TixStock booking reaches Approved or Commissionable, or by the manual mark
   ("טופל ידנית", supplier + reference, as in the RateHawk design).
 - **Reservations from before the panel opens** take the same tick "בדקתי - עוד לא הוזמן ידנית" before Book is
@@ -356,10 +358,16 @@ The card shows it in amber: "לא ודאי - לא להזמין שוב עד שי�
 
 `POST /api/tixstock/webhook/[env]`. It is public, because TixStock calls it.
 - **Signature:** `X-Tixstock-Signature` is verified as HMAC-SHA256 of the raw body, keyed with that environment's
-  API token (TixStock 10.11). A bad or missing signature answers 401 and is logged.
-- **Idempotent** on (our booking row, kind, row, seat): a repeat stores nothing new and answers the same. Neither
-  the webhook type nor the order id the payload names is part of it, so a refresh of the same order does not
-  store a file twice.
+  API token (TixStock 10.11), over the bytes exactly as they arrived. A bad signature answers 401 and is logged
+  (without the body). A request with NO signature header - or one that arrives while the environment has no token
+  to check against - answers 401 and leaves no row at all: the URL is public, and an anonymous sender must not be
+  able to fill the table (final review, 11.11).
+- **Idempotent** on (our booking row, kind, the file's own content - a hash of its bytes or of its link): a repeat
+  stores nothing new and answers the same. Neither the webhook type nor the order id the payload names is part
+  of it, so a refresh of the same order does not store a file twice. Row, seat and the file's place in the
+  payload are NOT part of it (they were, in the first build): an e-ticket order of n tickets arrives as n
+  webhooks with one file each, and with no seat numbers the second ticket was dropped as a repeat of the first
+  (final review, 11.11, before any file was stored).
 - **Finding the booking:** `order_id` is tried as TixStock's own order id, then as ours (TixStock did not say
   which a webhook carries); an id of ours that names no booking matches nothing.
 - **Fulfilment types:** the file goes to the private bucket, or the link / proof URL is stored, and the
