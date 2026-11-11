@@ -77,6 +77,10 @@ check(
   [finder.tabs[0].searchLabel, finder.tabs[0].searchUrl, finder.tabs[0].gridTitle, finder.tabs[0].moreLabel, finder.tabs[0].moreHref],
   ["", "", "", "", ""],
 );
+// 11.11 (Alon: "תן לי אופציה לכבות את זה"): a tile's grid can wait for a search; a tile saved before shows it
+check("an old tile shows its tour grid from the start", finder.tabs.map((t) => t.showGrid), [true, true]);
+const gridOff = readSiteDoc("home", { sections: [{ ...oldHome.sections[1], tabs: [{ ...oldTab, showGrid: false }] }] });
+check("a tile whose grid waits for a search keeps it so", (gridOff.sections[0] as Extract<HomeSection, { type: "tours" }>).tabs[0].showGrid, false);
 const oldBanners = home.sections.find((s) => s.type === "banners") as Extract<HomeSection, { type: "banners" }>;
 check("an old banners section keeps the look it had", oldBanners.layout, "overlay");
 check("an old section belongs to every tile", home.sections.map((s) => s.onlyTabs).filter(Boolean), []);

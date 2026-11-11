@@ -333,6 +333,12 @@ const toursTab = z
       .default(""),
     /** The title of the tour grid while this tile is chosen; empty = the section's. */
     gridTitle: text(120).default(""),
+    /**
+     * Whether the tour grid shows before the customer narrows the list (Alon, 11.11: "תן לי אופציה לכבות את זה"). Off:
+     * only the tile's rows show until a trip type, a destination, a season or a word - the grid is where the results
+     * show; a tile with no row to show keeps it (mega-family components/home/HomeFilters.tsx `gridShown`).
+     */
+    showGrid: z.boolean().default(true),
     /** The link beside that title; no address = the page of the tile's world, tag, destination or category. */
     moreLabel: text(60).default(""),
     moreHref: href.default(""),

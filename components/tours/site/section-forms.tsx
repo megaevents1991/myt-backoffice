@@ -341,6 +341,22 @@ function TileGrid({ tab, section, patch, options }: { tab: ToursTile; section: T
           </p>
         </div>
       </div>
+      {/* Alon 11.11: "תן לי אופציה לכבות את זה" - the grid steps aside until a search, never for good: the results show in it */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Switch id={`${tab.key}-show-grid`} checked={tab.showGrid} onCheckedChange={(showGrid) => patch({ showGrid })} />
+          <label htmlFor={`${tab.key}-show-grid`} className="text-sm">
+            Show the tour grid before a search
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {tab.showGrid
+            ? "On: the grid shows under the rows from the start."
+            : tab.rows.length > 0
+              ? "Off: under the search only the rows above show. The grid comes in as soon as the customer searches or picks a trip type, with the results - and if none of the rows has a tour to show, the grid shows anyway, so the tile is never empty."
+              : "Off - but this tile has no rows, so the site shows the grid anyway (the tile is never empty). Add a row above to let it step aside."}
+        </p>
+      </div>
       <Grid>
         <Field label="Title of the grid" hint='Empty = the "Title of the tour grid" at the top of this section. E.g. "חם עכשיו באיבנטס".'>
           <Input dir="auto" value={tab.gridTitle} placeholder={section.gridTitle} onChange={(e) => patch({ gridTitle: e.target.value })} />
@@ -395,6 +411,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
           searchLabel: "",
           searchUrl: "",
           gridTitle: "",
+          showGrid: true,
           moreLabel: "",
           moreHref: "",
         })}
@@ -513,7 +530,7 @@ function ToursForm({ section, onChange, options, siteUrl }: FormProps<"tours">) 
                   רק שורה 1" - the grid "מוצרים במבצע" looked like a row nobody had set) */}
               <Fold
                 title="Rows of this tile"
-                summary={`${tab.rows.length ? `${tab.rows.length} ${tab.rows.length === 1 ? "row" : "rows"}` : "No rows"} + the tour grid${gridTitleOf(tab, section) ? ` "${gridTitleOf(tab, section)}"` : ""}`}
+                summary={`${tab.rows.length ? `${tab.rows.length} ${tab.rows.length === 1 ? "row" : "rows"}` : "No rows"} + the tour grid${gridTitleOf(tab, section) ? ` "${gridTitleOf(tab, section)}"` : ""}${tab.showGrid || tab.rows.length === 0 ? "" : " (after a search only)"}`}
               >
                 <p className="text-sm text-muted-foreground">
                   What the site shows under the tile&apos;s search, top to bottom: the rows you add here (best sellers, a holiday, tours you pick, the tours of
