@@ -8,6 +8,7 @@
  */
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -241,10 +242,11 @@ function HeroForm({ section, onChange, options, siteUrl }: FormProps<"hero">) {
 type TileTab = Of<"tours">["tabs"][number];
 
 /**
- * The one picture at the top of the page while a tile is chosen (Liz, 06.11: "אופציה לשים תמונה אחת וזהו"): the
- * first banner of the tile, with no title or link to fill in. Empty says what shows instead - the picture of the
- * tile's world, else its first tours, else the general banners. A tile that already rotates several pictures
- * keeps them: they are edited under "Banner of this tile".
+ * The picture at the top of the page while a tile is chosen (Liz, 06.11: "אופציה לשים תמונה אחת וזהו"): the first
+ * banner of the tile, with no title or link to fill in. Empty says what shows instead - the picture of the tile's world,
+ * else its first tours, else the general banners. A tile that rotates several pictures shows its first one here too, and
+ * a button keeps it alone (Liz, 11.11: "בזוגות ויחידים, נשים וקונספט לא ניתן להוסיף תמונת באנר" - those three tiles had
+ * two pictures each, and until then this field gave way to a line pointing at "Banner of this tile").
  */
 function TilePicture({
   tab,
@@ -258,12 +260,7 @@ function TilePicture({
   siteUrl: string | null;
 }) {
   const slides = tab.banner.slides;
-  if (slides.length > 1)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Picture at the top: {slides.length} pictures rotate while this tile is chosen - change them under &quot;Banner of this tile&quot; below.
-      </p>
-    );
+  const rest = slides.slice(1);
   const world = tab.show === "world" ? options.terms.find((t) => t.kind === "audiences" && t.slug === tab.world) : undefined;
   const fallback = world?.image
     ? `Empty = the picture of the world "${world.name}" (its first hero image, Categories & Tags > Worlds).`
@@ -274,9 +271,24 @@ function TilePicture({
     <ImageUrlField
       label="Picture at the top"
       value={slides[0]?.image ?? ""}
-      onChange={(image) => onChange(image ? [{ image, alt: slides[0]?.alt || tab.label, href: slides[0]?.href ?? "" }] : [])}
+      // the first picture changes in place; the ones after it stay, and emptying it leaves them
+      onChange={(image) => onChange(image ? [{ image, alt: slides[0]?.alt || tab.label, href: slides[0]?.href ?? "" }, ...rest] : rest)}
       siteUrl={siteUrl}
-      hint={`The wide picture at the top of the page while a customer has this tile chosen - one picture, about 1920 x 500. ${fallback}`}
+      hint={
+        rest.length ? (
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              The wide picture at the top of the page while a customer has this tile chosen, about 1920 x 500. It is the first of {slides.length} that
+              rotate - the {rest.length === 1 ? "other one is" : `other ${rest.length} are`} under &quot;Banner of this tile&quot; below.
+            </span>
+            <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => onChange(slides.slice(0, 1))}>
+              Show this picture alone
+            </Button>
+          </span>
+        ) : (
+          `The wide picture at the top of the page while a customer has this tile chosen - one picture, about 1920 x 500. ${fallback}`
+        )
+      }
     />
   );
 }

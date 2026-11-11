@@ -212,6 +212,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > searches (Alon: "יש לי 2 שורות באתר ובבק אופיס יש רק שורה 1"). A world has "Name on tour cards" (`terms.data.cardLabel`):
 > what the site's cards print on their picture - the kind of trip, "טיול משפחות", not the brand; empty = "טיול" + its name
 > (mega-family `lib/world-label.ts`).
+> **Liz + Daniel, 11.11 (road map tabs "הערות ליז" note 2, "הערות דניאל 1").** A home tile's "Picture at the top" shows at any
+> count of pictures (`TilePicture` in `section-forms.tsx`): the first one changes in place, the others stay, and "Show this
+> picture alone" drops them (Liz: "בזוגות ויחידים, נשים וקונספט לא ניתן להוסיף תמונת באנר" - those three tiles had two
+> pictures each, and the field gave way to a line pointing at "Banner of this tile"). A date priced with neither a third
+> adult nor a fourth child sells rooms of up to three alone - single, double, adult + kid, couple + kid, adult + 2 kids
+> (`roomPrice` in `lib/tours/pricing.ts`, `tours.room_price` in migration 20261111150000, mega-family
+> `lib/data/departures.mjs` - the three together); a date with either price keeps the fourth person's fallback (ATP415 alone
+> on 11.11).
 > **Customers + deal cards (2026-10-19, Nir Azulay - the end user; spec `docs/superpowers/specs/2026-10-19-tours-customer-cards-design.md`,
 > migration `20261019180000_tours_customers.sql`, mockup https://claude.ai/artifact/6CXvKBuoCd3np4RiD9GPG1).** `public.customers`
 > = one per phone (`phone_keys` = last 9 digits, kept by a trigger; `customer_no` shown `C-1041`; `not_same`, `merged_into`); every

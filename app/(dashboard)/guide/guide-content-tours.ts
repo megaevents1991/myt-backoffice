@@ -651,8 +651,8 @@ export const TOURS_GUIDE_SECTIONS: GuideSection[] = [
         title: t("Give each world its own picture, card, slider and reasons", "לתת לכל עולם תמונה, כרטיס, סליידר וסיבות משלו"),
         steps: [
           t(
-            "The picture at the top: open the \"Tour finder\" section, open the world's tile and \"Upload\" one picture in \"Picture at the top\". Empty = the world's own hero image (Categories & Tags), else its first tours' pictures.",
-            "התמונה למעלה: פותחים את הסקשן \"Tour finder\", פותחים את הכפתור של העולם ומעלים תמונה אחת ב-\"Picture at the top\". ריק = התמונה הראשית של העולם עצמו (קטגוריות ותגיות), אחרת תמונות הטיולים הראשונים שלו.",
+            "The picture at the top: open the \"Tour finder\" section, open the world's tile and \"Upload\" one picture in \"Picture at the top\". Empty = the world's own hero image (Categories & Tags), else its first tours' pictures. A tile that rotates several pictures shows the first one there; \"Show this picture alone\" drops the others.",
+            "התמונה למעלה: פותחים את הסקשן \"Tour finder\", פותחים את הכפתור של העולם ומעלים תמונה אחת ב-\"Picture at the top\". ריק = התמונה הראשית של העולם עצמו (קטגוריות ותגיות), אחרת תמונות הטיולים הראשונים שלו. לכפתור שמתחלפות בו כמה תמונות רואים שם את הראשונה, ו-\"Show this picture alone\" משאיר רק אותה.",
           ),
           t(
             "Click the world's chip under \"The page as a tile shows it\": the list shows only what a customer with that tile chosen sees. A section added there shows for that tile only.",

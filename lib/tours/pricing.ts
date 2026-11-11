@@ -19,6 +19,9 @@
  *   couple + 3 kids = two rooms: 4 x adult-in-double + third-kid (the double, and the triple whose third
  *   bed is the child's - Daniel, 08.11.2026; it was 2 x double + third-kid + 2 x fourth person,
  *   migration 20261108180000)
+ *   a date priced with neither third-adult nor fourth-kid sells rooms of up to three people alone: single,
+ *   double, adult + kid, couple + kid, adult + 2 kids (Daniel, 11.11.2026 - ATP today; migration
+ *   20261111150000). The fallback of the fourth person is for a date that has one of the two.
  *
  * Pure functions, no I/O. The same table lives in the customer site
  * (mega-family/lib/data/departures.mjs) and in the database, which prices online
@@ -67,6 +70,8 @@ export function roomPrice(key: string, m: PriceMatrix): number | null {
   const thirdKid = m["child:3"];
   const fourth = m["child:4"];
   const extra = fourth ?? double;
+  const room = ROOM_COMPOSITIONS.find((c) => c.key === key);
+  if (thirdAdult == null && fourth == null && room && room.adults + room.children > 3) return null;
   switch (key) {
     case "single_room":
       return single ?? null;
