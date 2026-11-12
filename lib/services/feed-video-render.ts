@@ -7,7 +7,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { cpus, tmpdir, totalmem } from "node:os";
 import path from "node:path";
 import type { Browser, Page } from "playwright-core";
 
@@ -22,6 +22,17 @@ export async function launchVideoBrowser(): Promise<Browser> {
     return playwright.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: true });
   }
   return playwright.launch({ executablePath: process.env.LOCAL_CHROME_PATH || MAC_CHROME, headless: true });
+}
+
+/** What a render instance has to work with (the spike's check mode). */
+export async function renderEnvironment(): Promise<{ cpus: number; cpuModel: string | null; memMb: number; chromiumArgs: string[] | null }> {
+  const c = cpus();
+  let chromiumArgs: string[] | null = null;
+  if (process.env.VERCEL) {
+    const { default: chromium } = await import("@sparticuz/chromium");
+    chromiumArgs = chromium.args;
+  }
+  return { cpus: c.length, cpuModel: c[0]?.model ?? null, memMb: Math.round(totalmem() / 1048576), chromiumArgs };
 }
 
 export function ffmpegBinary(): string {
@@ -90,8 +101,11 @@ async function preparePage(browser: Browser, html: string): Promise<Page> {
   return page;
 }
 
-/** Where each video's time went - the spike reports it, the run logs it. */
-export type RenderTimings = { launchMs: number; prepareMs: number; framesMs: number; encodeMs: number; frames: number };
+/** Where each video's time went - the spike reports it, the run logs it. `splits` = ms per 30 frames. */
+export type RenderTimings = {
+  launchMs: number; prepareMs: number; framesMs: number; encodeMs: number;
+  frames: number; from: number; still: boolean; splits: number[];
+};
 
 /** What the server has to render with: the ffmpeg binary (present, size, `-version`). */
 export async function ffmpegCheck(): Promise<{ path: string; exists: boolean; bytes: number | null; version: string | null; error: string | null }> {
@@ -112,16 +126,21 @@ export async function ffmpegCheck(): Promise<{ path: string; exists: boolean; by
 /**
  * Renders one page to a 1080x1350, 10 s, 30 fps H.264 mp4 with a silent AAC track. Throws with the
  * page's own problems (a font, a picture, a box that does not fit) - never a video with a hole.
- * Pass a browser to reuse one across videos; otherwise one is launched and closed. `frames` (the
- * spike only) renders the first N frames; `log` gets a line per stage and every 30 frames.
+ * Pass a browser to reuse one across videos; otherwise one is launched and closed. `log` gets a line
+ * per stage and every 30 frames. Measuring switches (the spike only): `from` starts at that frame,
+ * `frames` renders N frames, `still` captures the first frame N times without moving the clock (the
+ * capture floor: screenshot + JPEG + transfer, with no new paint).
  */
 export async function renderVideo(
   html: string,
-  opts: { browser?: Browser; frames?: number; log?: (line: string) => void } = {},
+  opts: { browser?: Browser; frames?: number; from?: number; still?: boolean; log?: (line: string) => void } = {},
 ): Promise<{ mp4: Buffer; ms: number; timings: RenderTimings }> {
   const t0 = Date.now();
   const log = opts.log ?? (() => {});
-  const total = Math.max(1, Math.min(VIDEO_FPS * VIDEO_SECONDS, Math.floor(opts.frames ?? VIDEO_FPS * VIDEO_SECONDS)));
+  const all = VIDEO_FPS * VIDEO_SECONDS;
+  const from = Math.max(0, Math.min(all - 1, Math.floor(opts.from ?? 0)));
+  const total = Math.max(1, Math.min(all - from, Math.floor(opts.frames ?? all - from)));
+  const still = opts.still === true;
   const browser = opts.browser ?? (await launchVideoBrowser());
   const tLaunch = Date.now();
   log(`browser ready ${tLaunch - t0}ms`);
@@ -163,14 +182,23 @@ export async function renderVideo(
         ff.once("close", finish);
       });
     let tFrames = tPrepared;
+    const splits: number[] = [];
+    let tBlock = tPrepared;
     try {
       for (let f = 0; f < total; f++) {
         if (ffDead) throw new Error(ffDead);
-        const ms = (f * 1000) / VIDEO_FPS;
-        await page.evaluate(`document.getAnimations().forEach(function (a) { a.currentTime = ${ms}; })`);
+        if (!still || f === 0) {
+          const ms = ((from + f) * 1000) / VIDEO_FPS;
+          await page.evaluate(`document.getAnimations().forEach(function (a) { a.currentTime = ${ms}; })`);
+        }
         const jpg = await page.screenshot({ type: "jpeg", quality: 92 });
         if (!ff.stdin.write(jpg)) await waitDrainOrDeath();
-        if ((f + 1) % 30 === 0) log(`frame ${f + 1}/${total} ${Date.now() - tPrepared}ms`);
+        if ((f + 1) % 30 === 0) {
+          const now = Date.now();
+          splits.push(now - tBlock);
+          tBlock = now;
+          log(`frame ${from + f + 1} (${f + 1}/${total}) ${now - tPrepared}ms`);
+        }
       }
       if (ffDead) throw new Error(ffDead);
       tFrames = Date.now();
@@ -185,7 +213,10 @@ export async function renderVideo(
     return {
       mp4: await readFile(out),
       ms: tEnd - t0,
-      timings: { launchMs: tLaunch - t0, prepareMs: tPrepared - tLaunch, framesMs: tFrames - tPrepared, encodeMs: tEnd - tFrames, frames: total },
+      timings: {
+        launchMs: tLaunch - t0, prepareMs: tPrepared - tLaunch, framesMs: tFrames - tPrepared, encodeMs: tEnd - tFrames,
+        frames: total, from, still, splits,
+      },
     };
   } finally {
     await rm(dir, { recursive: true, force: true });
