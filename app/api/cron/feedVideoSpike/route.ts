@@ -5,7 +5,7 @@ import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { deriveCreativeDefaults } from "@/lib/creative/auto";
 import { drawStyle, printedFor, VIDEO_BUCKET } from "@/lib/feed-video/rules";
 import { videoHtml } from "@/lib/feed-video/template";
-import { renderVideo, videoFontDataUrl, videoLogoSvg } from "@/lib/services/feed-video-render";
+import { ffmpegCheck, launchVideoBrowser, renderVideo, videoFontDataUrl, videoLogoSvg } from "@/lib/services/feed-video-render";
 import { VIDEO_ARTISTS } from "@/scripts/feed-video/config";
 
 /**
@@ -13,7 +13,8 @@ import { VIDEO_ARTISTS } from "@/scripts/feed-video/config";
  * renders ONE event's video on Vercel and answers how long it took, so the in-system design is
  * measured before it is built on. It writes only to `creatives/video-spike/` - never to the
  * feed's `creatives/video/`, never to `events` - and calls no AI.
- *   GET /api/cron/feedVideoSpike?only=<eventId>[&line=<opening line>]   (cron bearer)
+ *   GET /api/cron/feedVideoSpike?only=<eventId>[&line=<opening line>][&frames=<1-300>]   (cron bearer)
+ *   GET /api/cron/feedVideoSpike?check=1   = the ffmpeg binary (present, -version) + a Chromium launch time
  * Called several at once it also shows how many instances answered (fluid compute may share one).
  */
 export const dynamic = "force-dynamic";
@@ -26,6 +27,21 @@ const DEFAULT_LINE = "ערב שתזכרו עוד הרבה שנים";
 export async function GET(request: NextRequest) {
   const denied = await guardCronRoute(request);
   if (denied) return denied;
+  if (request.nextUrl.searchParams.get("check") === "1") {
+    const ffmpeg = await ffmpegCheck();
+    const t = Date.now();
+    let chromium: { launchMs: number; version: string } | { error: string };
+    try {
+      const b = await launchVideoBrowser();
+      chromium = { launchMs: Date.now() - t, version: b.version() };
+      await b.close();
+    } catch (e) {
+      chromium = { error: e instanceof Error ? e.message : String(e) };
+    }
+    return NextResponse.json({ ffmpeg, chromium, instance: INSTANCE, region: process.env.VERCEL_REGION ?? null });
+  }
+  const framesParam = request.nextUrl.searchParams.get("frames");
+  const frames = framesParam ? Number(framesParam) : undefined;
   const id = Number(request.nextUrl.searchParams.get("only"));
   if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "?only=<eventId> is required" }, { status: 400 });
   const line = (request.nextUrl.searchParams.get("line") ?? DEFAULT_LINE).trim() || DEFAULT_LINE;
@@ -45,8 +61,11 @@ export async function GET(request: NextRequest) {
     const style = drawStyle(id, artist.styles);
     const printed = printedFor(d, { name: row.name.trim(), ...artist }, style, true);
     const tPlan = Date.now();
-    const { mp4, ms: renderMs } = await renderVideo(
+    const log = (l: string) => console.log(`[feedVideoSpike] ${id} ${l} (total ${Date.now() - t0}ms)`);
+    log("planned");
+    const { mp4, ms: renderMs, timings } = await renderVideo(
       videoHtml({ ...printed, hook: line, logoSvg: await videoLogoSvg(), fontDataUrl: videoFontDataUrl() }),
+      { frames, log },
     );
     const objectPath = `${SPIKE_DIR}/event-${id}-${style}-${Date.now()}.mp4`;
     const up = await supabase.storage.from(VIDEO_BUCKET).upload(objectPath, mp4, { contentType: "video/mp4", upsert: false });
@@ -54,7 +73,7 @@ export async function GET(request: NextRequest) {
     const url = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(objectPath).data.publicUrl;
     const body = {
       id, style, line, bytes: mp4.length, url,
-      planMs: tPlan - t0, renderMs, totalMs: Date.now() - t0,
+      planMs: tPlan - t0, renderMs, timings, totalMs: Date.now() - t0,
       instance: INSTANCE, region: process.env.VERCEL_REGION ?? null,
     };
     console.log(`[feedVideoSpike] ${JSON.stringify(body)}`);
