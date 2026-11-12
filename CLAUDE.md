@@ -1410,7 +1410,8 @@ editor holds (version + saved copy + form move together, `useContentForm` `rebas
 lands, theirs = the newest save. Sections are matched by `id`, tiles by `key`, rows by `id` (only when unique in all three
 copies; every other list is one value); a part one side changed takes that side; both changed the same value = MINE, listed
 with what they had; an item one side removed and the other changed is KEPT and listed. The merged page is never saved by
-itself: it waits on screen with a notice, and the person looks and presses Save. `useContentForm` also blocks a second Save
+itself: it waits on screen with a notice, and the person looks and presses Save. Both notices are pinned under the top bar
+(people edit deep inside the Tour finder), and the merge notice shows only while something is left to save (Discard clears it). `useContentForm` also blocks a second Save
 click before the first one re-rendered (it was refused as "someone else saved" - by the first click). Not done: the header &
 footer editor (`chrome-editor.tsx`) still refuses without merging.
 

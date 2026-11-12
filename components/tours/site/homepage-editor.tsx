@@ -179,8 +179,13 @@ export function HomepageEditor({ initial, options }: { initial: HomeData; option
         }
       />
 
-      {stale && <StaleNotice stale={stale} dirty={isDirty} busy={catchingUp || isSaving} onBringIn={() => void bringIn()} />}
-      {merged && <MergedNotice note={merged} onClose={() => setMerged(null)} />}
+      {(stale || (merged && isDirty)) && (
+        // kept in view under the top bar: people edit deep inside the Tour finder, far below the top of the page
+        <div className="sticky top-12 z-10 space-y-2 bg-background pb-1 pt-2">
+          {stale && <StaleNotice stale={stale} dirty={isDirty} busy={catchingUp || isSaving} onBringIn={() => void bringIn()} />}
+          {merged && isDirty && <MergedNotice note={merged} onClose={() => setMerged(null)} />}
+        </div>
+      )}
 
       {sections.length === 0 && (
         <Notice tone="warning">The home page has no sections. Add the first one below; until then the site shows its built-in home page.</Notice>
@@ -197,7 +202,10 @@ export function HomepageEditor({ initial, options }: { initial: HomeData; option
         isDirty={isDirty}
         isSaving={isSaving || catchingUp}
         onSave={() => void submit()}
-        onDiscard={discard}
+        onDiscard={() => {
+          discard();
+          setMerged(null);
+        }}
         disabled={!!problem}
         disabledReason={problem ?? undefined}
         showDisabledReason
@@ -241,7 +249,7 @@ function MergedNotice({ note, onClose }: { note: MergedNote; onClose: () => void
       {note.collisions.length > 0 && (
         <>
           <p className="font-medium">Check these - you both touched them:</p>
-          <ul className="list-disc ps-5">
+          <ul className="max-h-40 list-disc overflow-y-auto ps-5">
             {note.collisions.map((collision, i) => (
               <li key={i}>{collisionLine(collision, who)}</li>
             ))}
