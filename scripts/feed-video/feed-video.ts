@@ -499,6 +499,8 @@ async function publish(items: PlanItem[]) {
     const objectPath = `${STORAGE_DIR}/${file}`;
     const url = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath).data.publicUrl;
     if (current === url) { console.log(`  ${it.id}: already live`); ok++; continue; }
+    // A video someone uploaded by hand (the event editor's "Campaign Video URL") is never replaced.
+    if (current && !current.includes(`/${STORAGE_DIR}/`)) { console.log(`  ${it.id}: skipped - a video uploaded by hand stays`); continue; }
     if (!apply) { console.log(`  ${it.id}: would upload ${objectPath} and set campaign_video_url`); ok++; continue; }
     const body = readFileSync(path.join(OUT, file));
     const up = await supabase.storage.from(STORAGE_BUCKET).upload(objectPath, body, {
