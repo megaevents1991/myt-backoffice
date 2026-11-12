@@ -343,12 +343,12 @@ const linkAnswer = (links: readonly LinkFact[]): PaymentAnswer | null =>
   links.some((l) => l.status === "review") ? "link_review" : links.some((l) => l.status === "paid") ? "link_paid" : null;
 
 /**
- * The answer a card shows on TODAY until the rep moves it on: a card Waiting for payment whose newest booking's payment
- * answered (bookings newest first), else one of its payment links was paid (or kept for a check); a Deposit paid card
- * whose BALANCE link was paid - its deposit link was paid already, that is why it is there.
+ * The answer a card Waiting for payment shows on TODAY until the rep moves it on: its newest booking's payment answered
+ * (bookings newest first), else one of its payment links was paid (or kept for a check). A Deposit paid card answers
+ * nothing here: a balance paid in parts, or a balance link left for a check, would pin it to TODAY with no way off but
+ * "Paid" - the database already brings it back on TODAY by moving its follow-up day to the day a link is paid.
  */
 export function paymentAnswerOf(status: string, bookingStatuses: readonly string[], links: readonly LinkFact[] = []): PaymentAnswer | null {
-  if (status === "deposit_paid") return linkAnswer(links.filter((l) => l.kind === "balance"));
   if (status !== "pending_payment") return null;
   const newest = bookingStatuses[0];
   if (newest === "paid" || newest === "failed" || newest === "review") return newest;

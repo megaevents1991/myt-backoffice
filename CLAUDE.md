@@ -368,8 +368,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > and, while it waits, a follow-up day (`followUpAfterPaymentLink`: its own from today on, else the link's last day in Israel); a card that
 > could not be moved is a warning, the link is made anyway. **A paid link shows on TODAY** until the rep moves the card on:
 > `paymentAnswerOf(status, bookingStatuses, links)` answers `link_paid` / `link_review` ("Payment link paid - confirm" / "to check") for a
-> card Waiting for payment with any paid / review link, or a Deposit paid card with a paid BALANCE link (`enrich` reads `tours.payment_links`
-> of the case's bookings into `x.links`); the reason label is now "Payment to confirm"; the row's button opens the card, whose notice says
+> card Waiting for payment with any paid / review link (`enrich` reads `tours.payment_links` of the case's bookings into `x.links`); a
+> Deposit paid card answers nothing (a balance paid in parts or left for a check would pin it there - its follow-up day, moved by the
+> database when a link is paid, brings it back instead); the reason label is now "Payment to confirm"; the row's button opens the card, whose notice says
 > to set Deposit paid (with the day) or Paid. Sending or copying the link changes nothing more. Selftest `scripts/tours-cases-selftest.ts`.
 > **An inquiry "to file" that a rep closed is a closed card (same tab: "לאחר מחיקה לא יורד מ-TODAY")** - `todayReason` asks "closed?"
 > before "to file?", and `toCaseRow` reads `waitsToBeFiled(to_file, status)`, so no screen shows it as "Inquiry to file" with "File it".

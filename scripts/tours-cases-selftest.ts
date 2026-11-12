@@ -167,7 +167,8 @@ assert.equal(paymentAnswerOf("pending_payment", [], [L("other", "open"), L("depo
 assert.equal(paymentAnswerOf("pending_payment", [], [L("deposit", "paid"), L("other", "review")]), "link_review", "a charge to check comes first");
 assert.equal(paymentAnswerOf("pending_payment", ["paid"], [L("deposit", "paid")]), "paid", "the site payment's own answer wins");
 assert.equal(paymentAnswerOf("deposit_paid", [], [L("deposit", "paid")]), null, "the deposit link that made it Deposit paid");
-assert.equal(paymentAnswerOf("deposit_paid", [], [L("deposit", "paid"), L("balance", "paid")]), "link_paid", "the balance came in");
+assert.equal(paymentAnswerOf("deposit_paid", [], [L("deposit", "paid"), L("balance", "paid")]), null, "a balance link: its follow-up day brings it back (no way to get stuck)");
+assert.equal(paymentAnswerOf("deposit_paid", [], [L("balance", "review")]), null);
 assert.equal(paymentAnswerOf("paid", [], [L("balance", "paid")]), null, "confirmed: off TODAY");
 assert.equal(todayReason(facts({ status: "pending_payment", paymentAnswer: "link_paid" }), S, TODAY), "payment");
 assert.equal(todayReason(facts({ status: "no_answer", followUpDate: "2026-10-10" }), S, TODAY), "late");
