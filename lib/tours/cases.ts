@@ -216,6 +216,28 @@ export function statusAfterLink(current: string, statuses: readonly CaseStatus[]
   return "offer_sent";
 }
 
+/**
+ * The status a card takes when a rep makes a card payment link on its order (Nir & Yaniv 12.11: "לאחר שליחת לינק למקדמה
+ * לא הפך לממתין לתשלום"): "Waiting for payment" - never back from a deposit or a payment, never over a payment's own
+ * states, never over Done. A lead closed as not relevant that gets a link is being sold to again, so it reopens (as a
+ * booking link does). A company list without the status keeps the card's own.
+ */
+export function statusAfterPaymentLink(current: string, statuses: readonly CaseStatus[]): string {
+  if (!statusOf("pending_payment", statuses)) return current;
+  if (PAYMENT_KEYS.has(current) || current === "done") return current;
+  return "pending_payment";
+}
+
+/**
+ * The follow-up day of a card Waiting for payment on a link: its own day when it has one from today on, else the link's
+ * last day (`lastDay`, YYYY-MM-DD in Israel) - so a link nobody pays brings the card back on TODAY when it runs out.
+ * Null = leave the card's day alone.
+ */
+export function followUpAfterPaymentLink(stored: string | null, lastDay: string, today: string): string | null {
+  if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored) && stored >= today) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(lastDay) ? lastDay : null;
+}
+
 /** A row of the status editor: `key` null = a status staff just added. */
 export interface StatusDraft {
   key: string | null;
@@ -289,7 +311,8 @@ export const TODAY_REASON_LABELS: Record<TodayReason, string> = {
   returned: "Came back",
   // an inbound WhatsApp message the card's rep has not seen yet (2026-10-21)
   whatsapp: "הודעה חדשה בוואטסאפ",
-  payment: "Site payment to confirm",
+  // a site card payment or a payment link answered (PAYMENT_ANSWER_LABELS says which)
+  payment: "Payment to confirm",
   file: "Inquiry to file",
   new: "New",
   late: "Follow-up late",
@@ -298,19 +321,38 @@ export const TODAY_REASON_LABELS: Record<TodayReason, string> = {
 };
 export const todayRank = (reason: TodayReason): number => TODAY_REASONS.indexOf(reason);
 
-/** What a site card payment answered on a card that waits for its money - the rep confirms it (Nir 19.10). */
-export type PaymentAnswer = "paid" | "failed" | "review";
+/**
+ * What a payment answered on a card that waits for its money - the rep confirms it (Nir 19.10): a site card payment
+ * (the booking's own state), or a card payment LINK of the order (Nir & Yaniv 12.11: a paid link changed nothing and
+ * showed nowhere - the money went into the order's log alone).
+ */
+export type PaymentAnswer = "paid" | "failed" | "review" | "link_paid" | "link_review";
 export const PAYMENT_ANSWER_LABELS: Record<PaymentAnswer, string> = {
   paid: "Card payment approved",
   failed: "Card payment failed",
   review: "Card payment to check",
+  link_paid: "Payment link paid - confirm",
+  link_review: "Payment link to check",
 };
+/** A card payment link of the card's orders (tours.payment_links: kind deposit / balance / other, status ... paid / review). */
+export interface LinkFact {
+  kind: string;
+  status: string;
+}
+const linkAnswer = (links: readonly LinkFact[]): PaymentAnswer | null =>
+  links.some((l) => l.status === "review") ? "link_review" : links.some((l) => l.status === "paid") ? "link_paid" : null;
 
-/** The card waits for money and its newest booking's payment has an answer (bookings newest first). */
-export function paymentAnswerOf(status: string, bookingStatuses: readonly string[]): PaymentAnswer | null {
+/**
+ * The answer a card shows on TODAY until the rep moves it on: a card Waiting for payment whose newest booking's payment
+ * answered (bookings newest first), else one of its payment links was paid (or kept for a check); a Deposit paid card
+ * whose BALANCE link was paid - its deposit link was paid already, that is why it is there.
+ */
+export function paymentAnswerOf(status: string, bookingStatuses: readonly string[], links: readonly LinkFact[] = []): PaymentAnswer | null {
+  if (status === "deposit_paid") return linkAnswer(links.filter((l) => l.kind === "balance"));
   if (status !== "pending_payment") return null;
   const newest = bookingStatuses[0];
-  return newest === "paid" || newest === "failed" || newest === "review" ? newest : null;
+  if (newest === "paid" || newest === "failed" || newest === "review") return newest;
+  return linkAnswer(links);
 }
 
 /** What TODAY is read from. */
@@ -328,10 +370,18 @@ export interface TodayFacts {
   followUpSetAt?: string | null;
 }
 
-/** Why the card waits for a rep today, or null. First match wins. */
+/**
+ * An inquiry waits to be filed while nobody filed it, booked it or closed it (Nir & Yaniv, 12.11: "לאחר מחיקה לא יורד
+ * מ-TODAY" - an inquiry set Cancelled stayed on TODAY as "Inquiry to file" with its "File it" button, because TODAY asked
+ * "to file?" before "closed?"). A closed one reads as the closed card it is on every screen (toCaseRow).
+ */
+export const waitsToBeFiled = (toFile: boolean, status: string, statuses: readonly CaseStatus[]): boolean =>
+  toFile && !isClosedStatus(status, statuses);
+
+/** Why the card waits for a rep today, or null. First match wins - and a closed card waits for nothing, to file or not. */
 export function todayReason(c: TodayFacts, statuses: readonly CaseStatus[], today: string): TodayReason | null {
-  if (c.toFile) return "file";
   if (isClosedStatus(c.status, statuses)) return null;
+  if (c.toFile) return "file";
   if (c.status === "returned") return "returned";
   if (c.waUnseen > 0) return "whatsapp";
   if (c.paymentAnswer) return "payment";

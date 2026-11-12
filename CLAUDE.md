@@ -362,6 +362,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > charge on a paid link is flagged). Paid or review moves the card's follow-up to today; the STATUS stays the rep's (Nir's rule). Pure
 > rules `lib/tours/payment-links.ts` (selftest `scripts/tours-payment-links-selftest.ts`); SQL on PGlite
 > `scripts/tours-payment-links-sql-pglite-test.mjs`. Not built: a link on a card with no order row, tokens / J5, API refunds, invoices.
+> **Since 12.11 (Nir & Yaniv's tab "הערות ניר ויניב": "לאחר שליחת לינק למקדמה לא הפך לממתין לתשלום", Dor's choice) MAKING a link moves the
+> card:** `createPaymentLink` -> `cardAfterLink` sets "Waiting for payment" (`statusAfterPaymentLink` in `lib/tours/cases.ts` - never back
+> from `deposit_paid` / `paid`, never over a payment's own states or Done; a lead closed as not relevant reopens, as a booking link does)
+> and, while it waits, a follow-up day (`followUpAfterPaymentLink`: its own from today on, else the link's last day in Israel); a card that
+> could not be moved is a warning, the link is made anyway. **A paid link shows on TODAY** until the rep moves the card on:
+> `paymentAnswerOf(status, bookingStatuses, links)` answers `link_paid` / `link_review` ("Payment link paid - confirm" / "to check") for a
+> card Waiting for payment with any paid / review link, or a Deposit paid card with a paid BALANCE link (`enrich` reads `tours.payment_links`
+> of the case's bookings into `x.links`); the reason label is now "Payment to confirm"; the row's button opens the card, whose notice says
+> to set Deposit paid (with the day) or Paid. Sending or copying the link changes nothing more. Selftest `scripts/tours-cases-selftest.ts`.
+> **An inquiry "to file" that a rep closed is a closed card (same tab: "לאחר מחיקה לא יורד מ-TODAY")** - `todayReason` asks "closed?"
+> before "to file?", and `toCaseRow` reads `waitsToBeFiled(to_file, status)`, so no screen shows it as "Inquiry to file" with "File it".
 >
 > **The site mails the customer of an order by itself (30.10.2026, Dor; migration `20261030180000_tours_booking_customer_mail.sql`).** The
 > mails live in mega-family (`lib/customer-mail.ts`, `lib/server/customer-mail.ts`); here is the data: two actions on `tours.site_booking`

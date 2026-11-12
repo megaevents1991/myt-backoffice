@@ -30,7 +30,7 @@ import { asObject, companyAudit } from "@/lib/tours/company-kit";
 import { isoToJerusalemLocal } from "@/lib/tours/format";
 import { bookingRowOf, departuresOf } from "@/lib/tours/booking-rows";
 import { readCancellationRules, readPaymentLog } from "@/lib/tours/payment-log";
-import { readPaymentLinks } from "@/lib/tours/payment-link-log";
+import { linksTableMissing, readPaymentLinks } from "@/lib/tours/payment-link-log";
 import { holdOwedSeats, readCaseStatuses } from "@/lib/tours/case-seats";
 import { sendTemplate, whatsappApiReady } from "@/lib/services/whatsapp-cloud";
 import { storedItineraryPdf } from "@/lib/services/tours-itinerary-pdf";
@@ -71,6 +71,8 @@ import {
   primaryOffer,
   storedOffers,
   paymentAnswerOf,
+  waitsToBeFiled,
+  type LinkFact,
   caseName,
   checkCloseReason,
   isClosedStatus,
@@ -228,6 +230,8 @@ interface Enrichment {
   bookings: Map<string, { ref: string; status: string; confirmationPending: boolean }>;
   /** Every booking's status, newest first - what paymentAnswerOf reads. */
   bookingStatuses: Map<string, string[]>;
+  /** The card payment links of the case's bookings (kind + status), newest first - what paymentAnswerOf reads too. */
+  links: Map<string, LinkFact[]>;
   travelers: Map<string, number>;
   /** Every booking of the case, newest first, and its seat ledger - what seatGap reads. */
   seatBookings: Map<string, SeatBooking[]>;
@@ -268,6 +272,7 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     packages: new Map(),
     bookings: new Map(),
     bookingStatuses: new Map(),
+    links: new Map(),
     travelers: new Map(),
     seatBookings: new Map(),
     seatHolds: new Map(),
@@ -308,15 +313,17 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
     for (const part of chunk(caseIds, IN_CHUNK)) {
       const { data, error } = await toursDb()
         .from("bookings")
-        .select("lead_id, ref, status, kind, confirmation_sent_at, created_at, departure_id, adults, children, sales_entry_id, total, currency")
+        .select("id, lead_id, ref, status, kind, confirmation_sent_at, created_at, departure_id, adults, children, sales_entry_id, total, currency")
         .eq("company_id", companyId)
         .in("lead_id", part)
         .is("is_deleted", null)
         .order("created_at", { ascending: false });
       if (error) throw new Error(`bookings: ${error.message}`);
       const all = new Map<string, { status: string; confirmationSentAt: string | null }[]>();
+      const leadOfBooking = new Map<string, string>();
       for (const b of data ?? []) {
         if (!b.lead_id) continue;
+        leadOfBooking.set(b.id, b.lead_id);
         // newest first: the first one seen per case is the one the row names
         if (!out.bookings.has(b.lead_id)) out.bookings.set(b.lead_id, { ref: b.ref, status: b.status, confirmationPending: false });
         all.set(b.lead_id, [...(all.get(b.lead_id) ?? []), { status: b.status, confirmationSentAt: b.confirmation_sent_at }]);
@@ -347,6 +354,21 @@ async function enrich(companyId: string, records: CaseRecord[]): Promise<Enrichm
       for (const [leadId, list] of all) {
         const row = out.bookings.get(leadId);
         if (row) row.confirmationPending = confirmationPendingOf(list);
+      }
+      // the card payment links of these bookings: a paid one brings its card to TODAY (Nir & Yaniv 12.11)
+      for (const ids of chunk([...leadOfBooking.keys()], IN_CHUNK)) {
+        const { data: links, error: linksError } = await toursDb()
+          .from("payment_links")
+          .select("booking_id, kind, status, created_at")
+          .eq("company_id", companyId)
+          .in("booking_id", ids)
+          .order("created_at", { ascending: false });
+        if (linksTableMissing(linksError)) break; // before the migration: no links to read
+        if (linksError) throw new Error(`payment_links: ${linksError.message}`);
+        for (const l of links ?? []) {
+          const leadId = leadOfBooking.get(l.booking_id);
+          if (leadId) out.links.set(leadId, [...(out.links.get(leadId) ?? []), { kind: l.kind, status: l.status }]);
+        }
       }
     }
   };
@@ -484,12 +506,12 @@ function toCaseRow(r: CaseRecord, x: Enrichment, statuses: readonly CaseStatus[]
     waitingFor: waitingForOf(asObject(r.payload)),
     customerId: r.customer_id ?? null,
     customerNo: r.customer_id ? (x.customers.get(r.customer_id) ?? null) : null,
-    // an inquiry that got a booking since is a card like any other
-    toFile: !!r.to_file && !booking,
+    // an inquiry that got a booking since, or that a rep closed, is a card like any other (waitsToBeFiled)
+    toFile: waitsToBeFiled(!!r.to_file, r.status, statuses) && !booking,
     season: r.season ?? null,
     bookingRef: booking?.ref ?? null,
     bookingStatus: booking?.status ?? null,
-    paymentAnswer: paymentAnswerOf(r.status, x.bookingStatuses.get(r.id) ?? []),
+    paymentAnswer: paymentAnswerOf(r.status, x.bookingStatuses.get(r.id) ?? [], x.links.get(r.id) ?? []),
     confirmationPending: booking?.confirmationPending ?? false,
     // filled by the thread read (Task 7 of the WhatsApp plan); 0 / null until then and before the migration
     waUnseen: x.waUnseen.get(r.id) ?? 0,

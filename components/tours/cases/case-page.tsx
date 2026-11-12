@@ -995,6 +995,20 @@ export function CasePage({ id, embedded, focus, onChanged }: { id: string; embed
               {PAYMENT_ANSWER_LABELS.failed} on booking {row.bookingRef}. Call the customer: they may pay again, by phone or with a new link.
             </Notice>
           )}
+          {/* a card payment link of the order was paid (Nir & Yaniv 12.11): the rep says what it paid for */}
+          {row.paymentAnswer === "link_paid" && (
+            <Notice tone="info">
+              {PAYMENT_ANSWER_LABELS.link_paid}: the payment is in the order&apos;s payments below. Set the card{" "}
+              <span dir="rtl">&quot;{statusOf("deposit_paid", statuses)?.label ?? "Deposit paid"}&quot;</span> (with the day to follow up on the balance) or{" "}
+              <span dir="rtl">&quot;{statusOf("paid", statuses)?.label ?? "Paid"}&quot;</span> - until then it stays on TODAY.
+            </Notice>
+          )}
+          {row.paymentAnswer === "link_review" && (
+            <Notice tone="warning">
+              {PAYMENT_ANSWER_LABELS.link_review}: CreditGuard reported a charge the link did not expect (another amount, a second charge or a cancelled
+              link). Check it in CreditGuard and record or refund it - the link says why below.
+            </Notice>
+          )}
           {row.closeReason && isClosedStatus(row.status, statuses) && (
             <p dir="auto" className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
               <span className="text-xs text-muted-foreground">Closed because: </span>

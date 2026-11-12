@@ -33,6 +33,9 @@ import {
   statusOnReturn,
   todayRank,
   todayReason,
+  statusAfterPaymentLink,
+  followUpAfterPaymentLink,
+  waitsToBeFiled,
   cleanRoomKeys,
   confirmationPendingOf,
   followUpDue,
@@ -135,6 +138,38 @@ assert.equal(todayReason(facts({ status: "returned", followUpDate: "2026-10-01" 
 assert.equal(todayReason(facts({ status: "pending_payment", paymentAnswer: "paid" }), S, TODAY), "payment");
 assert.equal(todayReason(facts({ status: "pending_payment" }), S, TODAY), null, "money on its way, no answer yet: nothing to do");
 assert.equal(todayReason(facts({ toFile: true, status: "new" }), S, TODAY), "file");
+// Nir & Yaniv 12.11: an inquiry to file that a rep closed leaves TODAY and is no longer "to file" anywhere
+assert.equal(todayReason(facts({ toFile: true, status: "cancelled" }), S, TODAY), null, "closed beats to file");
+assert.equal(todayReason(facts({ toFile: true, status: "spam" }), S, TODAY), null);
+assert.equal(waitsToBeFiled(true, "new", S), true);
+assert.equal(waitsToBeFiled(true, "cancelled", S), false, "a cancelled inquiry is not waiting to be filed");
+assert.equal(waitsToBeFiled(true, "not_relevant", S), false);
+assert.equal(waitsToBeFiled(false, "new", S), false);
+
+// Nir & Yaniv 12.11: a payment link moves the card to "Waiting for payment" - never back from money
+assert.equal(statusAfterPaymentLink("new", S), "pending_payment");
+assert.equal(statusAfterPaymentLink("offer_sent", S), "pending_payment");
+assert.equal(statusAfterPaymentLink("not_relevant", S), "pending_payment", "a link reopens a lead closed as not relevant");
+assert.equal(statusAfterPaymentLink("deposit_paid", S), "deposit_paid", "a balance link never undoes the deposit");
+assert.equal(statusAfterPaymentLink("paid", S), "paid");
+assert.equal(statusAfterPaymentLink("pending_payment", S), "pending_payment");
+assert.equal(statusAfterPaymentLink("done", S), "done");
+assert.equal(statusAfterPaymentLink("new", S.filter((x) => x.key !== "pending_payment")), "new", "a list without the status keeps the card's");
+assert.equal(followUpAfterPaymentLink(null, "2026-11-19", "2026-11-12"), "2026-11-19", "no day: the link's last day");
+assert.equal(followUpAfterPaymentLink("2026-11-01", "2026-11-19", "2026-11-12"), "2026-11-19", "a day already past: the link's last day");
+assert.equal(followUpAfterPaymentLink("2026-11-15", "2026-11-19", "2026-11-12"), null, "a day of its own from today on stays");
+assert.equal(followUpAfterPaymentLink("2026-11-12", "2026-11-19", "2026-11-12"), null);
+// ...and a paid link brings it to TODAY until the rep confirms it
+const L = (kind: string, status: string) => ({ kind, status });
+assert.equal(paymentAnswerOf("pending_payment", [], [L("deposit", "open")]), null, "an open link: nothing to do yet");
+assert.equal(paymentAnswerOf("pending_payment", ["request"], [L("deposit", "paid")]), "link_paid");
+assert.equal(paymentAnswerOf("pending_payment", [], [L("other", "open"), L("deposit", "paid")]), "link_paid", "a newer open link never hides a paid one");
+assert.equal(paymentAnswerOf("pending_payment", [], [L("deposit", "paid"), L("other", "review")]), "link_review", "a charge to check comes first");
+assert.equal(paymentAnswerOf("pending_payment", ["paid"], [L("deposit", "paid")]), "paid", "the site payment's own answer wins");
+assert.equal(paymentAnswerOf("deposit_paid", [], [L("deposit", "paid")]), null, "the deposit link that made it Deposit paid");
+assert.equal(paymentAnswerOf("deposit_paid", [], [L("deposit", "paid"), L("balance", "paid")]), "link_paid", "the balance came in");
+assert.equal(paymentAnswerOf("paid", [], [L("balance", "paid")]), null, "confirmed: off TODAY");
+assert.equal(todayReason(facts({ status: "pending_payment", paymentAnswer: "link_paid" }), S, TODAY), "payment");
 assert.equal(todayReason(facts({ status: "no_answer", followUpDate: "2026-10-10" }), S, TODAY), "late");
 assert.equal(todayReason(facts({ status: "offer_sent", followUpDate: TODAY }), S, TODAY), "today");
 assert.equal(todayReason(facts({ status: "offer_sent", followUpDate: "2026-10-15" }), S, TODAY), null, "a day ahead is not today's");

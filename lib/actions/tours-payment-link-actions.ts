@@ -20,6 +20,10 @@ import { orderBalance } from "@/lib/tours/payments";
 import { readPaymentLog, staffNames } from "@/lib/tours/payment-log";
 import { LINK_COLUMNS, linkViewOf, linksTableMissing, readPaymentLinks, type LinkRecord } from "@/lib/tours/payment-link-log";
 import { LINK_DAYS_DEFAULT, checkLinkInput, openLinksTotal, type LinkInput, type PaymentLinkView } from "@/lib/tours/payment-links";
+import { supabaseTyped } from "@/lib/supabase-server";
+import { readCaseStatuses } from "@/lib/tours/case-seats";
+import { followUpAfterPaymentLink, isClosedStatus, statusAfterPaymentLink } from "@/lib/tours/cases";
+import { todayIso } from "@/lib/tours/deadlines";
 
 const SCOPE = "tours-payment-link-actions";
 const NOT_READY = "Payment links are available after the system update - try again in a few minutes.";
@@ -54,6 +58,56 @@ async function linkRecord(company: Company, id: string): Promise<LinkRecord> {
   if (error) throw new Error(`payment_links: ${error.message}`);
   if (!data) throw new UserError("The link was not found.");
   return data as LinkRecord;
+}
+
+/**
+ * The order's card once a link is made (Nir & Yaniv 12.11: "לאחר שליחת לינק למקדמה לא הפך לממתין לתשלום"): "Waiting
+ * for payment" (statusAfterPaymentLink - never back from a deposit or a payment), and while it waits, a follow-up day
+ * (followUpAfterPaymentLink: its own from today on, else the link's last day). The link is made whatever happens here:
+ * a card that could not be moved is a warning, never a lost link.
+ */
+async function cardAfterLink(company: Company, leadId: string, expiresAt: string, ref: string): Promise<string | undefined> {
+  try {
+    const { data: lead, error } = await supabaseTyped
+      .from("leads")
+      .select("id, case_no, status, follow_up_date, close_reason")
+      .eq("company_id", company.id)
+      .eq("id", leadId)
+      .is("is_deleted", null)
+      .maybeSingle();
+    if (error) throw new Error(`leads: ${error.message}`);
+    if (!lead) return undefined;
+    const statuses = await readCaseStatuses(company);
+    const status = statusAfterPaymentLink(lead.status, statuses);
+    if (status !== "pending_payment") return undefined;
+    const today = todayIso();
+    const day = followUpAfterPaymentLink(lead.follow_up_date, todayIso(new Date(expiresAt)), today);
+    const patch: { status?: string; follow_up_date?: string; follow_up_set_at?: string; close_reason?: null; updated_at: string } = { updated_at: new Date().toISOString() };
+    if (status !== lead.status) patch.status = status;
+    // a lead closed as not relevant that gets a link is sold to again: its reason no longer holds
+    if (status !== lead.status && isClosedStatus(lead.status, statuses) && lead.close_reason) patch.close_reason = null;
+    if (day) {
+      patch.follow_up_date = day;
+      patch.follow_up_set_at = patch.updated_at;
+    }
+    if (!patch.status && !patch.follow_up_date) return undefined;
+    const { error: updateError } = await supabaseTyped.from("leads").update(patch).eq("company_id", company.id).eq("id", lead.id);
+    if (updateError) throw new Error(`leads: ${updateError.message}`);
+    await logAudit({
+      action: "update",
+      entityType: "tours_case",
+      entityId: lead.id,
+      changes: {
+        ...(patch.status ? { status: { from: lead.status, to: patch.status } } : {}),
+        ...(patch.follow_up_date ? { follow_up_date: { from: lead.follow_up_date, to: patch.follow_up_date } } : {}),
+      },
+      metadata: { ...companyAudit(company), case_no: lead.case_no, why: "payment_link", ref },
+    });
+    return undefined;
+  } catch (e) {
+    console.error(`${SCOPE}: card of ${ref} not moved to Waiting for payment:`, e instanceof Error ? e.message : e);
+    return "The link is ready, but its card was not moved to Waiting for payment - set it by hand.";
+  }
 }
 
 /** The order's links, newest first (the card loads them with the order; this re-reads after a change). */
@@ -110,8 +164,9 @@ export async function createPaymentLink(bookingId: string, input: LinkInput): Pr
       changes: { kind: { from: null, to: input.kind }, amount: { from: null, to: input.amount }, payments: { from: null, to: record.payments } },
       metadata: { ...companyAudit(company), ref: booking.ref, booking_id: booking.id, lead_id: booking.lead_id, days },
     });
+    const warning = booking.lead_id ? await cardAfterLink(company, booking.lead_id, record.expires_at, booking.ref) : undefined;
     revalidatePath("/tours/reservations");
-    return actionOk({ link: linkViewOf(record, company.siteUrl, names), links: await linksOf(company, booking.id) });
+    return actionOk({ link: linkViewOf(record, company.siteUrl, names), links: await linksOf(company, booking.id) }, warning);
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to make the payment link");
   }
