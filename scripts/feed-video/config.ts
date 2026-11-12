@@ -9,7 +9,9 @@
 // logos behind them) is not one. `cutoutInC` = whether the cut-out is sharp enough to rise
 // full height in C (it is drawn ~1000 px tall there).
 
-export type VideoStyle = "A" | "B" | "C";
+import { stylesFor, type VideoStyle } from "@/lib/feed-video/rules";
+
+export type { VideoStyle };
 
 export type VideoArtist = {
   id: number; // artists.id
@@ -22,7 +24,7 @@ export type VideoArtist = {
 
 const S = "https://fandqafngybfdyslofmr.supabase.co/storage/v1/object/public";
 
-export const VIDEO_ARTISTS: VideoArtist[] = [
+const ARTISTS: Omit<VideoArtist, "styles">[] = [
   {
     id: 44,
     feedLabel: "oasis",
@@ -32,7 +34,6 @@ export const VIDEO_ARTISTS: VideoArtist[] = [
       `${S}/card_images/oasis%201.jpeg`,
       `${S}/templates/oasis.jpg`,
     ],
-    styles: ["A", "B", "C"],
     cutoutInC: true,
   },
   {
@@ -40,7 +41,6 @@ export const VIDEO_ARTISTS: VideoArtist[] = [
     feedLabel: "celine-dion",
     cutout: `${S}/templates/celine-dion-art-tight.png`, // 317x467 - fine in A, too small for C
     photos: [`${S}/templates/migrated/2ngg9lNiKMyovNmeakhn2T.jpeg`], // on stage, 1200x1600
-    styles: ["A", "C"],
     cutoutInC: false,
   },
   {
@@ -48,7 +48,6 @@ export const VIDEO_ARTISTS: VideoArtist[] = [
     feedLabel: "olivia-rodrigo",
     cutout: `${S}/templates/olivia-rodrigo-art-tight.png`,
     photos: [`${S}/templates/migrated/3vyS5whE0AZaCnKnoShIzs.jpeg`], // on stage, 650x717
-    styles: ["A", "C"],
     cutoutInC: true,
   },
   {
@@ -56,7 +55,8 @@ export const VIDEO_ARTISTS: VideoArtist[] = [
     feedLabel: "u2",
     cutout: `${S}/templates/U2-cutout-1794134026532.png`,
     photos: [], // the only photo is a red-carpet one
-    styles: ["A"],
     cutoutInC: false,
   },
 ];
+
+export const VIDEO_ARTISTS: VideoArtist[] = ARTISTS.map((a) => ({ ...a, styles: stylesFor(a) }));

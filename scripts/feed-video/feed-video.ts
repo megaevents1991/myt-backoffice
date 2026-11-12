@@ -30,18 +30,21 @@ import React, { createElement } from "react";
 import { chromium, type Browser } from "playwright-core";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { deriveCreativeDefaults, type CreativeLookupCaches } from "@/lib/creative/auto";
-import { buildPriceText, cityOf, creativeTagline, Wordmark } from "@/components/creative/MatchTemplate";
+import { cityOf, Wordmark } from "@/components/creative/MatchTemplate";
 import { anthropicKey, answerWithTool } from "@/lib/agents/switch";
-import { VIDEO_ARTISTS, type VideoArtist, type VideoStyle } from "./config";
-import { videoHtml, hookBeats, type VideoPage } from "./template";
+import { VIDEO_ARTISTS, type VideoArtist } from "./config";
+import { videoHtml, hookBeats } from "@/lib/feed-video/template";
+import {
+  holdProblems, lineProblem, LINES_SYSTEM, printedFor, drawStyle, videoFileName, videoHash,
+  VIDEO_BUCKET, VIDEO_DIR, type PrintedVideo, type VideoStyle,
+} from "@/lib/feed-video/rules";
 
-const TEMPLATE_VERSION = 2; // bump when a template changes - every video renders again
 const ROOT = path.resolve(".superpowers/feed-video");
 const OUT = path.join(ROOT, "out");
 const STATE_FILE = path.join(ROOT, "state.json");
 const LIVE_FEED = "https://www.mega-events.co.il/feeds/meta-activities.csv";
-const STORAGE_BUCKET = "public_resources";
-const STORAGE_DIR = "creatives/video";
+const STORAGE_BUCKET = VIDEO_BUCKET;
+const STORAGE_DIR = VIDEO_DIR;
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const FPS = 30;
 const SECONDS = 10;
@@ -120,17 +123,11 @@ type PlanItem = {
   artist: VideoArtist;
   artistName: string;
   style: VideoStyle;
-  page: Omit<VideoPage, "hook" | "logoSvg" | "fontDataUrl">;
+  page: PrintedVideo;
   sitePrice: number | null;
   feedPrice: number;
   problems: string[];
 };
-
-/** The style an event draws - once, from its id, among the styles its artist can carry. */
-export function drawStyle(eventId: number, styles: VideoStyle[]): VideoStyle {
-  const h = createHash("sha1").update(`feed-video-style:${eventId}`).digest();
-  return styles[h.readUInt32BE(0) % styles.length];
-}
 
 async function plan(): Promise<PlanItem[]> {
   const feed = await liveFeedRows();
@@ -148,20 +145,13 @@ async function plan(): Promise<PlanItem[]> {
     if (!artist) continue;
     if (ONLY.length && !ONLY.includes(row.id)) continue;
     const d = await deriveCreativeDefaults(row.id, caches);
-    const problems: string[] = [];
     const expected = artistName.get(artist.id) ?? "";
-    if (d.kind !== "artist" || (d.artistName ?? "").trim() !== expected) {
-      problems.push(`artist is "${d.artistName}" - expected "${expected}"`);
-    }
-    if (d.price === null) problems.push("no site price");
-    else if (Math.abs(d.price - row.price) >= 1) {
-      problems.push(`site price $${d.price} != live feed $${row.price}`);
-    }
-    // The city alone, as the image ad prints it (cityOf). A place name that reads as a travel
-    // note ("נבוורת טיסה ללונדון . בריטניה" - the location row's own name) is held for a person.
+    // The city alone, as the image ad prints it (cityOf); holdProblems refuses a travel-note place.
     const place = cityOf(d.locationText);
-    if (!place) problems.push("no place");
-    else if (/טיסה|\s\.\s/.test(place)) problems.push(`place reads "${place}" - fix the location's name first`);
+    const problems = holdProblems({
+      expectedName: expected, eventArtistName: d.artistName, kind: d.kind,
+      sitePrice: d.price, feedPrice: row.price, place,
+    });
     const style = drawStyle(row.id, artist.styles);
     items.push({
       id: row.id,
@@ -171,51 +161,16 @@ async function plan(): Promise<PlanItem[]> {
       sitePrice: d.price,
       feedPrice: row.price,
       problems,
-      page: {
-        style,
-        name: expected,
-        place,
-        date: d.dateText,
-        priceText: PRICE_ON && d.price !== null ? buildPriceText(d.ticketOnly ? "ticket" : "package", d.price, "$") : null,
-        tagline: creativeTagline(d.ticketOnly),
-        cta: d.ticketOnly ? "כרטיס בלבד" : "טיסה + מלון + כרטיס",
-        cutout: artist.cutout,
-        photos: artist.photos,
-        cutoutInC: artist.cutoutInC,
-      },
+      page: printedFor(d, { name: expected, ...artist }, style, PRICE_ON),
     });
   }
   return items;
 }
 
 /** What a video prints and shows; the file name carries it, so new data = a new file. */
-function videoHash(item: PlanItem, hook: string): string {
-  return createHash("sha1")
-    .update(JSON.stringify({ v: TEMPLATE_VERSION, hook, ...item.page }))
-    .digest("hex")
-    .slice(0, 10);
-}
-const videoFile = (item: PlanItem, hook: string) =>
-  `event-${item.id}-${item.style}-${videoHash(item, hook)}.mp4`;
+const videoFile = (item: PlanItem, hook: string) => videoFileName(item.id, item.style, videoHash(item.page, hook));
 
 // ---------- lines ----------
-const LINE_MAX_CHARS = 34;
-/** Why a line cannot go on a video, or null. */
-export function lineProblem(line: string, others: string[]): string | null {
-  const t = line.trim();
-  const words = t.split(/\s+/).filter(Boolean);
-  if (!/[֐-׿]/.test(t)) return "no Hebrew";
-  if (t.length > LINE_MAX_CHARS) return `longer than ${LINE_MAX_CHARS}`;
-  if (words.length < 3 || words.length > 7) return "needs 3-7 words";
-  if (/[0-9$₪€£%]/.test(t)) return "a number or a price";
-  // A geresh is part of a city's name (מנצ'סטר) - only real quotation marks are refused.
-  if (/["״«»“”]/.test(t)) return "quotes";
-  if (/בירה|יין|אלכוהול|שיכור|וודקה|קוקטייל/.test(t)) return "alcohol";
-  if ((t.match(/!/g) ?? []).length > 1) return "more than one !";
-  if (others.includes(t)) return "same as another show";
-  return null;
-}
-
 const LINES_TOOL = {
   name: "hooks",
   description: "One opening line per show.",
@@ -235,20 +190,6 @@ const LINES_TOOL = {
   },
 };
 
-const LINES_SYSTEM = `You write the opening line of a 10-second video ad for a travel company that sells
-packages (flight + hotel + concert ticket) to see an artist live abroad. The audience is Israeli; write
-in natural, everyday Hebrew, addressed to the plural "you" (אתם) or with no addressee at all.
-The line is the hook of the first 2.5 seconds: an emotion or a picture of the night itself.
-Rules:
-- 3 to 7 words, at most ${LINE_MAX_CHARS} characters, one sentence, no emoji, no quotation marks.
-- No numbers, no prices, no dates, no "last tickets", "selling out" or any other urgency or scarcity.
-- The show is months away: no "tonight" or "today" that reads as if it is happening now (הלילה / היום).
-- No alcohol, no drinking.
-- No facts about the artist or the tour (no "reunion", "farewell", "first time", "only show"), no song
-  titles and no lyrics - only what is true of any great night of live music.
-- The artist's name, the city and the date appear right after the line, so the line need not repeat
-  them; you may name the city when it makes the line better.
-- Every show gets its own line - no two lines the same, and vary the openings.`;
 
 async function writeLines(items: PlanItem[]) {
   const key = anthropicKey();

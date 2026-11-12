@@ -6,7 +6,7 @@
 // `data-fit` boxes shrink their font until the text fits; the capture fails the video when one
 // still overflows at its minimum, and when a picture does not load - never a video with a hole.
 
-import type { VideoStyle } from "./config";
+import type { VideoStyle } from "./rules";
 
 export type VideoPage = {
   style: VideoStyle;
