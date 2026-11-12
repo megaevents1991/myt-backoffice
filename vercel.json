@@ -189,6 +189,10 @@
       "memory": 1024,
       "maxDuration": 60
     },
+    "app/api/cron/feedVideoSpike/route.ts": {
+      "memory": 3009,
+      "maxDuration": 300
+    },
     "app/api/cron/nightlyCampaignCreatives/route.ts": {
       "memory": 1024,
       "maxDuration": 300

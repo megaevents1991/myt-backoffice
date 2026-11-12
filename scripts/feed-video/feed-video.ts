@@ -21,16 +21,13 @@
 // local file: .superpowers/feed-video/state.json.
 
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import { renderToStaticMarkup } from "react-dom/server";
-import React, { createElement } from "react";
-import { chromium, type Browser } from "playwright-core";
 import { supabase, supabaseTyped } from "@/lib/supabase-server";
 import { deriveCreativeDefaults, type CreativeLookupCaches } from "@/lib/creative/auto";
-import { cityOf, Wordmark } from "@/components/creative/MatchTemplate";
+import { cityOf } from "@/components/creative/MatchTemplate";
+import { launchVideoBrowser, renderVideo, videoFontDataUrl, videoLogoSvg } from "@/lib/services/feed-video-render";
 import { anthropicKey, answerWithTool } from "@/lib/agents/switch";
 import { VIDEO_ARTISTS, type VideoArtist } from "./config";
 import { videoHtml, hookBeats } from "@/lib/feed-video/template";
@@ -45,9 +42,6 @@ const STATE_FILE = path.join(ROOT, "state.json");
 const LIVE_FEED = "https://www.mega-events.co.il/feeds/meta-activities.csv";
 const STORAGE_BUCKET = VIDEO_BUCKET;
 const STORAGE_DIR = VIDEO_DIR;
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const FPS = 30;
-const SECONDS = 10;
 const MODEL = "claude-opus-5-5";
 
 // ---------- args ----------
@@ -246,100 +240,12 @@ async function writeLines(items: PlanItem[]) {
 }
 
 // ---------- render ----------
-function fontDataUrl(): string {
-  const buf = readFileSync(path.resolve("app/fonts/rubik.woff2"));
-  return `data:font/woff2;base64,${buf.toString("base64")}`;
-}
-function logoSvg(): string {
-  // MatchTemplate is compiled with the classic JSX transform under tsx - it needs React in scope.
-  (globalThis as { React?: typeof React }).React = React;
-  return renderToStaticMarkup(createElement(Wordmark, { width: 96 }));
-}
-
-/** Runs inside the page: fonts, every picture, every [data-fit] box; then pauses the clock. */
-const PAGE_CHECK = `(async () => {
-  const problems = [];
-  await document.fonts.ready;
-  if (!document.fonts.check("900 20px Rubik")) problems.push("Rubik did not load");
-  for (const img of Array.from(document.images)) {
-    try { await img.decode(); } catch (e) {}
-    if (!img.naturalWidth) problems.push("picture failed: " + img.src);
-  }
-  const bgs = Array.from(document.querySelectorAll("[style*='background-image']"))
-    .map(function (el) { const m = /url\\(['"]?(.*?)['"]?\\)/.exec(el.style.backgroundImage); return m && m[1]; })
-    .filter(Boolean);
-  for (const url of bgs) {
-    const ok = await new Promise(function (resolve) {
-      const im = new Image();
-      im.onload = function () { resolve(im.naturalWidth > 0); };
-      im.onerror = function () { resolve(false); };
-      im.src = url;
-    });
-    if (!ok) problems.push("picture failed: " + url);
-  }
-  function over(el) { return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1; }
-  for (const el of Array.from(document.querySelectorAll("[data-fit]"))) {
-    const min = Number(el.dataset.min || 10);
-    let size = parseFloat(getComputedStyle(el).fontSize);
-    while (over(el) && size > min) { size -= 0.5; el.style.fontSize = size + "px"; }
-    if (over(el)) problems.push("text does not fit: " + el.className + ' "' + (el.textContent || "").trim() + '"');
-  }
-  document.getAnimations().forEach(function (a) { a.pause(); });
-  return problems;
-})()`;
-
-/** Loads the page, checks every picture and every text box, then pauses the clock. */
-async function preparePage(browser: Browser, html: string) {
-  const page = await browser.newPage({ viewport: { width: 270, height: 338 }, deviceScaleFactor: 4 });
-  await page.setContent(html, { waitUntil: "networkidle", timeout: 60_000 });
-  // A string, not a function: tsx compiles named arrows with an `__name` helper the page lacks.
-  const report = (await page.evaluate(PAGE_CHECK)) as string[];
-  if (report.length) {
-    await page.close();
-    throw new Error(report.join("; "));
-  }
-  return page;
-}
-
-async function renderOne(browser: Browser, html: string, outFile: string) {
-  const page = await preparePage(browser, html);
-  const part = `${outFile}.part.mp4`;
-  const ff = spawn("ffmpeg", [
-    "-y", "-loglevel", "error",
-    "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "-",
-    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-    "-t", String(SECONDS),
-    "-vf", "crop=1080:1350:0:1",
-    "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-profile:v", "high",
-    "-c:a", "aac", "-b:a", "64k", "-shortest", "-movflags", "+faststart",
-    part,
-  ]);
-  let ffErr = "";
-  ff.stderr.on("data", (d) => (ffErr += d));
-  const done = new Promise<void>((resolve, reject) =>
-    ff.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg ${code}: ${ffErr}`)))),
-  );
-  try {
-    for (let f = 0; f < FPS * SECONDS; f++) {
-      const ms = (f * 1000) / FPS;
-      await page.evaluate(`document.getAnimations().forEach(function (a) { a.currentTime = ${ms}; })`);
-      const jpg = await page.screenshot({ type: "jpeg", quality: 92 });
-      if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once("drain", r));
-    }
-    ff.stdin.end();
-    await done;
-    renameSync(part, outFile);
-  } finally {
-    await page.close();
-  }
-}
-
 async function render(items: PlanItem[]) {
   const state = readState();
   mkdirSync(OUT, { recursive: true });
   const drafts = flag("drafts");
-  const font = fontDataUrl();
-  const logo = logoSvg();
+  const font = videoFontDataUrl();
+  const logo = await videoLogoSvg();
   const jobs = items.flatMap((it) => {
     const l = state.lines[it.id];
     if (!l) { console.log(`  ${it.id}: no line yet - run lines`); return []; }
@@ -350,7 +256,7 @@ async function render(items: PlanItem[]) {
     return [{ it, hook: l.line, file }];
   });
   console.log(`rendering ${jobs.length} video(s)`);
-  const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+  const browser = await launchVideoBrowser();
   const concurrency = Number(flagValue("concurrency") ?? 3);
   let next = 0;
   let failed = 0;
@@ -360,7 +266,9 @@ async function render(items: PlanItem[]) {
       const t0 = Date.now();
       try {
         if (it.style === "B") hookBeats(hook);
-        await renderOne(browser, videoHtml({ ...it.page, hook, logoSvg: logo, fontDataUrl: font }), file);
+        const { mp4 } = await renderVideo(videoHtml({ ...it.page, hook, logoSvg: logo, fontDataUrl: font }), { browser });
+        writeFileSync(`${file}.part.mp4`, mp4);
+        renameSync(`${file}.part.mp4`, file);
         console.log(`  ${it.id} ${it.style} ${((Date.now() - t0) / 1000).toFixed(0)}s ${path.basename(file)}`);
       } catch (e) {
         failed++;

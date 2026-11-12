@@ -6,6 +6,11 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // The feed-video renderer (lib/services/feed-video-render.ts) spawns ffmpeg-static's binary by a
+  // fixed path and reads Rubik from app/fonts - neither is an import, so tracing must be told.
+  outputFileTracingIncludes: {
+    "/api/cron/feedVideoSpike": ["./node_modules/ffmpeg-static/ffmpeg", "./app/fonts/rubik.woff2"],
+  },
   images: {
     unoptimized: true,
     domains: ["www.doctorticket.com", "doctorticket.com"],
