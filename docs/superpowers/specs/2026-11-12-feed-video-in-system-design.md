@@ -137,6 +137,16 @@ parallelism (fluid compute may put several requests on one instance). **Pass = 8
 (e.g. 60 s a video with 6 truly in parallel). A fail leaves the rest of the design standing and swaps only this
 piece (fewer frames, the extra 03:45 run, a GitHub Actions runner, or a scheduled job on a machine of ours).
 
+**Spike result (12.11, `/api/cron/feedVideoSpike`, fra1, 3009 MB = 2 vCPU Xeon 2.5 GHz): PASS.** Chromium from
+`@sparticuz/chromium` emulates its GPU with SwiftShader in one process; just capturing a frame cost ~0.48 s. With
+Chromium's own CPU compositor instead (`defaultVideoGpu()` = "cpu" on Vercel; its flags dropped, `--disable-gpu`)
+the capture is 0.11 s and **a full video takes A 45 s, B 56 s, C 127 s** (was 179 / 198 / 403), the picture
+identical to the Mac's frame for frame. ffmpeg's encode is 1-3 s; Chromium starts in ~3 s. Six calls at once landed
+on six instances with no slowdown. Drawing at half size and enlarging (`scale=2`) halves C again but softens the
+text - not used. So the run renders in **calls of several videos each** (one browser per call, ~8 videos in 800 s at
+today's mix of styles), fanned out in parallel - 80 videos are ~10 calls. Rough cost (an estimate from Vercel's
+CPU pricing, not a bill): ~75 s of 2 vCPU a video, ~$0.5 per 80 videos.
+
 ### 6. Staff screens
 
 - **Artist editor** (Templates -> Artists): "וידאו בפיד" switch, a pick of photos for the video from the artist's

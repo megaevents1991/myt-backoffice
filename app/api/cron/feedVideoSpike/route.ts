@@ -14,11 +14,12 @@ import { VIDEO_ARTISTS } from "@/scripts/feed-video/config";
  * measured before it is built on. It writes only to `creatives/video-spike/` - never to the
  * feed's `creatives/video/`, never to `events` - and calls no AI.
  *   GET /api/cron/feedVideoSpike?only=<eventId>[&line=<opening line>][&frames=<1-300>][&from=<0-299>][&still=1]
- *       [&gpu=off][&scale=2|3|4]
+ *       [&gpu=on|off][&scale=2|3|4]
  *   GET /api/cron/feedVideoSpike?check=1   = the ffmpeg binary, a Chromium launch time, the instance's CPUs,
  *     memory and Chromium's launch args
  * `from` starts at that frame (style C's blur is in seconds 6.8-9.6), `still` = the capture floor (one
- * frame captured N times, no new paint). `gpu=off` = Chromium's CPU compositor instead of SwiftShader,
+ * frame captured N times, no new paint). `gpu=on` = SwiftShader's emulated GPU instead of the default CPU
+ * compositor (`gpu=off`, about 3x faster here),
  * `scale` below 4 = drawn smaller and enlarged by ffmpeg. The answer carries ms per 30 frames (`timings.splits`).
  * Called several at once it also shows how many instances answered (fluid compute may share one).
  */
@@ -56,7 +57,8 @@ export async function GET(request: NextRequest) {
   const fromParam = request.nextUrl.searchParams.get("from");
   const from = fromParam ? Number(fromParam) : undefined;
   const still = request.nextUrl.searchParams.get("still") === "1";
-  const gpu = request.nextUrl.searchParams.get("gpu") === "off" ? "off" : "swiftshader";
+  const gpuParam = request.nextUrl.searchParams.get("gpu");
+  const gpu = gpuParam === "on" ? "gpu" : gpuParam === "off" ? "cpu" : undefined;
   const scaleParam = Number(request.nextUrl.searchParams.get("scale") ?? 4);
   const scale = scaleParam === 2 || scaleParam === 3 ? scaleParam : 4;
   if ((frames !== undefined && !Number.isFinite(frames)) || (from !== undefined && !Number.isFinite(from))) {

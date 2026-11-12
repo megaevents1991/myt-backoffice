@@ -15,15 +15,19 @@ export const VIDEO_FPS = 30;
 export const VIDEO_SECONDS = 10;
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-/** The GPU flags @sparticuz/chromium sets (GL emulated by SwiftShader). `gpu: "off"` drops them for
- *  Chromium's own CPU compositor - a measuring switch of the spike until one path wins. */
+/** The GPU flags @sparticuz/chromium sets (GL emulated by SwiftShader). "cpu" drops them for Chromium's
+ *  own CPU compositor. Measured on Vercel 12.11 (2 vCPU, fra1): a frame's capture 480 -> 113 ms, style C's
+ *  blur seconds 1.85 s -> 0.42 s, full videos A 179 -> 45 s, B 198 -> 56 s, C 403 -> 127 s, same picture.
+ *  So Vercel draws on the CPU; a Mac keeps its real GPU (there "cpu" is ~2.5x slower). */
 const SWIFTSHADER_FLAG = /^--(use-gl|use-angle|enable-unsafe-swiftshader|in-process-gpu|ignore-gpu-blocklist)\b/;
 
-export type VideoGpu = "swiftshader" | "off";
+export type VideoGpu = "gpu" | "cpu";
+
+export const defaultVideoGpu = (): VideoGpu => (process.env.VERCEL ? "cpu" : "gpu");
 
 export async function launchVideoBrowser(o: { gpu?: VideoGpu } = {}): Promise<Browser> {
   const { chromium: playwright } = await import("playwright-core");
-  const off = o.gpu === "off";
+  const off = (o.gpu ?? defaultVideoGpu()) === "cpu";
   if (process.env.VERCEL) {
     const { default: chromium } = await import("@sparticuz/chromium");
     const args = off ? [...chromium.args.filter((a) => !SWIFTSHADER_FLAG.test(a)), "--disable-gpu"] : chromium.args;
@@ -143,7 +147,8 @@ export async function ffmpegCheck(): Promise<{ path: string; exists: boolean; by
  * Pass a browser to reuse one across videos; otherwise one is launched and closed. `log` gets a line
  * per stage and every 30 frames. Measuring switches (the spike only): `from` starts at that frame,
  * `frames` renders N frames, `still` captures the first frame N times without moving the clock (the
- * capture floor: screenshot + JPEG + transfer, with no new paint), `gpu` the compositor,
+ * capture floor: screenshot + JPEG + transfer, with no new paint), `gpu` the compositor (default
+ * `defaultVideoGpu()`),
  * `scale` the pixel density (below 4 the frame is drawn smaller and enlarged by ffmpeg - a softer look).
  */
 export async function renderVideo(
@@ -160,7 +165,7 @@ export async function renderVideo(
   const from = Math.max(0, Math.min(all - 1, Math.floor(opts.from ?? 0)));
   const total = Math.max(1, Math.min(all - from, Math.floor(opts.frames ?? all - from)));
   const still = opts.still === true;
-  const gpu: VideoGpu = opts.gpu ?? "swiftshader";
+  const gpu: VideoGpu = opts.gpu ?? defaultVideoGpu();
   const scale = opts.scale ?? 4;
   const browser = opts.browser ?? (await launchVideoBrowser({ gpu }));
   const tLaunch = Date.now();
