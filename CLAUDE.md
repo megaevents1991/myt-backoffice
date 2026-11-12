@@ -1398,6 +1398,22 @@ the general banners). **Reasons follow the world** (`reasons.followWorld`, defau
 the site shows the Reasons part of that world's own page (switched on, with reasons) instead of the home page's (mega-family
 `tileReasons` + `TabSwitch`). Rules pure in `lib/tours/site-content.ts` (`scripts/tours-site-content-selftest.ts`).
 
+**Two people on the home page at once (12.11.2026).** The whole page is ONE document saved with its version, so a save over
+someone else's newer save is refused - on 12.11 Liz saved ten times in 18 minutes and Alon's save, opened before her last
+one, was refused and his changes had to be typed again. Now the editor (`components/tours/site/homepage-editor.tsx`) asks
+`getSiteDocVersion` every 30 s while its tab is shown and when the tab comes back, and says at once when someone else saved
+("Bring their changes in" / "Load the newest" - `getSiteDoc`); a refused save carries the newest document
+(`SaveSiteDocResult.latest`, additive - the header & footer editor still reads only `error`) and the editor merges by itself.
+The merge is a three-way merge (`lib/doc-merge.ts` generic, `lib/tours/home-merge.ts` the editor's words; selftest
+`scripts/tours-home-merge-selftest.ts`, `HOME_FIXTURE=<stored home JSON>` runs it over a real document): base = the copy the
+editor holds (version + saved copy + form move together, `useContentForm` `rebase`), mine = the form as it is when the answer
+lands, theirs = the newest save. Sections are matched by `id`, tiles by `key`, rows by `id` (only when unique in all three
+copies; every other list is one value); a part one side changed takes that side; both changed the same value = MINE, listed
+with what they had; an item one side removed and the other changed is KEPT and listed. The merged page is never saved by
+itself: it waits on screen with a notice, and the person looks and presses Save. `useContentForm` also blocks a second Save
+click before the first one re-rendered (it was refused as "someone else saved" - by the first click). Not done: the header &
+footer editor (`chrome-editor.tsx`) still refuses without merging.
+
 ### Mega Family site - the flights of a planned block (2026-11-06)
 
 `<schema>.departure_flights` lists every block of a published date that is not declined, cancelled or deleted - a draft (null status)

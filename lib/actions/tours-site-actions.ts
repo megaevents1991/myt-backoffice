@@ -51,6 +51,19 @@ export interface SiteDocEditorData<K extends SiteDocKey = SiteDocKey> {
 const SAVED_BY_OTHER =
   "Someone else saved this screen while you were editing. Copy what you changed, reload the page, and apply it again.";
 
+/**
+ * A save refused because someone else saved first carries the document as it is saved now
+ * (`latest`), so an editor can merge its copy onto it without a second call (the home page does,
+ * lib/tours/home-merge.ts). Other editors read only `error`.
+ */
+export type SaveSiteDocResult = ActionResult<SiteDocEditorData> | { success: false; error: string; latest: SiteDocEditorData };
+
+/** Who saved a document last, and when - what an open editor compares with the version it holds. */
+export interface SiteDocVersion {
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
 async function docRow(company: Company, key: SiteDocKey) {
   const { data, error } = await toursDb()
     .from("site_content")
@@ -121,6 +134,46 @@ function withChromeDefaults<K extends SiteDocKey>(doc: SiteDocEditorData<K>, def
     return { ...doc, form: { ...form, hot: defaults.hot, hotTitle: form.hotTitle || defaults.hotTitle } as SiteDocs[K] };
   }
   return doc;
+}
+
+/** The document as its editor shows it: the header and footer keep showing what the site shows for a list that is still empty. */
+async function shownDoc(company: Company, key: SiteDocKey): Promise<SiteDocEditorData> {
+  const doc = await editorData(company, key);
+  return key === "header" || key === "footer" ? withChromeDefaults(doc, await chromeDefaults(company)) : doc;
+}
+
+const isDocKey = (key: string): key is SiteDocKey => SITE_DOC_KEYS.includes(key as SiteDocKey);
+
+/**
+ * The version of one document, read only for its stamp: an open editor asks every half minute and
+ * when its tab comes back, and says so as soon as someone else saved (Liz + Alon, 12.11).
+ */
+export async function getSiteDocVersion(key: string): Promise<ActionResult<SiteDocVersion>> {
+  try {
+    const { company } = await requireCompany("tours");
+    if (!isDocKey(key)) return plainFail("Unknown document");
+    const { data, error } = await toursDb()
+      .from("site_content")
+      .select("updated_at, updated_by")
+      .eq("company_id", company.id)
+      .eq("key", key)
+      .maybeSingle();
+    if (error) throw error;
+    return { success: true, data: { updatedAt: data?.updated_at ?? null, updatedBy: data?.updated_by ?? null } };
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to check the page");
+  }
+}
+
+/** One document as it is saved now - what an editor merges its copy onto. */
+export async function getSiteDoc(key: string): Promise<ActionResult<SiteDocEditorData>> {
+  try {
+    const { company } = await requireCompany("tours");
+    if (!isDocKey(key)) return plainFail("Unknown document");
+    return { success: true, data: await shownDoc(company, key) };
+  } catch (e) {
+    return actionFail(e, SCOPE, "Failed to load the page");
+  }
 }
 
 /** The home page editor: the document and what its pickers choose from. */
@@ -241,18 +294,20 @@ export async function saveSiteDoc(
   key: string,
   form: unknown,
   expectedUpdatedAt: string | null,
-): Promise<ActionResult<SiteDocEditorData>> {
+): Promise<SaveSiteDocResult> {
   try {
     const { company, session } = await requireCompany("tours");
-    if (!SITE_DOC_KEYS.includes(key as SiteDocKey)) return plainFail("Unknown document");
-    const docKey = key as SiteDocKey;
+    if (!isDocKey(key)) return plainFail("Unknown document");
+    const docKey = key;
     const parsed = SITE_DOC_SCHEMAS[docKey].safeParse(form);
     if (!parsed.success) return invalidInput(parsed.error);
     const data = parsed.data as unknown as Json;
+    // refused: the document as it is saved now goes back with the refusal
+    const savedByOther = async (): Promise<SaveSiteDocResult> => ({ success: false, error: SAVED_BY_OTHER, latest: await shownDoc(company, docKey) });
 
     const db = toursDb();
     const before = await docRow(company, docKey);
-    if ((before?.updated_at ?? null) !== expectedUpdatedAt) return plainFail(SAVED_BY_OTHER);
+    if ((before?.updated_at ?? null) !== expectedUpdatedAt) return savedByOther();
 
     const stamp = { data, updated_at: new Date().toISOString(), updated_by: session.email };
     if (before) {
@@ -266,11 +321,11 @@ export async function saveSiteDoc(
         .select("key")
         .maybeSingle();
       if (error) throw error;
-      if (!written) return plainFail(SAVED_BY_OTHER);
+      if (!written) return savedByOther();
     } else {
       const { error } = await db.from("site_content").insert({ company_id: company.id, key: docKey, ...stamp });
       if (error) {
-        if (error.code === "23505") return plainFail(SAVED_BY_OTHER);
+        if (error.code === "23505") return savedByOther();
         throw error;
       }
     }
@@ -283,10 +338,7 @@ export async function saveSiteDoc(
     });
     revalidatePath("/tours/homepage");
     revalidatePath("/tours/site");
-    const fresh = await editorData(company, docKey);
-    // the header and footer editors keep showing what the site shows for a list that is still empty
-    const shown = docKey === "header" || docKey === "footer" ? withChromeDefaults(fresh, await chromeDefaults(company)) : fresh;
-    return { success: true, data: shown };
+    return { success: true, data: await shownDoc(company, docKey) };
   } catch (e) {
     return actionFail(e, SCOPE, "Failed to save");
   }
