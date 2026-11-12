@@ -15,13 +15,25 @@ export const VIDEO_FPS = 30;
 export const VIDEO_SECONDS = 10;
 const MAC_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-export async function launchVideoBrowser(): Promise<Browser> {
+/** The GPU flags @sparticuz/chromium sets (GL emulated by SwiftShader). `gpu: "off"` drops them for
+ *  Chromium's own CPU compositor - a measuring switch of the spike until one path wins. */
+const SWIFTSHADER_FLAG = /^--(use-gl|use-angle|enable-unsafe-swiftshader|in-process-gpu|ignore-gpu-blocklist)\b/;
+
+export type VideoGpu = "swiftshader" | "off";
+
+export async function launchVideoBrowser(o: { gpu?: VideoGpu } = {}): Promise<Browser> {
   const { chromium: playwright } = await import("playwright-core");
+  const off = o.gpu === "off";
   if (process.env.VERCEL) {
     const { default: chromium } = await import("@sparticuz/chromium");
-    return playwright.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: true });
+    const args = off ? [...chromium.args.filter((a) => !SWIFTSHADER_FLAG.test(a)), "--disable-gpu"] : chromium.args;
+    return playwright.launch({ args, executablePath: await chromium.executablePath(), headless: true });
   }
-  return playwright.launch({ executablePath: process.env.LOCAL_CHROME_PATH || MAC_CHROME, headless: true });
+  return playwright.launch({
+    executablePath: process.env.LOCAL_CHROME_PATH || MAC_CHROME,
+    headless: true,
+    args: off ? ["--disable-gpu"] : [],
+  });
 }
 
 /** What a render instance has to work with (the spike's check mode). */
@@ -89,9 +101,10 @@ const PAGE_CHECK = `(async () => {
   return problems;
 })()`;
 
-/** Loads the page at 270x338 CSS px x4, checks every picture and text box, pauses the clock. */
-async function preparePage(browser: Browser, html: string): Promise<Page> {
-  const page = await browser.newPage({ viewport: { width: 270, height: 338 }, deviceScaleFactor: 4 });
+/** Loads the page at 270x338 CSS px x`scale` (4 = 1080 wide), checks every picture and text box,
+ *  pauses the clock. */
+async function preparePage(browser: Browser, html: string, scale: number): Promise<Page> {
+  const page = await browser.newPage({ viewport: { width: 270, height: 338 }, deviceScaleFactor: scale });
   await page.setContent(html, { waitUntil: "networkidle", timeout: 60_000 });
   const report = (await page.evaluate(PAGE_CHECK)) as string[];
   if (report.length) {
@@ -105,6 +118,7 @@ async function preparePage(browser: Browser, html: string): Promise<Page> {
 export type RenderTimings = {
   launchMs: number; prepareMs: number; framesMs: number; encodeMs: number;
   frames: number; from: number; still: boolean; splits: number[];
+  gpu: VideoGpu; scale: number;
 };
 
 /** What the server has to render with: the ffmpeg binary (present, size, `-version`). */
@@ -129,11 +143,16 @@ export async function ffmpegCheck(): Promise<{ path: string; exists: boolean; by
  * Pass a browser to reuse one across videos; otherwise one is launched and closed. `log` gets a line
  * per stage and every 30 frames. Measuring switches (the spike only): `from` starts at that frame,
  * `frames` renders N frames, `still` captures the first frame N times without moving the clock (the
- * capture floor: screenshot + JPEG + transfer, with no new paint).
+ * capture floor: screenshot + JPEG + transfer, with no new paint), `gpu` the compositor,
+ * `scale` the pixel density (below 4 the frame is drawn smaller and enlarged by ffmpeg - a softer look).
  */
 export async function renderVideo(
   html: string,
-  opts: { browser?: Browser; frames?: number; from?: number; still?: boolean; log?: (line: string) => void } = {},
+  opts: {
+    browser?: Browser; frames?: number; from?: number; still?: boolean;
+    gpu?: VideoGpu; scale?: 2 | 3 | 4;
+    log?: (line: string) => void;
+  } = {},
 ): Promise<{ mp4: Buffer; ms: number; timings: RenderTimings }> {
   const t0 = Date.now();
   const log = opts.log ?? (() => {});
@@ -141,13 +160,15 @@ export async function renderVideo(
   const from = Math.max(0, Math.min(all - 1, Math.floor(opts.from ?? 0)));
   const total = Math.max(1, Math.min(all - from, Math.floor(opts.frames ?? all - from)));
   const still = opts.still === true;
-  const browser = opts.browser ?? (await launchVideoBrowser());
+  const gpu: VideoGpu = opts.gpu ?? "swiftshader";
+  const scale = opts.scale ?? 4;
+  const browser = opts.browser ?? (await launchVideoBrowser({ gpu }));
   const tLaunch = Date.now();
   log(`browser ready ${tLaunch - t0}ms`);
   const dir = await mkdtemp(path.join(tmpdir(), "feed-video-"));
   const out = path.join(dir, "video.mp4");
   try {
-    const page = await preparePage(browser, html);
+    const page = await preparePage(browser, html, scale);
     const tPrepared = Date.now();
     log(`page ready ${tPrepared - tLaunch}ms`);
     const ff = spawn(ffmpegBinary(), [
@@ -155,7 +176,7 @@ export async function renderVideo(
       "-f", "image2pipe", "-framerate", String(VIDEO_FPS), "-c:v", "mjpeg", "-i", "-",
       "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
       "-t", String(total / VIDEO_FPS),
-      "-vf", "crop=1080:1350:0:1",
+      "-vf", scale === 4 ? "crop=1080:1350:0:1" : "scale=1080:1352:flags=lanczos,crop=1080:1350:0:1",
       "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p", "-profile:v", "high",
       "-c:a", "aac", "-b:a", "64k", "-shortest", "-movflags", "+faststart",
       out,
@@ -215,7 +236,7 @@ export async function renderVideo(
       ms: tEnd - t0,
       timings: {
         launchMs: tLaunch - t0, prepareMs: tPrepared - tLaunch, framesMs: tFrames - tPrepared, encodeMs: tEnd - tFrames,
-        frames: total, from, still, splits,
+        frames: total, from, still, splits, gpu, scale,
       },
     };
   } finally {
