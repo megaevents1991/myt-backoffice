@@ -20,6 +20,7 @@ import {
   STORAGE_PATH_XML,
   type PublishResult,
 } from "@/lib/feed/publish-meta-feed";
+import { runFeedPriceGuard } from "@/lib/services/feed-price-guard";
 
 export type MetaFeedSnapshot = {
   path: string;
@@ -111,7 +112,10 @@ export async function pushEventToFeedAction(
       };
     }
 
-    const creative = await generateCampaignForEvent(event);
+    // The abnormal-price guard for this event first: a held one gets no creative, forced or not.
+    // Read again after the guard: a hold or release just rewrote the creative columns.
+    const feedHolds = await guardOne(eventId);
+    const creative = await generateCampaignForEvent((await loadFeedEvent(eventId)) ?? event, { feedHolds });
     const result = await publishMetaFeeds();
     const inFeed = result.activityIds.includes(eventId);
     const blockers = feedBlockers(event, creative);
@@ -189,7 +193,9 @@ export async function renderEventCreativeAction(
       };
     }
 
-    const creative = await generateCampaignForEvent(event, undefined, { force });
+    // Even a forced redraw stops at the abnormal-price guard (lib/feed/price-guard.ts).
+    const feedHolds = await guardOne(eventId);
+    const creative = await generateCampaignForEvent((await loadFeedEvent(eventId)) ?? event, { feedHolds }, { force });
     await logAudit({
       action: "update",
       entityType: "meta_feed_creative",
@@ -270,6 +276,20 @@ export async function listFeedPickerEvents(): Promise<FeedPickerEvent[]> {
 
 type FeedEventRow = CampaignEventRow &
   Pick<Event, "tickets_and_rates" | "tags" | "is_deleted" | "is_test">;
+
+/**
+ * The feed's abnormal-price guard for ONE event (lib/services/feed-price-guard.ts) - holds or releases
+ * it and answers the holds for generateCampaignForEvent. Throws when the check failed: the caller
+ * answers an error rather than draw a price nobody checked.
+ */
+async function guardOne(eventId: number): Promise<Map<number, string>> {
+  try {
+    return (await runFeedPriceGuard({ ids: [eventId] })).holds;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`בדיקת המחיר החריג נכשלה: ${message}`);
+  }
+}
 
 /** The event as the creative pipeline and the feed blockers read it. */
 async function loadFeedEvent(eventId: number): Promise<FeedEventRow | null> {

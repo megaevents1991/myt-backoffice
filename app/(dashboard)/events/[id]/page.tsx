@@ -9,6 +9,7 @@ import { PushToFeedButton } from "@/components/push-to-feed-button";
 import Link from "next/link";
 import { auditHistoryHref } from "@/lib/audit-display";
 import { EventAvailabilityBanner } from "@/components/event-availability-banner";
+import { FeedPriceHoldNotice } from "@/components/feed-price-hold-notice";
 import { ArrowLeft, Plus, Trash2, AlertTriangle, Loader2, Crown, Plane, ExternalLink, BedDouble, ChevronDown } from "lucide-react";
 import {
   Collapsible,
@@ -1821,6 +1822,14 @@ export default function EventPage({
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {!isNewEvent && !event.is_deleted && (
+        <FeedPriceHoldNotice
+          eventId={event.id}
+          guard={(event as Event & { feed_price_guard?: unknown }).feed_price_guard}
+          unsaved={isDirty}
+        />
       )}
 
       {!isNewEvent && !event.is_deleted && (

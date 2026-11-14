@@ -2280,6 +2280,7 @@ export type Database = {
           campaign_image_url: string | null
           campaign_input_hash: string | null
           campaign_skip_reason: string | null
+          feed_price_guard: Json | null
           campaign_video_url: string | null
           card_image_url: string | null
           comp_pricing: Json | null
@@ -2345,6 +2346,7 @@ export type Database = {
           campaign_image_url?: string | null
           campaign_input_hash?: string | null
           campaign_skip_reason?: string | null
+          feed_price_guard?: Json | null
           campaign_video_url?: string | null
           card_image_url?: string | null
           comp_pricing?: Json | null
@@ -2410,6 +2412,7 @@ export type Database = {
           campaign_image_url?: string | null
           campaign_input_hash?: string | null
           campaign_skip_reason?: string | null
+          feed_price_guard?: Json | null
           campaign_video_url?: string | null
           card_image_url?: string | null
           comp_pricing?: Json | null

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase-server";
+import { runFeedPriceGuard } from "@/lib/services/feed-price-guard";
 
 /**
  * Publishes the Meta/Google feed snapshots to Supabase Storage. Shared by the
@@ -46,6 +47,8 @@ export type PublishResult = {
   activityRows: number;
   /** Our event ids in the activities feed - what Meta will list. */
   activityIds: number[];
+  /** The abnormal-price guard's pass before the build (lib/services/feed-price-guard.ts). */
+  priceGuard: { ready: boolean; held: number[]; kept: number[]; released: number[]; alerted: number[]; ms: number };
 };
 
 /** The `id` column (first field) of every data row of the activities CSV. Pure. */
@@ -109,6 +112,16 @@ async function publish(
 
 /** Throws with a human-readable message when any step fails. */
 export async function publishMetaFeeds(): Promise<PublishResult> {
+  // The abnormal-price guard right before the build: main builds the files from the database as it is
+  // NOW, so an event held here (its creative cleared) is out of all three. A failed pass publishes
+  // NOTHING - the previous files stay - rather than ship a price nobody checked (918, 13.11: $19,907).
+  let guard: Awaited<ReturnType<typeof runFeedPriceGuard>>;
+  try {
+    guard = await runFeedPriceGuard();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`Abnormal-price check failed - feed not published, the previous files stay: ${message}`);
+  }
   const [xmlBody, csvBody, activitiesBody] = await Promise.all([
     fetchLiveSource(SOURCE_XML_URL, "<?xml"),
     fetchLiveSource(SOURCE_CSV_URL, "id,title"),
@@ -141,5 +154,13 @@ export async function publishMetaFeeds(): Promise<PublishResult> {
     activitiesUrl,
     activityRows,
     activityIds: activityIdsOf(activitiesBody.toString("utf-8")),
+    priceGuard: {
+      ready: guard.ready,
+      held: guard.held,
+      kept: guard.kept,
+      released: guard.released,
+      alerted: guard.alerted,
+      ms: guard.ms,
+    },
   };
 }

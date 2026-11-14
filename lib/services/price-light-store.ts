@@ -6,8 +6,9 @@ import {
   competitorOverrideHolds, competitorsFor, computeScopeLight, decidePriceDrop, kindOf, lightSettled, minAvailableTicketUsd,
   nightsUncertaintyUsd, ourFromUsd, ourNightRateUsd, ourNights, ourPackageUsd, ourTicketUsd,
   stampLightChange, totalMarkupUsd,
-  OVERRIDE_DRIFT_USD, PRICE_DROP_LOOKBACK_DAYS, type LatestMatch, type PricedEvent,
+  OVERRIDE_DRIFT_USD, pickDropReference, PRICE_DROP_LOOKBACK_DAYS, type DropRefRow, type LatestMatch, type PricedEvent,
 } from "@/lib/services/price-light";
+import { FEED_BASELINE_DAYS } from "@/lib/feed/price-guard";
 import { tagSlugsForEvent } from "@/lib/services/price-light-tags";
 import type {
   CompetitorKey, CompetitorOverride, CompetitorOverrides, EventKind, ExtractedAttrs, Light, LightDetail, LightOverride, LightScopeDetail, MatchRow, MatchTrigger, Scope,
@@ -256,30 +257,19 @@ export async function writeSnapshotAndTag(
     base_hotel: Math.round(Number(event.base_hotel_price) || 0), markup: Math.round(totalMarkupUsd(event)),
   };
 
-  // Reference window: 10-21 days back (LOOKBACK-4 .. LOOKBACK+7). Fetch every snapshot in
-  // that window and pick the one whose day is closest to `today - PRICE_DROP_LOOKBACK_DAYS`
-  // (ties -> the older row), rather than trusting the query's own ordering to land on it -
-  // "order by day desc limit 1" would just return the freshest-in-window row (nearest the
-  // 10-day edge), not the one nearest the 14-day target.
+  // The "before" of a drop: the snapshot nearest PRICE_DROP_LOOKBACK_DAYS back inside the 10-21 day
+  // window, never a SPIKE day (pickDropReference - 918's two $19,907 days would make a fall back to
+  // $1,909 an $18,000 "drop"); the 30 days before the window are read too, to tell a spike.
   const { data: refRows, error: refError } = await db
     .from("event_price_snapshots")
-    .select("day,package_usd")
+    .select("day,package_usd,min_ticket")
     .eq("event_id", event.id)
     .lte("day", isoDaysAgo(today, PRICE_DROP_LOOKBACK_DAYS - 4))
-    .gte("day", isoDaysAgo(today, PRICE_DROP_LOOKBACK_DAYS + 7))
-    .limit(12);
+    .gte("day", isoDaysAgo(today, PRICE_DROP_LOOKBACK_DAYS + 7 + FEED_BASELINE_DAYS))
+    .order("day", { ascending: true })
+    .limit(80);
   if (refError) console.error("price-light: snapshot ref failed", JSON.stringify(refError));
-
-  const target = isoDaysAgo(today, PRICE_DROP_LOOKBACK_DAYS);
-  const targetMs = new Date(`${target}T00:00:00.000Z`).getTime();
-  let refRow: { day: string; package_usd: number | null } | null = null;
-  for (const row of (refRows ?? []) as { day: string; package_usd: number | null }[]) {
-    if (!refRow) { refRow = row; continue; }
-    const rowDist = Math.abs(new Date(`${row.day}T00:00:00.000Z`).getTime() - targetMs);
-    const bestDist = Math.abs(new Date(`${refRow.day}T00:00:00.000Z`).getTime() - targetMs);
-    // Strictly closer wins; on a tie, prefer the older row (smaller day).
-    if (rowDist < bestDist || (rowDist === bestDist && row.day < refRow.day)) refRow = row;
-  }
+  const refRow = pickDropReference((refRows ?? []) as DropRefRow[], today);
 
   const current = event.price_drop_usd != null && event.price_drop_from != null && event.price_drop_until
     ? { usd: event.price_drop_usd, from: event.price_drop_from, until: event.price_drop_until }

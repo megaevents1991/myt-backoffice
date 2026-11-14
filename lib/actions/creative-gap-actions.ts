@@ -2,6 +2,7 @@
 
 import { siteUrlOf, siteUrlsForRefs } from "@/lib/services/task-site-url";
 import { requireStaff } from "@/lib/auth/guards";
+import { FEED_PRICE_HOLD_PREFIX } from "@/lib/feed/price-guard";
 import { logAudit } from "@/lib/audit";
 import { supabaseTyped } from "@/lib/supabase-server";
 import {
@@ -57,7 +58,14 @@ export async function getCreativeGapCounts(): Promise<GapCounts> {
     artistBio,
     categoryContent,
   ] = await Promise.all([
-    feedEvents().is("campaign_image_url", null),
+    // Minus the events the feed's price guard holds - no creative on purpose (lib/feed/price-guard.ts).
+    Promise.all([
+      feedEvents().is("campaign_image_url", null),
+      feedEvents().is("campaign_image_url", null).like("campaign_skip_reason", `${FEED_PRICE_HOLD_PREFIX}%`),
+    ]).then(([all, held]) => ({
+      count: Math.max(0, (all.count ?? 0) - (held.count ?? 0)),
+      error: all.error ?? held.error,
+    })),
     feedEvents().is("card_image_url", null),
     // A crest in the library (/assets) closes the gap even with logo_url
     // empty - the matching is in code, so this counts the list's own rows.

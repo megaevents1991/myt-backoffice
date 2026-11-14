@@ -2153,6 +2153,15 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           t("Fix the reason (usually the price fields or ticket availability), save and click again. No reason found? Ask a developer to check the main site's /product-feed.", "מתקנים את הסיבה (לרוב שדות המחיר או זמינות כרטיסים), שומרים ולוחצים שוב. לא נמצאה סיבה? מבקשים ממפתח לבדוק את /product-feed באתר הראשי."),
         ],
       },
+      {
+        title: t("An event held out of the feed for an abnormal price", "אירוע שירד מהפיד בגלל מחיר חריג"),
+        steps: [
+          t("Before every publish of the feed (and every hour) the system checks the prices: an event over $6,000 a traveller, or whose cheapest ticket jumped 2.5 times and by at least $1,000 over its usual price of the last 30 days, leaves the Meta feed - so an ad never shows a price like that (Bob Dylan London, 13.11: one ticket of $18,672 left, the ad said $19,907).", "לפני כל פרסום של הפיד (וכל שעה) המערכת בודקת את המחירים: אירוע מעל $6,000 לנוסע, או שהכרטיס הזול שלו קפץ פי 2.5 ובלפחות $1,000 מעל המחיר הרגיל שלו ב-30 הימים האחרונים, יורד מהפיד של מטא - כדי שמודעה לא תציג מחיר כזה (בוב דילן לונדון, 13.11: נשאר כרטיס אחד של $18,672, והמודעה אמרה $19,907)."),
+          t("Staff get one mail per such event (not for an event marked Sold). The event's editor shows an amber \"מחוץ לפיד של מטא - מחיר חריג\" box with the numbers.", "הצוות מקבל מייל אחד על כל אירוע כזה (לא על אירוע שמסומן Sold). בעורך האירוע מופיעה תיבה כתומה \"מחוץ לפיד של מטא - מחיר חריג\" עם המספרים."),
+          t("If that ticket is all that is left: mark the event Sold. If the price is right and should be advertised: an admin clicks \"המחיר נכון - החזר לפיד\" in that box - the event is drawn and published at once, and the approval holds while the price moves less than 10%.", "אם זה הכרטיס היחיד שנשאר: מסמנים את האירוע Sold. אם המחיר נכון ורוצים לפרסם אותו: מנהל לוחץ \"המחיר נכון - החזר לפיד\" בתיבה - האירוע מצויר ומתפרסם מיד, והאישור תקף כל עוד המחיר זז פחות מ-10%."),
+          t("Nothing to do when the price comes back to normal: the event returns to the feed by itself within the hour. \"העלה לפיד עכשיו\" and the forced redraw do not bypass the check.", "כשהמחיר חוזר לרגיל לא צריך לעשות כלום: האירוע חוזר לפיד לבד תוך שעה. \"העלה לפיד עכשיו\" והציור המאולץ לא עוקפים את הבדיקה."),
+        ],
+      },
     ],
     links: [{ label: t("Meta product feed", "פיד מטא"), href: "/meta-feed" }],
   },

@@ -28,6 +28,7 @@ import {
 } from "@/lib/creative/input";
 import { siteCardPrice } from "@/lib/package-price";
 import { isTicketOnlyEvent } from "@/lib/package-mode";
+import { runFeedPriceGuard, storedHoldReason } from "@/lib/services/feed-price-guard";
 import { eventCityName, hasEventCity, type LodgingEvent } from "@/lib/lodging";
 import type { Event } from "@/types/app.types";
 
@@ -99,6 +100,12 @@ export type SubjectRow = PersonRow & { ref: string };
 export type CreativeLookupCaches = {
   artists?: PersonRow[];
   subjects?: SubjectRow[];
+  /**
+   * The feed's abnormal-price holds the caller's guard pass just left (event id -> reason;
+   * lib/services/feed-price-guard.ts). Absent = no pass ran: generateCampaignForEvent reads the
+   * event's stored hold itself.
+   */
+  feedHolds?: Map<number, string>;
 };
 
 const norm = (s: string) =>
@@ -695,6 +702,11 @@ export async function generateCampaignForEvent(
   // A hidden event (built by the uploader, not approved yet) gets no creative. Not a gap either:
   // nothing is written to the row - no hash, no skip reason - so approving it starts from scratch.
   if (event.is_hidden === true) return { status: "skipped", reason: "hidden" };
+  // An abnormal price (lib/feed/price-guard.ts) is held out of the feed: no creative, forced or not -
+  // only the editor's "the price is right" or a normal price again lets it back. Above the hash check
+  // on purpose: the guard cleared the hash, and a forced redraw must not get past it either.
+  const held = caches?.feedHolds ? caches.feedHolds.get(event.id) ?? null : await storedHoldReason(event.id);
+  if (held) return { status: "skipped", reason: held };
   // Gallery-aware hash: the picked gallery image is part of what gets
   // rendered, so a gallery edit must produce a new hash (→ regenerate).
   const [artistRows, subjectRows] = await Promise.all([
@@ -871,6 +883,8 @@ export type CampaignRunSummary = {
   /** Stale events left untouched because the run ran out of time/limit. */
   remaining: number;
   stoppedEarly: boolean;
+  /** The abnormal-price guard's pass at the top of the run (lib/services/feed-price-guard.ts). */
+  feedPriceGuard?: { held: number[]; kept: number[]; released: number[]; alerted: number[]; ms: number } | { error: string } | { ready: false };
 };
 
 export type CampaignRunOptions = {
@@ -895,6 +909,23 @@ export async function runCampaignCreatives(
   const { limit = null, timeBudgetMs = 250_000 } = options;
   const started = Date.now();
   const todayISO = new Date().toISOString().split("T")[0];
+
+  // The abnormal-price guard FIRST, so the rows read below already lack a held event's picture and
+  // every draw of the run knows the holds. A failed pass never stops the run: each draw then reads
+  // its event's stored hold, and the next feed publish runs the pass again before it ships anything.
+  let feedHolds: Map<number, string> | undefined;
+  let feedPriceGuard: CampaignRunSummary["feedPriceGuard"];
+  try {
+    const guard = await runFeedPriceGuard();
+    feedHolds = guard.holds;
+    feedPriceGuard = guard.ready
+      ? { held: guard.held, kept: guard.kept, released: guard.released, alerted: guard.alerted, ms: guard.ms }
+      : { ready: false };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[campaign] feed price guard failed:", message);
+    feedPriceGuard = { error: message };
+  }
 
   const { data, error } = await supabase
     .from("events")
@@ -927,11 +958,12 @@ export async function runCampaignCreatives(
     errors: [],
     remaining: 0,
     stoppedEarly: false,
+    feedPriceGuard,
   };
 
   let processed = 0;
   // Shared per-run caches: artists/teams/logos tables load once, not per event.
-  const caches: CreativeLookupCaches = {};
+  const caches: CreativeLookupCaches = { feedHolds };
   // The pre-check hash is gallery-aware, so the artists table loads up front -
   // one query per run, same rows generateCampaignForEvent reuses via `caches`.
   const [artistRows, subjectRows] = await Promise.all([

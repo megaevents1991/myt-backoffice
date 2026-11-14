@@ -133,8 +133,12 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     // opened before the approval would hide the event again with its save.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     is_hidden: _ih,
+    // The feed's abnormal-price hold is owned by the guard (lib/services/feed-price-guard.ts) and the
+    // editor's "the price is right" - a form opened before a hold would lift it with its save.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    feed_price_guard: _fg,
     ...event
-  } = input;
+  } = input as Partial<Event> & { feed_price_guard?: unknown };
   const before = await fetchBefore("events", "id", id, event);
   const { data, error } = await supabase
     .from("events")
@@ -308,6 +312,8 @@ export async function duplicateEvent(
     // that never dropped.
     light_package: null, light_ticket: null, light_detail: null, light_checked_at: null,
     light_silenced_until: null, price_drop_usd: null, price_drop_from: null, price_drop_until: null,
+    // The original's feed price hold / approval is about ITS price - the copy is checked afresh.
+    ...("feed_price_guard" in source ? { feed_price_guard: null } : {}),
     // "Off the site" is the ORIGINAL's state at its supplier (tixstock-availability.ts) - the
     // copy, usually another show with another eid, is judged afresh by the next price sync:
     // it starts on the site, and tickets the sync took off are put back.
@@ -369,8 +375,9 @@ export async function bulkUpdateEvents(ids: number[], input: Partial<Event>) {
   await requireStaff();
   // "Hidden" is owned by the uploader's Approve - the same strip as updateEvent, so a bulk
   // payload built from a stale row can never hide (or un-hide) events.
+  // The feed's price hold likewise (lib/services/feed-price-guard.ts).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { is_hidden: _ih, ...update } = input;
+  const { is_hidden: _ih, feed_price_guard: _fg, ...update } = input as Partial<Event> & { feed_price_guard?: unknown };
   const { data, error } = await supabase
     .from("events")
     .update(update as never)

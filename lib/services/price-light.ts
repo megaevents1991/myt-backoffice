@@ -8,6 +8,7 @@ import type {
   LightScopeDetail, MatchStatus, PerCompetitor, Scope, UncheckedReason,
 } from "../../types/price-light.types";
 import { FLIGHT_MARGIN_USD, HOTEL_MARGIN_USD } from "./price-margins.ts";
+import { FEED_BASELINE_DAYS, isSpikeSnapshot } from "../feed/price-guard.ts";
 
 // ---- thresholds -----------------------------------------------------------
 export const LIGHT_GREEN_USD = -150;
@@ -761,6 +762,33 @@ export function addDays(day: string, days: number): string {
   const d = new Date(`${day}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+export type DropRefRow = { day: string; package_usd: number | null; min_ticket: number | null };
+
+/**
+ * The "before" of a price drop: the snapshot nearest PRICE_DROP_LOOKBACK_DAYS back inside the
+ * 10-21 day window (ties -> the older), skipping a SPIKE day (isSpikeSnapshot against the 30 days
+ * before it) - 918's two $19,907 days (13-14.11) would otherwise make a fall back to $1,909 an
+ * $18,000 "drop". `rows` = the event's snapshots, any order, including the 30 days before the window.
+ */
+export function pickDropReference(rows: DropRefRow[], today: string): DropRefRow | null {
+  const from = addDays(today, -(PRICE_DROP_LOOKBACK_DAYS + 7));
+  const to = addDays(today, -(PRICE_DROP_LOOKBACK_DAYS - 4));
+  const targetMs = Date.parse(`${addDays(today, -PRICE_DROP_LOOKBACK_DAYS)}T00:00:00.000Z`);
+  const distance = (day: string) => Math.abs(Date.parse(`${day}T00:00:00.000Z`) - targetMs);
+  const candidates = rows
+    .filter((r) => r.day >= from && r.day <= to)
+    .sort((a, b) => distance(a.day) - distance(b.day) || (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+  for (const row of candidates) {
+    const start = addDays(row.day, -FEED_BASELINE_DAYS);
+    const before = rows
+      .filter((r) => r.day >= start && r.day < row.day)
+      .map((r) => r.min_ticket)
+      .filter((v): v is number => v != null);
+    if (!isSpikeSnapshot(row, before)) return row;
+  }
+  return null;
 }
 
 /** Spec §6.2 step 2. `current` = the tag already on the event (or null). */

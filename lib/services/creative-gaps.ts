@@ -25,6 +25,7 @@ import {
 } from "@/lib/services/category-twins";
 import type { CategoryPageContent } from "@/types/page-content.types";
 import { GAP_KINDS, GAP_META, gapKey, type GapItem, type GapKind } from "@/types/creative-gap.types";
+import { FEED_PRICE_HOLD_PREFIX } from "@/lib/feed/price-guard";
 
 // Typed against types/database.types.ts (npm run db:types).
 const db = supabaseTyped;
@@ -241,13 +242,19 @@ export async function listGapsOfKind(
           .order("date", { ascending: true })
           .limit(LIST_LIMIT);
         if (error) throw error;
-        return (data ?? []).map((row) => {
+        // An event the feed's price guard holds (lib/feed/price-guard.ts) has no creative on purpose -
+        // a price question, not a creative one: it is not a gap (and never a task for the creative team).
+        const notHeld = (data ?? []).filter(
+          (row: { campaign_skip_reason: string | null }) =>
+            !String(row.campaign_skip_reason ?? "").startsWith(FEED_PRICE_HOLD_PREFIX),
+        );
+        return notHeld.map((row: { id: number; name: string; date: string; campaign_skip_reason: string | null }) => {
           // The pipeline records WHY it skipped. Its only remaining skip is
           // "no computable price" (lib/creative/auto.ts) - so the fix for a
           // missing creative is almost always the event's price fields, not
-          // the generator. Route "Do" at the actual cause.
+          // the generator. Route "Do" at the actual cause (the reason is Hebrew: "אין מחיר ...").
           const reason = String(row.campaign_skip_reason ?? "").toLowerCase();
-          const fixUrl = reason.includes("price")
+          const fixUrl = reason.includes("price") || reason.includes("מחיר")
             ? `/events/${row.id}#fix-price`
             : reason.includes("image")
               ? `/events/${row.id}#section-images`
