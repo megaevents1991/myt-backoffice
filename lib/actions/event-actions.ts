@@ -137,8 +137,23 @@ export async function updateEvent(id: number, input: Partial<Event>) {
     // editor's "the price is right" - a form opened before a hold would lift it with its save.
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     feed_price_guard: _fg,
+    // The feed creative's columns are the creative pipeline's (lib/creative/auto.ts) and the price
+    // guard's - no form edits them, and a tab opened before a redraw / hold / "the price is right"
+    // would write the old picture back (or take a re-drawn event out of the feed) with its save.
+    // campaign_video_url stays: the editor sets it.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    campaign_image_url: _ci, campaign_banner_url: _cb, campaign_input_hash: _ch, campaign_generated_at: _cg,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    campaign_skip_reason: _cs,
     ...event
-  } = input as Partial<Event> & { feed_price_guard?: unknown };
+  } = input as Partial<Event> & {
+    feed_price_guard?: unknown;
+    campaign_image_url?: unknown;
+    campaign_banner_url?: unknown;
+    campaign_input_hash?: unknown;
+    campaign_generated_at?: unknown;
+    campaign_skip_reason?: unknown;
+  };
   const before = await fetchBefore("events", "id", id, event);
   const { data, error } = await supabase
     .from("events")

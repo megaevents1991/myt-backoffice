@@ -1411,7 +1411,9 @@ fewer than 3 days = the ceiling alone; a live ready package = the ceiling alone)
 baseline never learns a spike. Measured 14.11 over every snapshot since 11.09 (26,099 rows, 605 events): both rules caught
 918 alone; the dearest event on sale was $2,704. **State** `events.feed_price_guard` jsonb (migration
 `20261114141156`): `{ hold: { since, reason ceiling|jump, card_usd, ticket_usd, baseline_usd, alerted_at }, approved: {
-card_usd, by, at } }`, null = neither; `updateEvent` / `bulkUpdateEvents` strip it, `duplicateEvent` resets it. **The pass**
+card_usd, by, at } }`, null = neither; `updateEvent` / `bulkUpdateEvents` strip it, `duplicateEvent` resets it. `updateEvent` also strips the
+feed creative's columns (`campaign_image_url` / `_banner_url` / `_input_hash` / `_generated_at` / `campaign_skip_reason` - no
+form edits them; a tab opened before a redraw, hold or approval wrote the old picture back with its save). **The pass**
 `runFeedPriceGuard` (`lib/services/feed-price-guard.ts`, ~1 s for 450 events: one events read, snapshots only for the
 candidates) HOLDS = clears `campaign_image_url` + `campaign_input_hash` (both of main's feeds skip an event with no creative -
 no change in myt-main) and writes `campaign_skip_reason` "מחיר חריג - מחוץ לפיד: ..." (/product-feed prints it); KEEPS a
